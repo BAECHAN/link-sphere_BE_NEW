@@ -1,0 +1,29 @@
+# === Gradle ===
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# === IDE ===
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/
+.kotlin/
+
+# === OS ===
+.DS_Store
+Thumbs.db
+
+# === Application Secrets ===
+src/main/resources/application-secret.yml
+src/main/resources/application-secret.properties
+*.env
+.env.*
+
+# === Logs ===
+*.log
+logs/
+
+# === Verify output files ===
+verify_output*.txt
