@@ -17,6 +17,7 @@ class JwtTokenProvider(
         @Value("\${jwt.refresh-token-validity:604800000}")
         private val refreshTokenValidity: Long // 7 days
 ) {
+    private val logger = org.slf4j.LoggerFactory.getLogger(JwtTokenProvider::class.java)
     private val key: SecretKey = Keys.hmacShaKeyFor(secretKey.toByteArray(StandardCharsets.UTF_8))
 
     fun createAccessToken(userId: String): String {
@@ -44,6 +45,7 @@ class JwtTokenProvider(
             Jwts.parser().verifyWith(key).build().parseSignedClaims(token)
             return true
         } catch (e: Exception) {
+            logger.error("JWT Validation failed", e)
             return false
         }
     }

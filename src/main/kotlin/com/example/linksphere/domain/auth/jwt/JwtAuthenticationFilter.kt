@@ -12,13 +12,15 @@ import org.springframework.web.filter.OncePerRequestFilter
 class JwtAuthenticationFilter(private val jwtTokenProvider: JwtTokenProvider) :
         OncePerRequestFilter() {
 
+    private val logger = org.slf4j.LoggerFactory.getLogger(JwtAuthenticationFilter::class.java)
+
     override fun doFilterInternal(
             request: HttpServletRequest,
             response: HttpServletResponse,
             filterChain: FilterChain
     ) {
         val token = resolveToken(request)
-        println(
+        logger.debug(
                 "JwtAuthenticationFilter: Processing ${request.method} ${request.requestURI}, Token: $token"
         )
 
@@ -38,6 +40,18 @@ class JwtAuthenticationFilter(private val jwtTokenProvider: JwtTokenProvider) :
         if (bearerToken != null && bearerToken.startsWith("Bearer ")) {
             return bearerToken.substring(7)
         }
+        // SSE 연결 시 EventSource는 커스텀 헤더를 지원하지 않으므로
+        // 쿼리 파라미터에서 토큰을 읽어옴
+        val queryToken = request.getParameter("token")
+        if (!queryToken.isNullOrBlank()) {
+            logger.debug(
+                    "JwtAuthenticationFilter: Found token in query param: ${queryToken.take(10)}..."
+            )
+            return queryToken
+        }
+        logger.debug(
+                "JwtAuthenticationFilter: No token found in header or query. URI: ${request.requestURI}"
+        )
         return null
     }
 }
