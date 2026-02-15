@@ -1,10 +1,11 @@
 package com.example.linksphere.domain.post
 
 import com.example.linksphere.domain.category.CategoryRepository
-import com.example.linksphere.infra.ai.GeminiService
 import java.util.UUID
 import org.jsoup.Jsoup
 import org.slf4j.LoggerFactory
+import org.springframework.context.ApplicationEventPublisher
+import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 
@@ -13,7 +14,7 @@ import org.springframework.transaction.annotation.Transactional
 class PostService(
         private val postRepository: PostRepository,
         private val categoryRepository: CategoryRepository,
-        private val geminiService: GeminiService
+        private val eventPublisher: ApplicationEventPublisher
 ) {
 
     private val logger = LoggerFactory.getLogger(PostService::class.java)
@@ -24,7 +25,7 @@ class PostService(
         var description: String? = null
         var ogImage: String? = null
         val tags = mutableListOf<String>()
-        var aiSummary: String? = null
+        var pageContent: String? = null
 
         try {
             val doc = Jsoup.connect(request.url).get()
@@ -43,26 +44,11 @@ class PostService(
                 tags.add(host)
             }
 
-            // AI Analysis
-            try {
-                val content = doc.body().text().replace("\\s+".toRegex(), " ").trim().take(5000)
-                val analysisResult = geminiService.analyzeContent(title, description, content)
-
-                aiSummary = analysisResult.summary
-                if (analysisResult.tags.isNotEmpty()) {
-                    // Add distinct tags
-                    val newTags = analysisResult.tags.filter { !tags.contains(it) }
-                    tags.addAll(newTags)
-                }
-                logger.info("[AI] 분석 성공 - summary: ${aiSummary?.take(50)}, tags: $tags")
-            } catch (e: Exception) {
-                logger.error("[AI] 분석 실패", e)
-                // Continue even if AI analysis fails
-            }
+            // 페이지 본문 텍스트 추출 (AI 분석용)
+            pageContent = doc.body().text().replace("\\s+".toRegex(), " ").trim().take(5000)
         } catch (e: Exception) {
             logger.error("[Crawling] 크롤링 실패", e)
             title = request.url
-            // 크롤링 실패 시 URL을 제목으로 사용하고 나머지 필드는 null 처리
         }
 
         // 카테고리 ID로 카테고리 엔티티 조회
@@ -82,14 +68,32 @@ class PostService(
                         tags = tags,
                         categories = categories,
                         ogImage = ogImage,
-                        aiSummary = aiSummary
+                        aiStatus = if (pageContent != null) AiStatus.PENDING else AiStatus.NONE
                 )
         val savedPost = postRepository.save(newPost)
+
+        // AI 분석은 비동기로 처리 (크롤링 성공 시에만)
+        if (pageContent != null) {
+            logger.info("[AI Async] PostCreatedEvent 발행 - postId: ${savedPost.id}")
+            eventPublisher.publishEvent(
+                    PostCreatedEvent(
+                            postId = savedPost.id!!,
+                            userId = userId,
+                            title = title,
+                            description = description,
+                            content = pageContent,
+                            existingTags = tags.toList()
+                    )
+            )
+        }
+
         return PostResponse.from(savedPost)
     }
 
-    fun getAllPosts(): List<PostResponse> {
-        return postRepository.findAll().map { PostResponse.from(it) }
+    fun getAllPosts(page: Int, size: Int): PostPageResponse {
+        val pageable = PageRequest.of(page, size)
+        val postPage = postRepository.findAllByOrderByCreatedAtDesc(pageable)
+        return PostPageResponse.from(postPage)
     }
 
     fun getPostById(id: UUID): PostResponse {
@@ -100,7 +104,9 @@ class PostService(
         return PostResponse.from(post)
     }
 
-    fun getPostsByCategorySlug(slug: String): List<PostResponse> {
-        return postRepository.findByCategoriesSlug(slug).map { PostResponse.from(it) }
+    fun getPostsByCategorySlug(slug: String, page: Int, size: Int): PostPageResponse {
+        val pageable = PageRequest.of(page, size)
+        val postPage = postRepository.findByCategoriesSlugOrderByCreatedAtDesc(slug, pageable)
+        return PostPageResponse.from(postPage)
     }
 }

@@ -7,6 +7,13 @@ import java.util.UUID
 import org.hibernate.annotations.JdbcTypeCode
 import org.hibernate.type.SqlTypes
 
+enum class AiStatus {
+        NONE,
+        PENDING,
+        COMPLETED,
+        FAILED
+}
+
 @Entity
 @Table(name = "posts")
 class TablePost(
@@ -18,7 +25,7 @@ class TablePost(
         @Column(name = "url", nullable = false, columnDefinition = "text") val url: String,
         @Column(name = "title", nullable = false, columnDefinition = "text") val title: String,
         @Column(name = "description", columnDefinition = "text") val description: String? = null,
-        @Column(name = "tags") @JdbcTypeCode(SqlTypes.ARRAY) val tags: List<String>? = null,
+        @Column(name = "tags") @JdbcTypeCode(SqlTypes.ARRAY) var tags: List<String>? = null,
         @ManyToMany(fetch = FetchType.LAZY)
         @JoinTable(
                 name = "post_categories",
@@ -27,7 +34,10 @@ class TablePost(
         )
         val categories: MutableSet<TableCategory> = mutableSetOf(),
         @Column(name = "og_image", columnDefinition = "text") val ogImage: String? = null,
-        @Column(name = "ai_summary", columnDefinition = "text") val aiSummary: String? = null,
+        @Column(name = "ai_summary", columnDefinition = "text") var aiSummary: String? = null,
         @Column(name = "view_count") val viewCount: Int? = 0,
-        @Column(name = "created_at") val createdAt: LocalDateTime? = LocalDateTime.now()
+        @Column(name = "created_at") val createdAt: LocalDateTime? = LocalDateTime.now(),
+        @Enumerated(EnumType.STRING)
+        @Column(name = "ai_status")
+        var aiStatus: AiStatus = AiStatus.NONE
 )
