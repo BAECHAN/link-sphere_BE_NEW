@@ -2,6 +2,8 @@ package com.example.linksphere.domain.auth
 
 import com.example.linksphere.domain.auth.jwt.JwtTokenProvider
 import com.example.linksphere.domain.member.MemberService
+import java.time.format.DateTimeFormatter
+import java.util.UUID
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 
@@ -68,5 +70,18 @@ class AuthService(
         // standard TokenResponse.
 
         return AuthResult(newAccessToken, refreshToken)
+    }
+
+    fun getAccount(userId: String): AccountResponse {
+        val member = memberService.findById(UUID.fromString(userId))
+        val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
+        return AccountResponse(
+                id = member.id.toString(),
+                email = member.email,
+                name = member.name,
+                image = member.image,
+                createdAt = member.createdAt?.format(formatter) ?: "",
+                updatedAt = member.updatedAt?.format(formatter) ?: ""
+        )
     }
 }

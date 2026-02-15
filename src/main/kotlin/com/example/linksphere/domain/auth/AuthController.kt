@@ -1,8 +1,10 @@
 package com.example.linksphere.domain.auth
 
+import java.security.Principal
 import org.springframework.http.HttpHeaders
 import org.springframework.http.ResponseCookie
 import org.springframework.http.ResponseEntity
+import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
@@ -52,6 +54,12 @@ class AuthController(private val authService: AuthService) {
                                 .build()
 
                 return ResponseEntity.ok().header(HttpHeaders.SET_COOKIE, cookie.toString()).build()
+        }
+
+        @GetMapping("/account")
+        fun getAccount(principal: Principal): ResponseEntity<AccountResponse> {
+                val account = authService.getAccount(principal.name)
+                return ResponseEntity.ok(account)
         }
 
         private fun createCookieResponse(authResult: AuthResult): ResponseEntity<TokenResponse> {

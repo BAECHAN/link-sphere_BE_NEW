@@ -15,6 +15,7 @@ class TableMember(
         @Column(name = "password", nullable = false) // Encrypted password
         val password: String,
         @Column(name = "name") val name: String? = null,
+        @Column(name = "image") val image: String? = null,
         @Column(name = "created_at") val createdAt: LocalDateTime? = LocalDateTime.now(),
         @Column(name = "updated_at") val updatedAt: LocalDateTime? = LocalDateTime.now()
 )
