@@ -15,9 +15,10 @@ import org.springframework.web.bind.annotation.RestController
 class AuthController(private val authService: AuthService) {
 
         @PostMapping("/signup")
-        fun signup(@RequestBody request: SignupRequest): ResponseEntity<TokenResponse> {
-                val authResult = authService.signup(request)
-                return createCookieResponse(authResult)
+        fun signup(@RequestBody request: SignupRequest): ResponseEntity<AccountResponse> {
+                val account = authService.signup(request)
+                return ResponseEntity.status(org.springframework.http.HttpStatus.CREATED)
+                        .body(account)
         }
 
         @PostMapping("/login")

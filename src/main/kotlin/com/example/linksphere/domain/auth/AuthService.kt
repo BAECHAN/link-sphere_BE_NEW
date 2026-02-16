@@ -16,24 +16,21 @@ class AuthService(
 ) {
 
     @Transactional
-    fun signup(request: SignupRequest): AuthResult {
-        // Password encryption is handled in MemberService or here.
-        // Let's delegate encryption to MemberService or handle it here before passing.
-        // Actually MemberService code showed "TODO: Password encryption needed".
-        // Use MemberService for creation, but we need to ensure it uses encryption.
-        // Let's modify MemberService to take encrypted password, or encrypt here.
-        // Better: Encrypt here and pass to MemberService (modifying request? no, MemberService
-        // should probably handle it or take a DTO).
-        // Given MemberService.signup takes SignupRequest, let's modify MemberService.
-
+    fun signup(request: SignupRequest): AccountResponse {
         val member =
                 memberService.signup(
                         request.copy(password = passwordEncoder.encode(request.password))
                 )
-        val accessToken = jwtTokenProvider.createAccessToken(member.id.toString())
-        val refreshToken = jwtTokenProvider.createRefreshToken(member.id.toString())
 
-        return AuthResult(accessToken, refreshToken)
+        val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
+        return AccountResponse(
+                id = member.id.toString(),
+                email = member.email,
+                name = member.name,
+                image = member.image,
+                createdAt = member.createdAt?.format(formatter) ?: "",
+                updatedAt = member.updatedAt?.format(formatter) ?: ""
+        )
     }
 
     fun login(request: LoginRequest): AuthResult {
