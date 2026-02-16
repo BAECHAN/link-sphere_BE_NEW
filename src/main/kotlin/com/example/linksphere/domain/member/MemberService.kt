@@ -1,6 +1,7 @@
 package com.example.linksphere.domain.member
 
 import com.example.linksphere.domain.auth.SignupRequest
+import com.example.linksphere.global.exception.DuplicateMemberException
 import java.util.UUID
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -12,7 +13,12 @@ class MemberService(private val memberRepository: MemberRepository) {
     @Transactional
     fun signup(request: SignupRequest): TableMember {
         if (memberRepository.existsByEmail(request.email)) {
-            throw IllegalArgumentException("Email already exists: ${request.email}")
+            throw DuplicateMemberException("Email already exists: ${request.email}")
+        }
+        request.name?.let {
+            if (memberRepository.existsByName(it)) {
+                throw DuplicateMemberException("Name already exists: $it")
+            }
         }
 
         // Password is already encrypted by AuthService before calling this, or we can assume the
