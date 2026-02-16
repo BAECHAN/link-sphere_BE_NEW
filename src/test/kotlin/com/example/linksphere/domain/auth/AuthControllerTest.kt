@@ -1,0 +1,61 @@
+package com.example.linksphere.domain.auth
+
+import com.example.linksphere.domain.auth.jwt.JwtTokenProvider
+import com.example.linksphere.domain.member.MemberService
+import com.example.linksphere.global.exception.DuplicateMemberException
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import org.mockito.Mockito.`when`
+import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest
+import org.springframework.context.annotation.ComponentScan
+import org.springframework.context.annotation.FilterType
+import org.springframework.http.MediaType
+import org.springframework.security.test.context.support.WithMockUser
+import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf
+import org.springframework.security.web.SecurityFilterChain
+import org.springframework.test.context.bean.override.mockito.MockitoBean
+import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
+
+@WebMvcTest(
+        controllers = [AuthController::class],
+        excludeFilters =
+                [
+                        ComponentScan.Filter(
+                                type = FilterType.ASSIGNABLE_TYPE,
+                                classes = [SecurityFilterChain::class]
+                        )]
+)
+class AuthControllerTest {
+
+        @Autowired private lateinit var mockMvc: MockMvc
+
+        @MockitoBean private lateinit var authService: AuthService
+
+        @MockitoBean private lateinit var memberService: MemberService
+
+        @MockitoBean private lateinit var jwtTokenProvider: JwtTokenProvider
+
+        @WithMockUser
+        fun `signup returns 409 when DuplicateMemberException is thrown`() {
+                val request = SignupRequest("test@example.com", "password", "testuser")
+                `when`(authService.signup(request))
+                        .thenThrow(
+                                DuplicateMemberException("Email already exists: test@example.com")
+                        )
+
+                val mapper = jacksonObjectMapper()
+                val json = mapper.writeValueAsString(request)
+
+                mockMvc.perform(
+                                post("/auth/signup")
+                                        .contentType(MediaType.APPLICATION_JSON)
+                                        .content(json)
+                                        .with(csrf())
+                        )
+                        .andExpect(status().isConflict)
+                        .andExpect(content().string("Email already exists: test@example.com"))
+        }
+}
