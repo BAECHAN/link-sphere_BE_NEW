@@ -1,6 +1,8 @@
 package com.example.linksphere.global.config
 
 import com.example.linksphere.domain.auth.jwt.JwtAuthenticationFilter
+import com.example.linksphere.global.config.security.CustomAccessDeniedHandler
+import com.example.linksphere.global.config.security.CustomAuthenticationEntryPoint
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
@@ -14,7 +16,11 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource
 
 @Configuration
 @EnableWebSecurity
-class SecurityConfig(private val jwtAuthenticationFilter: JwtAuthenticationFilter) {
+class SecurityConfig(
+        private val jwtAuthenticationFilter: JwtAuthenticationFilter,
+        private val customAuthenticationEntryPoint: CustomAuthenticationEntryPoint,
+        private val customAccessDeniedHandler: CustomAccessDeniedHandler
+) {
 
     @Bean
     fun passwordEncoder(): org.springframework.security.crypto.password.PasswordEncoder {
@@ -40,6 +46,10 @@ class SecurityConfig(private val jwtAuthenticationFilter: JwtAuthenticationFilte
                             )
                             .permitAll()
                     it.anyRequest().authenticated()
+                }
+                .exceptionHandling {
+                    it.authenticationEntryPoint(customAuthenticationEntryPoint)
+                    it.accessDeniedHandler(customAccessDeniedHandler)
                 }
                 .addFilterBefore(
                         jwtAuthenticationFilter,

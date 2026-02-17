@@ -1,6 +1,9 @@
 package com.example.linksphere.domain.auth.jwt
 
+import io.jsonwebtoken.ExpiredJwtException
 import io.jsonwebtoken.Jwts
+import io.jsonwebtoken.MalformedJwtException
+import io.jsonwebtoken.UnsupportedJwtException
 import io.jsonwebtoken.security.Keys
 import java.nio.charset.StandardCharsets
 import java.util.Date
@@ -44,9 +47,21 @@ class JwtTokenProvider(
         try {
             Jwts.parser().verifyWith(key).build().parseSignedClaims(token)
             return true
-        } catch (e: Exception) {
-            logger.error("JWT Validation failed", e)
-            return false
+        } catch (e: io.jsonwebtoken.security.SecurityException) {
+            logger.error("Invalid JWT signature: {}", e.message)
+            throw e
+        } catch (e: MalformedJwtException) {
+            logger.error("Invalid JWT token: {}", e.message)
+            throw e
+        } catch (e: ExpiredJwtException) {
+            logger.error("JWT token is expired: {}", e.message)
+            throw e
+        } catch (e: UnsupportedJwtException) {
+            logger.error("JWT token is unsupported: {}", e.message)
+            throw e
+        } catch (e: IllegalArgumentException) {
+            logger.error("JWT claims string is empty: {}", e.message)
+            throw e
         }
     }
 
