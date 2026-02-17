@@ -3,7 +3,9 @@ package com.example.linksphere.domain.auth
 import com.example.linksphere.domain.auth.jwt.JwtTokenProvider
 import com.example.linksphere.domain.member.MemberService
 import com.example.linksphere.global.exception.DuplicateMemberException
+import com.example.linksphere.global.exception.InvalidCredentialsException
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import org.junit.jupiter.api.Test
 import org.mockito.Mockito.`when`
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest
@@ -56,6 +58,36 @@ class AuthControllerTest {
                                         .with(csrf())
                         )
                         .andExpect(status().isConflict)
-                        .andExpect(content().string("Email already exists: test@example.com"))
+                        .andExpect(
+                                content()
+                                        .json(
+                                                """{"status":409,"code":"DUPLICATE_MEMBER","message":"Email already exists: test@example.com"}"""
+                                        )
+                        )
+        }
+
+        @Test
+        @WithMockUser
+        fun `login returns 401 when InvalidCredentialsException is thrown`() {
+                val request = LoginRequest("test@example.com", "wrongpassword")
+                `when`(authService.login(request))
+                        .thenThrow(InvalidCredentialsException("Invalid email or password"))
+
+                val mapper = jacksonObjectMapper()
+                val json = mapper.writeValueAsString(request)
+
+                mockMvc.perform(
+                                post("/auth/login")
+                                        .contentType(MediaType.APPLICATION_JSON)
+                                        .content(json)
+                                        .with(csrf())
+                        )
+                        .andExpect(status().isUnauthorized)
+                        .andExpect(
+                                content()
+                                        .json(
+                                                """{"status":401,"code":"INVALID_CREDENTIALS","message":"Invalid email or password"}"""
+                                        )
+                        )
         }
 }
