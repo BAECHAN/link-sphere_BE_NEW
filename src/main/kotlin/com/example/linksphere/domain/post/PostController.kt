@@ -1,7 +1,9 @@
 package com.example.linksphere.domain.post
 
+import com.example.linksphere.global.common.ApiResponse
 import com.example.linksphere.infra.sse.SseEmitterService
 import java.util.UUID
+import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.web.bind.annotation.*
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter
@@ -18,9 +20,10 @@ class PostController(
     fun createPost(
             @RequestBody request: PostCreateRequest,
             authentication: org.springframework.security.core.Authentication
-    ): PostResponse {
+    ): ApiResponse<PostResponse> {
         val userId = UUID.fromString(authentication.name)
-        return postService.createPost(userId, request)
+        val post = postService.createPost(userId, request)
+        return ApiResponse(HttpStatus.CREATED.value(), "Post created", post)
     }
 
     @GetMapping
@@ -28,17 +31,20 @@ class PostController(
             @RequestParam(required = false) category: String?,
             @RequestParam(defaultValue = "0") page: Int,
             @RequestParam(defaultValue = "10") size: Int
-    ): PostPageResponse {
-        return if (category != null) {
-            postService.getPostsByCategorySlug(category, page, size)
-        } else {
-            postService.getAllPosts(page, size)
-        }
+    ): ApiResponse<PostPageResponse> {
+        val posts =
+                if (category != null) {
+                    postService.getPostsByCategorySlug(category, page, size)
+                } else {
+                    postService.getAllPosts(page, size)
+                }
+        return ApiResponse(HttpStatus.OK.value(), "Posts retrieved", posts)
     }
 
     @GetMapping("/{id}")
-    fun getPostById(@PathVariable id: UUID): PostResponse {
-        return postService.getPostById(id)
+    fun getPostById(@PathVariable id: UUID): ApiResponse<PostResponse> {
+        val post = postService.getPostById(id)
+        return ApiResponse(HttpStatus.OK.value(), "Post retrieved", post)
     }
 
     @GetMapping("/ai-events", produces = [MediaType.TEXT_EVENT_STREAM_VALUE])
