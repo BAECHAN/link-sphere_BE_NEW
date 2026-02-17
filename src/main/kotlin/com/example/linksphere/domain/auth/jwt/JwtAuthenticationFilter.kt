@@ -1,5 +1,7 @@
 package com.example.linksphere.domain.auth.jwt
 
+import io.jsonwebtoken.ExpiredJwtException
+import io.jsonwebtoken.JwtException
 import jakarta.servlet.FilterChain
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
@@ -24,12 +26,23 @@ class JwtAuthenticationFilter(private val jwtTokenProvider: JwtTokenProvider) :
                 "JwtAuthenticationFilter: Processing ${request.method} ${request.requestURI}, Token: $token"
         )
 
-        if (token != null && jwtTokenProvider.validateToken(token)) {
-            val userId = jwtTokenProvider.getUserId(token)
-            // In a real app, you might load UserDetails here.
-            // For now, we create a simple authenticated token with the userId.
-            val auth = UsernamePasswordAuthenticationToken(userId, null, emptyList())
-            SecurityContextHolder.getContext().authentication = auth
+        try {
+            if (token != null && jwtTokenProvider.validateToken(token)) {
+                val userId = jwtTokenProvider.getUserId(token)
+                // In a real app, you might load UserDetails here.
+                // For now, we create a simple authenticated token with the userId.
+                val auth = UsernamePasswordAuthenticationToken(userId, null, emptyList())
+                SecurityContextHolder.getContext().authentication = auth
+            }
+        } catch (e: ExpiredJwtException) {
+            logger.error("Expired JWT token", e)
+            request.setAttribute("exception", "TOKEN_EXPIRED")
+        } catch (e: JwtException) {
+            logger.error("Invalid JWT token", e)
+            request.setAttribute("exception", "INVALID_TOKEN")
+        } catch (e: Exception) {
+            logger.error("Could not set user authentication in security context", e)
+            request.setAttribute("exception", "INVALID_TOKEN")
         }
 
         filterChain.doFilter(request, response)

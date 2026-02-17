@@ -2,6 +2,7 @@ package com.example.linksphere.domain.auth
 
 import com.example.linksphere.domain.auth.jwt.JwtTokenProvider
 import com.example.linksphere.domain.member.MemberService
+import com.example.linksphere.global.exception.InvalidCredentialsException
 import java.time.format.DateTimeFormatter
 import java.util.UUID
 import org.springframework.stereotype.Service
@@ -34,14 +35,15 @@ class AuthService(
     }
 
     fun login(request: LoginRequest): AuthResult {
-        val member = memberService.findByEmail(request.email)
-        println("AuthService: Found member ${member.email}, Stored Password: ${member.password}")
+        val member =
+                try {
+                    memberService.findByEmail(request.email)
+                } catch (e: IllegalArgumentException) {
+                    throw InvalidCredentialsException("Invalid email or password")
+                }
 
         if (!passwordEncoder.matches(request.password, member.password)) {
-            println(
-                    "AuthService: Password mismatch. Input: ${request.password}, Stored: ${member.password}"
-            )
-            throw IllegalArgumentException("Invalid password")
+            throw InvalidCredentialsException("Invalid email or password")
         }
 
         val accessToken = jwtTokenProvider.createAccessToken(member.id.toString())

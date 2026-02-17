@@ -1,7 +1,9 @@
 package com.example.linksphere.domain.auth
 
+import com.example.linksphere.global.common.ApiResponse
 import java.security.Principal
 import org.springframework.http.HttpHeaders
+import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseCookie
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
@@ -15,36 +17,43 @@ import org.springframework.web.bind.annotation.RestController
 class AuthController(private val authService: AuthService) {
 
         @PostMapping("/signup")
-        fun signup(@RequestBody request: SignupRequest): ResponseEntity<AccountResponse> {
+        fun signup(
+                @RequestBody request: SignupRequest
+        ): ResponseEntity<ApiResponse<AccountResponse>> {
                 val account = authService.signup(request)
-                return ResponseEntity.status(org.springframework.http.HttpStatus.CREATED)
-                        .body(account)
+                val response = ApiResponse(HttpStatus.CREATED.value(), "Signup successful", account)
+                return ResponseEntity.status(HttpStatus.CREATED).body(response)
         }
 
         @PostMapping("/login")
-        fun login(@RequestBody request: LoginRequest): ResponseEntity<TokenResponse> {
+        fun login(@RequestBody request: LoginRequest): ResponseEntity<ApiResponse<TokenResponse>> {
                 val authResult = authService.login(request)
-                return createCookieResponse(authResult)
+                val response =
+                        ApiResponse(
+                                HttpStatus.OK.value(),
+                                "Login successful",
+                                TokenResponse(authResult.accessToken)
+                        )
+                return createCookieResponse(authResult, response)
         }
 
         @PostMapping("/refresh")
         fun refresh(
                 @org.springframework.web.bind.annotation.CookieValue("refreshToken")
                 refreshToken: String
-        ): ResponseEntity<TokenResponse> {
+        ): ResponseEntity<ApiResponse<TokenResponse>> {
                 val authResult = authService.refresh(refreshToken)
-                // If we were rotating, we would use createCookieResponse.
-                // Since we are just issuing a new access token, we can just return it.
-                // However, updating the cookie's path/secure flags or just keeping it alive might
-                // be good.
-                // But the requirement says "update Access Token".
-                // Let's just return the new access token in the body. The old refresh token cookie
-                // remains valid until it expires.
-                return ResponseEntity.ok(TokenResponse(authResult.accessToken))
+                val response =
+                        ApiResponse(
+                                HttpStatus.OK.value(),
+                                "Token refreshed",
+                                TokenResponse(authResult.accessToken)
+                        )
+                return ResponseEntity.ok(response)
         }
 
         @PostMapping("/logout")
-        fun logout(): ResponseEntity<Void> {
+        fun logout(): ResponseEntity<ApiResponse<Unit>> {
                 val cookie =
                         ResponseCookie.from("refreshToken", "")
                                 .httpOnly(true)
@@ -54,16 +63,23 @@ class AuthController(private val authService: AuthService) {
                                 .sameSite("Strict")
                                 .build()
 
-                return ResponseEntity.ok().header(HttpHeaders.SET_COOKIE, cookie.toString()).build()
+                val response = ApiResponse(HttpStatus.OK.value(), "Logout successful", Unit)
+                return ResponseEntity.ok()
+                        .header(HttpHeaders.SET_COOKIE, cookie.toString())
+                        .body(response)
         }
 
         @GetMapping("/account")
-        fun getAccount(principal: Principal): ResponseEntity<AccountResponse> {
+        fun getAccount(principal: Principal): ResponseEntity<ApiResponse<AccountResponse>> {
                 val account = authService.getAccount(principal.name)
-                return ResponseEntity.ok(account)
+                val response = ApiResponse(HttpStatus.OK.value(), "Account retrieved", account)
+                return ResponseEntity.ok(response)
         }
 
-        private fun createCookieResponse(authResult: AuthResult): ResponseEntity<TokenResponse> {
+        private fun createCookieResponse(
+                authResult: AuthResult,
+                body: ApiResponse<TokenResponse>
+        ): ResponseEntity<ApiResponse<TokenResponse>> {
                 val cookie =
                         ResponseCookie.from("refreshToken", authResult.refreshToken)
                                 .httpOnly(true)
@@ -75,6 +91,6 @@ class AuthController(private val authService: AuthService) {
 
                 return ResponseEntity.ok()
                         .header(HttpHeaders.SET_COOKIE, cookie.toString())
-                        .body(TokenResponse(authResult.accessToken))
+                        .body(body)
         }
 }
