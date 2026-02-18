@@ -62,6 +62,16 @@ class PostController(
         return ApiResponse(HttpStatus.OK.value(), "Post retrieved", post)
     }
 
+    @DeleteMapping("/{id}")
+    fun deletePost(
+            @PathVariable id: UUID,
+            authentication: org.springframework.security.core.Authentication
+    ): ApiResponse<Unit> {
+        val userId = UUID.fromString(authentication.name)
+        postService.deletePost(id, userId)
+        return ApiResponse(HttpStatus.OK.value(), "Post deleted", Unit)
+    }
+
     @GetMapping("/ai-events", produces = [MediaType.TEXT_EVENT_STREAM_VALUE])
     fun subscribeAiEvents(
             authentication: org.springframework.security.core.Authentication?

@@ -22,6 +22,7 @@ class PostService(
         private val memberRepository: MemberRepository,
         private val bookmarkRepository: BookmarkRepository,
         private val reactionRepository: ReactionRepository,
+        private val commentRepository: com.example.linksphere.domain.comment.CommentRepository,
         private val eventPublisher: ApplicationEventPublisher
 ) {
 
@@ -126,12 +127,26 @@ class PostService(
                 return PostPageResponse.from(postPage, responses)
         }
 
+        @Transactional
         fun getPostById(id: UUID, currentUserId: UUID?): PostResponse {
+                postRepository.incrementViewCount(id)
                 val post =
                         postRepository.findById(id).orElseThrow {
                                 IllegalArgumentException("Post not found with id: $id")
                         }
                 return convertToResponse(post, currentUserId)
+        }
+
+        @Transactional
+        fun deletePost(id: UUID, userId: UUID) {
+                val post =
+                        postRepository.findById(id).orElseThrow {
+                                IllegalArgumentException("Post not found with id: $id")
+                        }
+                if (post.userId != userId) {
+                        throw IllegalStateException("You are not the owner of this post")
+                }
+                postRepository.delete(post)
         }
 
         private fun convertToResponse(post: TablePost, currentUserId: UUID?): PostResponse {
@@ -151,7 +166,7 @@ class PostService(
                                 image = author.image
                         )
 
-                val bookmarkCount = bookmarkRepository.countByPostId(postId)
+                val bookmarkCount = bookmarkRepository.countByPostId(postId).toInt()
                 val isBookmarked =
                         if (currentUserId != null) {
                                 bookmarkRepository.existsByUserIdAndPostId(currentUserId, postId)
@@ -160,13 +175,15 @@ class PostService(
                         }
 
                 val reactionCount =
-                        reactionRepository.countByTargetIdAndTargetType(postId, TargetType.POST)
+                        reactionRepository
+                                .countByTargetIdAndTargetType(postId, TargetType.POST)
+                                .toInt()
                 val isReacted =
                         if (currentUserId != null) {
-                                reactionRepository.existsByUserIdAndTargetIdAndTargetType(
-                                        currentUserId,
+                                reactionRepository.existsByTargetIdAndTargetTypeAndUserId(
                                         postId,
-                                        TargetType.POST
+                                        TargetType.POST,
+                                        currentUserId
                                 )
                         } else {
                                 false
@@ -191,7 +208,8 @@ class PostService(
                                 PostStats(
                                         viewCount = post.viewCount ?: 0,
                                         likeCount = reactionCount,
-                                        commentCount = 0, // TODO: Implement comment count
+                                        commentCount =
+                                                commentRepository.countByPostId(postId).toInt(),
                                         bookmarkCount = bookmarkCount
                                 ),
                         userInteractions =
