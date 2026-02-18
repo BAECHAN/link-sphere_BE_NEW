@@ -9,6 +9,15 @@ data class PostCreateRequest(val url: String, val categoryIds: List<Long>? = emp
 
 data class UserSummary(val id: UUID, val nickname: String?, val image: String?)
 
+data class PostStats(
+        val viewCount: Int,
+        val likeCount: Int,
+        val commentCount: Int,
+        val bookmarkCount: Int
+)
+
+data class PostUserInteractions(val isLiked: Boolean, val isBookmarked: Boolean)
+
 data class PostResponse(
         val id: UUID,
         val userId: UUID,
@@ -19,13 +28,10 @@ data class PostResponse(
         val categories: List<CategoryResponse>,
         val ogImage: String?,
         val aiSummary: String?,
-        val viewCount: Int?,
         val createdAt: LocalDateTime?,
         val aiStatus: AiStatus,
-        val isBookmarked: Boolean,
-        val bookmarkCount: Int,
-        val isReacted: Boolean,
-        val reactionCount: Int,
+        val stats: PostStats,
+        val userInteractions: PostUserInteractions,
         val author: UserSummary
 )
 

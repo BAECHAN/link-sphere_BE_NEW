@@ -185,13 +185,20 @@ class PostService(
                                 },
                         ogImage = post.ogImage,
                         aiSummary = post.aiSummary,
-                        viewCount = post.viewCount,
                         createdAt = post.createdAt,
                         aiStatus = post.aiStatus,
-                        isBookmarked = isBookmarked,
-                        bookmarkCount = bookmarkCount,
-                        isReacted = isReacted,
-                        reactionCount = reactionCount,
+                        stats =
+                                PostStats(
+                                        viewCount = post.viewCount ?: 0,
+                                        likeCount = reactionCount,
+                                        commentCount = 0, // TODO: Implement comment count
+                                        bookmarkCount = bookmarkCount
+                                ),
+                        userInteractions =
+                                PostUserInteractions(
+                                        isLiked = isReacted,
+                                        isBookmarked = isBookmarked
+                                ),
                         author = authorSummary
                 )
         }
