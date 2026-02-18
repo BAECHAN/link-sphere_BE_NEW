@@ -42,6 +42,7 @@ class SecurityConfig(
                                     "/common/**",
                                     "/swagger-ui/**",
                                     "/v3/api-docs/**",
+                                    "/sse/debug/**",
                                     "/error"
                             )
                             .permitAll()
