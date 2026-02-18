@@ -15,9 +15,9 @@ class MemberService(private val memberRepository: MemberRepository) {
         if (memberRepository.existsByEmail(request.email)) {
             throw DuplicateMemberException("Email already exists: ${request.email}")
         }
-        request.name?.let {
-            if (memberRepository.existsByName(it)) {
-                throw DuplicateMemberException("Name already exists: $it")
+        request.nickname?.let {
+            if (memberRepository.existsByNickname(it)) {
+                throw DuplicateMemberException("Nickname already exists: $it")
             }
         }
 
@@ -27,7 +27,11 @@ class MemberService(private val memberRepository: MemberRepository) {
         // So here we just use it.
 
         val newMember =
-                TableMember(email = request.email, password = request.password, name = request.name)
+                TableMember(
+                        email = request.email,
+                        password = request.password,
+                        nickname = request.nickname
+                )
 
         return memberRepository.save(newMember)
     }

@@ -29,13 +29,13 @@ class MemberServiceTest {
     }
 
     @Test
-    fun `signup throws DuplicateMemberException when name exists`() {
+    fun `signup throws DuplicateMemberException when nickname exists`() {
         val request = SignupRequest("test@example.com", "password", "testuser")
         `when`(memberRepository.existsByEmail(request.email)).thenReturn(false)
-        `when`(memberRepository.existsByName(request.name!!)).thenReturn(true)
+        `when`(memberRepository.existsByNickname(request.nickname!!)).thenReturn(true)
 
         val exception =
                 assertThrows(DuplicateMemberException::class.java) { memberService.signup(request) }
-        assertTrue(exception.message!!.contains("Name already exists"))
+        assertTrue(exception.message!!.contains("Nickname already exists"))
     }
 }

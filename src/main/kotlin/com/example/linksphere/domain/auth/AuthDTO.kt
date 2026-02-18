@@ -7,7 +7,7 @@ data class LoginRequest(
         val password: String // Password is now required
 )
 
-data class SignupRequest(val email: String, val password: String, val name: String? = null)
+data class SignupRequest(val email: String, val password: String, val nickname: String? = null)
 
 data class TokenResponse(val accessToken: String)
 
@@ -16,7 +16,7 @@ data class AuthResult(val accessToken: String, val refreshToken: String)
 data class AccountResponse(
         val id: String,
         val email: String,
-        val name: String? = null,
+        val nickname: String? = null,
         val role: String = "USER", // Default role
         val image: String? = null,
         @JsonProperty("created_at") val createdAt: String,

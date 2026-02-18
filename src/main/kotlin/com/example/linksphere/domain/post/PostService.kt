@@ -137,18 +137,18 @@ class PostService(
         private fun convertToResponse(post: TablePost, currentUserId: UUID?): PostResponse {
                 val postId = post.id ?: throw IllegalStateException("Post ID cannot be null")
 
-                val user =
+                val author =
                         memberRepository.findById(post.userId).orElseThrow {
                                 IllegalArgumentException("Member not found with id: ${post.userId}")
                         }
-                val userSummary =
+                val authorSummary =
                         UserSummary(
-                                id = user.id
+                                id = author.id
                                                 ?: throw IllegalStateException(
                                                         "User ID cannot be null"
                                                 ),
-                                name = user.name,
-                                image = user.image
+                                nickname = author.nickname,
+                                image = author.image
                         )
 
                 val bookmarkCount = bookmarkRepository.countByPostId(postId)
@@ -192,7 +192,7 @@ class PostService(
                         bookmarkCount = bookmarkCount,
                         isReacted = isReacted,
                         reactionCount = reactionCount,
-                        user = userSummary
+                        author = authorSummary
                 )
         }
 }

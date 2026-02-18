@@ -7,7 +7,7 @@ import org.springframework.data.domain.Page
 
 data class PostCreateRequest(val url: String, val categoryIds: List<Long>? = emptyList())
 
-data class UserSummary(val id: UUID, val name: String?, val image: String?)
+data class UserSummary(val id: UUID, val nickname: String?, val image: String?)
 
 data class PostResponse(
         val id: UUID,
@@ -26,7 +26,7 @@ data class PostResponse(
         val bookmarkCount: Int,
         val isReacted: Boolean,
         val reactionCount: Int,
-        val user: UserSummary
+        val author: UserSummary
 )
 
 data class PostPageResponse(
@@ -37,18 +37,21 @@ data class PostPageResponse(
         val totalPages: Int,
         val last: Boolean
 ) {
-    companion object {
-        fun from(page: Page<TablePost>, postResponses: List<PostResponse>): PostPageResponse {
-            return PostPageResponse(
-                    content = postResponses,
-                    page = page.number,
-                    size = page.size,
-                    totalElements = page.totalElements,
-                    totalPages = page.totalPages,
-                    last = page.isLast
-            )
+        companion object {
+                fun from(
+                        page: Page<TablePost>,
+                        postResponses: List<PostResponse>
+                ): PostPageResponse {
+                        return PostPageResponse(
+                                content = postResponses,
+                                page = page.number,
+                                size = page.size,
+                                totalElements = page.totalElements,
+                                totalPages = page.totalPages,
+                                last = page.isLast
+                        )
+                }
         }
-    }
 }
 
 data class PostCreatedEvent(

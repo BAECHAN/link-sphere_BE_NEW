@@ -27,7 +27,7 @@ class AuthService(
         return AccountResponse(
                 id = member.id.toString(),
                 email = member.email,
-                name = member.name,
+                nickname = member.nickname,
                 image = member.image,
                 createdAt = member.createdAt?.format(formatter) ?: "",
                 updatedAt = member.updatedAt?.format(formatter) ?: ""
@@ -77,7 +77,7 @@ class AuthService(
         return AccountResponse(
                 id = member.id.toString(),
                 email = member.email,
-                name = member.name,
+                nickname = member.nickname,
                 image = member.image,
                 createdAt = member.createdAt?.format(formatter) ?: "",
                 updatedAt = member.updatedAt?.format(formatter) ?: ""
