@@ -22,8 +22,8 @@ class JwtAuthenticationFilter(private val jwtTokenProvider: JwtTokenProvider) :
             filterChain: FilterChain
     ) {
         val token = resolveToken(request)
-        logger.debug(
-                "JwtAuthenticationFilter: Processing ${request.method} ${request.requestURI}, Token: $token"
+        logger.info(
+                "JwtAuthenticationFilter: Processing ${request.method} ${request.requestURI}, Token: ${token?.take(10)}..."
         )
 
         try {
@@ -57,12 +57,12 @@ class JwtAuthenticationFilter(private val jwtTokenProvider: JwtTokenProvider) :
         // 쿼리 파라미터에서 토큰을 읽어옴
         val queryToken = request.getParameter("token")
         if (!queryToken.isNullOrBlank()) {
-            logger.debug(
+            logger.info(
                     "JwtAuthenticationFilter: Found token in query param: ${queryToken.take(10)}..."
             )
             return queryToken
         }
-        logger.debug(
+        logger.info(
                 "JwtAuthenticationFilter: No token found in header or query. URI: ${request.requestURI}"
         )
         return null
