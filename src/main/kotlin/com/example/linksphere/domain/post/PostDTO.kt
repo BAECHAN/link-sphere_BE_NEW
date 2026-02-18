@@ -7,6 +7,8 @@ import org.springframework.data.domain.Page
 
 data class PostCreateRequest(val url: String, val categoryIds: List<Long>? = emptyList())
 
+data class UserSummary(val id: UUID, val name: String?, val image: String?)
+
 data class PostResponse(
         val id: UUID,
         val userId: UUID,
@@ -19,27 +21,13 @@ data class PostResponse(
         val aiSummary: String?,
         val viewCount: Int?,
         val createdAt: LocalDateTime?,
-        val aiStatus: AiStatus
-) {
-    companion object {
-        fun from(entity: TablePost): PostResponse {
-            return PostResponse(
-                    id = entity.id!!,
-                    userId = entity.userId,
-                    url = entity.url,
-                    title = entity.title,
-                    description = entity.description,
-                    tags = entity.tags,
-                    categories = entity.categories.map { CategoryResponse.from(it) },
-                    ogImage = entity.ogImage,
-                    aiSummary = entity.aiSummary,
-                    viewCount = entity.viewCount,
-                    createdAt = entity.createdAt,
-                    aiStatus = entity.aiStatus
-            )
-        }
-    }
-}
+        val aiStatus: AiStatus,
+        val isBookmarked: Boolean,
+        val bookmarkCount: Int,
+        val isReacted: Boolean,
+        val reactionCount: Int,
+        val user: UserSummary
+)
 
 data class PostPageResponse(
         val content: List<PostResponse>,
@@ -50,9 +38,9 @@ data class PostPageResponse(
         val last: Boolean
 ) {
     companion object {
-        fun from(page: Page<TablePost>): PostPageResponse {
+        fun from(page: Page<TablePost>, postResponses: List<PostResponse>): PostPageResponse {
             return PostPageResponse(
-                    content = page.content.map { PostResponse.from(it) },
+                    content = postResponses,
                     page = page.number,
                     size = page.size,
                     totalElements = page.totalElements,

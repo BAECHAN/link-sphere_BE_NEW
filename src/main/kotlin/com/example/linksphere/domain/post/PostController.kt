@@ -16,6 +16,18 @@ class PostController(
 ) {
     private val logger = org.slf4j.LoggerFactory.getLogger(PostController::class.java)
 
+    private fun getUserIdFromAuthentication(
+            authentication: org.springframework.security.core.Authentication?
+    ): UUID? {
+        if (authentication == null) return null
+        return try {
+            UUID.fromString(authentication.name)
+        } catch (e: Exception) {
+            logger.warn("Failed to parse UUID from auth name: ${authentication.name}")
+            null
+        }
+    }
+
     @PostMapping
     fun createPost(
             @RequestBody request: PostCreateRequest,
@@ -29,21 +41,24 @@ class PostController(
     @GetMapping
     fun getAllPosts(
             @RequestParam(required = false) category: String?,
+            @RequestParam(required = false) search: String?,
+            @RequestParam(required = false) filter: String?,
             @RequestParam(defaultValue = "0") page: Int,
-            @RequestParam(defaultValue = "10") size: Int
+            @RequestParam(defaultValue = "10") size: Int,
+            authentication: org.springframework.security.core.Authentication?
     ): ApiResponse<PostPageResponse> {
-        val posts =
-                if (category != null) {
-                    postService.getPostsByCategorySlug(category, page, size)
-                } else {
-                    postService.getAllPosts(page, size)
-                }
+        val currentUserId = getUserIdFromAuthentication(authentication)
+        val posts = postService.getAllPosts(category, search, filter, page, size, currentUserId)
         return ApiResponse(HttpStatus.OK.value(), "Posts retrieved", posts)
     }
 
     @GetMapping("/{id}")
-    fun getPostById(@PathVariable id: UUID): ApiResponse<PostResponse> {
-        val post = postService.getPostById(id)
+    fun getPostById(
+            @PathVariable id: UUID,
+            authentication: org.springframework.security.core.Authentication?
+    ): ApiResponse<PostResponse> {
+        val currentUserId = getUserIdFromAuthentication(authentication)
+        val post = postService.getPostById(id, currentUserId)
         return ApiResponse(HttpStatus.OK.value(), "Post retrieved", post)
     }
 
@@ -51,6 +66,7 @@ class PostController(
     fun subscribeAiEvents(
             authentication: org.springframework.security.core.Authentication?
     ): SseEmitter {
+        logger.info("[PostController] SSE Subscription request. Auth: ${authentication?.name}")
         if (authentication == null) {
             logger.error("[PostController] SSE Subscription attempted with NULL authentication")
             throw RuntimeException("Authentication is missing")
