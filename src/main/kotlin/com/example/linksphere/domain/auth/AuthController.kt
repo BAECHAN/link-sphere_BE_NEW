@@ -60,7 +60,7 @@ class AuthController(private val authService: AuthService) {
                                 .secure(true)
                                 .path("/")
                                 .maxAge(0) // Delete cookie
-                                .sameSite("Strict")
+                                .sameSite("None")
                                 .build()
 
                 val response = ApiResponse(HttpStatus.OK.value(), "Logout successful", Unit)
@@ -86,7 +86,7 @@ class AuthController(private val authService: AuthService) {
                                 .secure(true) // Should be true for https
                                 .path("/")
                                 .maxAge(7 * 24 * 60 * 60) // 1 week
-                                .sameSite("Strict")
+                                .sameSite("None")
                                 .build()
 
                 return ResponseEntity.ok()
