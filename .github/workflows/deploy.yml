@@ -32,7 +32,7 @@ jobs:
       - name: Build and Push to ECR
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: linksphere-backend
+          ECR_REPOSITORY: link-sphere/link-sphere-be # ECR Repository 이름
         run: |
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
