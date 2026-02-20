@@ -6,6 +6,7 @@ import com.example.linksphere.domain.interaction.BookmarkRepository
 import com.example.linksphere.domain.interaction.ReactionRepository
 import com.example.linksphere.domain.interaction.TargetType
 import com.example.linksphere.domain.member.MemberRepository
+import com.fasterxml.jackson.databind.ObjectMapper
 import java.util.UUID
 import org.jsoup.Jsoup
 import org.slf4j.LoggerFactory
@@ -23,7 +24,8 @@ class PostService(
         private val bookmarkRepository: BookmarkRepository,
         private val reactionRepository: ReactionRepository,
         private val commentRepository: com.example.linksphere.domain.comment.CommentRepository,
-        private val eventPublisher: ApplicationEventPublisher
+        private val eventPublisher: ApplicationEventPublisher,
+        private val objectMapper: ObjectMapper
 ) {
 
         private val logger = LoggerFactory.getLogger(PostService::class.java)
@@ -64,6 +66,19 @@ class PostService(
                         // 페이지 본문 텍스트 추출 (AI 분석용)
                         pageContent =
                                 doc.body().text().replace("\\s+".toRegex(), " ").trim().take(5000)
+
+                        // YouTube URL인 경우 oEmbed를 통해 정확한 정보 가져오기
+                        if (isYoutubeUrl(request.url)) {
+                                val youtubeMeta = fetchYoutubeMetadata(request.url)
+                                if (youtubeMeta != null) {
+                                        if (!youtubeMeta["title"].isNullOrBlank()) {
+                                                title = youtubeMeta["title"]!!
+                                        }
+                                        if (ogImage.isNullOrBlank() && !youtubeMeta["thumbnail_url"].isNullOrBlank()) {
+                                                ogImage = youtubeMeta["thumbnail_url"]
+                                        }
+                                }
+                        }
                 } catch (e: Exception) {
                         logger.error("[Crawling] 크롤링 실패", e)
                         title = request.url
@@ -147,6 +162,24 @@ class PostService(
                         throw IllegalStateException("You are not the owner of this post")
                 }
                 postRepository.delete(post)
+        }
+
+        private fun isYoutubeUrl(url: String): Boolean {
+                return url.contains("youtube.com") || url.contains("youtu.be")
+        }
+
+        private fun fetchYoutubeMetadata(url: String): Map<String, String>? {
+                return try {
+                        val oembedUrl = "https://www.youtube.com/oembed?url=$url&format=json"
+                        val json = Jsoup.connect(oembedUrl).ignoreContentType(true).execute().body()
+                        val node = objectMapper.readTree(json)
+                        val title = node.get("title")?.asText() ?: ""
+                        val thumbnailUrl = node.get("thumbnail_url")?.asText() ?: ""
+                        mapOf("title" to title, "thumbnail_url" to thumbnailUrl)
+                } catch (e: Exception) {
+                        logger.warn("Failed to fetch YouTube oEmbed data", e)
+                        null
+                }
         }
 
         private fun convertToResponse(post: TablePost, currentUserId: UUID?): PostResponse {
