@@ -37,11 +37,11 @@ jobs:
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
 
-      - name: Deploy to App Runner
-        uses: aws-actions/amazon-apprunner-deploy@v1
-        with:
-          service: linksphere-backend
-          image: ${{ steps.login-ecr.outputs.registry }}/linksphere-backend:latest
-          region: ap-northeast-1
-          access-role-arn: ${{ secrets.AWS_APP_RUNNER_ROLE_ARN }}
-          wait-for-service-stability-seconds: 600
+      # - name: Deploy to App Runner
+      #   uses: aws-actions/amazon-apprunner-deploy@v1
+      #   with:
+      #     service: linksphere-backend
+      #     image: ${{ steps.login-ecr.outputs.registry }}/linksphere-backend:latest
+      #     region: ap-northeast-1
+      #     access-role-arn: ${{ secrets.AWS_APP_RUNNER_ROLE_ARN }}
+      #     wait-for-service-stability-seconds: 600
