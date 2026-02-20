@@ -42,9 +42,10 @@ class SecurityConfig(
                                     "/common/**",
                                     "/swagger-ui/**",
                                     "/v3/api-docs/**",
-                                    "/sse/debug/**",
-                                    "/error"
-                            )
+                                "/sse/debug/**",
+                                "/error",
+                                "/actuator/**",
+                        )
                             .permitAll()
                     it.anyRequest().authenticated()
                 }
