@@ -141,6 +141,20 @@ jwt:
 
 ---
 
+## 🚀 배포 (Deployment)
+
+이 프로젝트는 **GitHub Actions**, **AWS ECR**, **AWS App Runner**를 사용하여 CI/CD 파이프라인을 구축했습니다.
+
+자세한 배포 과정과 설정 방법은 [**docs/DEPLOY.md**](./docs/DEPLOY.md) 문서를 참고해주세요.
+
+### 배포 프로세스 요약
+
+1. **GitHub Push**: `main` 브랜치에 코드가 푸시됩니다.
+2. **GitHub Actions**: 자동으로 빌드 및 테스트를 수행하고 Docker 이미지를 생성하여 **AWS ECR**로 업로드합니다.
+3. **AWS App Runner**: ECR에 새로운 이미지가 업로드되면 자동으로 감지하여 서비스를 재배포합니다.
+
+---
+
 ## 환경 설정
 
 | 항목                   | 설명                 | 파일                     |
@@ -154,4 +168,4 @@ jwt:
 
 프론트엔드 프로젝트: [link-sphere_FE_NEW](https://github.com/BAECHAN/link-sphere_FE_NEW)
 
-- CORS 허용 Origin: `http://localhost:31119`, `https://localhost:31119`
+- CORS 허용 Origin: `http://localhost:31119`, `https://localhost:31119`, AWS_CLOUDFRONT_NET
