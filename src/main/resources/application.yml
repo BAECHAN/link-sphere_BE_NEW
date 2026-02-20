@@ -26,6 +26,13 @@ management:
     health:
       show-details: always # 상세 상태(DB 등)를 확인하려면 설정 (운영 시엔 'when_authorized' 권장)
 
+app:
+  cors:
+    allowed-origins:
+      - http://localhost:31119
+      - https://localhost:31119
+      - https://dbw3brui6htwk.cloudfront.net
+
 logging:
   level:
     com:
