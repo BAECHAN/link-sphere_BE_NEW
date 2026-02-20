@@ -9,6 +9,14 @@ spring:
     active: secret
   datasource:
     driver-class-name: org.postgresql.Driver
+    hikari:
+      # 리전 간 지연을 고려해 연결 시도 타임아웃을 넉넉히 (기본 30초에서 조정)
+      connection-timeout: 30000
+      # 유휴 커넥션을 버리지 않고 재사용하도록 유지
+      minimum-idle: 5
+      maximum-pool-size: 10 # Supabase 무료 티어라면 10~15 정도가 안전합니다
+      idle-timeout: 600000 # 10분
+      max-lifetime: 1800000 # 30분
   jpa:
     database: POSTGRESQL
     show-sql: true
