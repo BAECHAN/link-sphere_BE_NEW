@@ -17,6 +17,15 @@ spring:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
         format_sql: true
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health # health 엔드포인트만 활성화
+  endpoint:
+    health:
+      show-details: always # 상세 상태(DB 등)를 확인하려면 설정 (운영 시엔 'when_authorized' 권장)
+
 logging:
   level:
     com:
