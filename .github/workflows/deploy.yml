@@ -1,0 +1,47 @@
+name: Deploy to App Runner
+
+on:
+  push:
+    branches: ["main"] # main 브랜치 푸시 시 작동
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: "temurin"
+
+      - name: Build with Gradle
+        run: chmod +x gradlew && ./gradlew bootJar
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-northeast-1
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and Push to ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: linksphere-backend
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+      - name: Deploy to App Runner
+        uses: aws-actions/amazon-apprunner-deploy@v1
+        with:
+          service: linksphere-backend
+          image: ${{ steps.login-ecr.outputs.registry }}/linksphere-backend:latest
+          region: ap-northeast-1
+          access-role-arn: ${{ secrets.AWS_APP_RUNNER_ROLE_ARN }}
+          wait-for-service-stability-seconds: 600
