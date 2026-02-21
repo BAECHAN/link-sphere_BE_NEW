@@ -3,6 +3,12 @@ name: Deploy to App Runner
 on:
   push:
     branches: ["main"] # main 브랜치 푸시 시 작동
+    paths:
+      - "src/**"
+      - "build.gradle.kts"
+      - "settings.gradle.kts"
+      - "gradle/**"
+      - "Dockerfile"
 
 jobs:
   deploy:
