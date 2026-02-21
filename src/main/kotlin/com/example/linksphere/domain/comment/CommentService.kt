@@ -222,4 +222,37 @@ class CommentService(
                         commentRepository.delete(comment)
                 }
         }
+        @Transactional
+        fun updateComment(commentId: UUID, userId: UUID, content: String): CommentResponse {
+                val comment =
+                        commentRepository.findByIdOrNull(commentId)
+                                ?: throw IllegalArgumentException("Comment not found")
+
+                if (comment.userId != userId) {
+                        throw IllegalAccessException("Not authorized to update this comment")
+                }
+
+                if (comment.isDeleted) {
+                        throw IllegalStateException("Cannot update a deleted comment")
+                }
+
+                comment.content = content
+                val updated = commentRepository.save(comment)
+
+                val member =
+                        memberRepository.findByIdOrNull(userId)
+                                ?: throw IllegalArgumentException("User not found")
+
+                val author = CommentAuthor(member.id!!, member.nickname ?: "Unknown", member.image)
+                return CommentResponse(
+                        id = updated.id,
+                        postId = updated.postId,
+                        userId = updated.userId,
+                        content = updated.content,
+                        isDeleted = updated.isDeleted,
+                        createdAt = updated.createdAt,
+                        updatedAt = updated.updatedAt,
+                        author = author
+                )
+        }
 }
