@@ -7,6 +7,7 @@
 - **feat(comment)**: 댓글 수정 API (`PATCH /comment/{id}`) 구현 및 작성자 검증 로직 추가
 - **feat(security)**: CORS 허용 메서드에 `PATCH` 추가로 403 오류 해결
 - **docs**: 리전 최적화(도쿄) 성능 지표 추가 및 사용 서비스 상세 기입 (README, DEPLOY)
+- **chore(deploy)**: GitHub Actions 배포 워크플로우 최적화 (`paths` 허용 리스트 방식 적용)
 
 ## 2026-02-20
 
