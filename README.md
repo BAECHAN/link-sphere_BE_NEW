@@ -13,7 +13,7 @@
 | **Framework**  | Spring Boot 3.5.8                    |
 | **JDK**        | Java 17                              |
 | **Build Tool** | Gradle 8.14.3 (Kotlin DSL)           |
-| **Database**   | PostgreSQL (Supabase)                |
+| **Database**   | Supabase (PostgreSQL)                |
 | **ORM**        | Spring Data JPA / Hibernate          |
 | **Auth**       | JWT (jjwt 0.12.5) + Spring Security  |
 | **AI**         | Google Gemini API (gemini-2.5-flash) |
@@ -102,7 +102,7 @@ http://localhost:51119/swagger-ui/index.html
 ### 사전 요구사항
 
 - **JDK 17** 이상
-- **PostgreSQL** 데이터베이스 (또는 Supabase)
+- **Supabase (PostgreSQL)** 데이터베이스
 
 ### 1. 설정 파일 생성
 
@@ -143,7 +143,12 @@ jwt:
 
 ## 🚀 배포 (Deployment)
 
-이 프로젝트는 **GitHub Actions**, **AWS ECR**, **AWS App Runner**를 사용하여 CI/CD 파이프라인을 구축했습니다.
+이 프로젝트는 다음 서비스들을 사용하여 CI/CD 파이프라인을 구축했습니다:
+
+- **GitHub Actions**: CI/CD 자동화 워크플로우
+- **AWS ECR (Elastic Container Registry)**: Docker 이미지 저장소
+- **AWS App Runner**: 컨테이너 기반 애플리케이션 서비스 (도쿄 리전)
+- **Supabase**: 클라우드 PostgreSQL 데이터베이스 (도쿄 리전)
 
 자세한 배포 과정과 설정 방법은 [**docs/DEPLOY.md**](./docs/DEPLOY.md) 문서를 참고해주세요.
 
@@ -152,6 +157,7 @@ jwt:
 1. **GitHub Push**: `main` 브랜치에 코드가 푸시됩니다.
 2. **GitHub Actions**: 자동으로 빌드 및 테스트를 수행하고 Docker 이미지를 생성하여 **AWS ECR**로 업로드합니다.
 3. **AWS App Runner**: ECR에 새로운 이미지가 업로드되면 자동으로 감지하여 서비스를 재배포합니다.
+4. **Supabase**: DB는 Supabase로 관리하기에 별도의 배포 과정은 없습니다.
 
 ---
 
