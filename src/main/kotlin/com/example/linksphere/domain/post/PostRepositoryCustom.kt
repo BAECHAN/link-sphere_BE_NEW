@@ -9,6 +9,7 @@ interface PostRepositoryCustom {
             category: String?,
             search: String?,
             filter: String?,
+            nickname: String?,
             currentUserId: UUID?,
             pageable: Pageable
     ): Page<TablePost>

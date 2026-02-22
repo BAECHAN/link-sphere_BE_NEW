@@ -43,12 +43,22 @@ class PostController(
             @RequestParam(required = false) category: String?,
             @RequestParam(required = false) search: String?,
             @RequestParam(required = false) filter: String?,
+            @RequestParam(required = false) nickname: String?,
             @RequestParam(defaultValue = "0") page: Int,
             @RequestParam(defaultValue = "10") size: Int,
             authentication: org.springframework.security.core.Authentication?
     ): ApiResponse<PostPageResponse> {
         val currentUserId = getUserIdFromAuthentication(authentication)
-        val posts = postService.getAllPosts(category, search, filter, page, size, currentUserId)
+        val posts =
+                postService.getAllPosts(
+                        category,
+                        search,
+                        filter,
+                        nickname,
+                        page,
+                        size,
+                        currentUserId
+                )
         return ApiResponse(HttpStatus.OK.value(), "Posts retrieved", posts)
     }
 

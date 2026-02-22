@@ -18,6 +18,7 @@ class PostRepositoryImpl : PostRepositoryCustom {
                 category: String?,
                 search: String?,
                 filter: String?,
+                nickname: String?,
                 currentUserId: UUID?,
                 pageable: Pageable
         ): Page<TablePost> {
@@ -35,6 +36,7 @@ class PostRepositoryImpl : PostRepositoryCustom {
                                 category,
                                 search,
                                 filter,
+                                nickname,
                                 currentUserId
                         )
                 countQuery
@@ -48,7 +50,16 @@ class PostRepositoryImpl : PostRepositoryCustom {
                 val root = query.from(TablePost::class.java)
 
                 val predicates =
-                        buildPredicates(cb, root, query, category, search, filter, currentUserId)
+                        buildPredicates(
+                                cb,
+                                root,
+                                query,
+                                category,
+                                search,
+                                filter,
+                                nickname,
+                                currentUserId
+                        )
                 query.select(root).where(*predicates.toTypedArray())
                 query.distinct(true) // Ensure distinct results
 
@@ -84,6 +95,7 @@ class PostRepositoryImpl : PostRepositoryCustom {
                 category: String?,
                 search: String?,
                 filter: String?,
+                nickname: String?,
                 currentUserId: UUID?
         ): List<Predicate> {
                 val predicates = mutableListOf<Predicate>()
@@ -158,9 +170,26 @@ class PostRepositoryImpl : PostRepositoryCustom {
                         )
                 }
 
+                // Nickname Filter (Partial Match)
+                if (!nickname.isNullOrBlank()) {
+                        val subquery = query.subquery(UUID::class.java)
+                        val memberRoot =
+                                subquery.from(
+                                        com.example.linksphere.domain.member.TableMember::class.java
+                                )
+                        subquery.select(memberRoot.get("id"))
+                        subquery.where(
+                                cb.like(
+                                        cb.lower(memberRoot.get("nickname")),
+                                        "%${nickname.lowercase()}%"
+                                )
+                        )
+                        predicates.add(root.get<UUID>("userId").`in`(subquery))
+                }
+
                 // Filters (Multiple supported, comma separated)
                 println(
-                        "DEBUG: params - category=$category, search=$search, filter=$filter, currentUserId=$currentUserId"
+                        "DEBUG: params - category=$category, search=$search, filter=$filter, nickname=$nickname, currentUserId=$currentUserId"
                 )
                 if (!filter.isNullOrBlank()) {
                         val activeFilters =

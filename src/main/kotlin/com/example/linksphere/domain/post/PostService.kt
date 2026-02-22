@@ -127,6 +127,7 @@ class PostService(
             category: String?,
             search: String?,
             filter: String?,
+            nickname: String?,
             page: Int,
             size: Int,
             currentUserId: UUID?
@@ -134,7 +135,15 @@ class PostService(
         val pageable = PageRequest.of(page, size)
 
         // Use the custom repository method for dynamic filtering
-        val postPage = postRepository.findPosts(category, search, filter, currentUserId, pageable)
+        val postPage =
+                postRepository.findPosts(
+                        category,
+                        search,
+                        filter,
+                        nickname,
+                        currentUserId,
+                        pageable
+                )
 
         val responses = postPage.content.map { convertToResponse(it, currentUserId) }
         return PostPageResponse.from(postPage, responses)
