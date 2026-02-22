@@ -19,13 +19,14 @@ spring:
       max-lifetime: 1800000 # 30분
   jpa:
     database: POSTGRESQL
-    show-sql: true
+    show-sql: false # [변경] 표준 출력(System.out)으로 SQL을 찍지 않음
     hibernate:
       ddl-auto: none
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
-        format_sql: true
+        format_sql: false # [변경] SQL 포맷팅 로직 비활성화 (CPU 자원 절약)
+        use_sql_comments: false # [추가] SQL 내 주석 제거
 management:
   endpoints:
     web:
@@ -33,7 +34,7 @@ management:
         include: health # health 엔드포인트만 활성화
   endpoint:
     health:
-      show-details: always # 상세 상태(DB 등)를 확인하려면 설정 (운영 시엔 'when_authorized' 권장)
+      show-details: never # 상세 상태(DB 등)를 확인하려면 설정 (운영 시엔 'when_authorized' 권장)
 
 app:
   cors:
@@ -44,12 +45,11 @@ app:
 
 logging:
   level:
-    com:
-      example:
-        linksphere: DEBUG
-    org:
-      springframework:
-        security: DEBUG
+    root: INFO # 기본 루트 로그 레벨 설정
+    com.example.linksphere: INFO # [변경] DEBUG -> INFO (비즈니스 로직 로그 최소화)
+    org.springframework.security: INFO # [변경] 보안 로그 최소화
+    org.hibernate.SQL: ERROR # [추가] SQL 로그를 완전히 끄거나 에러만 찍도록 설정
+    org.hibernate.type.descriptor.sql: ERROR # [추가] 바인딩 파라미터 로그 비활성화
 
 gemini:
   api:
