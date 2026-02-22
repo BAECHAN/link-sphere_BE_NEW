@@ -62,6 +62,17 @@ class PostController(
         return ApiResponse(HttpStatus.OK.value(), "Post retrieved", post)
     }
 
+    @PatchMapping("/{id}/visibility")
+    fun updateVisibility(
+            @PathVariable id: UUID,
+            @RequestBody request: PostVisibilityUpdateRequest,
+            authentication: org.springframework.security.core.Authentication
+    ): ApiResponse<PostResponse> {
+        val userId = UUID.fromString(authentication.name)
+        val post = postService.updatePostVisibility(id, userId, request)
+        return ApiResponse(HttpStatus.OK.value(), "Post visibility updated", post)
+    }
+
     @DeleteMapping("/{id}")
     fun deletePost(
             @PathVariable id: UUID,

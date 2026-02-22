@@ -5,7 +5,13 @@ import java.time.LocalDateTime
 import java.util.UUID
 import org.springframework.data.domain.Page
 
-data class PostCreateRequest(val url: String, val categoryIds: List<Long>? = emptyList())
+data class PostCreateRequest(
+        val url: String,
+        val categoryIds: List<Long>? = emptyList(),
+        val isPrivate: Boolean = false
+)
+
+data class PostVisibilityUpdateRequest(val isPrivate: Boolean)
 
 data class UserSummary(val id: UUID, val nickname: String?, val image: String?)
 
@@ -30,6 +36,7 @@ data class PostResponse(
         val aiSummary: String?,
         val createdAt: LocalDateTime?,
         val aiStatus: AiStatus,
+        val isPrivate: Boolean,
         val stats: PostStats,
         val userInteractions: PostUserInteractions,
         val author: UserSummary
@@ -43,21 +50,18 @@ data class PostPageResponse(
         val totalPages: Int,
         val last: Boolean
 ) {
-        companion object {
-                fun from(
-                        page: Page<TablePost>,
-                        postResponses: List<PostResponse>
-                ): PostPageResponse {
-                        return PostPageResponse(
-                                content = postResponses,
-                                page = page.number,
-                                size = page.size,
-                                totalElements = page.totalElements,
-                                totalPages = page.totalPages,
-                                last = page.isLast
-                        )
-                }
+    companion object {
+        fun from(page: Page<TablePost>, postResponses: List<PostResponse>): PostPageResponse {
+            return PostPageResponse(
+                    content = postResponses,
+                    page = page.number,
+                    size = page.size,
+                    totalElements = page.totalElements,
+                    totalPages = page.totalPages,
+                    last = page.isLast
+            )
         }
+    }
 }
 
 data class PostCreatedEvent(

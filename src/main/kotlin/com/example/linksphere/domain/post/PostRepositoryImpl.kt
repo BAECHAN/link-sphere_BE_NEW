@@ -98,8 +98,6 @@ class PostRepositoryImpl : PostRepositoryCustom {
                                 val categoriesJoin: Join<TablePost, TableCategory> =
                                         root.join("categories", JoinType.INNER)
 
-                                // Match any of the categories (OR logic within categories)
-                                // category IN (slugs OR names)
                                 val categoryPredicates =
                                         categories.map { cat ->
                                                 cb.or(
@@ -113,7 +111,6 @@ class PostRepositoryImpl : PostRepositoryCustom {
                                                         )
                                                 )
                                         }
-                                // If we want posts that match ANY of the categories:
                                 predicates.add(cb.or(*categoryPredicates.toTypedArray()))
                         }
                 }
@@ -161,20 +158,77 @@ class PostRepositoryImpl : PostRepositoryCustom {
                         )
                 }
 
-                // Bookmark Filter
-                if (filter == "isBookmarked" && currentUserId != null) {
-                        // Since TablePost doesn't have mapping to bookmarks, we use a Subquery
-                        val subquery = query.subquery(UUID::class.java)
-                        val bookmarkRoot =
-                                subquery.from(
-                                        TableBookmark::class.java
-                                ) // TableBookmark has composite key but id class
-                        // But we can select postId directly if it's a field
-                        subquery.select(bookmarkRoot.get("postId"))
-                        subquery.where(cb.equal(bookmarkRoot.get<UUID>("userId"), currentUserId))
+                // Filters (Multiple supported, comma separated)
+                println(
+                        "DEBUG: params - category=$category, search=$search, filter=$filter, currentUserId=$currentUserId"
+                )
+                if (!filter.isNullOrBlank()) {
+                        val activeFilters =
+                                filter.split(",").map { it.trim() }.filter { it.isNotEmpty() }
 
-                        // Post ID must be in the list of bookmarked Post IDs
-                        predicates.add(root.get<UUID>("id").`in`(subquery))
+                        for (f in activeFilters) {
+                                when (f) {
+                                        "isBookmarked" -> {
+                                                if (currentUserId != null) {
+                                                        val subquery =
+                                                                query.subquery(UUID::class.java)
+                                                        val bookmarkRoot =
+                                                                subquery.from(
+                                                                        TableBookmark::class.java
+                                                                )
+                                                        subquery.select(bookmarkRoot.get("postId"))
+                                                        subquery.where(
+                                                                cb.equal(
+                                                                        bookmarkRoot.get<UUID>(
+                                                                                "userId"
+                                                                        ),
+                                                                        currentUserId
+                                                                )
+                                                        )
+                                                        // Post ID must be in the list of bookmarked
+                                                        // Post IDs
+                                                        predicates.add(
+                                                                root.get<UUID>("id").`in`(subquery)
+                                                        )
+                                                }
+                                        }
+                                        "isMyPosts" -> {
+                                                if (currentUserId != null) {
+                                                        predicates.add(
+                                                                cb.equal(
+                                                                        root.get<UUID>("userId"),
+                                                                        currentUserId
+                                                                )
+                                                        )
+                                                }
+                                        }
+                                        "isPrivate" -> {
+                                                if (currentUserId != null) {
+                                                        predicates.add(
+                                                                cb.equal(
+                                                                        root.get<Boolean>(
+                                                                                "isPrivate"
+                                                                        ),
+                                                                        true
+                                                                )
+                                                        )
+                                                } else {
+                                                        predicates.add(cb.disjunction())
+                                                }
+                                        }
+                                }
+                        }
+                }
+
+                // --- Visibility Filter ---
+                // 1. Show if is_private is false (Public)
+                // 2. OR show if userId matches currentUserId (Owner)
+                val publicPredicate = cb.equal(root.get<Boolean>("isPrivate"), false)
+                if (currentUserId != null) {
+                        val ownerPredicate = cb.equal(root.get<UUID>("userId"), currentUserId)
+                        predicates.add(cb.or(publicPredicate, ownerPredicate))
+                } else {
+                        predicates.add(publicPredicate)
                 }
 
                 return predicates

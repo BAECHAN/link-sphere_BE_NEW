@@ -39,5 +39,6 @@ class TablePost(
         @Column(name = "created_at") val createdAt: LocalDateTime? = LocalDateTime.now(),
         @Enumerated(EnumType.STRING)
         @Column(name = "ai_status")
-        var aiStatus: AiStatus = AiStatus.NONE
+        var aiStatus: AiStatus = AiStatus.NONE,
+        @Column(name = "is_private", nullable = false) var isPrivate: Boolean = false
 )
