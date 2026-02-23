@@ -54,7 +54,9 @@ class AuthService(
 
     fun refresh(refreshToken: String): AuthResult {
         if (!jwtTokenProvider.validateToken(refreshToken)) {
-            throw IllegalArgumentException("Invalid refresh token")
+            throw com.example.linksphere.global.exception.InvalidTokenException(
+                    "Invalid refresh token"
+            )
         }
 
         val userId = jwtTokenProvider.getUserId(refreshToken)
