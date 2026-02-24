@@ -27,6 +27,10 @@ spring:
         dialect: org.hibernate.dialect.PostgreSQLDialect
         format_sql: false # [변경] SQL 포맷팅 로직 비활성화 (CPU 자원 절약)
         use_sql_comments: false # [추가] SQL 내 주석 제거
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
 management:
   endpoints:
     web:

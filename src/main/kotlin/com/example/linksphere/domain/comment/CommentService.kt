@@ -4,17 +4,20 @@ import com.example.linksphere.domain.interaction.ReactionRepository
 import com.example.linksphere.domain.interaction.TargetType
 import com.example.linksphere.domain.member.MemberRepository
 import com.example.linksphere.domain.post.PostRepository
+import com.example.linksphere.global.common.SupabaseStorageService
 import java.util.UUID
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.web.multipart.MultipartFile
 
 @Service
 class CommentService(
         private val commentRepository: CommentRepository,
         private val postRepository: PostRepository,
         private val memberRepository: MemberRepository,
-        private val reactionRepository: ReactionRepository
+        private val reactionRepository: ReactionRepository,
+        private val supabaseStorageService: SupabaseStorageService
 ) {
 
         @Transactional(readOnly = true)
@@ -76,15 +79,6 @@ class CommentService(
 
                 // Reconstruct hierarchy
                 // 1. Separate roots and replies
-                val roots =
-                        commentDTOs
-                                .filter {
-                                        // We need to check parentId from original entity.
-                                        // Optimization: We can store parentId in DTO or use a map.
-                                        // Let's create a map: ID -> Entity (or ParentID)
-                                        false // Placeholder, see below loop
-                                }
-                                .toMutableList()
 
                 // Efficient O(N) reconstruction
                 val dtosById = commentDTOs.associateBy { it.id }
@@ -111,12 +105,25 @@ class CommentService(
         fun createComment(
                 postId: UUID,
                 userId: UUID,
-                content: String,
+                content: String?,
+                image: MultipartFile?,
                 parentId: UUID? = null
         ): CommentResponse {
-                val post =
-                        postRepository.findByIdOrNull(postId)
-                                ?: throw IllegalArgumentException("Post not found")
+                if (content.isNullOrBlank() && image == null) {
+                        throw IllegalArgumentException("Content or image must be provided")
+                }
+
+                var finalContent = content ?: ""
+                if (image != null && !image.isEmpty) {
+                        val imageUrl = supabaseStorageService.uploadFile(image)
+                        finalContent =
+                                if (finalContent.isNotBlank()) "$finalContent\n\n$imageUrl"
+                                else imageUrl
+                }
+
+                if (!postRepository.existsById(postId)) {
+                        throw IllegalArgumentException("Post not found")
+                }
                 val member =
                         memberRepository.findByIdOrNull(userId)
                                 ?: throw IllegalArgumentException("User not found")
@@ -146,7 +153,7 @@ class CommentService(
                                 postId = postId,
                                 userId = userId,
                                 parentId = parentId,
-                                content = content
+                                content = finalContent
                         )
                 val saved = commentRepository.save(comment)
 
@@ -165,7 +172,24 @@ class CommentService(
         }
 
         @Transactional
-        fun createReply(parentId: UUID, userId: UUID, content: String): CommentResponse {
+        fun createReply(
+                parentId: UUID,
+                userId: UUID,
+                content: String?,
+                image: MultipartFile?
+        ): CommentResponse {
+                if (content.isNullOrBlank() && image == null) {
+                        throw IllegalArgumentException("Content or image must be provided")
+                }
+
+                var finalContent = content ?: ""
+                if (image != null && !image.isEmpty) {
+                        val imageUrl = supabaseStorageService.uploadFile(image)
+                        finalContent =
+                                if (finalContent.isNotBlank()) "$finalContent\n\n$imageUrl"
+                                else imageUrl
+                }
+
                 val parent =
                         commentRepository.findByIdOrNull(parentId)
                                 ?: throw IllegalArgumentException("Parent comment not found")
@@ -186,7 +210,7 @@ class CommentService(
                                 postId = parent.postId,
                                 userId = userId,
                                 parentId = parentId,
-                                content = content
+                                content = finalContent
                         )
                 val saved = commentRepository.save(comment)
 
@@ -223,7 +247,24 @@ class CommentService(
                 }
         }
         @Transactional
-        fun updateComment(commentId: UUID, userId: UUID, content: String): CommentResponse {
+        fun updateComment(
+                commentId: UUID,
+                userId: UUID,
+                content: String?,
+                image: MultipartFile?
+        ): CommentResponse {
+                if (content.isNullOrBlank() && image == null) {
+                        throw IllegalArgumentException("Content or image must be provided")
+                }
+
+                var finalContent = content ?: ""
+                if (image != null && !image.isEmpty) {
+                        val imageUrl = supabaseStorageService.uploadFile(image)
+                        finalContent =
+                                if (finalContent.isNotBlank()) "$finalContent\n\n$imageUrl"
+                                else imageUrl
+                }
+
                 val comment =
                         commentRepository.findByIdOrNull(commentId)
                                 ?: throw IllegalArgumentException("Comment not found")
@@ -236,7 +277,7 @@ class CommentService(
                         throw IllegalStateException("Cannot update a deleted comment")
                 }
 
-                comment.content = content
+                comment.content = finalContent
                 val updated = commentRepository.save(comment)
 
                 val member =
