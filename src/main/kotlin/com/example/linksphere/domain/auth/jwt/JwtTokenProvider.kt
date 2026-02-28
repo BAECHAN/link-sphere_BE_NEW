@@ -15,8 +15,8 @@ import org.springframework.stereotype.Component
 class JwtTokenProvider(
         @Value("\${jwt.secret:defaultSecretKeyMustBeLongEnoughToSecureTheToken1234567890}")
         private val secretKey: String,
-        @Value("\${jwt.access-token-validity:900000}")
-        private val accessTokenValidity: Long, // 15 mins
+        @Value("\${jwt.access-token-validity:3600000}")
+        private val accessTokenValidity: Long, // 1 hour
         @Value("\${jwt.refresh-token-validity:604800000}")
         private val refreshTokenValidity: Long // 7 days
 ) {
