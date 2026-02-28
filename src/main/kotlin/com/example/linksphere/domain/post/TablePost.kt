@@ -23,7 +23,7 @@ class TablePost(
         val id: UUID? = null,
         @Column(name = "user_id", nullable = false) val userId: UUID,
         @Column(name = "url", nullable = false, columnDefinition = "text") val url: String,
-        @Column(name = "title", nullable = false, columnDefinition = "text") val title: String,
+        @Column(name = "title", nullable = false, columnDefinition = "text") var title: String,
         @Column(name = "description", columnDefinition = "text") val description: String? = null,
         @Column(name = "tags") @JdbcTypeCode(SqlTypes.ARRAY) var tags: List<String>? = null,
         @ManyToMany(fetch = FetchType.LAZY)

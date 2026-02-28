@@ -7,11 +7,18 @@ import org.springframework.data.domain.Page
 
 data class PostCreateRequest(
         val url: String,
+        val title: String? = null,
         val categoryIds: List<Long>? = emptyList(),
         val isPrivate: Boolean = false
 )
 
 data class PostVisibilityUpdateRequest(val isPrivate: Boolean)
+
+data class PostUpdateRequest(
+        val title: String,
+        val categoryIds: List<Long>? = emptyList(),
+        val isPrivate: Boolean = false
+)
 
 data class UserSummary(val id: UUID, val nickname: String?, val image: String?)
 

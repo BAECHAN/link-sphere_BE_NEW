@@ -32,7 +32,7 @@ class PostService(
 
     @Transactional
     fun createPost(userId: UUID, request: PostCreateRequest): PostResponse {
-        var title = ""
+        var title: String
         var description: String? = null
         var ogImage: String? = null
         val tags = mutableListOf<String>()
@@ -81,6 +81,11 @@ class PostService(
         } catch (e: Exception) {
             logger.error("[Crawling] 크롤링 실패", e)
             title = request.url
+        }
+
+        // 사용자가 제목을 직접 입력한 경우 스크래핑된 제목 대신 사용
+        if (!request.title.isNullOrBlank()) {
+            title = request.title
         }
 
         // 카테고리 ID로 카테고리 엔티티 조회
@@ -157,6 +162,29 @@ class PostService(
                     IllegalArgumentException("Post not found with id: $id")
                 }
         return convertToResponse(post, currentUserId)
+    }
+
+    @Transactional
+    fun updatePost(id: UUID, userId: UUID, request: PostUpdateRequest): PostResponse {
+        val post =
+                postRepository.findById(id).orElseThrow {
+                    IllegalArgumentException("Post not found with id: $id")
+                }
+        if (post.userId != userId) {
+            throw IllegalStateException("You are not the owner of this post")
+        }
+
+        post.title = request.title
+        post.isPrivate = request.isPrivate
+
+        post.categories.clear()
+        if (!request.categoryIds.isNullOrEmpty()) {
+            val categories = categoryRepository.findAllByIdIn(request.categoryIds)
+            post.categories.addAll(categories)
+        }
+
+        val updatedPost = postRepository.save(post)
+        return convertToResponse(updatedPost, userId)
     }
 
     @Transactional
