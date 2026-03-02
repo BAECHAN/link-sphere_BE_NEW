@@ -21,6 +21,10 @@ jobs:
           java-version: "17"
           distribution: "temurin"
 
+      - name: Create Firebase service account file
+        run: |
+          echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}' > src/main/resources/firebase-service-account.json
+
       - name: Build with Gradle
         run: chmod +x gradlew && ./gradlew bootJar
 
@@ -38,7 +42,12 @@ jobs:
       - name: Build and Push to ECR
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: link-sphere/link-sphere-be # ECR Repository 이름
+          ECR_REPOSITORY: link-sphere/link-sphere-be
         run: |
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+      - name: Deploy to App Runner
+        run: |
+          aws apprunner start-deployment \
+            --service-arn ${{ secrets.APP_RUNNER_SERVICE_ARN }}
