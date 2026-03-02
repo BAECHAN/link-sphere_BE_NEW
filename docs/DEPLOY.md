@@ -22,6 +22,7 @@
 ## 📋 사전 요구사항 (Prerequisites)
 
 배포를 위해 다음 AWS 리소스가 필요합니다. (리전: `ap-northeast-1` 도쿄 권장)
+배포 비용은 거의 안들고 서버 이용 비용만 발생
 
 ### 1. AWS ECR (Elastic Container Registry)
 
