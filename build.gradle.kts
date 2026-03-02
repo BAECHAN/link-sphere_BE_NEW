@@ -50,6 +50,9 @@ dependencies {
 
     // Jsoup
     implementation("org.jsoup:jsoup:1.17.2")
+
+    // Firebase Admin SDK (FCM 푸시 알림)
+    implementation("com.google.firebase:firebase-admin:9.4.2")
 }
 
 kotlin { compilerOptions { freeCompilerArgs.addAll("-Xjsr305=strict") } }

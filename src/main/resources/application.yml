@@ -58,3 +58,6 @@ logging:
 gemini:
   api:
     model: gemini-2.5-flash
+
+firebase:
+  service-account-key-path: classpath:firebase-service-account.json

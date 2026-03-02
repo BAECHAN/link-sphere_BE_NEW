@@ -5,6 +5,7 @@ import com.example.linksphere.domain.interaction.TargetType
 import com.example.linksphere.domain.member.MemberRepository
 import com.example.linksphere.domain.post.PostRepository
 import com.example.linksphere.global.common.SupabaseStorageService
+import com.example.linksphere.infra.fcm.FcmNotificationService
 import java.util.UUID
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
@@ -17,7 +18,8 @@ class CommentService(
         private val postRepository: PostRepository,
         private val memberRepository: MemberRepository,
         private val reactionRepository: ReactionRepository,
-        private val supabaseStorageService: SupabaseStorageService
+        private val supabaseStorageService: SupabaseStorageService,
+        private val fcmNotificationService: FcmNotificationService
 ) {
 
         @Transactional(readOnly = true)
@@ -121,9 +123,9 @@ class CommentService(
                                 else imageUrl
                 }
 
-                if (!postRepository.existsById(postId)) {
-                        throw IllegalArgumentException("Post not found")
-                }
+                val post =
+                        postRepository.findByIdOrNull(postId)
+                                ?: throw IllegalArgumentException("Post not found")
                 val member =
                         memberRepository.findByIdOrNull(userId)
                                 ?: throw IllegalArgumentException("User not found")
@@ -156,6 +158,17 @@ class CommentService(
                                 content = finalContent
                         )
                 val saved = commentRepository.save(comment)
+
+                // 내 포스트에 타인이 댓글을 달면 알림 (루트 댓글만, 자기 자신 제외)
+                if (parentId == null && post.userId != userId) {
+                        fcmNotificationService.sendCommentNotification(
+                                postAuthorId = post.userId,
+                                commenterNickname = member.nickname ?: "누군가",
+                                commentContent = finalContent.take(50),
+                                postId = postId,
+                                commentId = saved.id
+                        )
+                }
 
                 // Return DTO
                 val author = CommentAuthor(member.id!!, member.nickname ?: "Unknown", member.image)
@@ -213,6 +226,17 @@ class CommentService(
                                 content = finalContent
                         )
                 val saved = commentRepository.save(comment)
+
+                // 내 댓글에 타인이 답글을 달면 알림 (자기 자신 제외)
+                if (parent.userId != userId) {
+                        fcmNotificationService.sendReplyNotification(
+                                parentCommentAuthorId = parent.userId,
+                                replierNickname = member.nickname ?: "누군가",
+                                replyContent = finalContent.take(50),
+                                postId = saved.postId,
+                                commentId = saved.id
+                        )
+                }
 
                 val author = CommentAuthor(member.id!!, member.nickname ?: "Unknown", member.image)
                 return CommentResponse(

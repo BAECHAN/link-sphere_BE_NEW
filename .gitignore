@@ -18,6 +18,7 @@ Thumbs.db
 # === Application Secrets ===
 src/main/resources/application-secret.yml
 src/main/resources/application-secret.properties
+src/main/resources/firebase-service-account.json
 *.env
 .env.*
 
