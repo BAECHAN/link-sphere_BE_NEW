@@ -5,9 +5,34 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
+import org.slf4j.LoggerFactory
 
 @RestControllerAdvice
 class GlobalExceptionHandler {
+
+        private val logger = LoggerFactory.getLogger(GlobalExceptionHandler::class.java)
+
+        @ExceptionHandler(PostNotFoundException::class)
+        fun handlePostNotFoundException(e: PostNotFoundException): ResponseEntity<ErrorResponse> {
+                val response =
+                        ErrorResponse(
+                                status = HttpStatus.NOT_FOUND.value(),
+                                code = "POST_NOT_FOUND",
+                                message = e.message ?: "Post not found"
+                        )
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response)
+        }
+
+        @ExceptionHandler(ForbiddenException::class)
+        fun handleForbiddenException(e: ForbiddenException): ResponseEntity<ErrorResponse> {
+                val response =
+                        ErrorResponse(
+                                status = HttpStatus.FORBIDDEN.value(),
+                                code = "FORBIDDEN",
+                                message = e.message ?: "Access denied"
+                        )
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response)
+        }
 
         @ExceptionHandler(DuplicateMemberException::class)
         fun handleDuplicateMemberException(
@@ -72,6 +97,7 @@ class GlobalExceptionHandler {
 
         @ExceptionHandler(Exception::class)
         fun handleException(e: Exception): ResponseEntity<ErrorResponse> {
+                logger.error("Unhandled exception", e)
                 val response =
                         ErrorResponse(
                                 status = HttpStatus.INTERNAL_SERVER_ERROR.value(),

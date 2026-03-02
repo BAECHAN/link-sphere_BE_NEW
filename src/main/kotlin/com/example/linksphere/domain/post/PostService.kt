@@ -6,9 +6,9 @@ import com.example.linksphere.domain.interaction.BookmarkRepository
 import com.example.linksphere.domain.interaction.ReactionRepository
 import com.example.linksphere.domain.interaction.TargetType
 import com.example.linksphere.domain.member.MemberRepository
-import com.fasterxml.jackson.databind.ObjectMapper
+import com.example.linksphere.global.exception.ForbiddenException
+import com.example.linksphere.global.exception.PostNotFoundException
 import java.util.UUID
-import org.jsoup.Jsoup
 import org.slf4j.LoggerFactory
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.data.domain.PageRequest
@@ -25,70 +25,16 @@ class PostService(
         private val reactionRepository: ReactionRepository,
         private val commentRepository: com.example.linksphere.domain.comment.CommentRepository,
         private val eventPublisher: ApplicationEventPublisher,
-        private val objectMapper: ObjectMapper
+        private val urlMetadataExtractor: UrlMetadataExtractor
 ) {
 
     private val logger = LoggerFactory.getLogger(PostService::class.java)
 
     @Transactional
     fun createPost(userId: UUID, request: PostCreateRequest): PostResponse {
-        var title: String
-        var description: String? = null
-        var ogImage: String? = null
-        val tags = mutableListOf<String>()
-        var pageContent: String? = null
+        val metadata = urlMetadataExtractor.extract(request.url)
 
-        try {
-            val doc =
-                    Jsoup.connect(request.url)
-                            .userAgent(
-                                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-                            )
-                            .referrer("http://google.com")
-                            .timeout(5000)
-                            .get()
-
-            title =
-                    doc.select("meta[property=og:title]")
-                            .attr("content")
-                            .ifEmpty { doc.title() }
-                            .ifEmpty { request.url }
-
-            description = doc.select("meta[property=og:description]").attr("content")
-            ogImage = doc.select("meta[property=og:image]").attr("content")
-
-            // Domain extraction for tags
-            val host = java.net.URI(request.url).host.replace("www.", "")
-            if (host.isNotEmpty()) {
-                tags.add(host)
-            }
-
-            // 페이지 본문 텍스트 추출 (AI 분석용)
-            pageContent = doc.body().text().replace("\\s+".toRegex(), " ").trim().take(5000)
-
-            // YouTube URL인 경우 oEmbed를 통해 정확한 정보 가져오기
-            if (isYoutubeUrl(request.url)) {
-                val youtubeMeta = fetchYoutubeMetadata(request.url)
-                if (youtubeMeta != null) {
-                    if (!youtubeMeta["title"].isNullOrBlank()) {
-                        title = youtubeMeta["title"]!!
-                    }
-                    if (ogImage.isNullOrBlank() && !youtubeMeta["thumbnail_url"].isNullOrBlank()) {
-                        ogImage = youtubeMeta["thumbnail_url"]
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            logger.error("[Crawling] 크롤링 실패", e)
-            title = request.url
-        }
-
-        // 사용자가 제목을 직접 입력한 경우 스크래핑된 제목 대신 사용
-        if (!request.title.isNullOrBlank()) {
-            title = request.title
-        }
-
-        // 카테고리 ID로 카테고리 엔티티 조회
+        val title = if (!request.title.isNullOrBlank()) request.title else metadata.title
         val categories =
                 if (!request.categoryIds.isNullOrEmpty()) {
                     categoryRepository.findAllByIdIn(request.categoryIds).toMutableSet()
@@ -101,26 +47,25 @@ class PostService(
                         userId = userId,
                         url = request.url,
                         title = title,
-                        description = description,
-                        tags = tags,
+                        description = metadata.description,
+                        tags = metadata.tags.toMutableList(),
                         categories = categories,
-                        ogImage = ogImage,
-                        aiStatus = if (pageContent != null) AiStatus.PENDING else AiStatus.NONE,
+                        ogImage = metadata.ogImage,
+                        aiStatus = if (metadata.pageContent != null) AiStatus.PENDING else AiStatus.NONE,
                         isPrivate = request.isPrivate
                 )
         val savedPost = postRepository.save(newPost)
 
-        // AI 분석은 비동기로 처리 (크롤링 성공 시에만)
-        if (pageContent != null) {
+        if (metadata.pageContent != null) {
             logger.info("[AI Async] PostCreatedEvent 발행 - postId: ${savedPost.id}")
             eventPublisher.publishEvent(
                     PostCreatedEvent(
                             postId = savedPost.id!!,
                             userId = userId,
                             title = title,
-                            description = description,
-                            content = pageContent,
-                            existingTags = tags.toList()
+                            description = metadata.description,
+                            content = metadata.pageContent,
+                            existingTags = metadata.tags
                     )
             )
         }
@@ -138,18 +83,7 @@ class PostService(
             currentUserId: UUID?
     ): PostPageResponse {
         val pageable = PageRequest.of(page, size)
-
-        // Use the custom repository method for dynamic filtering
-        val postPage =
-                postRepository.findPosts(
-                        category,
-                        search,
-                        filter,
-                        nickname,
-                        currentUserId,
-                        pageable
-                )
-
+        val postPage = postRepository.findPosts(category, search, filter, nickname, currentUserId, pageable)
         val responses = postPage.content.map { convertToResponse(it, currentUserId) }
         return PostPageResponse.from(postPage, responses)
     }
@@ -157,84 +91,39 @@ class PostService(
     @Transactional
     fun getPostById(id: UUID, currentUserId: UUID?): PostResponse {
         postRepository.incrementViewCount(id)
-        val post =
-                postRepository.findById(id).orElseThrow {
-                    IllegalArgumentException("Post not found with id: $id")
-                }
+        val post = postRepository.findById(id).orElseThrow { PostNotFoundException(id) }
         return convertToResponse(post, currentUserId)
     }
 
     @Transactional
     fun updatePost(id: UUID, userId: UUID, request: PostUpdateRequest): PostResponse {
-        val post =
-                postRepository.findById(id).orElseThrow {
-                    IllegalArgumentException("Post not found with id: $id")
-                }
-        if (post.userId != userId) {
-            throw IllegalStateException("You are not the owner of this post")
-        }
+        val post = postRepository.findById(id).orElseThrow { PostNotFoundException(id) }
+        if (post.userId != userId) throw ForbiddenException("You are not the owner of this post")
 
         post.title = request.title
         post.isPrivate = request.isPrivate
-
         post.categories.clear()
         if (!request.categoryIds.isNullOrEmpty()) {
-            val categories = categoryRepository.findAllByIdIn(request.categoryIds)
-            post.categories.addAll(categories)
+            post.categories.addAll(categoryRepository.findAllByIdIn(request.categoryIds))
         }
 
-        val updatedPost = postRepository.save(post)
-        return convertToResponse(updatedPost, userId)
+        return convertToResponse(postRepository.save(post), userId)
     }
 
     @Transactional
-    fun updatePostVisibility(
-            id: UUID,
-            userId: UUID,
-            request: PostVisibilityUpdateRequest
-    ): PostResponse {
-        val post =
-                postRepository.findById(id).orElseThrow {
-                    IllegalArgumentException("Post not found with id: $id")
-                }
-        if (post.userId != userId) {
-            throw IllegalStateException("You are not the owner of this post")
-        }
+    fun updatePostVisibility(id: UUID, userId: UUID, request: PostVisibilityUpdateRequest): PostResponse {
+        val post = postRepository.findById(id).orElseThrow { PostNotFoundException(id) }
+        if (post.userId != userId) throw ForbiddenException("You are not the owner of this post")
 
         post.isPrivate = request.isPrivate
-        val updatedPost = postRepository.save(post)
-
-        return convertToResponse(updatedPost, userId)
+        return convertToResponse(postRepository.save(post), userId)
     }
 
     @Transactional
     fun deletePost(id: UUID, userId: UUID) {
-        val post =
-                postRepository.findById(id).orElseThrow {
-                    IllegalArgumentException("Post not found with id: $id")
-                }
-        if (post.userId != userId) {
-            throw IllegalStateException("You are not the owner of this post")
-        }
+        val post = postRepository.findById(id).orElseThrow { PostNotFoundException(id) }
+        if (post.userId != userId) throw ForbiddenException("You are not the owner of this post")
         postRepository.delete(post)
-    }
-
-    private fun isYoutubeUrl(url: String): Boolean {
-        return url.contains("youtube.com") || url.contains("youtu.be")
-    }
-
-    private fun fetchYoutubeMetadata(url: String): Map<String, String>? {
-        return try {
-            val oembedUrl = "https://www.youtube.com/oembed?url=$url&format=json"
-            val json = Jsoup.connect(oembedUrl).ignoreContentType(true).execute().body()
-            val node = objectMapper.readTree(json)
-            val title = node.get("title")?.asText() ?: ""
-            val thumbnailUrl = node.get("thumbnail_url")?.asText() ?: ""
-            mapOf("title" to title, "thumbnail_url" to thumbnailUrl)
-        } catch (e: Exception) {
-            logger.warn("Failed to fetch YouTube oEmbed data", e)
-            null
-        }
     }
 
     private fun convertToResponse(post: TablePost, currentUserId: UUID?): PostResponse {
@@ -253,24 +142,14 @@ class PostService(
 
         val bookmarkCount = bookmarkRepository.countByPostId(postId).toInt()
         val isBookmarked =
-                if (currentUserId != null) {
-                    bookmarkRepository.existsByUserIdAndPostId(currentUserId, postId)
-                } else {
-                    false
-                }
+                if (currentUserId != null) bookmarkRepository.existsByUserIdAndPostId(currentUserId, postId)
+                else false
 
-        val reactionCount =
-                reactionRepository.countByTargetIdAndTargetType(postId, TargetType.POST).toInt()
+        val reactionCount = reactionRepository.countByTargetIdAndTargetType(postId, TargetType.POST).toInt()
         val isReacted =
                 if (currentUserId != null) {
-                    reactionRepository.existsByTargetIdAndTargetTypeAndUserId(
-                            postId,
-                            TargetType.POST,
-                            currentUserId
-                    )
-                } else {
-                    false
-                }
+                    reactionRepository.existsByTargetIdAndTargetTypeAndUserId(postId, TargetType.POST, currentUserId)
+                } else false
 
         return PostResponse(
                 id = postId,
@@ -292,8 +171,7 @@ class PostService(
                                 commentCount = commentRepository.countByPostId(postId).toInt(),
                                 bookmarkCount = bookmarkCount
                         ),
-                userInteractions =
-                        PostUserInteractions(isLiked = isReacted, isBookmarked = isBookmarked),
+                userInteractions = PostUserInteractions(isLiked = isReacted, isBookmarked = isBookmarked),
                 author = authorSummary
         )
     }
