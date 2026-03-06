@@ -7,10 +7,8 @@ plugins {
     id("com.github.johnrengelman.shadow") version "8.1.1"
 }
 
-// Spring Boot의 bootJar 비활성화 → shadowJar만 사용 (Lambda 배포용)
+// Lambda는 fat JAR(shadowJar)로 배포한다. bootJar와 plain jar는 사용하지 않는다.
 tasks.bootJar { enabled = false }
-
-// plain jar도 비활성화 (Lambda에 불필요)
 tasks.jar { archiveClassifier.set("") }
 
 tasks.assemble {
@@ -22,31 +20,40 @@ tasks.withType<com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar> {
     manifest {
         attributes["Main-Class"] = "com.example.linksphere.LinkSphereBeApplicationKt"
     }
+
+    // META-INF/services/** 병합 (SPI 서비스 로더용)
     mergeServiceFiles()
-    // spring.factories는 mergeServiceFiles()가 처리하지 않으므로 명시적으로 append
-    // spring-boot.jar의 ApplicationContextFactory 항목이 없으면 AnnotationConfigApplicationContext 폴백 발생
+
+    // mergeServiceFiles()는 spring.factories를 처리하지 않는다.
+    // spring.factories에는 ApplicationContextFactory 등 Spring Boot 핵심 구현체가 등록되어 있으며,
+    // 누락되면 ApplicationContext 생성 시 비웹 컨텍스트로 폴백된다.
+    // Spring XML 네임스페이스 핸들러(handlers, schemas)와 자동 설정 목록도 동일하게 append로 병합한다.
     append("META-INF/spring.factories")
     append("META-INF/spring.handlers")
     append("META-INF/spring.schemas")
     append("META-INF/spring.tooling")
     append("META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports")
     append("META-INF/spring/org.springframework.boot.actuate.autoconfigure.web.ManagementContextConfiguration.imports")
+
+    // 2GB 초과 JAR 지원 (firebase-admin 등 포함 시 필요)
     isZip64 = true
 
-    // 불필요한 파일 제외하여 JAR 크기 최소화
+    // 서명 파일 제거 (fat JAR에서 원본 서명은 무효)
     exclude("META-INF/*.SF")
     exclude("META-INF/*.DSA")
     exclude("META-INF/*.RSA")
+    // 불필요한 메타 파일 제거로 JAR 크기 최소화
     exclude("META-INF/LICENSE*")
     exclude("META-INF/NOTICE*")
     exclude("META-INF/DEPENDENCIES")
     exclude("META-INF/maven/**")
     exclude("META-INF/proguard/**")
+    // protobuf 정의 파일 (firebase-admin 의존성에서 유입, 런타임 불필요)
     exclude("**/*.proto")
     exclude("google/protobuf/**")
     exclude("google/type/**")
     exclude("google/api/**")
-    // Swagger UI 정적 에셋 (API 스펙만 필요, UI 파일 불필요)
+    // Swagger UI 정적 에셋 (API 스펙 JSON만 사용, UI HTML/JS 불필요)
     exclude("META-INF/resources/webjars/**")
 }
 
@@ -104,14 +111,14 @@ dependencies {
     // firebase-admin이 의존하는 JacksonFactory가 classpath에서 누락되는 문제 해결
     implementation("com.google.http-client:google-http-client-jackson2:1.44.2")
 
-    // AWS Lambda
+    // Lambda RequestStreamHandler 인터페이스
     implementation("com.amazonaws:aws-lambda-java-core:1.2.3")
-    // Lambda handler에서 MockMvc로 Spring DispatcherServlet 직접 호출 (Tomcat 소켓 불필요)
+
+    // MockMvc로 DispatcherServlet을 직접 호출하기 위해 필요 (Tomcat 소켓 불사용)
     implementation("org.springframework:spring-test")
 
-    // SnapStart 체크포인트를 위해 crac 필수
-    // crac가 없으면 열린 소켓(Tomcat, HikariCP)이 있어서 체크포인트 자체가 State:Failed
-    // restore 후 Tomcat이 rebind 못해도 MockMvc는 소켓 없이 DispatcherServlet 직접 호출하므로 무관
+    // SnapStart CRaC 지원: 체크포인트 전 Tomcat/HikariCP 소켓을 자동으로 닫고 복원 후 재연결
+    // 이 의존성 없이는 열린 소켓 때문에 SnapStart 체크포인트가 State:Failed가 된다
     implementation("org.crac:crac")
 }
 

@@ -18,15 +18,18 @@ import java.net.URI
 import java.util.Base64
 
 /**
- * Spring Boot + AWS Lambda SnapStart 핸들러 (MockMvc 방식).
+ * AWS Lambda SnapStart 핸들러.
  *
- * Tomcat 소켓 없이 Spring DispatcherServlet을 직접 호출합니다.
- * CRaC restore 후 Tomcat 재바인딩 실패 문제를 우회합니다.
+ * Tomcat 소켓을 사용하지 않고 MockMvc로 DispatcherServlet을 직접 호출한다.
  *
- * 동작 방식:
- * 1. Lambda init phase: Spring Boot 시작, MockMvc 초기화 → SnapStart 스냅샷에 포함
- * 2. CRaC restore: Spring context는 그대로 복원, MockMvc 즉시 사용 가능
- * 3. 요청 시: Lambda Function URL 이벤트 → MockMvc → DispatcherServlet → 응답
+ * Tomcat 방식을 사용하지 않는 이유:
+ * - SnapStart CRaC 체크포인트는 열린 소켓(Tomcat 8080, HikariCP DB)이 있으면 State:Failed
+ * - CRaC restore 후 Tomcat이 8080 포트에 재바인딩하지 못하는 Lambda 환경 제약
+ *
+ * 동작 흐름:
+ * 1. Init phase: companion object init에서 Spring Boot 시작 → SnapStart 스냅샷 저장
+ * 2. Cold start: 스냅샷 복원 → handleRequest() 즉시 호출 (Spring 재시작 없음)
+ * 3. 요청 처리: Lambda 이벤트(rawPath, headers, body) → MockMvc → DispatcherServlet → 응답
  */
 class LambdaHandler : RequestStreamHandler {
 
@@ -35,12 +38,15 @@ class LambdaHandler : RequestStreamHandler {
         private val mockMvc: MockMvc
 
         init {
-            // Lambda runtime의 thread context classloader에는 jakarta.servlet.Servlet이 없음
-            // → WebApplicationType.deduceFromClasspath()가 NONE으로 감지됨
-            // CustomerClassLoader로 교체하면 shadow JAR의 jakarta.servlet.Servlet을 찾아 SERVLET 타입으로 감지
+            // Lambda 시스템 classloader에는 shadow JAR의 jakarta.servlet.Servlet이 없다.
+            // WebApplicationType.deduceFromClasspath()가 NONE으로 감지되는 것을 막기 위해
+            // shadow JAR의 classloader로 교체한다.
             Thread.currentThread().contextClassLoader = LambdaHandler::class.java.classLoader
-            // spring.factories 조회 없이 직접 AnnotationConfigServletWebServerApplicationContext 생성
-            // (Shadow JAR에서 spring.factories 병합 실패 시 AnnotationConfigApplicationContext 폴백 방지)
+
+            // createApplicationContext()를 오버라이드해 AnnotationConfigServletWebServerApplicationContext를 직접 생성한다.
+            // Shadow JAR에서 spring.factories가 올바르게 병합되지 않으면 ApplicationContextFactory 조회가 실패해
+            // AnnotationConfigApplicationContext(비웹)로 폴백되고 WebApplicationContext 캐스팅에서 오류가 난다.
+            // 이 오버라이드는 spring.factories 조회 자체를 건너뛰는 이중 방어책이다.
             val app = object : SpringApplication(LinkSphereBeApplication::class.java) {
                 override fun createApplicationContext(): ConfigurableApplicationContext =
                     AnnotationConfigServletWebServerApplicationContext()
