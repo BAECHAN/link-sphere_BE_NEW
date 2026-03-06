@@ -308,3 +308,41 @@ app.applicationContextFactory = ApplicationContextFactory.ofContextClass(...)
 ```
 
 **해결**: `createApplicationContext()`를 익명 서브클래스로 오버라이드.
+
+### 7. MockMvc에 Spring Security 필터 미적용 → 500 + CORS 에러
+
+`MockMvcBuilders.webAppContextSetup(ctx).build()`만으로는 `FilterChainProxy`(Spring Security 전체 필터 체인)가 MockMvc에 자동 포함되지 않는다.
+
+**증상**:
+- `GET /auth/account` → `NullPointerException: Parameter specified as non-null is null: method AuthController.getAccount, parameter principal` → 500
+- 배포 환경(CloudFront → Lambda URL)에서 CORS 헤더 미설정 → 브라우저 CORS 에러
+
+**원인 분석**: CloudWatch 로그에서 MockMvc 요청(메인 스레드)에 `JwtAuthenticationFilter` 로그가 없음을 확인. `FilterChainProxy`가 없으니 `CorsFilter`, `JwtAuthenticationFilter`, `SecurityContextHolderAwareRequestFilter` 모두 미실행 → `request.getUserPrincipal()` = null → Kotlin non-null 파라미터 NPE.
+
+**해결**:
+```kotlin
+val securityFilter = ctx.getBean("springSecurityFilterChain") as jakarta.servlet.Filter
+val builder = MockMvcBuilders.webAppContextSetup(ctx as WebApplicationContext)
+builder.addFilters<DefaultMockMvcBuilder>(securityFilter)
+mockMvc = builder.build()
+```
+
+> `spring-security-test`의 `springSecurity()` configurer를 쓰면 더 간결하지만, 해당 라이브러리가 `testImplementation`이므로 `springSecurityFilterChain` 빈을 직접 가져와 `addFilters`로 등록하는 방식 사용.
+
+### 8. SnapStart 복원 후 HikariCP 연결 문제
+
+**증상**: SnapStart 복원 직후 DB 쿼리 실패. CloudWatch 로그에서 두 가지 경고 확인:
+```
+HikariPool-1 - Failed to validate connection (This connection has been closed.)
+HikariDataSource is not configured to allow pool suspension.
+HikariPool-1 - Thread starvation or clock leap detected (housekeeper delta=1m11s...)
+```
+
+**원인**: 스냅샷 저장 시점의 DB 연결이 복원 후 죽어 있음(PgBouncer가 유휴 연결 종료). `keepalive-time`만으로는 이미 죽은 연결을 복원 직후 즉시 감지하지 못함.
+
+**해결**:
+```yaml
+hikari:
+  keepalive-time: 30000       # 유휴 중 연결 끊김 사전 예방
+  connection-test-query: SELECT 1  # pool에서 꺼낼 때 즉시 검증 → 죽은 연결 교체
+  allow-pool-suspension: true # 체크포인트 전 pool 중단 허용 (경고 제거)
