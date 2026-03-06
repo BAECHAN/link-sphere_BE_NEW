@@ -1,103 +1,310 @@
-# 🚀 배포 가이드 (Deployment Guide)
+# AWS Lambda SnapStart 배포 가이드
 
-이 프로젝트는 **GitHub Actions**, **AWS ECR**, **AWS App Runner**를 사용하여 CI/CD 파이프라인을 구축했습니다.
+## 아키텍처 개요
 
-## 🏗️ 배포 아키텍처
+### 배포 파이프라인
+```
+GitHub push (main)
+  → GitHub Actions
+    → shadowJar 빌드 (fat JAR, 모든 의존성 포함)
+    → S3 업로드
+    → Lambda 코드 업데이트
+    → 버전 발행 (SnapStart 스냅샷 생성)
+    → prod alias 업데이트
+```
 
-1. **GitHub Push**: `main` 브랜치에 코드가 푸시됩니다.
-2. **GitHub Actions**: 자동으로 워크플로우가 트리거되어 빌드 및 테스트를 수행합니다.
-3. **AWS ECR Upload**: 빌드된 Docker 이미지를 AWS Elastic Container Registry (ECR)에 푸시합니다.
-4. **AWS App Runner Deploy**: ECR에 새로운 이미지가 업로드되면, AWS App Runner가 이를 감지하고 자동으로 새 버전을 배포합니다.
-
-### 💡 지역 최적화 (Regional Latency Optimization)
-
-현재 인프라는 **AWS App Runner(도쿄)**와 **Supabase Database(도쿄)**를 같은 리전에 배치하여 최적의 응답 속도를 확보하고 있습니다.
-
-- **서울 리전 DB 사용 시**: API 응답 속도 약 **2.5ms** 소요
-- **도쿄 리전 DB 이전 후**: API 응답 속도 약 **0.5ms**로 대폭 감소 (**~80% 개선**)
-- 서비스 지연 시간을 최소화하기 위해 애플리케이션과 데이터베이스의 리전을 동일하게 유지하는 것을 권장합니다.
-
----
-
-## 📋 사전 요구사항 (Prerequisites)
-
-배포를 위해 다음 AWS 리소스가 필요합니다. (리전: `ap-northeast-1` 도쿄 권장)
-배포 비용은 거의 안들고 서버 이용 비용만 발생
-
-### 1. AWS ECR (Elastic Container Registry)
-
-- **리포지토리 이름**: `link-sphere/link-sphere-be`
-- Docker 이미지를 저장할 공간입니다.
-- GitHub Actions에서 이 이름으로 이미지를 푸시하도록 설정되어 있습니다.
-
-### 2. AWS App Runner
-
-- **Source**: Container Registry (ECR)
-- **Image URI**: ECR 리포지토리의 `latest` 태그 선택
-- **Deployment settings**: Automatic (자동 배포 활성화)
-- **Port**: `51119`
-- **Health check**: `/actuator/health` (Spring Boot Actuator)
+### Lambda 실행 구조
+```
+API 요청
+  → Lambda Function URL
+    → LambdaHandler.handleRequest()
+      → MockMvc.perform()
+        → Spring DispatcherServlet (Tomcat 소켓 없음)
+          → 응답
+```
 
 ---
 
-## ⚙️ GitHub Actions 설정
+## 핵심 동작 원리
 
-`.github/workflows/deploy.yml` 파일에 CI/CD 파이프라인이 정의되어 있습니다.
+### MockMvc 방식을 사용하는 이유
 
-### 주요 단계
+SnapStart는 Lambda init phase를 스냅샷으로 저장해 cold start를 단축한다. 그런데 일반적인 Spring Boot + Tomcat 방식은 두 가지 문제가 있다.
 
-1. **JDK 17 설정**: Java 17 (Temurin) 환경 구성
-2. **Gradle Build**: `./gradlew bootJar` 명령어로 애플리케이션 빌드
-3. **AWS Credentials**: GitHub Secrets에 저장된 키로 AWS 인증 (`ap-northeast-1`)
-4. **Docker Build & Push**: Docker 이미지를 빌드하고 ECR로 푸시 (`latest` 태그)
+1. **CRaC 체크포인트 실패**: Tomcat이 8080 소켓을 열고 있는 상태에서 SnapStart 체크포인트를 시도하면 열린 소켓이 있어서 `State:Failed`가 된다.
+2. **restore 후 rebind 실패**: 체크포인트를 통과하더라도 복원 후 Tomcat이 8080 포트에 재바인딩하지 못해 요청을 처리할 수 없다.
 
-### GitHub Secrets 설정
+**해결책**: Tomcat을 아예 사용하지 않는다. `MockMvc`로 `DispatcherServlet`을 직접 호출하면 소켓이 전혀 열리지 않으므로 CRaC 체크포인트가 성공하고, 복원 후에도 바인딩 문제가 없다.
 
-GitHub 저장소의 `Settings > Secrets and variables > Actions`에 다음 변수를 등록해야 합니다.
+### SnapStart 동작 흐름
 
-| Secret Name             | 설명                               |
-| ----------------------- | ---------------------------------- |
-| `AWS_ACCESS_KEY_ID`     | AWS 액세스 키 (ECR 쓰기 권한 필요) |
-| `AWS_SECRET_ACCESS_KEY` | AWS 시크릿 액세스 키               |
+```
+1. Init phase:
+   - LambdaHandler.companion.init { } 실행
+   - Spring Boot 시작 (MockMvc 초기화 포함)
+   - SnapStart가 이 상태를 스냅샷으로 저장
 
----
+2. 요청 수신 (cold start):
+   - 스냅샷에서 JVM 복원 (Spring 재시작 없음)
+   - handleRequest() 호출
+   - MockMvc → DispatcherServlet → 응답
 
-## ☁️ AWS App Runner 설정 (상세)
+3. 요청 수신 (warm start):
+   - 동일 컨테이너 재사용, 즉시 handleRequest() 호출
+```
 
-App Runner 서비스 생성 시 다음 설정을 따릅니다.
+### Shadow JAR에서 spring.factories를 append하는 이유
 
-1. **Source & deployment**
-   - **Repository type**: ECR Public 또는 Private (Private 권장)
-   - **Source image URI**: `[AWS_ACCOUNT_ID].dkr.ecr.ap-northeast-1.amazonaws.com/link-sphere/link-sphere-be:latest`
-   - **Deployment settings**:
-     - **Trigger**: **Automatic** (중요: ECR에 새 이미지가 푸시될 때마다 자동 배포)
-     - **ECR access role**: `AppRunnerECRAccessRole` (새로 생성하거나 기존 역할 선택)
+Shadow JAR 플러그인의 `mergeServiceFiles()`는 `META-INF/services/**` 파일만 병합한다. Spring Boot의 `ApplicationContextFactory` 구현체들은 `META-INF/spring.factories`에 등록되어 있는데, 이 파일은 `mergeServiceFiles()` 대상이 아니다.
 
-2. **Service configuration**
-   - **Service name**: `link-sphere-be` (예시)
-   - **Virtual CPU & Memory**: 필요에 따라 설정 (예: 1 vCPU, 2 GB)
-   - **Environment variables**:
-     - `SPRING_PROFILES_ACTIVE`: `prod` (필요 시)
-     - `SPRING_DATASOURCE_URL`: DB 연결 주소
-     - `SPRING_DATASOURCE_USERNAME`: DB 사용자명
-     - `SPRING_DATASOURCE_PASSWORD`: DB 비밀번호
-     - `GEMINI_API_KEY`: Gemini API 키
-     - `JWT_SECRET`: JWT 시크릿 키
-   - **Port**: `51119`
+이 파일이 누락되면:
+- `DefaultApplicationContextFactory.getFromSpringFactories()` → 구현체 없음
+- 폴백: `AnnotationConfigApplicationContext` 생성 (웹 컨텍스트가 아님)
+- `MockMvcBuilders.webAppContextSetup(ctx as WebApplicationContext)` → **ClassCastException**
+
+따라서 `append("META-INF/spring.factories")`를 명시적으로 추가해야 한다. 추가로, `LambdaHandler`에서 `createApplicationContext()`를 오버라이드해 spring.factories 조회 자체를 우회하는 이중 방어도 적용되어 있다.
 
 ---
 
-## 🛠️ 로컬 테스트 (Docker)
+## AWS 초기 설정 (최초 1회)
 
-로컬 환경에서 배포 이미지를 미리 테스트할 수 있습니다.
+### 1. IAM 사용자 생성 (GitHub Actions용)
+
+최소 권한 정책:
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["s3:PutObject", "s3:GetObject"],
+      "Resource": "arn:aws:s3:::link-sphere-lambda-deploy/*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "lambda:UpdateFunctionCode",
+        "lambda:PublishVersion",
+        "lambda:CreateAlias",
+        "lambda:UpdateAlias",
+        "lambda:GetAlias",
+        "lambda:GetFunction",
+        "lambda:GetFunctionConfiguration"
+      ],
+      "Resource": "arn:aws:lambda:ap-northeast-1:*:function:link-sphere-api*"
+    }
+  ]
+}
+```
+
+### 2. S3 버킷 생성
 
 ```bash
-# 1. 빌드 (테스트 제외)
-./gradlew clean build -x test
-
-# 2. Docker 이미지 생성
-docker build -t linksphere-be .
-
-# 3. 컨테이너 실행
-docker run -p 51119:51119 linksphere-be
+aws s3 mb s3://link-sphere-lambda-deploy --region ap-northeast-1
 ```
+- 퍼블릭 액세스: 모두 차단
+- 버전 관리: 활성화 권장
+
+### 3. Lambda 함수 생성
+
+```bash
+aws lambda create-function \
+  --function-name link-sphere-api \
+  --runtime java17 \
+  --handler com.example.linksphere.LambdaHandler \
+  --role arn:aws:iam::ACCOUNT_ID:role/lambda-execution-role \
+  --code S3Bucket=link-sphere-lambda-deploy,S3Key=initial.jar \
+  --memory-size 1024 \
+  --timeout 30 \
+  --architectures arm64 \
+  --snap-start ApplyOn=PublishedVersions
+```
+
+Lambda 실행 역할 필요 권한: `AWSLambdaBasicExecutionRole`
+
+### 4. Lambda 환경변수 설정
+
+Lambda 콘솔 → Configuration → Environment variables:
+
+| 키 | 설명 |
+|----|------|
+| `SPRING_DATASOURCE_URL` | `jdbc:postgresql://...supabase.com:6543/postgres?prepareThreshold=0` |
+| `SPRING_DATASOURCE_USERNAME` | Supabase DB 사용자명 |
+| `SPRING_DATASOURCE_PASSWORD` | Supabase DB 비밀번호 |
+| `GEMINI_API_KEY` | Gemini API 키 |
+| `SUPABASE_BUCKET` | Supabase 스토리지 버킷명 |
+| `SUPABASE_KEY` | Supabase service role key |
+| `SUPABASE_URL` | `https://<project>.supabase.co` |
+| `JWT_SECRET` | JWT 서명 키 (최소 32자) |
+
+> Spring Boot는 `SPRING_DATASOURCE_URL` → `spring.datasource.url` 형식으로 환경변수를 자동 바인딩한다.
+
+### 5. Function URL 생성
+
+```bash
+# prod alias에 Function URL 생성
+aws lambda create-function-url-config \
+  --function-name link-sphere-api \
+  --qualifier prod \
+  --auth-type NONE
+
+# 퍼블릭 접근 허용
+aws lambda add-permission \
+  --function-name link-sphere-api \
+  --qualifier prod \
+  --statement-id FunctionURLAllowPublicAccess \
+  --action lambda:InvokeFunctionUrl \
+  --principal "*" \
+  --function-url-auth-type NONE
+```
+
+---
+
+## GitHub 설정
+
+### Secrets (암호화 저장)
+
+| Secret 이름 | 설명 |
+|-------------|------|
+| `AWS_ACCESS_KEY_ID` | IAM 사용자 액세스 키 |
+| `AWS_SECRET_ACCESS_KEY` | IAM 사용자 시크릿 키 |
+| `FIREBASE_SERVICE_ACCOUNT_JSON` | Firebase 서비스 계정 JSON 전문 |
+
+### Variables (평문 저장)
+
+| Variable 이름 | 예시 값 |
+|---------------|---------|
+| `AWS_REGION` | `ap-northeast-1` |
+| `AWS_S3_BUCKET` | `link-sphere-lambda-deploy` |
+| `LAMBDA_FUNCTION_NAME` | `link-sphere-api` |
+
+---
+
+## 배포 흐름 (deploy.yml 단계별)
+
+| 단계 | 설명 |
+|------|------|
+| 1. Checkout | 소스 체크아웃 |
+| 2. JDK 17 | Amazon Corretto 설치 (Lambda 런타임과 동일 계열) |
+| 3. Gradle 캐시 | 의존성 캐시로 빌드 시간 단축 |
+| 4. Firebase JSON | GitHub Secret → `src/main/resources/firebase-service-account.json` (classpath 포함) |
+| 5. shadowJar 빌드 | `./gradlew shadowJar` → 모든 의존성 포함된 fat JAR |
+| 6. JAR 검증 | 파일 존재 및 `LambdaHandler` 클래스 포함 여부 확인 |
+| 7. AWS 자격증명 | GitHub Secrets로 AWS 인증 |
+| 8. S3 업로드 | `deployments/YYYYMMDD-HHMMSS.jar` 키로 업로드 |
+| 9. 코드 업데이트 | Lambda가 새 JAR를 참조하도록 변경 |
+| 10. 업데이트 대기 | `function-updated` waiter로 완료 확인 |
+| 11. 버전 발행 | `publish-version` → SnapStart 스냅샷 생성 트리거 |
+| 12. SnapStart 대기 | `published-version-active` waiter (1~5분, 스냅샷 완성까지) |
+| 13. alias 업데이트 | `prod` alias를 새 버전으로 교체 |
+| 14. URL 출력 | 배포된 Function URL 확인 |
+
+---
+
+## 배포 트리거 조건
+
+`main` 브랜치 push 시, 아래 경로에 변경이 있을 때만 실행:
+- `src/**`
+- `build.gradle.kts`
+- `settings.gradle.kts`
+- `gradle/**`
+- `.github/workflows/deploy.yml`
+
+---
+
+## 배포 후 검증
+
+```bash
+# health check
+curl https://<function-url>/actuator/health
+# 응답: {"status":"UP"}
+
+# SnapStart 동작 확인 (CloudWatch Logs)
+# RESTORE_START / RESTORE_END 로그가 보이면 SnapStart 정상 동작
+```
+
+---
+
+## 로컬 개발 환경
+
+로컬에서는 `src/main/resources/application-secret.yml` 파일로 설정값을 관리한다 (gitignore).
+
+```yaml
+# application-secret.yml 예시 구조
+spring:
+  datasource:
+    url: jdbc:postgresql://...
+    username: ...
+    password: ...
+jwt:
+  secret: ...
+gemini:
+  api:
+    key: ...
+```
+
+Lambda에서는 이 파일 없이 환경변수로 동일한 값을 주입한다. Spring Boot가 `SPRING_DATASOURCE_URL` 형식의 환경변수를 자동으로 `spring.datasource.url`에 바인딩한다.
+
+---
+
+## 시행착오 기록
+
+### 1. Docker 방식 시도 → 폐기
+
+초기에는 `Dockerfile` + ECR + Lambda 컨테이너 이미지 방식을 시도했다. 문제 없이 동작하지만 이미지 빌드 시간이 길고, SnapStart는 zip 배포 방식에서만 지원된다. Shadow JAR 직접 배포 방식으로 전환.
+
+### 2. Tomcat 소켓 문제 (SnapStart State:Failed)
+
+일반 Spring Boot 내장 Tomcat은 8080 포트 소켓을 유지한다. SnapStart의 CRaC 체크포인트는 열린 소켓이 있으면 `State:Failed`를 반환한다. HikariCP도 DB 연결 소켓을 유지하므로 동일한 문제가 발생한다.
+
+**해결**: `org.crac:crac` 의존성 추가. Spring Boot 3.x가 CRaC를 인식해 체크포인트 전 Tomcat/HikariCP 소켓을 자동으로 닫고, 복원 후 재연결한다.
+
+### 3. Tomcat restore 후 rebind 실패
+
+crac로 체크포인트는 통과했지만, 복원 후 Tomcat이 8080 포트에 다시 바인딩하지 못하는 문제가 발생했다. Lambda 환경의 네트워크 제약으로 인한 것으로 추정.
+
+**해결**: Tomcat 자체를 사용하지 않는 MockMvc 방식으로 전환. `MockMvc`로 `DispatcherServlet`을 직접 호출하면 소켓이 전혀 필요 없다.
+
+### 4. WebApplicationType.NONE 감지 문제
+
+Lambda 런타임의 thread context classloader(시스템 클래스로더)에는 shadow JAR 내부의 `jakarta.servlet.Servlet`이 없다. `WebApplicationType.deduceFromClasspath()`가 `null` classloader로 클래스를 탐색하면 Servlet을 찾지 못해 `NONE`으로 판단, 서블릿 컨텍스트 없이 Spring이 시작되었다.
+
+**해결**:
+```kotlin
+Thread.currentThread().contextClassLoader = LambdaHandler::class.java.classLoader
+```
+shadow JAR의 classloader로 교체해 Servlet 클래스를 찾을 수 있게 함.
+
+### 5. spring.factories 미병합 → ClassCastException (핵심 문제)
+
+Shadow JAR 빌드 후 Lambda 배포 시 다음 에러 반복:
+```
+ClassCastException: AnnotationConfigApplicationContext cannot be cast to WebApplicationContext
+```
+
+**원인**: Shadow JAR의 `mergeServiceFiles()`는 `META-INF/services/**`만 병합. Spring Boot의 `ApplicationContextFactory` 구현체 목록이 담긴 `META-INF/spring.factories`는 병합되지 않아 누락. 결과적으로 Spring이 `AnnotationConfigApplicationContext`(비웹)로 폴백.
+
+**해결 1 — 빌드 레벨**:
+```kotlin
+// build.gradle.kts
+append("META-INF/spring.factories")
+```
+
+**해결 2 — 코드 레벨 (이중 방어)**:
+```kotlin
+// LambdaHandler.kt - spring.factories 조회 자체를 우회
+val app = object : SpringApplication(LinkSphereBeApplication::class.java) {
+    override fun createApplicationContext(): ConfigurableApplicationContext =
+        AnnotationConfigServletWebServerApplicationContext()
+}
+```
+
+### 6. SpringApplication.applicationContextFactory setter 접근 불가
+
+Spring Boot 3.5.x에서 `applicationContextFactory` 필드가 `private`으로 변경되어 다음 코드가 컴파일 에러 발생:
+```kotlin
+app.applicationContextFactory = ApplicationContextFactory.ofContextClass(...)
+// Error: Cannot access 'applicationContextFactory': it is private in 'SpringApplication'
+```
+
+**해결**: `createApplicationContext()`를 익명 서브클래스로 오버라이드.
