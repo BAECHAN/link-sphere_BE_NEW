@@ -53,9 +53,12 @@ class LambdaHandler : RequestStreamHandler {
             }
             app.webApplicationType = WebApplicationType.SERVLET
             val ctx = app.run()
-            mockMvc = MockMvcBuilders
-                .webAppContextSetup(ctx as WebApplicationContext)
-                .build()
+            // webAppContextSetup()만으로는 FilterChainProxy(Spring Security)가 MockMvc 필터 체인에
+            // 자동 포함되지 않는다. 명시적으로 추가해야 JwtAuthenticationFilter 등 보안 필터가 실행된다.
+            val securityFilter = ctx.getBean("springSecurityFilterChain") as jakarta.servlet.Filter
+            val builder = MockMvcBuilders.webAppContextSetup(ctx as WebApplicationContext)
+            builder.addFilters(securityFilter)
+            mockMvc = builder.build()
         }
     }
 
