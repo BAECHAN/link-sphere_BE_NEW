@@ -188,9 +188,6 @@ class PostRepositoryImpl : PostRepositoryCustom {
                 }
 
                 // Filters (Multiple supported, comma separated)
-                println(
-                        "DEBUG: params - category=$category, search=$search, filter=$filter, nickname=$nickname, currentUserId=$currentUserId"
-                )
                 if (!filter.isNullOrBlank()) {
                         val activeFilters =
                                 filter.split(",").map { it.trim() }.filter { it.isNotEmpty() }

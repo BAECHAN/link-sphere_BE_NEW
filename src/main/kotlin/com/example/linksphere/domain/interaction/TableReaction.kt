@@ -19,8 +19,8 @@ enum class TargetType {
 }
 
 data class ReactionId(
-        val userId: UUID = UUID.randomUUID(),
-        val targetId: UUID = UUID.randomUUID(),
+        val userId: UUID = UUID(0, 0),
+        val targetId: UUID = UUID(0, 0),
         val targetType: TargetType = TargetType.POST
 ) : Serializable
 

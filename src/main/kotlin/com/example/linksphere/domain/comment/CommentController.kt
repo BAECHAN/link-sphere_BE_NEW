@@ -10,15 +10,15 @@ import org.springframework.web.multipart.MultipartFile
 @RestController
 class CommentController(private val commentService: CommentService) {
 
+        private fun String?.toRequiredUserId(): UUID =
+                this?.let { UUID.fromString(it) } ?: throw IllegalStateException("User not authenticated")
+
         @GetMapping("/post/{postId}/comment")
         fun getComments(
                 @PathVariable postId: UUID,
                 @AuthenticationPrincipal principal: String?
-        ): ApiResponse<List<CommentResponse>> {
-                val userId = principal?.let { UUID.fromString(it) }
-                val comments = commentService.getComments(postId, userId)
-                return ApiResponse(200, "댓글 조회 성공", comments)
-        }
+        ): ApiResponse<List<CommentResponse>> =
+                ApiResponse(200, "댓글 조회 성공", commentService.getComments(postId, principal?.let { UUID.fromString(it) }))
 
         @PostMapping("/post/{postId}/comment", consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
         fun createComment(
@@ -27,39 +27,25 @@ class CommentController(private val commentService: CommentService) {
                 @RequestPart(required = false) image: MultipartFile?,
                 @AuthenticationPrincipal principal: String?
         ): ApiResponse<CommentResponse> {
-                val userId =
-                        principal?.let { UUID.fromString(it) }
-                                ?: throw IllegalStateException("User not authenticated")
-
-                println("content: $content")
-                println("image: $image")
-                val comment = commentService.createComment(postId, userId, content, image)
+                val comment = commentService.createComment(postId, principal.toRequiredUserId(), content, image)
                 return ApiResponse(201, "댓글 작성 성공", comment)
         }
 
         @PostMapping("/comment/{commentId}/reply", consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
         fun createReply(
-                @PathVariable commentId: UUID, // This is the parentId
+                @PathVariable commentId: UUID,
                 @RequestParam(required = false) content: String?,
                 @RequestPart(required = false) image: MultipartFile?,
                 @AuthenticationPrincipal principal: String?
-        ): ApiResponse<CommentResponse> {
-                val userId =
-                        principal?.let { UUID.fromString(it) }
-                                ?: throw IllegalStateException("User not authenticated")
-                val reply = commentService.createReply(commentId, userId, content, image)
-                return ApiResponse(201, "답글 작성 성공", reply)
-        }
+        ): ApiResponse<CommentResponse> =
+                ApiResponse(201, "답글 작성 성공", commentService.createReply(commentId, principal.toRequiredUserId(), content, image))
 
         @DeleteMapping("/comment/{commentId}")
         fun deleteComment(
                 @PathVariable commentId: UUID,
                 @AuthenticationPrincipal principal: String?
         ): ApiResponse<Unit> {
-                val userId =
-                        principal?.let { UUID.fromString(it) }
-                                ?: throw IllegalStateException("User not authenticated")
-                commentService.deleteComment(commentId, userId)
+                commentService.deleteComment(commentId, principal.toRequiredUserId())
                 return ApiResponse(200, "댓글 삭제 성공", Unit)
         }
 
@@ -69,11 +55,6 @@ class CommentController(private val commentService: CommentService) {
                 @RequestParam(required = false) content: String?,
                 @RequestPart(required = false) image: MultipartFile?,
                 @AuthenticationPrincipal principal: String?
-        ): ApiResponse<CommentResponse> {
-                val userId =
-                        principal?.let { UUID.fromString(it) }
-                                ?: throw IllegalStateException("User not authenticated")
-                val comment = commentService.updateComment(commentId, userId, content, image)
-                return ApiResponse(200, "댓글 수정 성공", comment)
-        }
+        ): ApiResponse<CommentResponse> =
+                ApiResponse(200, "댓글 수정 성공", commentService.updateComment(commentId, principal.toRequiredUserId(), content, image))
 }

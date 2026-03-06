@@ -12,9 +12,8 @@ import jakarta.annotation.PostConstruct
 @Configuration
 class FcmConfig(
     private val resourceLoader: ResourceLoader,
-    @Value("\${firebase.service-account-key-path}") private val keyPath: String
+    @Value("\${firebase.service-account-key-path:}") private val keyPath: String,
 ) {
-
     private val logger = LoggerFactory.getLogger(FcmConfig::class.java)
 
     @PostConstruct
@@ -24,17 +23,28 @@ class FcmConfig(
             return
         }
 
-        val resource = resourceLoader.getResource(keyPath)
-        if (!resource.exists()) {
-            logger.warn("[FCM] firebase-service-account.json not found at: $keyPath — FCM disabled")
+        val credentials = loadFromFile()
+        if (credentials == null) {
+            logger.warn("[FCM] Firebase credentials unavailable — FCM disabled")
             return
         }
 
         val options = FirebaseOptions.builder()
-            .setCredentials(GoogleCredentials.fromStream(resource.inputStream))
+            .setCredentials(credentials)
             .build()
 
         FirebaseApp.initializeApp(options)
         logger.info("[FCM] Firebase initialized successfully")
+    }
+
+    private fun loadFromFile(): GoogleCredentials? {
+        if (keyPath.isBlank()) return null
+        val resource = resourceLoader.getResource(keyPath)
+        if (!resource.exists()) {
+            logger.warn("[FCM] firebase-service-account.json not found at: $keyPath")
+            return null
+        }
+        logger.info("[FCM] Loaded credentials from file: $keyPath")
+        return GoogleCredentials.fromStream(resource.inputStream)
     }
 }

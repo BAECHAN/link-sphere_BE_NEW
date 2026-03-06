@@ -5,7 +5,7 @@ import java.io.Serializable
 import java.time.LocalDateTime
 import java.util.UUID
 
-data class BookmarkId(val userId: UUID = UUID.randomUUID(), val postId: UUID = UUID.randomUUID()) :
+data class BookmarkId(val userId: UUID = UUID(0, 0), val postId: UUID = UUID(0, 0)) :
         Serializable
 
 @Entity

@@ -1,5 +1,7 @@
 package com.example.linksphere.domain.interaction
 
+import com.example.linksphere.domain.comment.CommentRepository
+import com.example.linksphere.domain.post.PostRepository
 import java.util.UUID
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -7,18 +9,24 @@ import org.springframework.transaction.annotation.Transactional
 @Service
 class InteractionService(
         private val reactionRepository: ReactionRepository,
-        private val bookmarkRepository: BookmarkRepository
+        private val bookmarkRepository: BookmarkRepository,
+        private val postRepository: PostRepository,
+        private val commentRepository: CommentRepository
 ) {
     @Transactional
     fun toggleLike(targetId: UUID, targetType: TargetType, userId: UUID): Boolean {
-        val existing =
-                reactionRepository.findByTargetIdAndTargetTypeAndUserId(
-                        targetId,
-                        targetType,
-                        userId
-                )
-        return if (existing != null) {
-            reactionRepository.delete(existing)
+        when (targetType) {
+            TargetType.POST ->
+                    if (!postRepository.existsById(targetId))
+                            throw IllegalArgumentException("Post not found: $targetId")
+            TargetType.COMMENT ->
+                    if (!commentRepository.existsById(targetId))
+                            throw IllegalArgumentException("Comment not found: $targetId")
+        }
+
+        val exists = reactionRepository.existsByTargetIdAndTargetTypeAndUserId(targetId, targetType, userId)
+        return if (exists) {
+            reactionRepository.deleteByTargetIdAndTargetTypeAndUserId(targetId, targetType, userId)
             false
         } else {
             reactionRepository.save(
@@ -35,6 +43,8 @@ class InteractionService(
 
     @Transactional
     fun toggleBookmark(postId: UUID, userId: UUID): Boolean {
+        if (!postRepository.existsById(postId)) throw IllegalArgumentException("Post not found: $postId")
+
         val exists = bookmarkRepository.existsByUserIdAndPostId(userId, postId)
         return if (exists) {
             bookmarkRepository.deleteByUserIdAndPostId(userId, postId)

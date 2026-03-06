@@ -1,53 +1,170 @@
-name: Deploy to App Runner
+name: Deploy to AWS Lambda (SnapStart)
 
+# main 브랜치에 소스 변경이 push될 때만 실행
 on:
   push:
-    branches: ["main"] # main 브랜치 푸시 시 작동
+    branches: ["main"]
     paths:
       - "src/**"
       - "build.gradle.kts"
       - "settings.gradle.kts"
       - "gradle/**"
-      - "Dockerfile"
+      - ".github/workflows/deploy.yml"
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      # ─────────────────────────────────────────────
+      # 1. 소스 체크아웃
+      # ─────────────────────────────────────────────
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      # ─────────────────────────────────────────────
+      # 2. Java 17 설치 (Amazon Corretto — Lambda 런타임과 동일 JDK 계열)
+      # ─────────────────────────────────────────────
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: "17"
-          distribution: "temurin"
+          distribution: "corretto"
 
-      - name: Create Firebase service account file
+      # ─────────────────────────────────────────────
+      # 3. Gradle 의존성 캐시 (빌드 시간 단축)
+      # ─────────────────────────────────────────────
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: ${{ runner.os }}-gradle-
+
+      # ─────────────────────────────────────────────
+      # 4. Firebase 서비스 계정 JSON 파일 생성
+      #    GitHub Secret(FIREBASE_SERVICE_ACCOUNT_JSON) →
+      #    src/main/resources/firebase-service-account.json →
+      #    shadowJar에 classpath로 포함 → Lambda에서 classpath:로 읽음
+      # ─────────────────────────────────────────────
+      - name: Write Firebase service account file
         run: |
-          echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}' > src/main/resources/firebase-service-account.json
+          echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}' \
+            > src/main/resources/firebase-service-account.json
 
-      - name: Build with Gradle
-        run: chmod +x gradlew && ./gradlew bootJar
+      # ─────────────────────────────────────────────
+      # 5. Shadow JAR 빌드 (fat JAR — 모든 의존성 포함)
+      # ─────────────────────────────────────────────
+      - name: Build Shadow JAR
+        run: chmod +x gradlew && ./gradlew shadowJar --no-daemon
 
+      # ─────────────────────────────────────────────
+      # 6. JAR 파일 유효성 확인
+      # ─────────────────────────────────────────────
+      - name: Verify Shadow JAR
+        run: |
+          JAR_PATH=$(ls build/libs/*-all.jar 2>/dev/null | head -1)
+          if [ -z "$JAR_PATH" ]; then
+            echo "ERROR: Shadow JAR not found!"
+            ls -la build/libs/ || true
+            exit 1
+          fi
+          echo "JAR: $JAR_PATH  ($(du -h "$JAR_PATH" | cut -f1))"
+          unzip -l "$JAR_PATH" | grep -q "LambdaHandler" \
+            || { echo "ERROR: LambdaHandler class not found in JAR!"; exit 1; }
+          echo "JAR_PATH=$JAR_PATH" >> "$GITHUB_ENV"
+
+      # ─────────────────────────────────────────────
+      # 7. AWS 자격증명 설정
+      #    GitHub Secrets: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+      #    GitHub Variables: AWS_REGION
+      # ─────────────────────────────────────────────
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ap-northeast-1
+          aws-region: ${{ vars.AWS_REGION }}
 
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Build and Push to ECR
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: link-sphere/link-sphere-be
+      # ─────────────────────────────────────────────
+      # 8. JAR → S3 업로드
+      #    GitHub Variables: AWS_S3_BUCKET
+      # ─────────────────────────────────────────────
+      - name: Upload JAR to S3
         run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          S3_KEY="deployments/$(date +%Y%m%d-%H%M%S).jar"
+          aws s3 cp "$JAR_PATH" "s3://${{ vars.AWS_S3_BUCKET }}/$S3_KEY"
+          echo "S3_KEY=$S3_KEY" >> "$GITHUB_ENV"
 
-      - name: Deploy to App Runner
+      # ─────────────────────────────────────────────
+      # 9. Lambda 함수 코드 업데이트 (S3 참조)
+      #    GitHub Variables: LAMBDA_FUNCTION_NAME
+      #    ※ architecture(arm64)는 함수 생성 시 한 번만 설정, 여기서 변경 불필요
+      # ─────────────────────────────────────────────
+      - name: Update Lambda function code
         run: |
-          aws apprunner start-deployment \
-            --service-arn ${{ secrets.APP_RUNNER_SERVICE_ARN }}
+          aws lambda update-function-code \
+            --function-name "${{ vars.LAMBDA_FUNCTION_NAME }}" \
+            --s3-bucket "${{ vars.AWS_S3_BUCKET }}" \
+            --s3-key "$S3_KEY"
+
+      # ─────────────────────────────────────────────
+      # 10. 코드 업데이트 완료 대기
+      # ─────────────────────────────────────────────
+      - name: Wait for function code update
+        run: |
+          aws lambda wait function-updated \
+            --function-name "${{ vars.LAMBDA_FUNCTION_NAME }}"
+
+      # ─────────────────────────────────────────────
+      # 11. 버전 발행 → SnapStart 스냅샷 생성 트리거
+      #     SnapStart는 PublishedVersions(버전 발행)에서만 동작함
+      # ─────────────────────────────────────────────
+      - name: Publish Lambda version
+        id: publish
+        run: |
+          VERSION=$(aws lambda publish-version \
+            --function-name "${{ vars.LAMBDA_FUNCTION_NAME }}" \
+            --query 'Version' --output text)
+          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Published version: $VERSION"
+
+      # ─────────────────────────────────────────────
+      # 12. SnapStart 최적화 완료 대기 (스냅샷 생성까지 1~5분 소요)
+      # ─────────────────────────────────────────────
+      - name: Wait for SnapStart optimization
+        run: |
+          aws lambda wait published-version-active \
+            --function-name "${{ vars.LAMBDA_FUNCTION_NAME }}" \
+            --qualifier "${{ steps.publish.outputs.VERSION }}"
+
+      # ─────────────────────────────────────────────
+      # 13. prod alias를 새 버전으로 업데이트
+      #     이미 존재하면 update, 없으면 create
+      # ─────────────────────────────────────────────
+      - name: Update prod alias
+        run: |
+          VERSION="${{ steps.publish.outputs.VERSION }}"
+          aws lambda update-alias \
+            --function-name "${{ vars.LAMBDA_FUNCTION_NAME }}" \
+            --name prod \
+            --function-version "$VERSION" \
+          || aws lambda create-alias \
+            --function-name "${{ vars.LAMBDA_FUNCTION_NAME }}" \
+            --name prod \
+            --function-version "$VERSION"
+
+      # ─────────────────────────────────────────────
+      # 14. 배포된 Function URL 출력
+      # ─────────────────────────────────────────────
+      - name: Show deployed Function URL
+        run: |
+          URL=$(aws lambda get-function-url-config \
+            --function-name "${{ vars.LAMBDA_FUNCTION_NAME }}" \
+            --qualifier prod \
+            --query 'FunctionUrl' --output text 2>/dev/null \
+            || echo "(Function URL not configured yet)")
+          echo "::notice::Deployed URL: $URL"
+          echo "Deployed to: $URL"

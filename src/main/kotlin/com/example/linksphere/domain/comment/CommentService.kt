@@ -3,6 +3,7 @@ package com.example.linksphere.domain.comment
 import com.example.linksphere.domain.interaction.ReactionRepository
 import com.example.linksphere.domain.interaction.TargetType
 import com.example.linksphere.domain.member.MemberRepository
+import com.example.linksphere.domain.member.TableMember
 import com.example.linksphere.domain.post.PostRepository
 import com.example.linksphere.global.common.SupabaseStorageService
 import com.example.linksphere.infra.fcm.FcmNotificationService
@@ -11,6 +12,8 @@ import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.multipart.MultipartFile
+
+private const val DELETED_COMMENT_CONTENT = "삭제된 댓글입니다."
 
 @Service
 class CommentService(
@@ -30,8 +33,8 @@ class CommentService(
                 val likeCounts =
                         reactionRepository
                                 .findAllByTargetIdInAndTargetType(commentIds, TargetType.COMMENT)
-                                .groupBy { it.targetId }
-                                .mapValues { it.value.size }
+                                .groupingBy { it.targetId }
+                                .eachCount()
 
                 val userLikes =
                         currentUserId?.let { uid ->
@@ -68,7 +71,7 @@ class CommentService(
                                         postId = comment.postId,
                                         userId = comment.userId,
                                         content =
-                                                if (comment.isDeleted) "삭제된 댓글입니다."
+                                                if (comment.isDeleted) DELETED_COMMENT_CONTENT
                                                 else comment.content,
                                         isDeleted = comment.isDeleted,
                                         createdAt = comment.createdAt,
@@ -115,12 +118,23 @@ class CommentService(
                         throw IllegalArgumentException("Content or image must be provided")
                 }
 
-                var finalContent = content ?: ""
-                if (image != null && !image.isEmpty) {
-                        val imageUrl = supabaseStorageService.uploadFile(image)
-                        finalContent =
-                                if (finalContent.isNotBlank()) "$finalContent\n\n$imageUrl"
-                                else imageUrl
+                // Depth Check (fail fast, before image upload)
+                if (parentId != null) {
+                        val parentComment =
+                                commentRepository.findByIdOrNull(parentId)
+                                        ?: throw IllegalArgumentException(
+                                                "Parent comment not found"
+                                        )
+                        if (parentComment.parentId != null) {
+                                throw IllegalArgumentException(
+                                        "Reply to reply is not allowed (Max Depth 1)"
+                                )
+                        }
+                        if (parentComment.postId != postId) {
+                                throw IllegalArgumentException(
+                                        "Parent comment belongs to a different post"
+                                )
+                        }
                 }
 
                 val post =
@@ -130,25 +144,7 @@ class CommentService(
                         memberRepository.findByIdOrNull(userId)
                                 ?: throw IllegalArgumentException("User not found")
 
-                // Depth Check
-                if (parentId != null) {
-                        val parentUser =
-                                commentRepository.findByIdOrNull(parentId)
-                                        ?: throw IllegalArgumentException(
-                                                "Parent comment not found"
-                                        )
-
-                        if (parentUser.parentId != null) {
-                                throw IllegalArgumentException(
-                                        "Reply to reply is not allowed (Max Depth 1)"
-                                )
-                        }
-                        if (parentUser.postId != postId) {
-                                throw IllegalArgumentException(
-                                        "Parent comment belongs to a different post"
-                                )
-                        }
-                }
+                val finalContent = buildFinalContent(content, image)
 
                 val comment =
                         TableComment(
@@ -170,18 +166,7 @@ class CommentService(
                         )
                 }
 
-                // Return DTO
-                val author = CommentAuthor(member.id!!, member.nickname ?: "Unknown", member.image)
-                return CommentResponse(
-                        id = saved.id,
-                        postId = saved.postId,
-                        userId = saved.userId,
-                        content = saved.content,
-                        isDeleted = saved.isDeleted,
-                        createdAt = saved.createdAt,
-                        updatedAt = saved.updatedAt,
-                        author = author
-                )
+                return toCommentResponse(saved, member)
         }
 
         @Transactional
@@ -193,14 +178,6 @@ class CommentService(
         ): CommentResponse {
                 if (content.isNullOrBlank() && image == null) {
                         throw IllegalArgumentException("Content or image must be provided")
-                }
-
-                var finalContent = content ?: ""
-                if (image != null && !image.isEmpty) {
-                        val imageUrl = supabaseStorageService.uploadFile(image)
-                        finalContent =
-                                if (finalContent.isNotBlank()) "$finalContent\n\n$imageUrl"
-                                else imageUrl
                 }
 
                 val parent =
@@ -217,6 +194,8 @@ class CommentService(
                 val member =
                         memberRepository.findByIdOrNull(userId)
                                 ?: throw IllegalArgumentException("User not found")
+
+                val finalContent = buildFinalContent(content, image)
 
                 val comment =
                         TableComment(
@@ -238,17 +217,7 @@ class CommentService(
                         )
                 }
 
-                val author = CommentAuthor(member.id!!, member.nickname ?: "Unknown", member.image)
-                return CommentResponse(
-                        id = saved.id,
-                        postId = saved.postId,
-                        userId = saved.userId,
-                        content = saved.content,
-                        isDeleted = saved.isDeleted,
-                        createdAt = saved.createdAt,
-                        updatedAt = saved.updatedAt,
-                        author = author
-                )
+                return toCommentResponse(saved, member)
         }
 
         @Transactional
@@ -263,13 +232,14 @@ class CommentService(
 
                 val hasReplies = commentRepository.existsByParentId(commentId)
                 if (hasReplies) {
-                        comment.content = "삭제된 댓글입니다."
+                        comment.content = DELETED_COMMENT_CONTENT
                         comment.isDeleted = true
                         commentRepository.save(comment)
                 } else {
                         commentRepository.delete(comment)
                 }
         }
+
         @Transactional
         fun updateComment(
                 commentId: UUID,
@@ -279,14 +249,6 @@ class CommentService(
         ): CommentResponse {
                 if (content.isNullOrBlank() && image == null) {
                         throw IllegalArgumentException("Content or image must be provided")
-                }
-
-                var finalContent = content ?: ""
-                if (image != null && !image.isEmpty) {
-                        val imageUrl = supabaseStorageService.uploadFile(image)
-                        finalContent =
-                                if (finalContent.isNotBlank()) "$finalContent\n\n$imageUrl"
-                                else imageUrl
                 }
 
                 val comment =
@@ -301,6 +263,8 @@ class CommentService(
                         throw IllegalStateException("Cannot update a deleted comment")
                 }
 
+                val finalContent = buildFinalContent(content, image)
+
                 comment.content = finalContent
                 val updated = commentRepository.save(comment)
 
@@ -308,16 +272,25 @@ class CommentService(
                         memberRepository.findByIdOrNull(userId)
                                 ?: throw IllegalArgumentException("User not found")
 
-                val author = CommentAuthor(member.id!!, member.nickname ?: "Unknown", member.image)
-                return CommentResponse(
-                        id = updated.id,
-                        postId = updated.postId,
-                        userId = updated.userId,
-                        content = updated.content,
-                        isDeleted = updated.isDeleted,
-                        createdAt = updated.createdAt,
-                        updatedAt = updated.updatedAt,
-                        author = author
-                )
+                return toCommentResponse(updated, member)
         }
+
+        private fun buildFinalContent(content: String?, image: MultipartFile?): String {
+                val text = content.orEmpty()
+                if (image == null || image.isEmpty) return text
+                val imageUrl = supabaseStorageService.uploadFile(image)
+                return if (text.isNotBlank()) "$text\n\n$imageUrl" else imageUrl
+        }
+
+        private fun toCommentResponse(comment: TableComment, member: TableMember) =
+                CommentResponse(
+                        id = comment.id,
+                        postId = comment.postId,
+                        userId = comment.userId,
+                        content = comment.content,
+                        isDeleted = comment.isDeleted,
+                        createdAt = comment.createdAt,
+                        updatedAt = comment.updatedAt,
+                        author = CommentAuthor(member.id!!, member.nickname ?: "Unknown", member.image)
+                )
 }

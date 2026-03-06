@@ -10,6 +10,7 @@ build/
 *.ipr
 .vscode/
 .kotlin/
+bin/
 
 # === OS ===
 .DS_Store

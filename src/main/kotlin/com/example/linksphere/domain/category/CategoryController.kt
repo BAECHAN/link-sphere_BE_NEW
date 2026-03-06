@@ -9,14 +9,10 @@ import org.springframework.web.bind.annotation.*
 class CategoryController(private val categoryService: CategoryService) {
 
     @GetMapping
-    fun getAllCategories(): ApiResponse<List<CategoryResponse>> {
-        val categories = categoryService.getAllCategories()
-        return ApiResponse(HttpStatus.OK.value(), "Categories retrieved", categories)
-    }
+    fun getAllCategories(): ApiResponse<List<CategoryResponse>> =
+            ApiResponse(HttpStatus.OK.value(), "Categories retrieved", categoryService.getAllCategories())
 
     @GetMapping("/{slug}")
-    fun getCategoryBySlug(@PathVariable slug: String): ApiResponse<CategoryResponse> {
-        val category = categoryService.getCategoryBySlug(slug)
-        return ApiResponse(HttpStatus.OK.value(), "Category retrieved", category)
-    }
+    fun getCategoryBySlug(@PathVariable slug: String): ApiResponse<CategoryResponse> =
+            ApiResponse(HttpStatus.OK.value(), "Category retrieved", categoryService.getCategoryBySlug(slug))
 }

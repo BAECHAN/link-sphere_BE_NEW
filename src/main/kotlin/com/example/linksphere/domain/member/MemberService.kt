@@ -15,6 +15,7 @@ class MemberService(private val memberRepository: MemberRepository) {
         if (memberRepository.existsByEmail(request.email)) {
             throw DuplicateMemberException("Email already exists: ${request.email}")
         }
+        
         request.nickname?.let {
             if (memberRepository.existsByNickname(it)) {
                 throw DuplicateMemberException("Nickname already exists: $it")
@@ -36,14 +37,10 @@ class MemberService(private val memberRepository: MemberRepository) {
         return memberRepository.save(newMember)
     }
 
-    fun findByEmail(email: String): TableMember {
-        return memberRepository.findByEmail(email)
-                ?: throw IllegalArgumentException("Member not found with email: $email")
-    }
+    fun findByEmail(email: String): TableMember =
+            memberRepository.findByEmail(email)
+                    ?: throw IllegalArgumentException("Member not found with email: $email")
 
-    fun findById(id: UUID): TableMember {
-        return memberRepository.findById(id).orElseThrow {
-            IllegalArgumentException("Member not found with id: $id")
-        }
-    }
+    fun findById(id: UUID): TableMember =
+            memberRepository.findById(id).orElseThrow { IllegalArgumentException("Member not found with id: $id") }
 }

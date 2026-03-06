@@ -10,14 +10,13 @@ data class CategoryResponse(
         val createdAt: LocalDateTime?
 ) {
     companion object {
-        fun from(entity: TableCategory): CategoryResponse {
-            return CategoryResponse(
-                    id = entity.id!!,
-                    name = entity.name,
-                    slug = entity.slug,
-                    sortOrder = entity.sortOrder,
-                    createdAt = entity.createdAt
-            )
-        }
+        fun from(entity: TableCategory) =
+                CategoryResponse(
+                        id = entity.id!!,
+                        name = entity.name,
+                        slug = entity.slug,
+                        sortOrder = entity.sortOrder,
+                        createdAt = entity.createdAt
+                )
     }
 }

@@ -1,5 +1,5 @@
 server:
-  port: 51119
+  port: 8080                        # LWA(Lambda Web Adapter)가 이 포트로 요청 전달
   forward-headers-strategy: framework
 
 spring:
@@ -12,9 +12,8 @@ spring:
     hikari:
       # 리전 간 지연을 고려해 연결 시도 타임아웃을 넉넉히 (기본 30초에서 조정)
       connection-timeout: 30000
-      # 유휴 커넥션을 버리지 않고 재사용하도록 유지
-      minimum-idle: 5
-      maximum-pool-size: 10 # Supabase 무료 티어라면 10~15 정도가 안전합니다
+      minimum-idle: 1 # Lambda는 요청당 처리 → idle 커넥션 최소화
+      maximum-pool-size: 5 # Lambda 동시 실행 수에 맞게 조정
       idle-timeout: 600000 # 10분
       max-lifetime: 1800000 # 30분
   jpa:
@@ -35,10 +34,15 @@ management:
   endpoints:
     web:
       exposure:
-        include: health # health 엔드포인트만 활성화
+        include: health
   endpoint:
     health:
-      show-details: never # 상세 상태(DB 등)를 확인하려면 설정 (운영 시엔 'when_authorized' 권장)
+      show-details: never
+  health:
+    db:
+      enabled: false
+    diskSpace:
+      enabled: false
 
 app:
   cors:
@@ -61,3 +65,4 @@ gemini:
 
 firebase:
   service-account-key-path: classpath:firebase-service-account.json
+

@@ -6,6 +6,7 @@ import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseCookie
 import org.springframework.http.ResponseEntity
+import org.springframework.web.bind.annotation.CookieValue
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
@@ -17,39 +18,26 @@ import org.springframework.web.bind.annotation.RestController
 class AuthController(private val authService: AuthService) {
 
         @PostMapping("/signup")
-        fun signup(
-                @RequestBody request: SignupRequest
-        ): ResponseEntity<ApiResponse<AccountResponse>> {
-                val account = authService.signup(request)
-                val response = ApiResponse(HttpStatus.CREATED.value(), "Signup successful", account)
-                return ResponseEntity.status(HttpStatus.CREATED).body(response)
-        }
+        fun signup(@RequestBody request: SignupRequest): ResponseEntity<ApiResponse<AccountResponse>> =
+                ResponseEntity.status(HttpStatus.CREATED)
+                        .body(ApiResponse(HttpStatus.CREATED.value(), "Signup successful", authService.signup(request)))
 
         @PostMapping("/login")
         fun login(@RequestBody request: LoginRequest): ResponseEntity<ApiResponse<TokenResponse>> {
                 val authResult = authService.login(request)
-                val response =
-                        ApiResponse(
-                                HttpStatus.OK.value(),
-                                "Login successful",
-                                TokenResponse(authResult.accessToken)
-                        )
-                return createCookieResponse(authResult, response)
+                return createCookieResponse(
+                        authResult,
+                        ApiResponse(HttpStatus.OK.value(), "Login successful", TokenResponse(authResult.accessToken))
+                )
         }
 
         @PostMapping("/refresh")
-        fun refresh(
-                @org.springframework.web.bind.annotation.CookieValue("refreshToken")
-                refreshToken: String
-        ): ResponseEntity<ApiResponse<TokenResponse>> {
+        fun refresh(@CookieValue("refreshToken") refreshToken: String): ResponseEntity<ApiResponse<TokenResponse>> {
                 val authResult = authService.refresh(refreshToken)
-                val response =
-                        ApiResponse(
-                                HttpStatus.OK.value(),
-                                "Token refreshed",
-                                TokenResponse(authResult.accessToken)
-                        )
-                return ResponseEntity.ok(response)
+                return createCookieResponse(
+                        authResult,
+                        ApiResponse(HttpStatus.OK.value(), "Token refreshed", TokenResponse(authResult.accessToken))
+                )
         }
 
         @PostMapping("/logout")
@@ -59,22 +47,17 @@ class AuthController(private val authService: AuthService) {
                                 .httpOnly(true)
                                 .secure(true)
                                 .path("/")
-                                .maxAge(0) // Delete cookie
+                                .maxAge(0)
                                 .sameSite("None")
                                 .build()
-
-                val response = ApiResponse(HttpStatus.OK.value(), "Logout successful", Unit)
                 return ResponseEntity.ok()
                         .header(HttpHeaders.SET_COOKIE, cookie.toString())
-                        .body(response)
+                        .body(ApiResponse(HttpStatus.OK.value(), "Logout successful", Unit))
         }
 
         @GetMapping("/account")
-        fun getAccount(principal: Principal): ResponseEntity<ApiResponse<AccountResponse>> {
-                val account = authService.getAccount(principal.name)
-                val response = ApiResponse(HttpStatus.OK.value(), "Account retrieved", account)
-                return ResponseEntity.ok(response)
-        }
+        fun getAccount(principal: Principal): ResponseEntity<ApiResponse<AccountResponse>> =
+                ResponseEntity.ok(ApiResponse(HttpStatus.OK.value(), "Account retrieved", authService.getAccount(principal.name)))
 
         private fun createCookieResponse(
                 authResult: AuthResult,

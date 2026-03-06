@@ -2,6 +2,7 @@ package com.example.linksphere.domain.auth
 
 import com.example.linksphere.domain.auth.jwt.JwtTokenProvider
 import com.example.linksphere.domain.member.MemberService
+import com.example.linksphere.domain.member.TableMember
 import com.example.linksphere.global.exception.InvalidCredentialsException
 import java.time.format.DateTimeFormatter
 import java.util.UUID
@@ -17,22 +18,12 @@ class AuthService(
 ) {
 
     @Transactional
-    fun signup(request: SignupRequest): AccountResponse {
-        val member =
-                memberService.signup(
-                        request.copy(password = passwordEncoder.encode(request.password))
-                )
-
-        val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
-        return AccountResponse(
-                id = member.id.toString(),
-                email = member.email,
-                nickname = member.nickname,
-                image = member.image,
-                createdAt = member.createdAt?.format(formatter) ?: "",
-                updatedAt = member.updatedAt?.format(formatter) ?: ""
-        )
-    }
+    fun signup(request: SignupRequest): AccountResponse =
+            toAccountResponse(
+                    memberService.signup(
+                            request.copy(password = passwordEncoder.encode(request.password))
+                    )
+            )
 
     fun login(request: LoginRequest): AuthResult {
         val member =
@@ -53,28 +44,22 @@ class AuthService(
     }
 
     fun refresh(refreshToken: String): AuthResult {
-        if (!jwtTokenProvider.validateToken(refreshToken)) {
+        try {
+            jwtTokenProvider.validateToken(refreshToken)
+        } catch (e: Exception) {
             throw com.example.linksphere.global.exception.InvalidTokenException(
                     "Invalid refresh token"
             )
         }
 
         val userId = jwtTokenProvider.getUserId(refreshToken)
-        val newAccessToken = jwtTokenProvider.createAccessToken(userId)
-
-        // We can choose to rotate refresh token here or keep the old one.
-        // For simplicity and to match the requirement of "update access token", we keep the old one
-        // unless it's close to expiry, but for now just returning the new access token.
-        // If we want to return the same refresh token to keep the client consistent (or maybe null
-        // if not updated).
-        // Let's return the old refresh token so the controller can re-set it if needed, or just
-        // standard TokenResponse.
-
-        return AuthResult(newAccessToken, refreshToken)
+        return AuthResult(jwtTokenProvider.createAccessToken(userId), refreshToken)
     }
 
-    fun getAccount(userId: String): AccountResponse {
-        val member = memberService.findById(UUID.fromString(userId))
+    fun getAccount(userId: String): AccountResponse =
+            toAccountResponse(memberService.findById(UUID.fromString(userId)))
+
+    private fun toAccountResponse(member: TableMember): AccountResponse {
         val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
         return AccountResponse(
                 id = member.id.toString(),

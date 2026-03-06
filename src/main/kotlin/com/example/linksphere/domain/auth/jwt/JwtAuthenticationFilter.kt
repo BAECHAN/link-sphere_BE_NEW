@@ -27,10 +27,9 @@ class JwtAuthenticationFilter(private val jwtTokenProvider: JwtTokenProvider) :
         )
 
         try {
-            if (token != null && jwtTokenProvider.validateToken(token)) {
+            if (token != null) {
+                jwtTokenProvider.validateToken(token)
                 val userId = jwtTokenProvider.getUserId(token)
-                // In a real app, you might load UserDetails here.
-                // For now, we create a simple authenticated token with the userId.
                 val auth = UsernamePasswordAuthenticationToken(userId, null, emptyList())
                 SecurityContextHolder.getContext().authentication = auth
             }
