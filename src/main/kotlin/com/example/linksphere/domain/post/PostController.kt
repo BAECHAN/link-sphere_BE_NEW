@@ -2,21 +2,16 @@ package com.example.linksphere.domain.post
 
 import com.example.linksphere.global.common.ApiResponse
 import com.example.linksphere.global.common.getUserId
-import com.example.linksphere.infra.sse.SseEmitterService
 import java.util.UUID
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.security.core.Authentication
 import org.springframework.web.bind.annotation.*
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter
 
 @RestController
 @RequestMapping("/post")
-class PostController(
-        private val postService: PostService,
-        private val sseEmitterService: SseEmitterService
-) {
+class PostController(private val postService: PostService) {
     private val logger = org.slf4j.LoggerFactory.getLogger(PostController::class.java)
 
     @PostMapping
