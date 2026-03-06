@@ -17,6 +17,7 @@ spring:
       max-lifetime: 1800000  # 30분
       keepalive-time: 30000  # 30초마다 idle 커넥션 핑 → 유휴 중 끊김 방지
       connection-test-query: SELECT 1  # pool에서 꺼낼 때 연결 유효성 검사 → SnapStart 복원 후 죽은 연결 즉시 교체
+      allow-pool-suspension: true  # SnapStart 체크포인트 전 pool 일시 중단 허용 (미설정 시 checkpoint 경고)
   jpa:
     database: POSTGRESQL
     show-sql: false
