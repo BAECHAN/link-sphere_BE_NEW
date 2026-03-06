@@ -15,7 +15,8 @@ spring:
       maximum-pool-size: 5   # Lambda 동시 실행 컨테이너 수에 맞게 조정
       idle-timeout: 600000   # 10분
       max-lifetime: 1800000  # 30분
-      keepalive-time: 30000  # 30초마다 idle 커넥션 유효성 검사 (SnapStart 복원 후 죽은 연결 교체)
+      keepalive-time: 30000  # 30초마다 idle 커넥션 핑 → 유휴 중 끊김 방지
+      connection-test-query: SELECT 1  # pool에서 꺼낼 때 연결 유효성 검사 → SnapStart 복원 후 죽은 연결 즉시 교체
   jpa:
     database: POSTGRESQL
     show-sql: false

@@ -95,6 +95,17 @@ class GlobalExceptionHandler {
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response)
         }
 
+        @ExceptionHandler(IllegalArgumentException::class)
+        fun handleIllegalArgumentException(e: IllegalArgumentException): ResponseEntity<ErrorResponse> {
+                val response =
+                        ErrorResponse(
+                                status = HttpStatus.NOT_FOUND.value(),
+                                code = "NOT_FOUND",
+                                message = e.message ?: "Not found"
+                        )
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response)
+        }
+
         @ExceptionHandler(Exception::class)
         fun handleException(e: Exception): ResponseEntity<ErrorResponse> {
                 logger.error("Unhandled exception", e)
