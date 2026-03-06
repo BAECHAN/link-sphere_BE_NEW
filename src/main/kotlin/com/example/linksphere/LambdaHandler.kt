@@ -57,7 +57,7 @@ class LambdaHandler : RequestStreamHandler {
             // 자동 포함되지 않는다. 명시적으로 추가해야 JwtAuthenticationFilter 등 보안 필터가 실행된다.
             val securityFilter = ctx.getBean("springSecurityFilterChain") as jakarta.servlet.Filter
             val builder = MockMvcBuilders.webAppContextSetup(ctx as WebApplicationContext)
-            builder.addFilters(securityFilter)
+            builder.addFilters<org.springframework.test.web.servlet.setup.DefaultMockMvcBuilder>(securityFilter)
             mockMvc = builder.build()
         }
     }
