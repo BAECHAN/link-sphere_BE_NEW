@@ -1,35 +1,36 @@
 server:
-  port: 8080                        # LWA(Lambda Web Adapter)가 이 포트로 요청 전달
+  port: 8080
   forward-headers-strategy: framework
 
 spring:
   application:
     name: link-sphere_BE
   profiles:
-    active: secret
+    active: secret  # 로컬: application-secret.yml 로딩 / Lambda: 환경변수로 오버라이드
   datasource:
     driver-class-name: org.postgresql.Driver
     hikari:
-      # 리전 간 지연을 고려해 연결 시도 타임아웃을 넉넉히 (기본 30초에서 조정)
       connection-timeout: 30000
-      minimum-idle: 1 # Lambda는 요청당 처리 → idle 커넥션 최소화
-      maximum-pool-size: 5 # Lambda 동시 실행 수에 맞게 조정
-      idle-timeout: 600000 # 10분
-      max-lifetime: 1800000 # 30분
+      minimum-idle: 1        # Lambda는 요청 처리 후 유휴 상태 → idle 커넥션 최소화
+      maximum-pool-size: 5   # Lambda 동시 실행 컨테이너 수에 맞게 조정
+      idle-timeout: 600000   # 10분
+      max-lifetime: 1800000  # 30분
+      keepalive-time: 30000  # 30초마다 idle 커넥션 유효성 검사 (SnapStart 복원 후 죽은 연결 교체)
   jpa:
     database: POSTGRESQL
-    show-sql: false # [변경] 표준 출력(System.out)으로 SQL을 찍지 않음
+    show-sql: false
     hibernate:
       ddl-auto: none
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
-        format_sql: false # [변경] SQL 포맷팅 로직 비활성화 (CPU 자원 절약)
-        use_sql_comments: false # [추가] SQL 내 주석 제거
+        format_sql: false
+        use_sql_comments: false
   servlet:
     multipart:
       max-file-size: 10MB
       max-request-size: 10MB
+
 management:
   endpoints:
     web:
@@ -53,11 +54,11 @@ app:
 
 logging:
   level:
-    root: INFO # 기본 루트 로그 레벨 설정
-    com.example.linksphere: INFO # [변경] DEBUG -> INFO (비즈니스 로직 로그 최소화)
-    org.springframework.security: INFO # [변경] 보안 로그 최소화
-    org.hibernate.SQL: ERROR # [추가] SQL 로그를 완전히 끄거나 에러만 찍도록 설정
-    org.hibernate.type.descriptor.sql: ERROR # [추가] 바인딩 파라미터 로그 비활성화
+    root: INFO
+    com.example.linksphere: INFO
+    org.springframework.security: INFO
+    org.hibernate.SQL: ERROR
+    org.hibernate.type.descriptor.sql: ERROR
 
 gemini:
   api:
@@ -65,4 +66,3 @@ gemini:
 
 firebase:
   service-account-key-path: classpath:firebase-service-account.json
-

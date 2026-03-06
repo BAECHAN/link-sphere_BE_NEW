@@ -6,6 +6,7 @@ import com.example.linksphere.infra.sse.SseEmitterService
 import java.util.UUID
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
+import org.springframework.http.ResponseEntity
 import org.springframework.security.core.Authentication
 import org.springframework.web.bind.annotation.*
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter
@@ -85,13 +86,13 @@ class PostController(
         return ApiResponse(HttpStatus.OK.value(), "Post deleted", Unit)
     }
 
+    // Lambda 환경에서 SSE(Server-Sent Events)는 동작하지 않는다.
+    // Lambda는 요청-응답 1회 모델이므로 연결을 유지할 수 없고,
+    // SseEmitter 대기로 인해 Lambda 30초 타임아웃 → 502가 발생한다.
+    // AI 분석 결과는 POST /post 응답 또는 GET /post/{id} 로 확인한다.
     @GetMapping("/ai-events", produces = [MediaType.TEXT_EVENT_STREAM_VALUE])
-    fun subscribeAiEvents(authentication: Authentication?): SseEmitter {
-        if (authentication == null) {
-            logger.error("[PostController] SSE Subscription attempted with NULL authentication")
-            throw RuntimeException("Authentication is missing")
-        }
-        val userId = UUID.fromString(authentication.name)
-        return sseEmitterService.subscribe(userId)
+    fun subscribeAiEvents(): ResponseEntity<ApiResponse<String>> {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(ApiResponse(HttpStatus.SERVICE_UNAVAILABLE.value(), "SSE is not supported in this environment. Use GET /post/{id} to check AI analysis status.", ""))
     }
 }

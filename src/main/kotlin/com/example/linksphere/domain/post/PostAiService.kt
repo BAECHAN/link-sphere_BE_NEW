@@ -3,7 +3,6 @@ package com.example.linksphere.domain.post
 import com.example.linksphere.infra.ai.GeminiService
 import com.example.linksphere.infra.sse.SseEmitterService
 import org.slf4j.LoggerFactory
-import org.springframework.scheduling.annotation.Async
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
@@ -19,7 +18,9 @@ class PostAIService(
 
     private val logger = LoggerFactory.getLogger(PostAIService::class.java)
 
-    @Async
+    // @Async 제거: Lambda는 handleRequest() 반환 후 컨테이너를 동결하므로
+    // 비동기 스레드가 완료되기 전에 AI 처리가 중단될 수 있다.
+    // 동기 처리로 변경해 POST /post 응답 전에 AI 분석을 완료한다.
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     fun handlePostCreatedEvent(event: PostCreatedEvent) {
