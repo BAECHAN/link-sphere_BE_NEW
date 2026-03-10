@@ -1,24 +1,27 @@
 # 🔗 Link Sphere Backend
 
-링크를 저장하고 관리하는 웹 서비스의 백엔드 API 서버입니다.  
+링크를 저장하고 관리하는 웹 서비스의 백엔드 API 서버입니다.
 게시글 작성 시 **Gemini AI**가 자동으로 요약과 태그를 생성합니다.
 
 ---
 
 ## 기술 스택
 
-| 구분           | 기술                                 |
-| -------------- | ------------------------------------ |
-| **Language**   | Kotlin 2.1.0                         |
-| **Framework**  | Spring Boot 3.5.8                    |
-| **JDK**        | Java 17                              |
-| **Build Tool** | Gradle 8.14.3 (Kotlin DSL)           |
-| **Database**   | Supabase (PostgreSQL)                |
-| **ORM**        | Spring Data JPA / Hibernate          |
-| **Auth**       | JWT (jjwt 0.12.5) + Spring Security  |
-| **AI**         | Google Gemini API (gemini-2.5-flash) |
-| **API Docs**   | SpringDoc OpenAPI (Swagger UI)       |
-| **기타**       | Jsoup (HTML 파싱), Lombok, Jackson   |
+| 구분           | 기술                                              |
+| -------------- | ------------------------------------------------- |
+| **Language**   | Kotlin 2.1.0                                      |
+| **Framework**  | Spring Boot 3.5.8                                 |
+| **JDK**        | Java 17                                           |
+| **Build Tool** | Gradle 8.14.3 (Kotlin DSL) + Shadow JAR           |
+| **Database**   | Supabase (PostgreSQL)                             |
+| **ORM**        | Spring Data JPA / Hibernate                       |
+| **Auth**       | JWT (jjwt 0.12.5) + Spring Security               |
+| **AI**         | Google Gemini API (gemini-2.5-flash)              |
+| **Push**       | Firebase Cloud Messaging (firebase-admin 9.4.2)  |
+| **Storage**    | Supabase Storage (이미지 업로드)                  |
+| **API Docs**   | SpringDoc OpenAPI (Swagger UI)                    |
+| **Infra**      | AWS Lambda (SnapStart) + CRaC                     |
+| **기타**       | Jsoup (HTML 파싱), Jackson, Spring Boot Actuator  |
 
 ---
 
@@ -26,36 +29,82 @@
 
 ```
 src/main/kotlin/com/example/linksphere/
-├── LinkSphereBeApplication.kt       # 메인 애플리케이션
+├── LambdaHandler.kt                     # AWS Lambda 진입점 (MockMvc 기반)
+├── LinkSphereBeApplication.kt           # 메인 애플리케이션
 ├── domain/
-│   ├── auth/                        # 인증 도메인
-│   │   ├── AuthController.kt        # 회원가입, 로그인, 토큰 갱신, 로그아웃
-│   │   ├── AuthDTO.kt               # 요청/응답 DTO
-│   │   ├── AuthService.kt           # 인증 비즈니스 로직
+│   ├── auth/                            # 인증 도메인
+│   │   ├── AuthController.kt            # 회원가입, 로그인, 토큰 갱신, 로그아웃, 내 정보
+│   │   ├── AuthDTO.kt
+│   │   ├── AuthService.kt
 │   │   └── jwt/
-│   │       ├── JwtTokenProvider.kt   # JWT 토큰 생성/검증
+│   │       ├── JwtTokenProvider.kt
 │   │       └── JwtAuthenticationFilter.kt
-│   ├── member/                      # 회원 도메인
-│   │   ├── TableMember.kt           # 회원 Entity
+│   ├── member/                          # 회원 도메인
+│   │   ├── TableMember.kt
 │   │   ├── MemberRepository.kt
 │   │   └── MemberService.kt
-│   ├── post/                        # 게시글 도메인
-│   │   ├── PostController.kt        # 게시글 CRUD
+│   ├── post/                            # 게시글 도메인
+│   │   ├── PostController.kt            # 게시글 CRUD + 비공개 토글
 │   │   ├── PostDTO.kt
 │   │   ├── PostRepository.kt
+│   │   ├── PostRepositoryCustom.kt      # 커스텀 쿼리 인터페이스
+│   │   ├── PostRepositoryImpl.kt        # QueryDSL/JPQL 검색·필터 구현
 │   │   ├── PostService.kt
-│   │   └── TablePost.kt
-│   └── category/                    # 카테고리 도메인
-│       ├── CategoryController.kt    # 카테고리 조회
+│   │   ├── PostAiService.kt             # AI 분석 비동기 처리
+│   │   ├── TablePost.kt
+│   │   └── UrlMetadataExtractor.kt      # URL 크롤링 / YouTube oEmbed
+│   ├── comment/                         # 댓글 도메인
+│   │   ├── CommentController.kt         # 댓글·답글 CRUD (이미지 포함)
+│   │   ├── CommentDTO.kt
+│   │   ├── CommentRepository.kt
+│   │   ├── CommentService.kt            # FCM 알림 트리거 포함
+│   │   └── TableComment.kt
+│   ├── interaction/                     # 좋아요·북마크 도메인
+│   │   ├── InteractionController.kt
+│   │   ├── InteractionService.kt
+│   │   ├── BookmarkRepository.kt
+│   │   ├── ReactionRepository.kt
+│   │   ├── TableBookmark.kt
+│   │   └── TableReaction.kt
+│   └── category/                        # 카테고리 도메인
+│       ├── CategoryController.kt
 │       ├── CategoryDTO.kt
 │       ├── CategoryRepository.kt
 │       ├── CategoryService.kt
 │       └── TableCategory.kt
-├── global/config/
-│   └── SecurityConfig.kt            # Spring Security & CORS 설정
-└── infra/ai/
-    ├── GeminiService.kt             # Gemini AI 콘텐츠 분석
-    └── dto/GeminiDtos.kt
+├── global/
+│   ├── common/
+│   │   ├── ApiResponse.kt               # 공통 응답 래퍼
+│   │   ├── ErrorResponse.kt
+│   │   ├── SecurityUtils.kt             # Authentication?.getUserId() 확장 함수
+│   │   └── SupabaseStorageService.kt    # Supabase 이미지 업로드
+│   ├── config/
+│   │   ├── AsyncConfig.kt               # 비동기 스레드풀 설정
+│   │   ├── SecurityConfig.kt            # Spring Security & CORS 설정
+│   │   ├── SwaggerConfig.kt
+│   │   └── security/
+│   │       ├── CustomAccessDeniedHandler.kt
+│   │       └── CustomAuthenticationEntryPoint.kt
+│   └── exception/
+│       ├── GlobalExceptionHandler.kt
+│       ├── DuplicateMemberException.kt
+│       ├── ForbiddenException.kt
+│       ├── InvalidCredentialsException.kt
+│       ├── InvalidTokenException.kt
+│       └── PostNotFoundException.kt
+└── infra/
+    ├── ai/
+    │   ├── GeminiService.kt             # Gemini AI 콘텐츠 분석
+    │   └── dto/GeminiDtos.kt
+    └── fcm/
+        ├── FcmConfig.kt
+        ├── FcmService.kt
+        ├── FcmNotificationService.kt
+        ├── FcmTokenController.kt        # FCM 토큰 등록/해제
+        ├── FcmTokenDTO.kt
+        ├── FcmTokenRepository.kt
+        ├── FcmTokenService.kt
+        └── TableFcmToken.kt
 ```
 
 ---
@@ -64,21 +113,44 @@ src/main/kotlin/com/example/linksphere/
 
 ### 🔐 Auth (`/auth`)
 
-| Method | Endpoint        | 설명                 | 인증 |
-| ------ | --------------- | -------------------- | ---- |
-| `POST` | `/auth/signup`  | 회원가입             | ❌   |
-| `POST` | `/auth/login`   | 로그인               | ❌   |
-| `POST` | `/auth/refresh` | Access Token 갱신    | ❌   |
-| `POST` | `/auth/logout`  | 로그아웃 (쿠키 삭제) | ❌   |
+| Method | Endpoint        | 설명                    | 인증 |
+| ------ | --------------- | ----------------------- | ---- |
+| `POST` | `/auth/signup`  | 회원가입                | ❌   |
+| `POST` | `/auth/login`   | 로그인                  | ❌   |
+| `POST` | `/auth/refresh` | Access Token 갱신       | ❌   |
+| `POST` | `/auth/logout`  | 로그아웃 (쿠키 삭제)    | ❌   |
+| `GET`  | `/auth/account` | 내 계정 정보 조회       | ✅   |
 
 ### 📝 Post (`/post`)
 
-| Method | Endpoint                | 설명                       | 인증 |
-| ------ | ----------------------- | -------------------------- | ---- |
-| `POST` | `/post`                 | 게시글 생성 (AI 분석 포함) | ✅   |
-| `GET`  | `/post`                 | 전체 게시글 조회           | ✅   |
-| `GET`  | `/post?category={slug}` | 카테고리별 게시글 조회     | ✅   |
-| `GET`  | `/post/{id}`            | 게시글 상세 조회           | ✅   |
+| Method   | Endpoint                  | 설명                           | 인증 |
+| -------- | ------------------------- | ------------------------------ | ---- |
+| `POST`   | `/post`                   | 게시글 생성 (AI 분석 포함)     | ✅   |
+| `GET`    | `/post`                   | 게시글 목록 조회 (검색·필터)   | ✅   |
+| `GET`    | `/post/{id}`              | 게시글 상세 조회               | ✅   |
+| `PATCH`  | `/post/{id}`              | 게시글 수정                    | ✅   |
+| `PATCH`  | `/post/{id}/visibility`   | 게시글 공개/비공개 토글        | ✅   |
+| `DELETE` | `/post/{id}`              | 게시글 삭제                    | ✅   |
+
+**게시글 목록 쿼리 파라미터**: `category`, `keyword`, `nickname`, `tags[]`, `isPrivate` 등
+
+### 💬 Comment (`/post/{postId}/comment`, `/comment/{id}`)
+
+| Method   | Endpoint                                      | 설명                    | 인증 |
+| -------- | --------------------------------------------- | ----------------------- | ---- |
+| `GET`    | `/post/{postId}/comment`                      | 댓글 목록 조회          | ✅   |
+| `POST`   | `/post/{postId}/comment`                      | 댓글 작성 (이미지 포함) | ✅   |
+| `POST`   | `/comment/{commentId}/reply`                  | 답글 작성 (이미지 포함) | ✅   |
+| `PATCH`  | `/comment/{commentId}`                        | 댓글/답글 수정          | ✅   |
+| `DELETE` | `/comment/{commentId}`                        | 댓글/답글 삭제          | ✅   |
+
+### ❤️ Interaction
+
+| Method | Endpoint                       | 설명              | 인증 |
+| ------ | ------------------------------ | ----------------- | ---- |
+| `POST` | `/post/{postId}/like`          | 게시글 좋아요 토글 | ✅   |
+| `POST` | `/comment/{commentId}/like`    | 댓글 좋아요 토글  | ✅   |
+| `POST` | `/post/{postId}/bookmark`      | 게시글 북마크 토글 | ✅   |
 
 ### 📁 Category (`/common/category-option`)
 
@@ -86,6 +158,13 @@ src/main/kotlin/com/example/linksphere/
 | ------ | -------------------------------- | ------------------ | ---- |
 | `GET`  | `/common/category-option`        | 전체 카테고리 목록 | ❌   |
 | `GET`  | `/common/category-option/{slug}` | 카테고리 상세 조회 | ❌   |
+
+### 🔔 FCM Token (`/fcm`)
+
+| Method   | Endpoint     | 설명                | 인증 |
+| -------- | ------------ | ------------------- | ---- |
+| `POST`   | `/fcm/token` | FCM 토큰 등록       | ✅   |
+| `DELETE` | `/fcm/token` | FCM 토큰 해제       | ✅   |
 
 ### 📚 Swagger UI
 
@@ -121,9 +200,16 @@ gemini:
 
 jwt:
   secret: <YOUR_JWT_SECRET_KEY>
+
+supabase:
+  url: https://<PROJECT>.supabase.co
+  key: <SUPABASE_SERVICE_ROLE_KEY>
+  bucket: <BUCKET_NAME>
 ```
 
 > ⚠️ 이 파일은 `.gitignore`에 등록되어 있으므로 git에 커밋되지 않습니다.
+
+FCM을 사용하려면 `src/main/resources/firebase-service-account.json` 파일도 추가해야 합니다.
 
 ### 2. 실행
 
@@ -143,21 +229,35 @@ jwt:
 
 ## 🚀 배포 (Deployment)
 
-이 프로젝트는 다음 서비스들을 사용하여 CI/CD 파이프라인을 구축했습니다:
+이 프로젝트는 **AWS Lambda SnapStart** 기반으로 배포됩니다.
 
 - **GitHub Actions**: CI/CD 자동화 워크플로우
-- **AWS ECR (Elastic Container Registry)**: Docker 이미지 저장소
-- **AWS App Runner**: 컨테이너 기반 애플리케이션 서비스 (도쿄 리전)
+- **AWS Lambda (SnapStart)**: Shadow JAR 기반 서버리스 실행 (도쿄 리전)
+- **AWS S3**: Lambda 배포 JAR 저장소
 - **Supabase**: 클라우드 PostgreSQL 데이터베이스 (도쿄 리전)
 
-자세한 배포 과정과 설정 방법은 [**docs/DEPLOY.md**](./docs/DEPLOY.md) 문서를 참고해주세요.
+> App Runner로 운영했던 이전 배포 방식은 [**docs/DEPLOY_WHEN_APP_RUNNER.md**](./docs/DEPLOY_WHEN_APP_RUNNER.md)를 참고하세요.
 
 ### 배포 프로세스 요약
 
 1. **GitHub Push**: `main` 브랜치에 코드가 푸시됩니다.
-2. **GitHub Actions**: 자동으로 빌드 및 테스트를 수행하고 Docker 이미지를 생성하여 **AWS ECR**로 업로드합니다.
-3. **AWS App Runner**: ECR에 새로운 이미지가 업로드되면 자동으로 감지하여 서비스를 재배포합니다.
-4. **Supabase**: DB는 Supabase로 관리하기에 별도의 배포 과정은 없습니다.
+2. **GitHub Actions**: `./gradlew shadowJar`로 fat JAR를 빌드하고 **AWS S3**에 업로드합니다.
+3. **Lambda 코드 업데이트**: S3의 새 JAR를 참조하도록 Lambda 함수를 업데이트합니다.
+4. **버전 발행**: `publish-version`으로 **SnapStart 스냅샷**을 생성합니다.
+5. **alias 업데이트**: `prod` alias가 새 버전을 가리키도록 교체합니다.
+
+자세한 배포 과정은 [**docs/DEPLOY.md**](./docs/DEPLOY.md) 문서를 참고해주세요.
+
+### Lambda 핵심 구조
+
+Lambda 환경에서는 Tomcat 소켓 문제를 피하기 위해 **MockMvc**로 `DispatcherServlet`을 직접 호출합니다:
+
+```
+API 요청 → Lambda Function URL
+  → LambdaHandler.handleRequest()
+    → MockMvc.perform()
+      → Spring DispatcherServlet → 응답
+```
 
 ---
 
@@ -167,6 +267,7 @@ jwt:
 | ---------------------- | -------------------- | ------------------------ |
 | 서버 포트, JPA 설정 등 | 공통 설정            | `application.yml`        |
 | DB 접속 정보, API 키   | 민감 정보 (git 제외) | `application-secret.yml` |
+| Firebase 서비스 계정   | FCM 인증 (git 제외)  | `firebase-service-account.json` |
 
 ---
 
@@ -174,4 +275,4 @@ jwt:
 
 프론트엔드 프로젝트: [link-sphere_FE_NEW](https://github.com/BAECHAN/link-sphere_FE_NEW)
 
-- CORS 허용 Origin: `http://localhost:31119`, `https://localhost:31119`, AWS_CLOUDFRONT_NET
+- CORS 허용 Origin: `http://localhost:31119`, `https://localhost:31119`, AWS CloudFront 도메인

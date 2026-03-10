@@ -2,6 +2,32 @@
 
 프로젝트의 주요 변경 사항과 커밋 기록을 관리합니다.
 
+## 2026-03-11
+
+- **feat(post)**: 포스트 검색에 태그 배열 검색 추가 (`1c29770`)
+- **docs**: DEPLOY.md 시행착오 7·8번 추가 (Security 필터 미적용, HikariCP 연결 문제) (`e1480ec`)
+- **fix**: addFilters 제네릭 타입 명시 추가 (컴파일 에러 수정) (`af9328a`)
+- **fix**: HikariCP SnapStart 안정성 개선 — `keepalive-time`, `connection-test-query`, `allow-pool-suspension` 설정 (`0d5ae38`)
+- **fix**: MockMvc에 Spring Security 필터 체인 명시 추가 (`springSecurityFilterChain` 빈 직접 등록) (`818a279`)
+
+## 2026-02-28
+
+- **feat**: `GlobalExceptionHandler`에 `IllegalArgumentException` 핸들러 추가 (`f79c6d2`)
+- **refactor**: SSE 인프라 전체 제거 (`155cf23`)
+- **docs**: App Runner 배포 가이드 파일명 변경 (`DEPLOY_WHEN_APP_RUNNER.md`) (`963defc`)
+- **fix**: Lambda 환경 안정성 개선 (`e23fa0e`)
+- **docs**: Lambda SnapStart 배포 가이드 문서 작성 (`DEPLOY.md`) (`06679cc`)
+- **refactor**: AWS Lambda 배포 구성 전환 — MockMvc 방식, Shadow JAR, SnapStart, `LambdaHandler` 구현 (`8f0213a`)
+
+## 2026-02-25
+
+- **feat**: 댓글·답글 작성 시 FCM 푸시 알림 전송 (`a746636`)
+- **feat**: `infra/fcm/` 패키지 추가 — FCM 토큰 등록/해제 API, 알림 전송 서비스 (`a746636`)
+- **feat**: JWT 액세스 토큰 기본 유효 기간 15분 → 1시간으로 연장 (`ad71103`)
+- **feat**: 게시글 수정 API (`PATCH /post/{id}`) 추가, 게시글 생성 시 제목 직접 지정 가능 (`6085f95`)
+- **feat(comment)**: 댓글 이미지 업로드 기능 및 Supabase Storage 연동 (`7c24f5f`)
+- **feat**: `InvalidTokenException` 도입 및 리프레시 토큰 예외 처리 강화 (`bcca3ed`)
+
 ## 2026-02-22
 
 - **feat(post)**: 게시물 조회 시 닉네임 부분 일치 검색 기능 필터 추가 (`1b716f7`)
