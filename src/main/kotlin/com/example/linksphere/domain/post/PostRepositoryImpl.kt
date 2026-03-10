@@ -132,14 +132,6 @@ class PostRepositoryImpl : PostRepositoryCustom {
                         val cleanedSearch = search.replace(" ", "")
                         val searchLike = "%$cleanedSearch%"
 
-                        // Need to handle tags separately if it's a collection or array
-                        // TablePost tags is List<String> with @JdbcTypeCode(SqlTypes.ARRAY)
-                        // Standard criteria builder might struggle with Postgres Arrays without
-                        // specific dialect support or native query
-                        // For now, let's search Title and Description
-
-                        // Use 'replace' function to remove spaces from title and description for
-                        // comparison
                         val titleReplace =
                                 cb.function(
                                         "replace",
@@ -157,16 +149,39 @@ class PostRepositoryImpl : PostRepositoryCustom {
                                         cb.literal("")
                                 )
 
+                        // Tags: array_to_string으로 배열을 문자열로 변환 후 LIKE 검색
+                        // Case 1: 공백 제거 버전 — "콜드스타트" 단일 토큰 대응
+                        val tagsStringComma =
+                                cb.function(
+                                        "array_to_string",
+                                        String::class.java,
+                                        root.get<Any>("tags"),
+                                        cb.literal(",")
+                                )
+                        val tagsReplace =
+                                cb.function(
+                                        "replace",
+                                        String::class.java,
+                                        tagsStringComma,
+                                        cb.literal(" "),
+                                        cb.literal("")
+                                )
+                        // Case 2: 공백 join 버전 — ["콜드", "스타트"] 분리 토큰 대응
+                        val tagsStringSpace =
+                                cb.function(
+                                        "array_to_string",
+                                        String::class.java,
+                                        root.get<Any>("tags"),
+                                        cb.literal(" ")
+                                )
+
                         predicates.add(
                                 cb.or(
                                         cb.like(titleReplace, searchLike),
                                         cb.like(descriptionReplace, searchLike),
-                                        // If we want to search tags, it's tricky with standard JPA
-                                        // Criteria for Arrays
-                                        // We might need to skip tags search or use text search on
-                                        // the array column if it's mapped as text
-                                        // But let's stick to title/desc for safety first.
-                                        )
+                                        cb.like(tagsReplace, searchLike),
+                                        cb.like(tagsStringSpace, "%${search.trim()}%"),
+                                )
                         )
                 }
 
