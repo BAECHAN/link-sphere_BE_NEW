@@ -29,10 +29,10 @@ class DataSourceCracHook(
     }
 
     override fun beforeCheckpoint(context: Context<out Resource>?) {
-        (dataSource as HikariDataSource).suspendPool(true)
+        (dataSource as HikariDataSource).hikariPoolMXBean?.suspendPool()
     }
 
     override fun afterRestore(context: Context<out Resource>?) {
-        (dataSource as HikariDataSource).resumePool()
+        (dataSource as HikariDataSource).hikariPoolMXBean?.resumePool()
     }
 }
