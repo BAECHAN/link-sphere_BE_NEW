@@ -24,10 +24,10 @@ class CommentController(private val commentService: CommentService) {
         fun createComment(
                 @PathVariable postId: UUID,
                 @RequestParam(required = false) content: String?,
-                @RequestPart(required = false) image: MultipartFile?,
+                @RequestParam(required = false) images: List<MultipartFile>?,
                 @AuthenticationPrincipal principal: String?
         ): ApiResponse<CommentResponse> {
-                val comment = commentService.createComment(postId, principal.toRequiredUserId(), content, image)
+                val comment = commentService.createComment(postId, principal.toRequiredUserId(), content, images)
                 return ApiResponse(201, "댓글 작성 성공", comment)
         }
 
@@ -35,10 +35,10 @@ class CommentController(private val commentService: CommentService) {
         fun createReply(
                 @PathVariable commentId: UUID,
                 @RequestParam(required = false) content: String?,
-                @RequestPart(required = false) image: MultipartFile?,
+                @RequestParam(required = false) images: List<MultipartFile>?,
                 @AuthenticationPrincipal principal: String?
         ): ApiResponse<CommentResponse> =
-                ApiResponse(201, "답글 작성 성공", commentService.createReply(commentId, principal.toRequiredUserId(), content, image))
+                ApiResponse(201, "답글 작성 성공", commentService.createReply(commentId, principal.toRequiredUserId(), content, images))
 
         @DeleteMapping("/comment/{commentId}")
         fun deleteComment(
@@ -53,8 +53,8 @@ class CommentController(private val commentService: CommentService) {
         fun updateComment(
                 @PathVariable commentId: UUID,
                 @RequestParam(required = false) content: String?,
-                @RequestPart(required = false) image: MultipartFile?,
+                @RequestParam(required = false) images: List<MultipartFile>?,
                 @AuthenticationPrincipal principal: String?
         ): ApiResponse<CommentResponse> =
-                ApiResponse(200, "댓글 수정 성공", commentService.updateComment(commentId, principal.toRequiredUserId(), content, image))
+                ApiResponse(200, "댓글 수정 성공", commentService.updateComment(commentId, principal.toRequiredUserId(), content, images))
 }

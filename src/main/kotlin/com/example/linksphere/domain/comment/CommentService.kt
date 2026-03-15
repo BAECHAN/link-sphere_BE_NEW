@@ -111,10 +111,10 @@ class CommentService(
                 postId: UUID,
                 userId: UUID,
                 content: String?,
-                image: MultipartFile?,
+                images: List<MultipartFile>?,
                 parentId: UUID? = null
         ): CommentResponse {
-                if (content.isNullOrBlank() && image == null) {
+                if (content.isNullOrBlank() && images?.isEmpty() ?: true) {
                         throw IllegalArgumentException("Content or image must be provided")
                 }
 
@@ -144,7 +144,7 @@ class CommentService(
                         memberRepository.findByIdOrNull(userId)
                                 ?: throw IllegalArgumentException("User not found")
 
-                val finalContent = buildFinalContent(content, image)
+                val finalContent = buildFinalContent(content, images)
 
                 val comment =
                         TableComment(
@@ -174,9 +174,9 @@ class CommentService(
                 parentId: UUID,
                 userId: UUID,
                 content: String?,
-                image: MultipartFile?
+                images: List<MultipartFile>?
         ): CommentResponse {
-                if (content.isNullOrBlank() && image == null) {
+                if (content.isNullOrBlank() && images?.isEmpty() ?: true) {
                         throw IllegalArgumentException("Content or image must be provided")
                 }
 
@@ -195,7 +195,7 @@ class CommentService(
                         memberRepository.findByIdOrNull(userId)
                                 ?: throw IllegalArgumentException("User not found")
 
-                val finalContent = buildFinalContent(content, image)
+                val finalContent = buildFinalContent(content, images)
 
                 val comment =
                         TableComment(
@@ -245,9 +245,9 @@ class CommentService(
                 commentId: UUID,
                 userId: UUID,
                 content: String?,
-                image: MultipartFile?
+                images: List<MultipartFile>?
         ): CommentResponse {
-                if (content.isNullOrBlank() && image == null) {
+                if (content.isNullOrBlank() && images?.isEmpty() ?: true) {
                         throw IllegalArgumentException("Content or image must be provided")
                 }
 
@@ -263,7 +263,7 @@ class CommentService(
                         throw IllegalStateException("Cannot update a deleted comment")
                 }
 
-                val finalContent = buildFinalContent(content, image)
+                val finalContent = buildFinalContent(content, images)
 
                 comment.content = finalContent
                 val updated = commentRepository.save(comment)
@@ -275,11 +275,17 @@ class CommentService(
                 return toCommentResponse(updated, member)
         }
 
-        private fun buildFinalContent(content: String?, image: MultipartFile?): String {
+        private fun buildFinalContent(content: String?, images: List<MultipartFile>?): String {
                 val text = content.orEmpty()
-                if (image == null || image.isEmpty) return text
-                val imageUrl = supabaseStorageService.uploadFile(image)
-                return if (text.isNotBlank()) "$text\n\n$imageUrl" else imageUrl
+                val urls = images
+                        ?.filter { !it.isEmpty }
+                        ?.map { supabaseStorageService.uploadFile(it) }
+                        ?: emptyList()
+                return when {
+                        urls.isEmpty() -> text
+                        text.isNotBlank() -> "$text\n\n${urls.joinToString("\n")}"
+                        else -> urls.joinToString("\n")
+                }
         }
 
         private fun toCommentResponse(comment: TableComment, member: TableMember) =
