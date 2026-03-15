@@ -17,8 +17,12 @@ import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequ
 import org.springframework.security.web.SecurityFilterChain
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.test.web.servlet.MockMvc
+import org.springframework.mock.web.MockMultipartFile
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 
 @WebMvcTest(
@@ -64,6 +68,49 @@ class AuthControllerTest {
                                                 """{"status":409,"code":"DUPLICATE_MEMBER","message":"Email already exists: test@example.com"}"""
                                         )
                         )
+        }
+
+        @Test
+        @WithMockUser
+        fun `updateAccount returns 200 with updated AccountResponse`() {
+                val request = UpdateAccountRequest(nickname = "newNick", image = null)
+                val response = AccountResponse(
+                        id = "some-uuid",
+                        email = "test@example.com",
+                        nickname = "newNick",
+                        image = null,
+                        createdAt = "2024-01-01T00:00:00",
+                        updatedAt = "2024-01-02T00:00:00"
+                )
+                `when`(authService.updateAccount("user", request)).thenReturn(response)
+
+                val mapper = jacksonObjectMapper()
+                val json = mapper.writeValueAsString(request)
+
+                mockMvc.perform(
+                                patch("/auth/account")
+                                        .contentType(MediaType.APPLICATION_JSON)
+                                        .content(json)
+                                        .with(csrf())
+                        )
+                        .andExpect(status().isOk)
+                        .andExpect(jsonPath("$.data.nickname").value("newNick"))
+        }
+
+        @Test
+        @WithMockUser
+        fun `uploadAvatar returns 200 with imageUrl`() {
+                val mockFile = MockMultipartFile("file", "avatar.png", "image/png", "fake-image".toByteArray())
+                val response = AvatarUploadResponse(imageUrl = "https://supabase.co/avatars/abc.png")
+                `when`(authService.uploadAvatar(mockFile)).thenReturn(response)
+
+                mockMvc.perform(
+                                multipart("/auth/account/avatar")
+                                        .file(mockFile)
+                                        .with(csrf())
+                        )
+                        .andExpect(status().isOk)
+                        .andExpect(jsonPath("$.data.imageUrl").value("https://supabase.co/avatars/abc.png"))
         }
 
         @Test
