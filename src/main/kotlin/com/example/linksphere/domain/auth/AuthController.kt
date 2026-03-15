@@ -4,14 +4,18 @@ import com.example.linksphere.global.common.ApiResponse
 import java.security.Principal
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
+import org.springframework.http.MediaType
 import org.springframework.http.ResponseCookie
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.CookieValue
 import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.RequestPart
 import org.springframework.web.bind.annotation.RestController
+import org.springframework.web.multipart.MultipartFile
 
 @RestController
 @RequestMapping("/auth")
@@ -58,6 +62,19 @@ class AuthController(private val authService: AuthService) {
         @GetMapping("/account")
         fun getAccount(principal: Principal): ResponseEntity<ApiResponse<AccountResponse>> =
                 ResponseEntity.ok(ApiResponse(HttpStatus.OK.value(), "Account retrieved", authService.getAccount(principal.name)))
+
+        @PatchMapping("/account")
+        fun updateAccount(
+                @RequestBody request: UpdateAccountRequest,
+                principal: Principal
+        ): ResponseEntity<ApiResponse<AccountResponse>> =
+                ResponseEntity.ok(ApiResponse(HttpStatus.OK.value(), "Account updated", authService.updateAccount(principal.name, request)))
+
+        @PostMapping("/account/avatar", consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
+        fun uploadAvatar(
+                @RequestPart("file") file: MultipartFile
+        ): ResponseEntity<ApiResponse<AvatarUploadResponse>> =
+                ResponseEntity.ok(ApiResponse(HttpStatus.OK.value(), "Avatar uploaded", authService.uploadAvatar(file)))
 
         private fun createCookieResponse(
                 authResult: AuthResult,

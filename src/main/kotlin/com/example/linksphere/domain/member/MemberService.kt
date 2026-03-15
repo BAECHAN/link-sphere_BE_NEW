@@ -1,7 +1,9 @@
 package com.example.linksphere.domain.member
 
 import com.example.linksphere.domain.auth.SignupRequest
+import com.example.linksphere.domain.auth.UpdateAccountRequest
 import com.example.linksphere.global.exception.DuplicateMemberException
+import java.time.LocalDateTime
 import java.util.UUID
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -43,4 +45,18 @@ class MemberService(private val memberRepository: MemberRepository) {
 
     fun findById(id: UUID): TableMember =
             memberRepository.findById(id).orElseThrow { IllegalArgumentException("Member not found with id: $id") }
+
+    @Transactional
+    fun updateAccount(id: UUID, request: UpdateAccountRequest): TableMember {
+        val member = findById(id)
+        request.nickname?.let {
+            if (it != member.nickname && memberRepository.existsByNickname(it)) {
+                throw DuplicateMemberException("Nickname already exists: $it")
+            }
+            member.nickname = it
+        }
+        request.image?.let { member.image = it }
+        member.updatedAt = LocalDateTime.now()
+        return memberRepository.save(member)
+    }
 }
