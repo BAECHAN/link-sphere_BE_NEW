@@ -21,17 +21,19 @@ class SupabaseStorageService(
     private val log = LoggerFactory.getLogger(javaClass)
     private val restTemplate = RestTemplate()
 
-    fun uploadFile(file: MultipartFile): String {
+    fun uploadFile(file: MultipartFile): String = uploadFile(file, bucketName)
+
+    fun uploadFile(file: MultipartFile, bucket: String): String {
         log.info(
                 "Starting upload to Supabase Storage: bucket={}, fileName={}",
-                bucketName,
+                bucket,
                 file.originalFilename
         )
         val originalFilename = file.originalFilename ?: "unknown.tmp"
         val extension = originalFilename.substringAfterLast('.', "")
         val uniqueFileName = "${UUID.randomUUID()}.${extension}"
 
-        val uploadUrl = "${supabaseUrl}/storage/v1/object/${bucketName}/${uniqueFileName}"
+        val uploadUrl = "${supabaseUrl}/storage/v1/object/${bucket}/${uniqueFileName}"
 
         val headers = HttpHeaders()
         headers.set("Authorization", "Bearer ${supabaseKey}")
@@ -59,7 +61,7 @@ class SupabaseStorageService(
                     )
             if (response.statusCode.is2xxSuccessful) {
                 val publicUrl =
-                        "${supabaseUrl}/storage/v1/object/public/${bucketName}/${uniqueFileName}"
+                        "${supabaseUrl}/storage/v1/object/public/${bucket}/${uniqueFileName}"
                 log.info("Successfully uploaded file. Public URL: {}", publicUrl)
                 return publicUrl
             } else {
