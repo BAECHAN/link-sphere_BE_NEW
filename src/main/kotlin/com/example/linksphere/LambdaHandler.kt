@@ -64,7 +64,12 @@ class LambdaHandler : RequestStreamHandler {
 
     override fun handleRequest(input: InputStream, output: OutputStream, context: Context) {
         val event = mapper.readTree(input)
-        val path = event.get("rawPath")?.asText() ?: "/"
+        // rawPath에는 CloudFront가 forward한 전체 경로(/api/auth/login)가 담겨있다.
+        // MockMvc는 Tomcat과 달리 context-path(/api)를 자동으로 스트립하지 않으므로,
+        // Spring Security의 requestMatchers("/auth/login")가 /api/auth/login과 매칭 실패해 401이 된다.
+        // context-path를 제거한 서블릿 경로만 MockMvc에 전달한다.
+        val rawPath = event.get("rawPath")?.asText() ?: "/"
+        val path = rawPath.removePrefix("/api").ifEmpty { "/" }
         val rawQuery = event.get("rawQueryString")?.asText()?.takeIf { it.isNotEmpty() }
         val method = event.at("/requestContext/http/method").asText("GET")
         val body = event.get("body")?.asText()
