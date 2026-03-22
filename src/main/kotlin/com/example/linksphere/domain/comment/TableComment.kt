@@ -15,6 +15,10 @@ class TableComment(
         @Column(name = "parent_id") val parentId: UUID? = null,
         @Column(name = "content", columnDefinition = "text", nullable = false) var content: String,
         @Column(name = "is_deleted", nullable = false) var isDeleted: Boolean = false,
+        @Column(name = "link_url", columnDefinition = "text") var linkUrl: String? = null,
+        @Column(name = "link_title", columnDefinition = "text") var linkTitle: String? = null,
+        @Column(name = "link_description", columnDefinition = "text") var linkDescription: String? = null,
+        @Column(name = "link_og_image", columnDefinition = "text") var linkOgImage: String? = null,
         @Column(name = "created_at", nullable = false)
         val createdAt: LocalDateTime = LocalDateTime.now(),
         @Column(name = "updated_at", nullable = false)

@@ -5,8 +5,20 @@
 # <type>(<scope>): <한글 subject>
 # |<------ 제목은 최대 72자 이내 ------>|
 #
-# [본문 - 선택사항]
-# WHY를 설명한다 (WHAT이 아니라). 72자마다 줄바꿈.
+# ── 변경 이유 (WHY) ──────────────────────────────────
+# 왜 이 변경이 필요했는지 설명한다.
+# 예) 기존 방식의 문제점, 요구사항 변경, 성능 이슈 등
+#
+# ── 변경 내용 (WHAT) ─────────────────────────────────
+# - 변경된 클래스/메서드/파일을 bullet로 나열한다.
+# - 예) TableComment: link_url 등 링크 메타데이터 컬럼 4개 추가
+# - 예) CommentService: URL 감지 후 UrlMetadataExtractor 호출 로직 추가
+# - 예) CommentDTO: LinkMetadata 데이터 클래스 및 CommentResponse 필드 추가
+#
+# ── 영향 범위 ────────────────────────────────────────
+# DB 스키마 변경, API 스펙 변경, 의존성 추가 등 주의할 사항을 기술한다.
+# 예) DB 마이그레이션 필요: sql/add_link_metadata_to_comments.sql 실행 필요
+# 예) API 응답 스펙 변경: CommentResponse에 linkMetadata 필드 추가됨
 #
 # [꼬리말 - 선택사항]
 # Closes #123
@@ -26,15 +38,29 @@
 #   build    빌드 시스템, 외부 의존성 변경
 #   revert   이전 커밋 되돌리기
 # ──────────────────────────────────────────────────
+# scope 예시 (BE):
+#   comment, post, auth, member, interaction, category
+#   fcm, common, config, lambda, exception
+# ──────────────────────────────────────────────────
 # 작성 규칙:
 #   - 제목은 명령형으로 (영문: "Add feature" not "Added feature")
 #   - 제목 끝에 마침표 금지
 #   - 제목과 본문 사이 빈 줄 하나
-#   - scope는 변경된 범위 (선택사항): auth, button, api, member 등
+#   - 본문 각 섹션 사이 빈 줄 하나
+#   - 72자마다 줄바꿈
 # ──────────────────────────────────────────────────
 # 예시:
-#   feat(auth): OAuth2 로그인 기능 추가
-#   fix(member): 프로필 이미지 업로드 수정
-#   docs: README 설정 가이드 업데이트
-#   refactor(api): 에러 처리 로직 단순화
+#   feat(comment): 댓글 등록 시 링크 메타데이터 자동 추출 및 저장
+#
+#   댓글에 URL이 포함될 경우 링크 정보를 함께 표시하기 위해
+#   등록 시점에 메타데이터를 크롤링하여 DB에 저장하도록 변경함
+#
+#   - TableComment: link_url, link_title, link_description, link_og_image 컬럼 추가
+#   - CommentService: URL_REGEX로 첫 번째 URL 감지 후 UrlMetadataExtractor 호출
+#   - CommentDTO: LinkMetadata 데이터 클래스 추가 및 CommentResponse에 필드 추가
+#   - createComment, createReply, updateComment 모두 적용
+#
+#   DB 마이그레이션 필요:
+#   sql/add_link_metadata_to_comments.sql 실행 필요
+#   API 응답 스펙 변경: CommentResponse에 linkMetadata 필드 추가됨 (nullable)
 # ──────────────────────────────────────────────────

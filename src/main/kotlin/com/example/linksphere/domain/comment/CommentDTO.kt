@@ -3,6 +3,13 @@ package com.example.linksphere.domain.comment
 import java.time.LocalDateTime
 import java.util.UUID
 
+data class LinkMetadata(
+        val url: String,
+        val title: String,
+        val description: String?,
+        val ogImage: String?,
+)
+
 data class CommentResponse(
         val id: UUID,
         val postId: UUID,
@@ -16,6 +23,7 @@ data class CommentResponse(
         val isLiked: Boolean = false,
         val createdAt: LocalDateTime,
         val updatedAt: LocalDateTime,
+        val linkMetadata: LinkMetadata? = null,
 )
 
 data class CommentAuthor(val id: UUID, val nickname: String, val image: String?)

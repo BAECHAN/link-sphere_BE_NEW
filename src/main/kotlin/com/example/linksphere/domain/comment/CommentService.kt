@@ -5,6 +5,7 @@ import com.example.linksphere.domain.interaction.TargetType
 import com.example.linksphere.domain.member.MemberRepository
 import com.example.linksphere.domain.member.TableMember
 import com.example.linksphere.domain.post.PostRepository
+import com.example.linksphere.domain.post.UrlMetadataExtractor
 import com.example.linksphere.global.common.SupabaseStorageService
 import com.example.linksphere.infra.fcm.FcmNotificationService
 import java.util.UUID
@@ -15,6 +16,8 @@ import org.springframework.web.multipart.MultipartFile
 
 private const val DELETED_COMMENT_CONTENT = "삭제된 댓글입니다."
 
+private val URL_REGEX = Regex("""https?://\S+""")
+
 @Service
 class CommentService(
         private val commentRepository: CommentRepository,
@@ -22,7 +25,8 @@ class CommentService(
         private val memberRepository: MemberRepository,
         private val reactionRepository: ReactionRepository,
         private val supabaseStorageService: SupabaseStorageService,
-        private val fcmNotificationService: FcmNotificationService
+        private val fcmNotificationService: FcmNotificationService,
+        private val urlMetadataExtractor: UrlMetadataExtractor,
 ) {
 
         @Transactional(readOnly = true)
@@ -78,7 +82,16 @@ class CommentService(
                                         updatedAt = comment.updatedAt,
                                         author = author,
                                         isLiked = userLikes.contains(comment.id),
-                                        likeCount = likeCounts[comment.id] ?: 0
+                                        likeCount = likeCounts[comment.id] ?: 0,
+                                        linkMetadata = if (comment.isDeleted) null
+                                                else comment.linkUrl?.let {
+                                                        LinkMetadata(
+                                                                url = it,
+                                                                title = comment.linkTitle ?: it,
+                                                                description = comment.linkDescription,
+                                                                ogImage = comment.linkOgImage,
+                                                        )
+                                                },
                                 )
                         }
 
@@ -145,13 +158,18 @@ class CommentService(
                                 ?: throw IllegalArgumentException("User not found")
 
                 val finalContent = buildFinalContent(content, images)
+                val linkMeta = extractFirstLinkMetadata(finalContent)
 
                 val comment =
                         TableComment(
                                 postId = postId,
                                 userId = userId,
                                 parentId = parentId,
-                                content = finalContent
+                                content = finalContent,
+                                linkUrl = linkMeta?.first,
+                                linkTitle = linkMeta?.second?.title,
+                                linkDescription = linkMeta?.second?.description,
+                                linkOgImage = linkMeta?.second?.ogImage,
                         )
                 val saved = commentRepository.save(comment)
 
@@ -196,13 +214,18 @@ class CommentService(
                                 ?: throw IllegalArgumentException("User not found")
 
                 val finalContent = buildFinalContent(content, images)
+                val linkMeta = extractFirstLinkMetadata(finalContent)
 
                 val comment =
                         TableComment(
                                 postId = parent.postId,
                                 userId = userId,
                                 parentId = parentId,
-                                content = finalContent
+                                content = finalContent,
+                                linkUrl = linkMeta?.first,
+                                linkTitle = linkMeta?.second?.title,
+                                linkDescription = linkMeta?.second?.description,
+                                linkOgImage = linkMeta?.second?.ogImage,
                         )
                 val saved = commentRepository.save(comment)
 
@@ -264,8 +287,13 @@ class CommentService(
                 }
 
                 val finalContent = buildFinalContent(content, images)
+                val linkMeta = extractFirstLinkMetadata(finalContent)
 
                 comment.content = finalContent
+                comment.linkUrl = linkMeta?.first
+                comment.linkTitle = linkMeta?.second?.title
+                comment.linkDescription = linkMeta?.second?.description
+                comment.linkOgImage = linkMeta?.second?.ogImage
                 val updated = commentRepository.save(comment)
 
                 val member =
@@ -288,6 +316,13 @@ class CommentService(
                 }
         }
 
+        /** content에서 첫 번째 URL을 찾아 메타데이터를 추출. URL이 없으면 null 반환 */
+        private fun extractFirstLinkMetadata(content: String): Pair<String, com.example.linksphere.domain.post.UrlMetadata>? {
+                val url = URL_REGEX.find(content)?.value ?: return null
+                val meta = urlMetadataExtractor.extract(url)
+                return url to meta
+        }
+
         private fun toCommentResponse(comment: TableComment, member: TableMember) =
                 CommentResponse(
                         id = comment.id,
@@ -297,6 +332,14 @@ class CommentService(
                         isDeleted = comment.isDeleted,
                         createdAt = comment.createdAt,
                         updatedAt = comment.updatedAt,
-                        author = CommentAuthor(member.id!!, member.nickname ?: "Unknown", member.image)
+                        author = CommentAuthor(member.id!!, member.nickname ?: "Unknown", member.image),
+                        linkMetadata = comment.linkUrl?.let {
+                                LinkMetadata(
+                                        url = it,
+                                        title = comment.linkTitle ?: it,
+                                        description = comment.linkDescription,
+                                        ogImage = comment.linkOgImage,
+                                )
+                        },
                 )
 }
