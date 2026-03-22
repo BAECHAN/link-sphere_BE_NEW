@@ -52,7 +52,7 @@ class AuthController(private val authService: AuthService) {
                                 .secure(true)
                                 .path("/")
                                 .maxAge(0)
-                                .sameSite("None")
+                                .sameSite("Lax")
                                 .build()
                 return ResponseEntity.ok()
                         .header(HttpHeaders.SET_COOKIE, cookie.toString())
@@ -86,7 +86,7 @@ class AuthController(private val authService: AuthService) {
                                 .secure(true) // Should be true for https
                                 .path("/")
                                 .maxAge(7 * 24 * 60 * 60) // 1 week
-                                .sameSite("None")
+                                .sameSite("Lax")
                                 .build()
 
                 return ResponseEntity.ok()
