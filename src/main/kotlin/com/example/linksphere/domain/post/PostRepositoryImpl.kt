@@ -129,7 +129,7 @@ class PostRepositoryImpl : PostRepositoryCustom {
 
                 // Search Filter (Title, Description, or Tags)
                 if (!search.isNullOrBlank()) {
-                        val cleanedSearch = search.replace(" ", "")
+                        val cleanedSearch = search.replace(" ", "").lowercase()
                         val searchLike = "%$cleanedSearch%"
 
                         val titleReplace =
@@ -177,10 +177,10 @@ class PostRepositoryImpl : PostRepositoryCustom {
 
                         predicates.add(
                                 cb.or(
-                                        cb.like(titleReplace, searchLike),
-                                        cb.like(descriptionReplace, searchLike),
-                                        cb.like(tagsReplace, searchLike),
-                                        cb.like(tagsStringSpace, "%${search.trim()}%"),
+                                        cb.like(cb.lower(titleReplace), searchLike),
+                                        cb.like(cb.lower(descriptionReplace), searchLike),
+                                        cb.like(cb.lower(tagsReplace), searchLike),
+                                        cb.like(cb.lower(tagsStringSpace), "%${search.trim().lowercase()}%"),
                                 )
                         )
                 }
