@@ -14,6 +14,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders
 import org.springframework.web.context.WebApplicationContext
 import java.io.InputStream
 import java.io.OutputStream
+import jakarta.servlet.http.Cookie
 import java.net.URI
 import java.util.Base64
 
@@ -78,11 +79,30 @@ class LambdaHandler : RequestStreamHandler {
         val uri = if (rawQuery != null) URI.create("$path?$rawQuery") else URI.create(path)
         val requestBuilder = MockMvcRequestBuilders.request(HttpMethod.valueOf(method), uri)
 
+        var cookieHeader: String? = null
         event.get("headers")?.let { headers ->
             val names = headers.fieldNames()
             while (names.hasNext()) {
                 val key = names.next()
-                requestBuilder.header(key, headers.get(key).asText())
+                val value = headers.get(key).asText()
+                if (key.equals("cookie", ignoreCase = true)) {
+                    cookieHeader = value
+                } else {
+                    requestBuilder.header(key, value)
+                }
+            }
+        }
+        // Lambda 이벤트의 cookies 배열 우선 처리 (AllViewerExceptHostHeader 정책에서 cookies 필드로 전달될 수 있음)
+        val cookiesNode = event.get("cookies")
+        if (cookiesNode != null && cookiesNode.isArray && cookiesNode.size() > 0) {
+            cookieHeader = cookiesNode.joinToString("; ") { it.asText() }
+        }
+        // MockMvc는 Cookie 헤더를 자동 파싱하지 않으므로 명시적으로 Cookie 객체로 변환해야 @CookieValue가 동작한다.
+        cookieHeader?.split(";")?.forEach { part ->
+            val trimmed = part.trim()
+            val idx = trimmed.indexOf('=')
+            if (idx > 0) {
+                requestBuilder.cookie(Cookie(trimmed.substring(0, idx).trim(), trimmed.substring(idx + 1).trim()))
             }
         }
 
