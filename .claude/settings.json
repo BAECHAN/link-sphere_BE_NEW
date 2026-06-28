@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cmd=$(jq -r \".tool_input.command // empty\"); if printf '%s' \"$cmd\" | grep -Eq '(^|;|&&|\\|)[[:space:]]*git[[:space:]]+commit'; then echo \"방금 git commit을 실행했습니다. feat/fix/perf 또는 동작이 바뀌는 refactor라면 해당 레포 CHANGELOG.md의 [Unreleased] 섹션을 갱신했는지 확인하세요. 누락 시 사용자에게 알리고 항목 추가(필요 시 git commit --amend). docs/style/test/chore면 무시.\" >&2; exit 2; fi; exit 0",
+            "statusMessage": "CHANGELOG 갱신 확인"
+          }
+        ]
+      }
+    ]
+  }
+}
