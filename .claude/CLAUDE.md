@@ -401,3 +401,21 @@ data class FolderResponse(
 | Entity | `domain/comment/TableComment.kt` | UUID PK, `LAZY` loading, `insertable=false` FK, timestamp 자동화 |
 | 예외 핸들러 | `global/exception/GlobalExceptionHandler.kt` | `@ExceptionHandler` 등록, `ErrorResponse(status, code, message)` |
 | 인증 유틸 | `global/common/SecurityUtils.kt` | `Authentication?.getUserId(): UUID?` 확장 함수 |
+
+---
+
+## 릴리즈노트 (CHANGELOG) 관리
+
+레포 루트 `CHANGELOG.md`로 변경 이력을 관리한다. 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/) + [SemVer](https://semver.org/lang/ko/), **한글 작성**.
+
+**규칙**
+- `feat` / `fix` / `perf` / 동작이 바뀌는 `refactor` 커밋 시 → **`CHANGELOG.md`의 `[Unreleased]` 섹션에 항목 추가**를 같은 커밋에 포함한다.
+- 섹션: `Added` / `Changed` / `Fixed` / `Removed`. DB 변경은 `Migration`(실행할 SQL 명시) 섹션 사용.
+- `docs` / `style` / `test` / `chore` 등 사용자 영향 없는 변경은 기록하지 않는다.
+
+**릴리즈 시점** (버전 확정)
+1. `[Unreleased]` 항목들을 새 버전 섹션 `## [X.Y.Z] - YYYY-MM-DD` 으로 승격
+2. `git tag -a vX.Y.Z` → `git push origin vX.Y.Z`
+3. `gh release create vX.Y.Z --notes-file <노트>` 로 GitHub Release 생성
+4. 하단 compare/release 링크 갱신 (`https://github.com/BAECHAN/link-sphere_BE_NEW`)
+- 현재 버전 기준점: `0.1.0` (정식 릴리즈 전 개발 단계 = `0.x`)
