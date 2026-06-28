@@ -29,7 +29,11 @@ data class PostStats(
         val bookmarkCount: Int
 )
 
-data class PostUserInteractions(val isLiked: Boolean, val isBookmarked: Boolean)
+data class PostUserInteractions(
+        val isLiked: Boolean,
+        val isBookmarked: Boolean,
+        val bookmarkFolderId: UUID? = null
+)
 
 data class PostResponse(
         val id: UUID,

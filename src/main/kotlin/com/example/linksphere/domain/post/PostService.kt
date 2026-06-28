@@ -88,28 +88,31 @@ class PostService(
     ): PostPageResponse {
         val pageable = PageRequest.of(page, size)
         val postPage = postRepository.findPosts(category, search, filter, nickname, currentUserId, pageable)
-        val posts = postPage.content
+        return PostPageResponse.from(postPage, buildResponsesFromPosts(postPage.content, currentUserId))
+    }
 
-        if (posts.isEmpty()) return PostPageResponse.from(postPage, emptyList())
+    /**
+     * Post 리스트를 PostResponse 리스트로 변환하면서 author/likes/bookmarks/comments를 batch fetch.
+     * 다른 도메인(예: BookmarkFolderService)에서 페이지 변환 시 재사용한다.
+     */
+    fun buildResponsesFromPosts(posts: List<TablePost>, currentUserId: UUID?): List<PostResponse> {
+        if (posts.isEmpty()) return emptyList()
 
         val postIds = posts.mapNotNull { it.id }
 
-        // Batch fetch: authors
         val authorMap =
                 memberRepository.findAllById(posts.map { it.userId }.distinct())
                         .associate { m -> val id = m.id!!; id to UserSummary(id, m.nickname, m.image) }
 
-        // Batch fetch: bookmarks
         val allBookmarks = bookmarkRepository.findAllByPostIdIn(postIds)
         val bookmarkCountMap = allBookmarks.groupingBy { it.postId }.eachCount()
-        val bookmarkedPostIds =
+        val myBookmarks =
                 if (currentUserId != null)
                         bookmarkRepository.findAllByUserIdAndPostIdIn(currentUserId, postIds)
-                                .map { it.postId }
-                                .toSet()
-                else emptySet()
+                else emptyList()
+        val bookmarkedPostIds = myBookmarks.map { it.postId }.toSet()
+        val bookmarkFolderMap = myBookmarks.associate { it.postId to it.folderId }
 
-        // Batch fetch: reactions
         val allReactions = reactionRepository.findAllByTargetIdInAndTargetType(postIds, TargetType.POST)
         val reactionCountMap = allReactions.groupingBy { it.targetId }.eachCount()
         val reactedPostIds =
@@ -120,30 +123,27 @@ class PostService(
                                 .toSet()
                 else emptySet()
 
-        // Batch fetch: comment counts
         val commentCountMap =
                 commentRepository.countByPostIdIn(postIds)
                         .associate { it.postId to it.count.toInt() }
 
-        val responses =
-                posts.map { post ->
-                    val postId = post.id ?: throw IllegalStateException("Post ID cannot be null")
-                    val author =
-                            authorMap[post.userId]
-                                    ?: throw IllegalArgumentException("Member not found: ${post.userId}")
-                    buildPostResponse(
-                            post = post,
-                            postId = postId,
-                            author = author,
-                            likeCount = reactionCountMap[postId] ?: 0,
-                            isLiked = postId in reactedPostIds,
-                            bookmarkCount = bookmarkCountMap[postId] ?: 0,
-                            isBookmarked = postId in bookmarkedPostIds,
-                            commentCount = commentCountMap[postId] ?: 0
-                    )
-                }
-
-        return PostPageResponse.from(postPage, responses)
+        return posts.map { post ->
+            val postId = post.id ?: throw IllegalStateException("Post ID cannot be null")
+            val author =
+                    authorMap[post.userId]
+                            ?: throw IllegalArgumentException("Member not found: ${post.userId}")
+            buildPostResponse(
+                    post = post,
+                    postId = postId,
+                    author = author,
+                    likeCount = reactionCountMap[postId] ?: 0,
+                    isLiked = postId in reactedPostIds,
+                    bookmarkCount = bookmarkCountMap[postId] ?: 0,
+                    isBookmarked = postId in bookmarkedPostIds,
+                    bookmarkFolderId = bookmarkFolderMap[postId],
+                    commentCount = commentCountMap[postId] ?: 0
+            )
+        }
     }
 
     @Transactional
@@ -210,6 +210,9 @@ class PostService(
                         image = dbAuthor.image
                 )
 
+        val myBookmark = currentUserId?.let {
+            bookmarkRepository.findById(com.example.linksphere.domain.interaction.BookmarkId(it, postId)).orElse(null)
+        }
         return buildPostResponse(
                 post = post,
                 postId = postId,
@@ -220,8 +223,8 @@ class PostService(
                             reactionRepository.existsByTargetIdAndTargetTypeAndUserId(postId, TargetType.POST, it)
                         } ?: false,
                 bookmarkCount = bookmarkRepository.countByPostId(postId).toInt(),
-                isBookmarked =
-                        currentUserId?.let { bookmarkRepository.existsByUserIdAndPostId(it, postId) } ?: false,
+                isBookmarked = myBookmark != null,
+                bookmarkFolderId = myBookmark?.folderId,
                 commentCount = commentRepository.countByPostId(postId).toInt()
         )
     }
@@ -234,6 +237,7 @@ class PostService(
             isLiked: Boolean,
             bookmarkCount: Int,
             isBookmarked: Boolean,
+            bookmarkFolderId: UUID? = null,
             commentCount: Int
     ): PostResponse =
             PostResponse(
@@ -256,7 +260,11 @@ class PostService(
                                     commentCount = commentCount,
                                     bookmarkCount = bookmarkCount
                             ),
-                    userInteractions = PostUserInteractions(isLiked = isLiked, isBookmarked = isBookmarked),
+                    userInteractions = PostUserInteractions(
+                            isLiked = isLiked,
+                            isBookmarked = isBookmarked,
+                            bookmarkFolderId = bookmarkFolderId
+                    ),
                     author = author
             )
 }
