@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-11
+
 ### Added
 
 - 북마크 폴더 게시글 조회(`/bookmark/folders/{folderKey}/posts`)에 `search`
@@ -43,5 +45,6 @@
   - `bookmark_folders` 테이블 생성 (`user_id` + `name` UNIQUE)
   - `bookmarks` 테이블에 `folder_id` 컬럼 및 FK(`ON DELETE SET NULL`) 추가
 
-[Unreleased]: https://github.com/BAECHAN/link-sphere_BE_NEW/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/BAECHAN/link-sphere_BE_NEW/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/BAECHAN/link-sphere_BE_NEW/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/BAECHAN/link-sphere_BE_NEW/releases/tag/v0.1.0
