@@ -191,12 +191,14 @@ class BookmarkFolderService(
      * 북마크된 게시글 페이지 조회.
      * folderKey: "all" / "uncategorized" / 폴더 UUID 문자열
      * sort: "latest"(default) / "oldest" / "title" / "views"
+     * search: 제목/설명/태그 부분 검색 (null/blank면 미적용)
      */
     @Transactional(readOnly = true)
     fun getBookmarkedPosts(
             userId: UUID,
             folderKey: String,
             sort: String?,
+            search: String?,
             page: Int,
             size: Int
     ): PostPageResponse {
@@ -227,6 +229,7 @@ class BookmarkFolderService(
                         folderId,
                         onlyUncategorized,
                         sort ?: "latest",
+                        search,
                         pageable
                 )
         return PostPageResponse.from(postPage, postService.buildResponsesFromPosts(postPage.content, userId))

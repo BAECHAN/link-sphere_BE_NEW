@@ -7,6 +7,12 @@
 
 ## [Unreleased]
 
+### Added
+
+- 북마크 폴더 게시글 조회(`/bookmark/folders/{folderKey}/posts`)에 `search`
+  파라미터 추가 — 현재 폴더 범위 내에서 제목·설명·태그를 부분 검색
+  (피드 검색과 동일한 공백 무시 LIKE 매칭, 미지정 시 기존 동작 유지)
+
 ## [0.1.0] - 2026-06-28
 
 ### Added

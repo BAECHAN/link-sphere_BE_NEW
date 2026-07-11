@@ -67,12 +67,13 @@ class BookmarkFolderController(private val bookmarkFolderService: BookmarkFolder
     fun getBookmarkedPosts(
             @PathVariable folderKey: String,
             @RequestParam(required = false) sort: String?,
+            @RequestParam(required = false) search: String?,
             @RequestParam(defaultValue = "0") page: Int,
             @RequestParam(defaultValue = "10") size: Int,
             authentication: Authentication?
     ): ApiResponse<PostPageResponse> {
         val userId = authentication.getUserId() ?: throw IllegalArgumentException("User not authenticated")
-        val posts = bookmarkFolderService.getBookmarkedPosts(userId, folderKey, sort, page, size)
+        val posts = bookmarkFolderService.getBookmarkedPosts(userId, folderKey, sort, search, page, size)
         return ApiResponse(200, "북마크 게시글 조회 성공", posts)
     }
 }

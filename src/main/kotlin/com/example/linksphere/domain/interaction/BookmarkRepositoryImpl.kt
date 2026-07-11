@@ -19,6 +19,7 @@ class BookmarkRepositoryImpl : BookmarkRepositoryCustom {
             folderId: UUID?,
             onlyUncategorized: Boolean,
             sort: String,
+            search: String?,
             pageable: Pageable
     ): Page<TablePost> {
         val cb = entityManager.criteriaBuilder
@@ -29,7 +30,7 @@ class BookmarkRepositoryImpl : BookmarkRepositoryCustom {
         val countPostJoin = countBookmarkRoot.join<TableBookmark, TablePost>("post", JoinType.INNER)
         countQuery
                 .select(cb.count(countBookmarkRoot))
-                .where(*buildPredicates(cb, countBookmarkRoot, countPostJoin, userId, folderId, onlyUncategorized).toTypedArray())
+                .where(*buildPredicates(cb, countBookmarkRoot, countPostJoin, userId, folderId, onlyUncategorized, search).toTypedArray())
         val total = entityManager.createQuery(countQuery).singleResult
 
         if (total == 0L) return PageImpl(emptyList(), pageable, 0L)
@@ -41,7 +42,7 @@ class BookmarkRepositoryImpl : BookmarkRepositoryCustom {
 
         query
                 .select(postJoin)
-                .where(*buildPredicates(cb, bookmarkRoot, postJoin, userId, folderId, onlyUncategorized).toTypedArray())
+                .where(*buildPredicates(cb, bookmarkRoot, postJoin, userId, folderId, onlyUncategorized, search).toTypedArray())
 
         // sort
         val order = when (sort) {
@@ -68,7 +69,8 @@ class BookmarkRepositoryImpl : BookmarkRepositoryCustom {
             postJoin: jakarta.persistence.criteria.Join<TableBookmark, TablePost>,
             userId: UUID,
             folderId: UUID?,
-            onlyUncategorized: Boolean
+            onlyUncategorized: Boolean,
+            search: String?
     ): List<Predicate> {
         val predicates = mutableListOf<Predicate>()
 
@@ -78,6 +80,34 @@ class BookmarkRepositoryImpl : BookmarkRepositoryCustom {
             onlyUncategorized -> predicates.add(cb.isNull(bookmarkRoot.get<UUID>("folderId")))
             folderId != null -> predicates.add(cb.equal(bookmarkRoot.get<UUID>("folderId"), folderId))
             // else: all — no folder filter
+        }
+
+        // Search Filter (Title, Description, or Tags) — 피드 검색과 동일 로직
+        if (!search.isNullOrBlank()) {
+            val cleanedSearch = search.replace(" ", "").lowercase()
+            val searchLike = "%$cleanedSearch%"
+
+            val titleReplace =
+                    cb.function("replace", String::class.java, postJoin.get<String>("title"), cb.literal(" "), cb.literal(""))
+            val descriptionReplace =
+                    cb.function("replace", String::class.java, postJoin.get<String>("description"), cb.literal(" "), cb.literal(""))
+
+            // Tags: array_to_string으로 배열을 문자열로 변환 후 LIKE 검색
+            val tagsStringComma =
+                    cb.function("array_to_string", String::class.java, postJoin.get<Any>("tags"), cb.literal(","))
+            val tagsReplace =
+                    cb.function("replace", String::class.java, tagsStringComma, cb.literal(" "), cb.literal(""))
+            val tagsStringSpace =
+                    cb.function("array_to_string", String::class.java, postJoin.get<Any>("tags"), cb.literal(" "))
+
+            predicates.add(
+                    cb.or(
+                            cb.like(cb.lower(titleReplace), searchLike),
+                            cb.like(cb.lower(descriptionReplace), searchLike),
+                            cb.like(cb.lower(tagsReplace), searchLike),
+                            cb.like(cb.lower(tagsStringSpace), "%${search.trim().lowercase()}%"),
+                    )
+            )
         }
 
         // Post visibility: isPrivate=false OR post.userId=currentUserId (북마크 소유자)

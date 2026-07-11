@@ -16,6 +16,8 @@ interface BookmarkRepositoryCustom {
      *
      * sort: "latest"(default) / "oldest" / "title" / "views"
      *
+     * search: 제목/설명/태그 부분 검색 (null/blank면 미적용)
+     *
      * Post visibility 적용: isPrivate=false OR post.userId=userId
      */
     fun findBookmarkedPosts(
@@ -23,6 +25,7 @@ interface BookmarkRepositoryCustom {
             folderId: UUID?,
             onlyUncategorized: Boolean,
             sort: String,
+            search: String?,
             pageable: Pageable
     ): Page<TablePost>
 }
