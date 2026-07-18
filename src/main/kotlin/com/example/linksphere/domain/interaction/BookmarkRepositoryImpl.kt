@@ -1,5 +1,6 @@
 package com.example.linksphere.domain.interaction
 
+import com.example.linksphere.domain.post.PostSearchQuery
 import com.example.linksphere.domain.post.TablePost
 import jakarta.persistence.EntityManager
 import jakarta.persistence.PersistenceContext
@@ -44,14 +45,25 @@ class BookmarkRepositoryImpl : BookmarkRepositoryCustom {
                 .select(postJoin)
                 .where(*buildPredicates(cb, bookmarkRoot, postJoin, userId, folderId, onlyUncategorized, search).toTypedArray())
 
-        // sort
-        val order = when (sort) {
-            "oldest" -> cb.asc(bookmarkRoot.get<Any>("createdAt"))
-            "title" -> cb.asc(postJoin.get<Any>("title"))
-            "views" -> cb.desc(postJoin.get<Any>("viewCount"))
-            else -> cb.desc(bookmarkRoot.get<Any>("createdAt")) // "latest" default
-        }
-        query.orderBy(order)
+        // sort — 검색어가 있고 기본(latest) 정렬이면 관련도순, 그 외엔 사용자 선택 유지
+        val searchTokens = PostSearchQuery.tokenize(search)
+        val orders =
+                if (searchTokens.isNotEmpty() && sort == "latest") {
+                    listOf(
+                            cb.desc(PostSearchQuery.relevanceScore(cb, postJoin, searchTokens)),
+                            cb.desc(bookmarkRoot.get<Any>("createdAt"))
+                    )
+                } else {
+                    listOf(
+                            when (sort) {
+                                "oldest" -> cb.asc(bookmarkRoot.get<Any>("createdAt"))
+                                "title" -> cb.asc(postJoin.get<Any>("title"))
+                                "views" -> cb.desc(postJoin.get<Any>("viewCount"))
+                                else -> cb.desc(bookmarkRoot.get<Any>("createdAt")) // "latest" default
+                            }
+                    )
+                }
+        query.orderBy(orders)
 
         val resultList =
                 entityManager
@@ -82,32 +94,10 @@ class BookmarkRepositoryImpl : BookmarkRepositoryCustom {
             // else: all — no folder filter
         }
 
-        // Search Filter (Title, Description, or Tags) — 피드 검색과 동일 로직
-        if (!search.isNullOrBlank()) {
-            val cleanedSearch = search.replace(" ", "").lowercase()
-            val searchLike = "%$cleanedSearch%"
-
-            val titleReplace =
-                    cb.function("replace", String::class.java, postJoin.get<String>("title"), cb.literal(" "), cb.literal(""))
-            val descriptionReplace =
-                    cb.function("replace", String::class.java, postJoin.get<String>("description"), cb.literal(" "), cb.literal(""))
-
-            // Tags: array_to_string으로 배열을 문자열로 변환 후 LIKE 검색
-            val tagsStringComma =
-                    cb.function("array_to_string", String::class.java, postJoin.get<Any>("tags"), cb.literal(","))
-            val tagsReplace =
-                    cb.function("replace", String::class.java, tagsStringComma, cb.literal(" "), cb.literal(""))
-            val tagsStringSpace =
-                    cb.function("array_to_string", String::class.java, postJoin.get<Any>("tags"), cb.literal(" "))
-
-            predicates.add(
-                    cb.or(
-                            cb.like(cb.lower(titleReplace), searchLike),
-                            cb.like(cb.lower(descriptionReplace), searchLike),
-                            cb.like(cb.lower(tagsReplace), searchLike),
-                            cb.like(cb.lower(tagsStringSpace), "%${search.trim().lowercase()}%"),
-                    )
-            )
+        // Search Filter (Title, Description, or Tags) — 토큰 분리 후 OR 매칭 (피드 검색과 동일 로직)
+        val searchTokens = PostSearchQuery.tokenize(search)
+        if (searchTokens.isNotEmpty()) {
+            predicates.add(PostSearchQuery.searchPredicate(cb, postJoin, searchTokens))
         }
 
         // Post visibility: isPrivate=false OR post.userId=currentUserId (북마크 소유자)

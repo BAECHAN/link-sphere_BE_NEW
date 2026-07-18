@@ -61,10 +61,15 @@ class PostRepositoryImpl : PostRepositoryCustom {
                                 currentUserId
                         )
                 query.select(root).where(*predicates.toTypedArray())
-                query.distinct(true) // Ensure distinct results
 
-                // Sort order
-                if (pageable.sort.isSorted) {
+                // Sort order — 검색어가 있으면 관련도순, 없으면 기존 정렬
+                val searchTokens = PostSearchQuery.tokenize(search)
+                if (searchTokens.isNotEmpty()) {
+                        query.orderBy(
+                                cb.desc(PostSearchQuery.relevanceScore(cb, root, searchTokens)),
+                                cb.desc(root.get<Any>("createdAt"))
+                        )
+                } else if (pageable.sort.isSorted) {
                         val orders =
                                 pageable.sort
                                         .map { order ->
@@ -106,9 +111,11 @@ class PostRepositoryImpl : PostRepositoryCustom {
                                 category.split(",").map { it.trim() }.filter { it.isNotEmpty() }
 
                         if (categories.isNotEmpty()) {
-                                // Join categories
+                                // EXISTS 서브쿼리 — INNER JOIN fan-out(중복 행) 방지, distinct 불필요
+                                val subquery = query.subquery(Int::class.java)
+                                val subRoot = subquery.from(TablePost::class.java)
                                 val categoriesJoin: Join<TablePost, TableCategory> =
-                                        root.join("categories", JoinType.INNER)
+                                        subRoot.join("categories", JoinType.INNER)
 
                                 val categoryPredicates =
                                         categories.map { cat ->
@@ -123,66 +130,22 @@ class PostRepositoryImpl : PostRepositoryCustom {
                                                         )
                                                 )
                                         }
-                                predicates.add(cb.or(*categoryPredicates.toTypedArray()))
+                                subquery.select(cb.literal(1))
+                                        .where(
+                                                cb.equal(
+                                                        subRoot.get<UUID>("id"),
+                                                        root.get<UUID>("id")
+                                                ),
+                                                cb.or(*categoryPredicates.toTypedArray())
+                                        )
+                                predicates.add(cb.exists(subquery))
                         }
                 }
 
-                // Search Filter (Title, Description, or Tags)
-                if (!search.isNullOrBlank()) {
-                        val cleanedSearch = search.replace(" ", "").lowercase()
-                        val searchLike = "%$cleanedSearch%"
-
-                        val titleReplace =
-                                cb.function(
-                                        "replace",
-                                        String::class.java,
-                                        root.get<String>("title"),
-                                        cb.literal(" "),
-                                        cb.literal("")
-                                )
-                        val descriptionReplace =
-                                cb.function(
-                                        "replace",
-                                        String::class.java,
-                                        root.get<String>("description"),
-                                        cb.literal(" "),
-                                        cb.literal("")
-                                )
-
-                        // Tags: array_to_string으로 배열을 문자열로 변환 후 LIKE 검색
-                        // Case 1: 공백 제거 버전 — "콜드스타트" 단일 토큰 대응
-                        val tagsStringComma =
-                                cb.function(
-                                        "array_to_string",
-                                        String::class.java,
-                                        root.get<Any>("tags"),
-                                        cb.literal(",")
-                                )
-                        val tagsReplace =
-                                cb.function(
-                                        "replace",
-                                        String::class.java,
-                                        tagsStringComma,
-                                        cb.literal(" "),
-                                        cb.literal("")
-                                )
-                        // Case 2: 공백 join 버전 — ["콜드", "스타트"] 분리 토큰 대응
-                        val tagsStringSpace =
-                                cb.function(
-                                        "array_to_string",
-                                        String::class.java,
-                                        root.get<Any>("tags"),
-                                        cb.literal(" ")
-                                )
-
-                        predicates.add(
-                                cb.or(
-                                        cb.like(cb.lower(titleReplace), searchLike),
-                                        cb.like(cb.lower(descriptionReplace), searchLike),
-                                        cb.like(cb.lower(tagsReplace), searchLike),
-                                        cb.like(cb.lower(tagsStringSpace), "%${search.trim().lowercase()}%"),
-                                )
-                        )
+                // Search Filter (Title, Description, or Tags) — 토큰 분리 후 OR 매칭
+                val searchTokens = PostSearchQuery.tokenize(search)
+                if (searchTokens.isNotEmpty()) {
+                        predicates.add(PostSearchQuery.searchPredicate(cb, root, searchTokens))
                 }
 
                 // Nickname Filter (Partial Match)
