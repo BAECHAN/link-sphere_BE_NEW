@@ -9,6 +9,16 @@
 
 ### Changed
 
+- 비로그인(익명) 사용자에게 콘텐츠 조회 GET 엔드포인트를 공개 —
+  `GET /post`, `GET /post/{id}`, `GET /post/{id}/comment`, `GET /post/ai-events`를
+  `permitAll`에 추가 (HTTP 메서드 지정 방식이라 글·댓글 작성/수정/삭제 등 쓰기
+  요청은 인증 유지. 카테고리 조회는 기존 `/common/**` 공개 범위에 이미 포함)
+
+### Fixed
+
+- 댓글 조회(`GET /post/{postId}/comment`)가 비로그인 시 500/404로 실패하던 문제 수정 —
+  Security가 익명 사용자 principal로 주입하는 `"anonymousUser"` 문자열을 UUID로 파싱하려다
+  예외가 발생하던 것을 null(비로그인)로 처리
 - 게시글 검색(피드 `/post`, 북마크 `/bookmark/folders/{folderKey}/posts`)을
   개선 — 검색어를 공백으로 토큰 분리해 각 토큰을 OR 매칭하도록 변경
   (단어 사이에 다른 글자가 끼어도 검색됨, 한국어 붙여쓰기/띄어쓰기 양방향 대응)

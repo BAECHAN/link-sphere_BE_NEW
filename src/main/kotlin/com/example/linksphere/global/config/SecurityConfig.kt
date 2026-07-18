@@ -8,6 +8,7 @@ import org.springframework.boot.context.properties.bind.Binder
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.core.env.Environment
+import org.springframework.http.HttpMethod
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity
 import org.springframework.security.config.http.SessionCreationPolicy
@@ -20,46 +21,52 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource
 @Configuration
 @EnableWebSecurity
 class SecurityConfig(
-        private val jwtAuthenticationFilter: JwtAuthenticationFilter,
-        private val customAuthenticationEntryPoint: CustomAuthenticationEntryPoint,
-        private val customAccessDeniedHandler: CustomAccessDeniedHandler,
-        private val environment: Environment
+    private val jwtAuthenticationFilter: JwtAuthenticationFilter,
+    private val customAuthenticationEntryPoint: CustomAuthenticationEntryPoint,
+    private val customAccessDeniedHandler: CustomAccessDeniedHandler,
+    private val environment: Environment,
 ) {
 
     @Bean
-    fun passwordEncoder(): org.springframework.security.crypto.password.PasswordEncoder {
-        return org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder()
-    }
+    fun passwordEncoder(): org.springframework.security.crypto.password.PasswordEncoder = org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder()
 
     @Bean
     fun filterChain(http: HttpSecurity): SecurityFilterChain {
         http
-                .csrf { it.disable() }
-                .cors { it.configurationSource(corsConfigurationSource()) }
-                .sessionManagement { it.sessionCreationPolicy(SessionCreationPolicy.STATELESS) }
-                .authorizeHttpRequests {
-                    it.requestMatchers(
-                                    "/auth/signup",
-                                    "/auth/login",
-                                    "/auth/refresh",
-                                    "/auth/logout",
-                                    "/common/**",
-                                    "/swagger-ui/**",
-                                    "/v3/api-docs/**",
-                                    "/error",
-                                    "/actuator/**",
-                            )
-                            .permitAll()
-                    it.anyRequest().authenticated()
-                }
-                .exceptionHandling {
-                    it.authenticationEntryPoint(customAuthenticationEntryPoint)
-                    it.accessDeniedHandler(customAccessDeniedHandler)
-                }
-                .addFilterBefore(
-                        jwtAuthenticationFilter,
-                        UsernamePasswordAuthenticationFilter::class.java
+            .csrf { it.disable() }
+            .cors { it.configurationSource(corsConfigurationSource()) }
+            .sessionManagement { it.sessionCreationPolicy(SessionCreationPolicy.STATELESS) }
+            .authorizeHttpRequests {
+                it.requestMatchers(
+                    "/auth/signup",
+                    "/auth/login",
+                    "/auth/refresh",
+                    "/auth/logout",
+                    "/common/**",
+                    "/swagger-ui/**",
+                    "/v3/api-docs/**",
+                    "/error",
+                    "/actuator/**",
                 )
+                    .permitAll()
+                it.requestMatchers(
+                    HttpMethod.GET,
+                    "/post",
+                    "/post/*",
+                    "/post/*/comment",
+                    "/post/ai-events",
+                )
+                    .permitAll()
+                it.anyRequest().authenticated()
+            }
+            .exceptionHandling {
+                it.authenticationEntryPoint(customAuthenticationEntryPoint)
+                it.accessDeniedHandler(customAccessDeniedHandler)
+            }
+            .addFilterBefore(
+                jwtAuthenticationFilter,
+                UsernamePasswordAuthenticationFilter::class.java,
+            )
 
         return http.build()
     }
@@ -69,9 +76,9 @@ class SecurityConfig(
         val configuration = CorsConfiguration()
 
         val allowedOrigins =
-                Binder.get(environment)
-                        .bind("app.cors.allowed-origins", Bindable.listOf(String::class.java))
-                        .orElse(listOf())
+            Binder.get(environment)
+                .bind("app.cors.allowed-origins", Bindable.listOf(String::class.java))
+                .orElse(listOf())
 
         configuration.allowedOrigins = allowedOrigins
         configuration.allowedMethods = listOf("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
