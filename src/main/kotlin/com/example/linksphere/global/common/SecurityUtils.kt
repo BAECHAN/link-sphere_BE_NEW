@@ -1,8 +1,8 @@
 package com.example.linksphere.global.common
 
-import java.util.UUID
 import org.slf4j.LoggerFactory
 import org.springframework.security.core.Authentication
+import java.util.UUID
 
 private val logger = LoggerFactory.getLogger("SecurityUtils")
 

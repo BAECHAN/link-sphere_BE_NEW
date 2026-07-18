@@ -10,8 +10,8 @@ import org.springframework.transaction.event.TransactionalEventListener
 
 @Service
 class PostAIService(
-        private val postRepository: PostRepository,
-        private val geminiService: GeminiService
+    private val postRepository: PostRepository,
+    private val geminiService: GeminiService,
 ) {
 
     private val logger = LoggerFactory.getLogger(PostAIService::class.java)

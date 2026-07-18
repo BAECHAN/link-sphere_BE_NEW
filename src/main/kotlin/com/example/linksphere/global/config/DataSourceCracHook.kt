@@ -21,7 +21,7 @@ import javax.sql.DataSource
  */
 @Component
 class DataSourceCracHook(
-    private val dataSource: DataSource
+    private val dataSource: DataSource,
 ) : Resource {
 
     init {

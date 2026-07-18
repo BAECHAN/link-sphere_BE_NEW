@@ -55,10 +55,11 @@ jobs:
             > src/main/resources/firebase-service-account.json
 
       # ─────────────────────────────────────────────
-      # 5. Shadow JAR 빌드 (fat JAR — 모든 의존성 포함)
+      # 5. Ktlint 코드 스타일 검사 후 Shadow JAR 빌드 (fat JAR — 모든 의존성 포함)
+      #    스타일 위반이 있으면 빌드/배포 전에 실패한다.
       # ─────────────────────────────────────────────
-      - name: Build Shadow JAR
-        run: chmod +x gradlew && ./gradlew shadowJar --no-daemon
+      - name: Ktlint check & Build Shadow JAR
+        run: chmod +x gradlew && ./gradlew ktlintCheck shadowJar --no-daemon
 
       # ─────────────────────────────────────────────
       # 6. JAR 파일 유효성 확인

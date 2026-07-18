@@ -1,7 +1,7 @@
 package com.example.linksphere.infra.fcm
 
-import java.util.UUID
 import org.springframework.stereotype.Service
+import java.util.UUID
 
 @Service
 class FcmNotificationService(private val fcmService: FcmService) {
@@ -12,7 +12,7 @@ class FcmNotificationService(private val fcmService: FcmService) {
         replierNickname: String,
         replyContent: String,
         postId: UUID,
-        commentId: UUID
+        commentId: UUID,
     ) {
         fcmService.sendToUser(
             userId = parentCommentAuthorId,
@@ -21,8 +21,8 @@ class FcmNotificationService(private val fcmService: FcmService) {
             data = mapOf(
                 "type" to "REPLY",
                 "postId" to postId.toString(),
-                "commentId" to commentId.toString()
-            )
+                "commentId" to commentId.toString(),
+            ),
         )
     }
 
@@ -32,7 +32,7 @@ class FcmNotificationService(private val fcmService: FcmService) {
         commenterNickname: String,
         commentContent: String,
         postId: UUID,
-        commentId: UUID
+        commentId: UUID,
     ) {
         fcmService.sendToUser(
             userId = postAuthorId,
@@ -41,8 +41,8 @@ class FcmNotificationService(private val fcmService: FcmService) {
             data = mapOf(
                 "type" to "COMMENT",
                 "postId" to postId.toString(),
-                "commentId" to commentId.toString()
-            )
+                "commentId" to commentId.toString(),
+            ),
         )
     }
 }

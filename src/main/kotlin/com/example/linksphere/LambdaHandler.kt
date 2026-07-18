@@ -3,6 +3,7 @@ package com.example.linksphere
 import com.amazonaws.services.lambda.runtime.Context
 import com.amazonaws.services.lambda.runtime.RequestStreamHandler
 import com.fasterxml.jackson.databind.ObjectMapper
+import jakarta.servlet.http.Cookie
 import org.springframework.boot.SpringApplication
 import org.springframework.boot.WebApplicationType
 import org.springframework.boot.web.servlet.context.AnnotationConfigServletWebServerApplicationContext
@@ -14,7 +15,6 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders
 import org.springframework.web.context.WebApplicationContext
 import java.io.InputStream
 import java.io.OutputStream
-import jakarta.servlet.http.Cookie
 import java.net.URI
 import java.util.Base64
 
@@ -49,8 +49,7 @@ class LambdaHandler : RequestStreamHandler {
             // AnnotationConfigApplicationContext(비웹)로 폴백되고 WebApplicationContext 캐스팅에서 오류가 난다.
             // 이 오버라이드는 spring.factories 조회 자체를 건너뛰는 이중 방어책이다.
             val app = object : SpringApplication(LinkSphereBeApplication::class.java) {
-                override fun createApplicationContext(): ConfigurableApplicationContext =
-                    AnnotationConfigServletWebServerApplicationContext()
+                override fun createApplicationContext(): ConfigurableApplicationContext = AnnotationConfigServletWebServerApplicationContext()
             }
             app.webApplicationType = WebApplicationType.SERVLET
             val ctx = app.run()
@@ -115,10 +114,13 @@ class LambdaHandler : RequestStreamHandler {
         val response = result.response
         val responseHeaders = response.headerNames.associateWith { response.getHeader(it) }
 
-        mapper.writeValue(output, mapOf(
-            "statusCode" to response.status,
-            "headers" to responseHeaders,
-            "body" to response.contentAsString
-        ))
+        mapper.writeValue(
+            output,
+            mapOf(
+                "statusCode" to response.status,
+                "headers" to responseHeaders,
+                "body" to response.contentAsString,
+            ),
+        )
     }
 }

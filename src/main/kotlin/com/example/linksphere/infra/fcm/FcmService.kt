@@ -6,15 +6,15 @@ import com.google.firebase.messaging.FirebaseMessagingException
 import com.google.firebase.messaging.MessagingErrorCode
 import com.google.firebase.messaging.MulticastMessage
 import com.google.firebase.messaging.Notification
-import java.util.UUID
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.util.UUID
 
 @Service
 class FcmService(
     private val fcmTokenService: FcmTokenService,
-    private val fcmTokenRepository: FcmTokenRepository
+    private val fcmTokenRepository: FcmTokenRepository,
 ) {
 
     private val logger = LoggerFactory.getLogger(FcmService::class.java)
@@ -38,7 +38,7 @@ class FcmService(
                 Notification.builder()
                     .setTitle(title)
                     .setBody(body)
-                    .build()
+                    .build(),
             )
             .putAllData(data)
             .addAllTokens(tokens)
@@ -71,7 +71,7 @@ class FcmService(
         if (exception == null) return false
         return exception.messagingErrorCode in listOf(
             MessagingErrorCode.UNREGISTERED,
-            MessagingErrorCode.INVALID_ARGUMENT
+            MessagingErrorCode.INVALID_ARGUMENT,
         )
     }
 }

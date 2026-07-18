@@ -3,9 +3,9 @@ package com.example.linksphere.domain.interaction
 import com.example.linksphere.domain.post.PostPageResponse
 import com.example.linksphere.global.common.ApiResponse
 import com.example.linksphere.global.common.getUserId
-import java.util.UUID
 import org.springframework.security.core.Authentication
 import org.springframework.web.bind.annotation.*
+import java.util.UUID
 
 @RestController
 @RequestMapping("/bookmark/folders")
@@ -20,8 +20,8 @@ class BookmarkFolderController(private val bookmarkFolderService: BookmarkFolder
 
     @PostMapping
     fun createFolder(
-            @RequestBody request: CreateFolderRequest,
-            authentication: Authentication?
+        @RequestBody request: CreateFolderRequest,
+        authentication: Authentication?,
     ): ApiResponse<FolderResponse> {
         val userId = authentication.getUserId() ?: throw IllegalArgumentException("User not authenticated")
         val folder = bookmarkFolderService.createFolder(userId, request)
@@ -30,9 +30,9 @@ class BookmarkFolderController(private val bookmarkFolderService: BookmarkFolder
 
     @PatchMapping("/{folderId}")
     fun updateFolder(
-            @PathVariable folderId: UUID,
-            @RequestBody request: UpdateFolderRequest,
-            authentication: Authentication?
+        @PathVariable folderId: UUID,
+        @RequestBody request: UpdateFolderRequest,
+        authentication: Authentication?,
     ): ApiResponse<FolderResponse> {
         val userId = authentication.getUserId() ?: throw IllegalArgumentException("User not authenticated")
         val folder = bookmarkFolderService.updateFolder(userId, folderId, request)
@@ -41,8 +41,8 @@ class BookmarkFolderController(private val bookmarkFolderService: BookmarkFolder
 
     @PatchMapping("/reorder")
     fun reorderFolders(
-            @RequestBody request: ReorderFoldersRequest,
-            authentication: Authentication?
+        @RequestBody request: ReorderFoldersRequest,
+        authentication: Authentication?,
     ): ApiResponse<Unit> {
         val userId = authentication.getUserId() ?: throw IllegalArgumentException("User not authenticated")
         bookmarkFolderService.reorderFolders(userId, request.folderIds)
@@ -51,8 +51,8 @@ class BookmarkFolderController(private val bookmarkFolderService: BookmarkFolder
 
     @DeleteMapping("/{folderId}")
     fun deleteFolder(
-            @PathVariable folderId: UUID,
-            authentication: Authentication?
+        @PathVariable folderId: UUID,
+        authentication: Authentication?,
     ): ApiResponse<Unit> {
         val userId = authentication.getUserId() ?: throw IllegalArgumentException("User not authenticated")
         bookmarkFolderService.deleteFolder(userId, folderId)
@@ -65,12 +65,12 @@ class BookmarkFolderController(private val bookmarkFolderService: BookmarkFolder
      */
     @GetMapping("/{folderKey}/posts")
     fun getBookmarkedPosts(
-            @PathVariable folderKey: String,
-            @RequestParam(required = false) sort: String?,
-            @RequestParam(required = false) search: String?,
-            @RequestParam(defaultValue = "0") page: Int,
-            @RequestParam(defaultValue = "10") size: Int,
-            authentication: Authentication?
+        @PathVariable folderKey: String,
+        @RequestParam(required = false) sort: String?,
+        @RequestParam(required = false) search: String?,
+        @RequestParam(defaultValue = "0") page: Int,
+        @RequestParam(defaultValue = "10") size: Int,
+        authentication: Authentication?,
     ): ApiResponse<PostPageResponse> {
         val userId = authentication.getUserId() ?: throw IllegalArgumentException("User not authenticated")
         val posts = bookmarkFolderService.getBookmarkedPosts(userId, folderKey, sort, search, page, size)

@@ -5,6 +5,7 @@ plugins {
     id("io.spring.dependency-management") version "1.1.7"
     kotlin("plugin.jpa") version "2.1.0"
     id("com.github.johnrengelman.shadow") version "8.1.1"
+    id("org.jlleitschuh.gradle.ktlint") version "14.2.0"
 }
 
 // Lambda는 fat JAR(shadowJar)로 배포한다. bootJar와 plain jar는 사용하지 않는다.
@@ -69,9 +70,7 @@ description = "link-sphere_BE"
 
 java { toolchain { languageVersion = JavaLanguageVersion.of(17) } }
 
-
 repositories { mavenCentral() }
-
 
 dependencies {
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
@@ -85,7 +84,7 @@ dependencies {
     implementation("org.jetbrains.kotlin:kotlin-reflect")
     implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8")
     runtimeOnly("org.postgresql:postgresql")
-    
+
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
     testImplementation("org.springframework.security:spring-security-test")

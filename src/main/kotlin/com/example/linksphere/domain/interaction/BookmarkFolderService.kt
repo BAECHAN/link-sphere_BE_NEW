@@ -7,18 +7,18 @@ import com.example.linksphere.global.exception.BookmarkNotFoundException
 import com.example.linksphere.global.exception.DuplicateFolderNameException
 import com.example.linksphere.global.exception.ForbiddenException
 import com.example.linksphere.global.exception.InvalidInputException
-import java.time.LocalDateTime
-import java.util.UUID
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.time.LocalDateTime
+import java.util.UUID
 
 @Service
 class BookmarkFolderService(
-        private val bookmarkFolderRepository: BookmarkFolderRepository,
-        private val bookmarkRepository: BookmarkRepository,
-        private val postService: PostService
+    private val bookmarkFolderRepository: BookmarkFolderRepository,
+    private val bookmarkRepository: BookmarkRepository,
+    private val postService: PostService,
 ) {
 
     @Transactional(readOnly = true)
@@ -26,12 +26,12 @@ class BookmarkFolderService(
         val folders = bookmarkFolderRepository.findByUserIdOrderBySortOrderAsc(userId)
         return folders.map { folder ->
             FolderResponse(
-                    id = folder.id,
-                    name = folder.name,
-                    sortOrder = folder.sortOrder,
-                    bookmarkCount = bookmarkRepository.countByUserIdAndFolderId(userId, folder.id).toInt(),
-                    createdAt = folder.createdAt,
-                    updatedAt = folder.updatedAt
+                id = folder.id,
+                name = folder.name,
+                sortOrder = folder.sortOrder,
+                bookmarkCount = bookmarkRepository.countByUserIdAndFolderId(userId, folder.id).toInt(),
+                createdAt = folder.createdAt,
+                updatedAt = folder.updatedAt,
             )
         }
     }
@@ -48,27 +48,27 @@ class BookmarkFolderService(
         val nextSortOrder = bookmarkFolderRepository.findMaxSortOrderByUserId(userId) + 1
 
         val saved = bookmarkFolderRepository.save(
-                TableBookmarkFolder(
-                        userId = userId,
-                        name = name,
-                        sortOrder = nextSortOrder
-                )
+            TableBookmarkFolder(
+                userId = userId,
+                name = name,
+                sortOrder = nextSortOrder,
+            ),
         )
 
         return FolderResponse(
-                id = saved.id,
-                name = saved.name,
-                sortOrder = saved.sortOrder,
-                bookmarkCount = 0,
-                createdAt = saved.createdAt,
-                updatedAt = saved.updatedAt
+            id = saved.id,
+            name = saved.name,
+            sortOrder = saved.sortOrder,
+            bookmarkCount = 0,
+            createdAt = saved.createdAt,
+            updatedAt = saved.updatedAt,
         )
     }
 
     @Transactional
     fun updateFolder(userId: UUID, folderId: UUID, request: UpdateFolderRequest): FolderResponse {
         val folder = bookmarkFolderRepository.findByIdOrNull(folderId)
-                ?: throw BookmarkFolderNotFoundException(folderId)
+            ?: throw BookmarkFolderNotFoundException(folderId)
         if (folder.userId != userId) throw ForbiddenException("Cannot update another user's folder")
 
         val newName = request.name.trim()
@@ -83,19 +83,19 @@ class BookmarkFolderService(
 
         val bookmarkCount = bookmarkRepository.countByUserIdAndFolderId(userId, folder.id).toInt()
         return FolderResponse(
-                id = folder.id,
-                name = folder.name,
-                sortOrder = folder.sortOrder,
-                bookmarkCount = bookmarkCount,
-                createdAt = folder.createdAt,
-                updatedAt = folder.updatedAt
+            id = folder.id,
+            name = folder.name,
+            sortOrder = folder.sortOrder,
+            bookmarkCount = bookmarkCount,
+            createdAt = folder.createdAt,
+            updatedAt = folder.updatedAt,
         )
     }
 
     @Transactional
     fun deleteFolder(userId: UUID, folderId: UUID) {
         val folder = bookmarkFolderRepository.findByIdOrNull(folderId)
-                ?: throw BookmarkFolderNotFoundException(folderId)
+            ?: throw BookmarkFolderNotFoundException(folderId)
         if (folder.userId != userId) throw ForbiddenException("Cannot delete another user's folder")
 
         // FK ON DELETE SET NULL 로 안의 북마크들의 folder_id 가 자동 NULL 처리됨 (= 미분류 이동)
@@ -142,7 +142,7 @@ class BookmarkFolderService(
 
         if (folderId != null) {
             val folder = bookmarkFolderRepository.findByIdOrNull(folderId)
-                    ?: throw BookmarkFolderNotFoundException(folderId)
+                ?: throw BookmarkFolderNotFoundException(folderId)
             if (folder.userId != userId) {
                 throw ForbiddenException("Cannot move bookmarks to another user's folder")
             }
@@ -173,11 +173,11 @@ class BookmarkFolderService(
     @Transactional
     fun moveBookmark(userId: UUID, postId: UUID, folderId: UUID?) {
         val bookmark = bookmarkRepository.findById(BookmarkId(userId, postId))
-                .orElseThrow { BookmarkNotFoundException(userId, postId) }
+            .orElseThrow { BookmarkNotFoundException(userId, postId) }
 
         if (folderId != null) {
             val folder = bookmarkFolderRepository.findByIdOrNull(folderId)
-                    ?: throw BookmarkFolderNotFoundException(folderId)
+                ?: throw BookmarkFolderNotFoundException(folderId)
             if (folder.userId != userId) {
                 throw ForbiddenException("Cannot move bookmark to another user's folder")
             }
@@ -195,43 +195,43 @@ class BookmarkFolderService(
      */
     @Transactional(readOnly = true)
     fun getBookmarkedPosts(
-            userId: UUID,
-            folderKey: String,
-            sort: String?,
-            search: String?,
-            page: Int,
-            size: Int
+        userId: UUID,
+        folderKey: String,
+        sort: String?,
+        search: String?,
+        page: Int,
+        size: Int,
     ): PostPageResponse {
         val (folderId, onlyUncategorized) =
-                when (folderKey) {
-                    "all" -> null to false
-                    "uncategorized" -> null to true
-                    else -> {
-                        val uuid =
-                                try {
-                                    UUID.fromString(folderKey)
-                                } catch (e: IllegalArgumentException) {
-                                    throw InvalidInputException("Invalid folder key: $folderKey")
-                                }
-                        val folder = bookmarkFolderRepository.findByIdOrNull(uuid)
-                                ?: throw BookmarkFolderNotFoundException(uuid)
-                        if (folder.userId != userId) {
-                            throw ForbiddenException("Cannot access another user's folder")
+            when (folderKey) {
+                "all" -> null to false
+                "uncategorized" -> null to true
+                else -> {
+                    val uuid =
+                        try {
+                            UUID.fromString(folderKey)
+                        } catch (e: IllegalArgumentException) {
+                            throw InvalidInputException("Invalid folder key: $folderKey")
                         }
-                        uuid to false
+                    val folder = bookmarkFolderRepository.findByIdOrNull(uuid)
+                        ?: throw BookmarkFolderNotFoundException(uuid)
+                    if (folder.userId != userId) {
+                        throw ForbiddenException("Cannot access another user's folder")
                     }
+                    uuid to false
                 }
+            }
 
         val pageable = PageRequest.of(page, size)
         val postPage =
-                bookmarkRepository.findBookmarkedPosts(
-                        userId,
-                        folderId,
-                        onlyUncategorized,
-                        sort ?: "latest",
-                        search,
-                        pageable
-                )
+            bookmarkRepository.findBookmarkedPosts(
+                userId,
+                folderId,
+                onlyUncategorized,
+                sort ?: "latest",
+                search,
+                pageable,
+            )
         return PostPageResponse.from(postPage, postService.buildResponsesFromPosts(postPage.content, userId))
     }
 }

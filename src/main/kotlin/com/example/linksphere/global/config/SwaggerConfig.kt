@@ -15,22 +15,22 @@ class SwaggerConfig {
     fun openAPI(): OpenAPI {
         val securitySchemeName = "bearerAuth"
         return OpenAPI()
-                .info(
-                        Info().title("Link Sphere API")
-                                .description("API documentation for Link Sphere application")
-                                .version("1.0.0")
-                )
-                .addSecurityItem(SecurityRequirement().addList(securitySchemeName))
-                .components(
-                        Components()
-                                .addSecuritySchemes(
-                                        securitySchemeName,
-                                        SecurityScheme()
-                                                .name(securitySchemeName)
-                                                .type(SecurityScheme.Type.HTTP)
-                                                .scheme("bearer")
-                                                .bearerFormat("JWT")
-                                )
-                )
+            .info(
+                Info().title("Link Sphere API")
+                    .description("API documentation for Link Sphere application")
+                    .version("1.0.0"),
+            )
+            .addSecurityItem(SecurityRequirement().addList(securitySchemeName))
+            .components(
+                Components()
+                    .addSecuritySchemes(
+                        securitySchemeName,
+                        SecurityScheme()
+                            .name(securitySchemeName)
+                            .type(SecurityScheme.Type.HTTP)
+                            .scheme("bearer")
+                            .bearerFormat("JWT"),
+                    ),
+            )
     }
 }

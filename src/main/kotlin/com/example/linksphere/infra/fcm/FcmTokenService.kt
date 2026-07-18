@@ -1,9 +1,9 @@
 package com.example.linksphere.infra.fcm
 
-import java.util.UUID
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.util.UUID
 
 @Service
 class FcmTokenService(private val fcmTokenRepository: FcmTokenRepository) {
@@ -18,7 +18,7 @@ class FcmTokenService(private val fcmTokenRepository: FcmTokenRepository) {
             return
         }
         fcmTokenRepository.save(
-            TableFcmToken(userId = userId, token = token, platform = platform)
+            TableFcmToken(userId = userId, token = token, platform = platform),
         )
         logger.info("[FCM] Token registered - userId: $userId, platform: $platform")
     }
@@ -35,7 +35,5 @@ class FcmTokenService(private val fcmTokenRepository: FcmTokenRepository) {
         logger.info("[FCM] All tokens deleted for userId: $userId")
     }
 
-    fun getTokensByUserId(userId: UUID): List<String> {
-        return fcmTokenRepository.findAllByUserId(userId).map { it.token }
-    }
+    fun getTokensByUserId(userId: UUID): List<String> = fcmTokenRepository.findAllByUserId(userId).map { it.token }
 }

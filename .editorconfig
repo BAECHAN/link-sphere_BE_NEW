@@ -1,0 +1,12 @@
+root = true
+
+[*.{kt,kts}]
+ktlint_code_style = intellij_idea
+
+# 프로젝트 컨벤션과 충돌하는 규칙 비활성화
+# - no-wildcard-imports: jakarta.persistence.* 등 와일드카드 import를 의도적으로 사용
+# - filename: *DTO.kt 한 파일에 여러 DTO를 모아 관리하는 컨벤션(CLAUDE.md)과 충돌
+# - value-parameter-comment: 엔티티 생성자 파라미터 인라인 주석 사용
+ktlint_standard_no-wildcard-imports = disabled
+ktlint_standard_filename = disabled
+ktlint_standard_value-parameter-comment = disabled

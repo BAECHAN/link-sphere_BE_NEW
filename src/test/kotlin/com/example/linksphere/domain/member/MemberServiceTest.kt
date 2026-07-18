@@ -3,8 +3,6 @@ package com.example.linksphere.domain.member
 import com.example.linksphere.domain.auth.SignupRequest
 import com.example.linksphere.domain.auth.UpdateAccountRequest
 import com.example.linksphere.global.exception.DuplicateMemberException
-import java.util.Optional
-import java.util.UUID
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -16,6 +14,8 @@ import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 import org.mockito.junit.jupiter.MockitoExtension
+import java.util.Optional
+import java.util.UUID
 
 @ExtendWith(MockitoExtension::class)
 class MemberServiceTest {
@@ -30,7 +30,7 @@ class MemberServiceTest {
         `when`(memberRepository.existsByEmail(request.email)).thenReturn(true)
 
         val exception =
-                assertThrows(DuplicateMemberException::class.java) { memberService.signup(request) }
+            assertThrows(DuplicateMemberException::class.java) { memberService.signup(request) }
         assertTrue(exception.message!!.contains("Email already exists"))
     }
 
@@ -41,7 +41,7 @@ class MemberServiceTest {
         `when`(memberRepository.existsByNickname(request.nickname!!)).thenReturn(true)
 
         val exception =
-                assertThrows(DuplicateMemberException::class.java) { memberService.signup(request) }
+            assertThrows(DuplicateMemberException::class.java) { memberService.signup(request) }
         assertTrue(exception.message!!.contains("Nickname already exists"))
     }
 

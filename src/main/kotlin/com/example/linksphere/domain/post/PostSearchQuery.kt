@@ -22,14 +22,13 @@ object PostSearchQuery {
     private const val TITLE_PREFIX_BONUS = 50
 
     /** 검색어를 공백으로 토큰 분리한다. trim → split(\s+) → 빈 토큰 제거 → lowercase. */
-    fun tokenize(search: String?): List<String> =
-        search
-            ?.trim()
-            ?.takeIf { it.isNotEmpty() }
-            ?.split(Regex("\\s+"))
-            ?.filter { it.isNotEmpty() }
-            ?.map { it.lowercase() }
-            ?: emptyList()
+    fun tokenize(search: String?): List<String> = search
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?.split(Regex("\\s+"))
+        ?.filter { it.isNotEmpty() }
+        ?.map { it.lowercase() }
+        ?: emptyList()
 
     /** 토큰 중 하나라도 제목/설명/태그에 매칭되면 포함(OR). count/data 쿼리 공통 WHERE. */
     fun searchPredicate(cb: CriteriaBuilder, from: From<*, TablePost>, tokens: List<String>): Predicate {
@@ -75,26 +74,21 @@ object PostSearchQuery {
         return terms.fold(cb.literal(0) as Expression<Int>) { acc, term -> cb.sum(acc, term) }
     }
 
-    private fun caseInt(cb: CriteriaBuilder, cond: Predicate, weight: Int): Expression<Int> =
-        cb.selectCase<Int>().`when`(cond, cb.literal(weight)).otherwise(cb.literal(0))
+    private fun caseInt(cb: CriteriaBuilder, cond: Predicate, weight: Int): Expression<Int> = cb.selectCase<Int>().`when`(cond, cb.literal(weight)).otherwise(cb.literal(0))
 
-    private fun titleNorm(cb: CriteriaBuilder, from: From<*, TablePost>): Expression<String> =
-        norm(cb, from.get("title"))
+    private fun titleNorm(cb: CriteriaBuilder, from: From<*, TablePost>): Expression<String> = norm(cb, from.get("title"))
 
-    private fun descNorm(cb: CriteriaBuilder, from: From<*, TablePost>): Expression<String> =
-        norm(cb, from.get("description"))
+    private fun descNorm(cb: CriteriaBuilder, from: From<*, TablePost>): Expression<String> = norm(cb, from.get("description"))
 
-    private fun tagsNorm(cb: CriteriaBuilder, from: From<*, TablePost>): Expression<String> =
-        cb.lower(
-            cb.function(
-                "replace",
-                String::class.java,
-                cb.function("array_to_string", String::class.java, from.get<Any>("tags"), cb.literal(",")),
-                cb.literal(" "),
-                cb.literal(""),
-            )
-        )
+    private fun tagsNorm(cb: CriteriaBuilder, from: From<*, TablePost>): Expression<String> = cb.lower(
+        cb.function(
+            "replace",
+            String::class.java,
+            cb.function("array_to_string", String::class.java, from.get<Any>("tags"), cb.literal(",")),
+            cb.literal(" "),
+            cb.literal(""),
+        ),
+    )
 
-    private fun norm(cb: CriteriaBuilder, path: Expression<String>): Expression<String> =
-        cb.lower(cb.function("replace", String::class.java, path, cb.literal(" "), cb.literal("")))
+    private fun norm(cb: CriteriaBuilder, path: Expression<String>): Expression<String> = cb.lower(cb.function("replace", String::class.java, path, cb.literal(" "), cb.literal("")))
 }

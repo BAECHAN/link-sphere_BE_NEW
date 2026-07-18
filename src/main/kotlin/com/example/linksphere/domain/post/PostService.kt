@@ -9,26 +9,26 @@ import com.example.linksphere.domain.interaction.TargetType
 import com.example.linksphere.domain.member.MemberRepository
 import com.example.linksphere.global.exception.ForbiddenException
 import com.example.linksphere.global.exception.PostNotFoundException
-import java.net.URI
-import java.net.URISyntaxException
-import java.util.UUID
 import org.slf4j.LoggerFactory
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.net.URI
+import java.net.URISyntaxException
+import java.util.UUID
 
 @Service
 @Transactional(readOnly = true)
 class PostService(
-        private val postRepository: PostRepository,
-        private val categoryRepository: CategoryRepository,
-        private val memberRepository: MemberRepository,
-        private val bookmarkRepository: BookmarkRepository,
-        private val reactionRepository: ReactionRepository,
-        private val commentRepository: CommentRepository,
-        private val eventPublisher: ApplicationEventPublisher,
-        private val urlMetadataExtractor: UrlMetadataExtractor
+    private val postRepository: PostRepository,
+    private val categoryRepository: CategoryRepository,
+    private val memberRepository: MemberRepository,
+    private val bookmarkRepository: BookmarkRepository,
+    private val reactionRepository: ReactionRepository,
+    private val commentRepository: CommentRepository,
+    private val eventPublisher: ApplicationEventPublisher,
+    private val urlMetadataExtractor: UrlMetadataExtractor,
 ) {
 
     private val logger = LoggerFactory.getLogger(PostService::class.java)
@@ -40,37 +40,37 @@ class PostService(
 
         val title = if (!request.title.isNullOrBlank()) request.title else metadata.title
         val categories =
-                if (!request.categoryIds.isNullOrEmpty()) {
-                    categoryRepository.findAllByIdIn(request.categoryIds).toMutableSet()
-                } else {
-                    mutableSetOf()
-                }
+            if (!request.categoryIds.isNullOrEmpty()) {
+                categoryRepository.findAllByIdIn(request.categoryIds).toMutableSet()
+            } else {
+                mutableSetOf()
+            }
 
         val newPost =
-                TablePost(
-                        userId = userId,
-                        url = request.url,
-                        title = title,
-                        description = metadata.description,
-                        tags = metadata.tags.toMutableList(),
-                        categories = categories,
-                        ogImage = metadata.ogImage,
-                        aiStatus = if (metadata.pageContent != null) AiStatus.PENDING else AiStatus.NONE,
-                        isPrivate = request.isPrivate
-                )
+            TablePost(
+                userId = userId,
+                url = request.url,
+                title = title,
+                description = metadata.description,
+                tags = metadata.tags.toMutableList(),
+                categories = categories,
+                ogImage = metadata.ogImage,
+                aiStatus = if (metadata.pageContent != null) AiStatus.PENDING else AiStatus.NONE,
+                isPrivate = request.isPrivate,
+            )
         val savedPost = postRepository.save(newPost)
 
         if (metadata.pageContent != null) {
             logger.info("[AI Async] PostCreatedEvent 발행 - postId: ${savedPost.id}")
             eventPublisher.publishEvent(
-                    PostCreatedEvent(
-                            postId = savedPost.id!!,
-                            userId = userId,
-                            title = title,
-                            description = metadata.description,
-                            content = metadata.pageContent,
-                            existingTags = metadata.tags
-                    )
+                PostCreatedEvent(
+                    postId = savedPost.id!!,
+                    userId = userId,
+                    title = title,
+                    description = metadata.description,
+                    content = metadata.pageContent,
+                    existingTags = metadata.tags,
+                ),
             )
         }
 
@@ -78,13 +78,13 @@ class PostService(
     }
 
     fun getAllPosts(
-            category: String?,
-            search: String?,
-            filter: String?,
-            nickname: String?,
-            page: Int,
-            size: Int,
-            currentUserId: UUID?
+        category: String?,
+        search: String?,
+        filter: String?,
+        nickname: String?,
+        page: Int,
+        size: Int,
+        currentUserId: UUID?,
     ): PostPageResponse {
         val pageable = PageRequest.of(page, size)
         val postPage = postRepository.findPosts(category, search, filter, nickname, currentUserId, pageable)
@@ -101,47 +101,54 @@ class PostService(
         val postIds = posts.mapNotNull { it.id }
 
         val authorMap =
-                memberRepository.findAllById(posts.map { it.userId }.distinct())
-                        .associate { m -> val id = m.id!!; id to UserSummary(id, m.nickname, m.image) }
+            memberRepository.findAllById(posts.map { it.userId }.distinct())
+                .associate { m ->
+                    val id = m.id!!
+                    id to UserSummary(id, m.nickname, m.image)
+                }
 
         val allBookmarks = bookmarkRepository.findAllByPostIdIn(postIds)
         val bookmarkCountMap = allBookmarks.groupingBy { it.postId }.eachCount()
         val myBookmarks =
-                if (currentUserId != null)
-                        bookmarkRepository.findAllByUserIdAndPostIdIn(currentUserId, postIds)
-                else emptyList()
+            if (currentUserId != null) {
+                bookmarkRepository.findAllByUserIdAndPostIdIn(currentUserId, postIds)
+            } else {
+                emptyList()
+            }
         val bookmarkedPostIds = myBookmarks.map { it.postId }.toSet()
         val bookmarkFolderMap = myBookmarks.associate { it.postId to it.folderId }
 
         val allReactions = reactionRepository.findAllByTargetIdInAndTargetType(postIds, TargetType.POST)
         val reactionCountMap = allReactions.groupingBy { it.targetId }.eachCount()
         val reactedPostIds =
-                if (currentUserId != null)
-                        reactionRepository
-                                .findAllByUserIdAndTargetIdInAndTargetType(currentUserId, postIds, TargetType.POST)
-                                .map { it.targetId }
-                                .toSet()
-                else emptySet()
+            if (currentUserId != null) {
+                reactionRepository
+                    .findAllByUserIdAndTargetIdInAndTargetType(currentUserId, postIds, TargetType.POST)
+                    .map { it.targetId }
+                    .toSet()
+            } else {
+                emptySet()
+            }
 
         val commentCountMap =
-                commentRepository.countByPostIdIn(postIds)
-                        .associate { it.postId to it.count.toInt() }
+            commentRepository.countByPostIdIn(postIds)
+                .associate { it.postId to it.count.toInt() }
 
         return posts.map { post ->
             val postId = post.id ?: throw IllegalStateException("Post ID cannot be null")
             val author =
-                    authorMap[post.userId]
-                            ?: throw IllegalArgumentException("Member not found: ${post.userId}")
+                authorMap[post.userId]
+                    ?: throw IllegalArgumentException("Member not found: ${post.userId}")
             buildPostResponse(
-                    post = post,
-                    postId = postId,
-                    author = author,
-                    likeCount = reactionCountMap[postId] ?: 0,
-                    isLiked = postId in reactedPostIds,
-                    bookmarkCount = bookmarkCountMap[postId] ?: 0,
-                    isBookmarked = postId in bookmarkedPostIds,
-                    bookmarkFolderId = bookmarkFolderMap[postId],
-                    commentCount = commentCountMap[postId] ?: 0
+                post = post,
+                postId = postId,
+                author = author,
+                likeCount = reactionCountMap[postId] ?: 0,
+                isLiked = postId in reactedPostIds,
+                bookmarkCount = bookmarkCountMap[postId] ?: 0,
+                isBookmarked = postId in bookmarkedPostIds,
+                bookmarkFolderId = bookmarkFolderMap[postId],
+                commentCount = commentCountMap[postId] ?: 0,
             )
         }
     }
@@ -200,71 +207,70 @@ class PostService(
         val postId = post.id ?: throw IllegalStateException("Post ID cannot be null")
 
         val dbAuthor =
-                memberRepository.findById(post.userId).orElseThrow {
-                    IllegalArgumentException("Member not found with id: ${post.userId}")
-                }
+            memberRepository.findById(post.userId).orElseThrow {
+                IllegalArgumentException("Member not found with id: ${post.userId}")
+            }
         val author =
-                UserSummary(
-                        id = dbAuthor.id ?: throw IllegalStateException("User ID cannot be null"),
-                        nickname = dbAuthor.nickname,
-                        image = dbAuthor.image
-                )
+            UserSummary(
+                id = dbAuthor.id ?: throw IllegalStateException("User ID cannot be null"),
+                nickname = dbAuthor.nickname,
+                image = dbAuthor.image,
+            )
 
         val myBookmark = currentUserId?.let {
             bookmarkRepository.findById(com.example.linksphere.domain.interaction.BookmarkId(it, postId)).orElse(null)
         }
         return buildPostResponse(
-                post = post,
-                postId = postId,
-                author = author,
-                likeCount = reactionRepository.countByTargetIdAndTargetType(postId, TargetType.POST).toInt(),
-                isLiked =
-                        currentUserId?.let {
-                            reactionRepository.existsByTargetIdAndTargetTypeAndUserId(postId, TargetType.POST, it)
-                        } ?: false,
-                bookmarkCount = bookmarkRepository.countByPostId(postId).toInt(),
-                isBookmarked = myBookmark != null,
-                bookmarkFolderId = myBookmark?.folderId,
-                commentCount = commentRepository.countByPostId(postId).toInt()
+            post = post,
+            postId = postId,
+            author = author,
+            likeCount = reactionRepository.countByTargetIdAndTargetType(postId, TargetType.POST).toInt(),
+            isLiked =
+            currentUserId?.let {
+                reactionRepository.existsByTargetIdAndTargetTypeAndUserId(postId, TargetType.POST, it)
+            } ?: false,
+            bookmarkCount = bookmarkRepository.countByPostId(postId).toInt(),
+            isBookmarked = myBookmark != null,
+            bookmarkFolderId = myBookmark?.folderId,
+            commentCount = commentRepository.countByPostId(postId).toInt(),
         )
     }
 
     private fun buildPostResponse(
-            post: TablePost,
-            postId: UUID,
-            author: UserSummary,
-            likeCount: Int,
-            isLiked: Boolean,
-            bookmarkCount: Int,
-            isBookmarked: Boolean,
-            bookmarkFolderId: UUID? = null,
-            commentCount: Int
-    ): PostResponse =
-            PostResponse(
-                    id = postId,
-                    userId = post.userId,
-                    url = post.url,
-                    title = post.title,
-                    description = post.description,
-                    tags = post.tags,
-                    categories = post.categories.map { CategoryResponse.from(it) }.sortedBy { it.id },
-                    ogImage = post.ogImage,
-                    aiSummary = post.aiSummary,
-                    createdAt = post.createdAt,
-                    aiStatus = post.aiStatus,
-                    isPrivate = post.isPrivate,
-                    stats =
-                            PostStats(
-                                    viewCount = post.viewCount ?: 0,
-                                    likeCount = likeCount,
-                                    commentCount = commentCount,
-                                    bookmarkCount = bookmarkCount
-                            ),
-                    userInteractions = PostUserInteractions(
-                            isLiked = isLiked,
-                            isBookmarked = isBookmarked,
-                            bookmarkFolderId = bookmarkFolderId
-                    ),
-                    author = author
-            )
+        post: TablePost,
+        postId: UUID,
+        author: UserSummary,
+        likeCount: Int,
+        isLiked: Boolean,
+        bookmarkCount: Int,
+        isBookmarked: Boolean,
+        bookmarkFolderId: UUID? = null,
+        commentCount: Int,
+    ): PostResponse = PostResponse(
+        id = postId,
+        userId = post.userId,
+        url = post.url,
+        title = post.title,
+        description = post.description,
+        tags = post.tags,
+        categories = post.categories.map { CategoryResponse.from(it) }.sortedBy { it.id },
+        ogImage = post.ogImage,
+        aiSummary = post.aiSummary,
+        createdAt = post.createdAt,
+        aiStatus = post.aiStatus,
+        isPrivate = post.isPrivate,
+        stats =
+        PostStats(
+            viewCount = post.viewCount ?: 0,
+            likeCount = likeCount,
+            commentCount = commentCount,
+            bookmarkCount = bookmarkCount,
+        ),
+        userInteractions = PostUserInteractions(
+            isLiked = isLiked,
+            isBookmarked = isBookmarked,
+            bookmarkFolderId = bookmarkFolderId,
+        ),
+        author = author,
+    )
 }

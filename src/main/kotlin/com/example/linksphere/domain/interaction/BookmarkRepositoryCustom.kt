@@ -1,9 +1,9 @@
 package com.example.linksphere.domain.interaction
 
 import com.example.linksphere.domain.post.TablePost
-import java.util.UUID
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
+import java.util.UUID
 
 interface BookmarkRepositoryCustom {
     /**
@@ -21,11 +21,11 @@ interface BookmarkRepositoryCustom {
      * Post visibility 적용: isPrivate=false OR post.userId=userId
      */
     fun findBookmarkedPosts(
-            userId: UUID,
-            folderId: UUID?,
-            onlyUncategorized: Boolean,
-            sort: String,
-            search: String?,
-            pageable: Pageable
+        userId: UUID,
+        folderId: UUID?,
+        onlyUncategorized: Boolean,
+        sort: String,
+        search: String?,
+        pageable: Pageable,
     ): Page<TablePost>
 }

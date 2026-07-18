@@ -11,19 +11,18 @@ import org.springframework.stereotype.Component
 import org.springframework.web.filter.OncePerRequestFilter
 
 @Component
-class JwtAuthenticationFilter(private val jwtTokenProvider: JwtTokenProvider) :
-        OncePerRequestFilter() {
+class JwtAuthenticationFilter(private val jwtTokenProvider: JwtTokenProvider) : OncePerRequestFilter() {
 
     private val logger = org.slf4j.LoggerFactory.getLogger(JwtAuthenticationFilter::class.java)
 
     override fun doFilterInternal(
-            request: HttpServletRequest,
-            response: HttpServletResponse,
-            filterChain: FilterChain
+        request: HttpServletRequest,
+        response: HttpServletResponse,
+        filterChain: FilterChain,
     ) {
         val token = resolveToken(request)
         logger.info(
-                "JwtAuthenticationFilter: Processing ${request.method} ${request.requestURI}, Token: ${token?.take(10)}..."
+            "JwtAuthenticationFilter: Processing ${request.method} ${request.requestURI}, Token: ${token?.take(10)}...",
         )
 
         try {
@@ -57,12 +56,12 @@ class JwtAuthenticationFilter(private val jwtTokenProvider: JwtTokenProvider) :
         val queryToken = request.getParameter("token")
         if (!queryToken.isNullOrBlank()) {
             logger.info(
-                    "JwtAuthenticationFilter: Found token in query param: ${queryToken.take(10)}..."
+                "JwtAuthenticationFilter: Found token in query param: ${queryToken.take(10)}...",
             )
             return queryToken
         }
         logger.info(
-                "JwtAuthenticationFilter: No token found in header or query. URI: ${request.requestURI}"
+            "JwtAuthenticationFilter: No token found in header or query. URI: ${request.requestURI}",
         )
         return null
     }

@@ -2,12 +2,12 @@ package com.example.linksphere.domain.post
 
 import com.example.linksphere.global.common.ApiResponse
 import com.example.linksphere.global.common.getUserId
-import java.util.UUID
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.security.core.Authentication
 import org.springframework.web.bind.annotation.*
+import java.util.UUID
 
 @RestController
 @RequestMapping("/post")
@@ -16,8 +16,8 @@ class PostController(private val postService: PostService) {
 
     @PostMapping
     fun createPost(
-            @RequestBody request: PostCreateRequest,
-            authentication: Authentication
+        @RequestBody request: PostCreateRequest,
+        authentication: Authentication,
     ): ApiResponse<PostResponse> {
         val userId = UUID.fromString(authentication.name)
         val post = postService.createPost(userId, request)
@@ -26,13 +26,13 @@ class PostController(private val postService: PostService) {
 
     @GetMapping
     fun getAllPosts(
-            @RequestParam(required = false) category: String?,
-            @RequestParam(required = false) search: String?,
-            @RequestParam(required = false) filter: String?,
-            @RequestParam(required = false) nickname: String?,
-            @RequestParam(defaultValue = "0") page: Int,
-            @RequestParam(defaultValue = "10") size: Int,
-            authentication: Authentication?
+        @RequestParam(required = false) category: String?,
+        @RequestParam(required = false) search: String?,
+        @RequestParam(required = false) filter: String?,
+        @RequestParam(required = false) nickname: String?,
+        @RequestParam(defaultValue = "0") page: Int,
+        @RequestParam(defaultValue = "10") size: Int,
+        authentication: Authentication?,
     ): ApiResponse<PostPageResponse> {
         val currentUserId = authentication.getUserId()
         val posts = postService.getAllPosts(category, search, filter, nickname, page, size, currentUserId)
@@ -41,8 +41,8 @@ class PostController(private val postService: PostService) {
 
     @GetMapping("/{id}")
     fun getPostById(
-            @PathVariable id: UUID,
-            authentication: Authentication?
+        @PathVariable id: UUID,
+        authentication: Authentication?,
     ): ApiResponse<PostResponse> {
         val currentUserId = authentication.getUserId()
         val post = postService.getPostById(id, currentUserId)
@@ -51,9 +51,9 @@ class PostController(private val postService: PostService) {
 
     @PatchMapping("/{id}")
     fun updatePost(
-            @PathVariable id: UUID,
-            @RequestBody request: PostUpdateRequest,
-            authentication: Authentication
+        @PathVariable id: UUID,
+        @RequestBody request: PostUpdateRequest,
+        authentication: Authentication,
     ): ApiResponse<PostResponse> {
         val userId = UUID.fromString(authentication.name)
         val post = postService.updatePost(id, userId, request)
@@ -62,9 +62,9 @@ class PostController(private val postService: PostService) {
 
     @PatchMapping("/{id}/visibility")
     fun updateVisibility(
-            @PathVariable id: UUID,
-            @RequestBody request: PostVisibilityUpdateRequest,
-            authentication: Authentication
+        @PathVariable id: UUID,
+        @RequestBody request: PostVisibilityUpdateRequest,
+        authentication: Authentication,
     ): ApiResponse<PostResponse> {
         val userId = UUID.fromString(authentication.name)
         val post = postService.updatePostVisibility(id, userId, request)
@@ -73,8 +73,8 @@ class PostController(private val postService: PostService) {
 
     @DeleteMapping("/{id}")
     fun deletePost(
-            @PathVariable id: UUID,
-            authentication: Authentication
+        @PathVariable id: UUID,
+        authentication: Authentication,
     ): ApiResponse<Unit> {
         val userId = UUID.fromString(authentication.name)
         postService.deletePost(id, userId)
@@ -86,8 +86,6 @@ class PostController(private val postService: PostService) {
     // SseEmitter 대기로 인해 Lambda 30초 타임아웃 → 502가 발생한다.
     // AI 분석 결과는 POST /post 응답 또는 GET /post/{id} 로 확인한다.
     @GetMapping("/ai-events", produces = [MediaType.TEXT_EVENT_STREAM_VALUE])
-    fun subscribeAiEvents(): ResponseEntity<ApiResponse<String>> {
-        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
-                .body(ApiResponse(HttpStatus.SERVICE_UNAVAILABLE.value(), "SSE is not supported in this environment. Use GET /post/{id} to check AI analysis status.", ""))
-    }
+    fun subscribeAiEvents(): ResponseEntity<ApiResponse<String>> = ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+        .body(ApiResponse(HttpStatus.SERVICE_UNAVAILABLE.value(), "SSE is not supported in this environment. Use GET /post/{id} to check AI analysis status.", ""))
 }

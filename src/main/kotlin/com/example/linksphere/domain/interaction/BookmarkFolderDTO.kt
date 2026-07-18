@@ -8,12 +8,12 @@ data class CreateFolderRequest(val name: String)
 data class UpdateFolderRequest(val name: String)
 
 data class FolderResponse(
-        val id: UUID,
-        val name: String,
-        val sortOrder: Int,
-        val bookmarkCount: Int,
-        val createdAt: LocalDateTime,
-        val updatedAt: LocalDateTime
+    val id: UUID,
+    val name: String,
+    val sortOrder: Int,
+    val bookmarkCount: Int,
+    val createdAt: LocalDateTime,
+    val updatedAt: LocalDateTime,
 )
 
 // folderId = null → 미분류로 이동

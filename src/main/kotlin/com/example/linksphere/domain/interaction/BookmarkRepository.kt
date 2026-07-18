@@ -1,9 +1,11 @@
 package com.example.linksphere.domain.interaction
 
-import java.util.UUID
 import org.springframework.data.jpa.repository.JpaRepository
+import java.util.UUID
 
-interface BookmarkRepository : JpaRepository<TableBookmark, BookmarkId>, BookmarkRepositoryCustom {
+interface BookmarkRepository :
+    JpaRepository<TableBookmark, BookmarkId>,
+    BookmarkRepositoryCustom {
     fun existsByUserIdAndPostId(userId: UUID, postId: UUID): Boolean
     fun deleteByUserIdAndPostId(userId: UUID, postId: UUID)
     fun countByPostId(postId: UUID): Long

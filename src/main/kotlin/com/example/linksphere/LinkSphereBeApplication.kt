@@ -1,10 +1,10 @@
 package com.example.linksphere
 
 import jakarta.annotation.PostConstruct
-import java.util.TimeZone
 import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.runApplication
 import org.springframework.scheduling.annotation.EnableScheduling
+import java.util.TimeZone
 
 @EnableScheduling
 @SpringBootApplication
