@@ -16,6 +16,12 @@ data class FolderResponse(
     val updatedAt: LocalDateTime,
 )
 
+// 폴더 목록 + 미분류(folder_id IS NULL) 북마크 수
+data class FolderListResponse(
+    val folders: List<FolderResponse>,
+    val uncategorizedCount: Int,
+)
+
 // folderId = null → 미분류로 이동
 data class MoveBookmarkRequest(val folderId: UUID?)
 

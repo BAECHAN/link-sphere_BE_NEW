@@ -7,8 +7,15 @@
 
 ## [Unreleased]
 
+### Added
+
+- 폴더 목록 응답(`GET /bookmark/folders`)에 미분류(`folder_id IS NULL`) 북마크 수
+  `uncategorizedCount` 추가 — FE에서 '미분류'·'전체' 개수를 표시할 수 있도록 지원.
+
 ### Changed
 
+- 폴더 목록 응답 형태를 배열(`List<FolderResponse>`)에서 래퍼 객체
+  `{ folders, uncategorizedCount }`(`FolderListResponse`)로 변경.
 - 비로그인(익명) 사용자에게 콘텐츠 조회 GET 엔드포인트를 공개 —
   `GET /post`, `GET /post/{id}`, `GET /post/{id}/comment`, `GET /post/ai-events`를
   `permitAll`에 추가 (HTTP 메서드 지정 방식이라 글·댓글 작성/수정/삭제 등 쓰기

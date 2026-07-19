@@ -14,4 +14,7 @@ interface BookmarkRepository :
 
     // 폴더별 북마크 수 — Stage 1 폴더 목록 응답에 사용
     fun countByUserIdAndFolderId(userId: UUID, folderId: UUID): Long
+
+    // 미분류(folder_id IS NULL) 북마크 수 — 폴더 목록 응답에 사용
+    fun countByUserIdAndFolderIdIsNull(userId: UUID): Long
 }

@@ -12,7 +12,7 @@ import java.util.UUID
 class BookmarkFolderController(private val bookmarkFolderService: BookmarkFolderService) {
 
     @GetMapping
-    fun getFolders(authentication: Authentication?): ApiResponse<List<FolderResponse>> {
+    fun getFolders(authentication: Authentication?): ApiResponse<FolderListResponse> {
         val userId = authentication.getUserId() ?: throw IllegalArgumentException("User not authenticated")
         val folders = bookmarkFolderService.getFolders(userId)
         return ApiResponse(200, "북마크 폴더 조회 성공", folders)

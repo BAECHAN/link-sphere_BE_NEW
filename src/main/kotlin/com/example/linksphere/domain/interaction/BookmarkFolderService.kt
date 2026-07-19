@@ -22,9 +22,9 @@ class BookmarkFolderService(
 ) {
 
     @Transactional(readOnly = true)
-    fun getFolders(userId: UUID): List<FolderResponse> {
+    fun getFolders(userId: UUID): FolderListResponse {
         val folders = bookmarkFolderRepository.findByUserIdOrderBySortOrderAsc(userId)
-        return folders.map { folder ->
+        val folderResponses = folders.map { folder ->
             FolderResponse(
                 id = folder.id,
                 name = folder.name,
@@ -34,6 +34,8 @@ class BookmarkFolderService(
                 updatedAt = folder.updatedAt,
             )
         }
+        val uncategorizedCount = bookmarkRepository.countByUserIdAndFolderIdIsNull(userId).toInt()
+        return FolderListResponse(folders = folderResponses, uncategorizedCount = uncategorizedCount)
     }
 
     @Transactional
