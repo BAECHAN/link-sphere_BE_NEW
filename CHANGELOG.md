@@ -9,6 +9,10 @@
 
 ### Added
 
+- 카테고리를 지정하지 않은 게시글을 AI가 자동 분류 — 태그를 카테고리 마스터의
+  name/slug와 매칭(비용 0)하고, 실패 시 Gemini 의미 분류로 폴백해 `post.categories`를
+  채운다. 사용자가 직접 선택한 글은 건드리지 않음. "태그는 보이는데 카테고리 필터에
+  안 나오는" 불일치(이슈 #9) 해소. (`PostCategoryClassifier`, `PostAIService`)
 - 폴더 목록 응답(`GET /bookmark/folders`)에 미분류(`folder_id IS NULL`) 북마크 수
   `uncategorizedCount` 추가 — FE에서 '미분류'·'전체' 개수를 표시할 수 있도록 지원.
 

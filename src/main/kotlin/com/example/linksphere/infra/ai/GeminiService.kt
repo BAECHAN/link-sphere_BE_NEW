@@ -62,6 +62,66 @@ class GeminiService(
         return parseResponse(response)
     }
 
+    fun classifyCategories(
+        title: String,
+        description: String?,
+        tags: List<String>,
+        availableCategories: List<String>,
+    ): List<String> {
+        if (apiKey.isBlank() || apiKey == "your-api-key-here") {
+            logger.warn("Gemini API Key is missing or invalid. Skipping classification.")
+            return emptyList()
+        }
+        if (availableCategories.isEmpty()) return emptyList()
+
+        val prompt =
+            """
+            다음 게시글을 아래 '카테고리 목록' 중에서 분류해줘:
+
+            제목: $title
+            설명: ${description ?: ""}
+            태그: ${tags.joinToString(", ")}
+
+            카테고리 목록: ${availableCategories.joinToString(", ")}
+
+            반드시 다음 형식을 지켜서 응답해줘:
+            CATEGORY: [위 목록에 있는 카테고리 이름만 쉼표로 구분해서 1~2개]
+
+            규칙:
+            - 반드시 위 '카테고리 목록'에 있는 이름만 그대로 사용할 것 (새 카테고리 만들지 말 것)
+            - 적합한 카테고리가 없으면 CATEGORY: 뒤를 비워둘 것
+            """.trimIndent()
+
+        val request = GeminiRequest(contents = listOf(Content(parts = listOf(Part(text = prompt)))))
+
+        logger.info("[Gemini API] Requesting category classification for title: $title")
+        val response =
+            restClient
+                .post()
+                .uri("$baseUrl/$model:generateContent?key=$apiKey")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(request)
+                .retrieve()
+                .body(GeminiResponse::class.java)
+
+        return parseCategories(response)
+    }
+
+    private fun parseCategories(response: GeminiResponse?): List<String> {
+        val text = response?.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
+            ?: return emptyList()
+
+        val match =
+            Regex("CATEGORY:\\s*([\\s\\S]+?)$", RegexOption.IGNORE_CASE).find(text)
+                ?: return emptyList()
+
+        return match.groupValues[1]
+            .trim()
+            .split(",")
+            .map { it.trim().removePrefix("#").trim() }
+            .filter { it.isNotBlank() }
+    }
+
     private fun parseResponse(response: GeminiResponse?): AiAnalysisResult {
         val text = response?.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
 

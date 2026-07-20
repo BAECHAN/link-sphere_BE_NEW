@@ -12,6 +12,7 @@ import org.springframework.transaction.event.TransactionalEventListener
 class PostAIService(
     private val postRepository: PostRepository,
     private val geminiService: GeminiService,
+    private val postCategoryClassifier: PostCategoryClassifier,
 ) {
 
     private val logger = LoggerFactory.getLogger(PostAIService::class.java)
@@ -50,6 +51,12 @@ class PostAIService(
 
             post.aiSummary = analysisResult.summary
             post.tags = mergedTags
+
+            // 사용자가 카테고리를 지정하지 않은 글만 자동 분류로 채운다.
+            if (post.categories.isEmpty()) {
+                post.categories.addAll(postCategoryClassifier.classify(title, description, mergedTags))
+            }
+
             post.aiStatus = AiStatus.COMPLETED
 
             postRepository.save(post)
