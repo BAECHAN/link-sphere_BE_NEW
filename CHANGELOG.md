@@ -9,6 +9,13 @@
 
 ### Added
 
+- Gemini 호출에 모델 폴백 체인 도입 — 무료 등급의 `gemini-2.5-flash`는 일일 20건(RPD)
+  제한이라 링크 10건만 등록·수정해도 소진된다. 상위 모델이 429(쿼터 초과)·5xx(과부하)·
+  404(모델 지원 종료)를 내면 같은 요청을 다음 모델(`gemini-3.1-flash-lite`, 일일 500건)로
+  즉시 재시도하도록 변경. 대기(백오프)는 두지 않는다(RPM 초과는 1분을 기다려야 회복되는데
+  Lambda 예산이 30초). 설정 키가 `gemini.api.model`(단수) → `gemini.api.models`(복수,
+  쉼표 구분)로 바뀌었다. (`GeminiService`, `application.yml`)
+
 - 게시글 수정(`PATCH /post/{id}`)에서 URL 변경 지원 — `PostUpdateRequest`에 `url` 추가.
   URL이 실제로 바뀐 경우에만 생성 때와 동일하게 재크롤링(`UrlMetadataExtractor`)해
   제목·설명·이미지·태그를 새 링크 기준으로 교체하고, `aiSummary`를 비운 뒤

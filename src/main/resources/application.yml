@@ -66,7 +66,8 @@ logging:
 
 gemini:
   api:
-    model: gemini-2.5-flash
+    # 앞에서부터 시도하고, 쿼터 소진(429)·서버 오류(5xx)면 다음 모델로 폴백한다
+    models: gemini-2.5-flash,gemini-3.1-flash-lite
 
 firebase:
   service-account-key-path: classpath:firebase-service-account.json

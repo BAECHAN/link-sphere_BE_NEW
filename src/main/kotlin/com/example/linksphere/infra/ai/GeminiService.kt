@@ -5,19 +5,53 @@ import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.MediaType
 import org.springframework.stereotype.Service
+import org.springframework.web.client.HttpStatusCodeException
 import org.springframework.web.client.RestClient
 
 @Service
 class GeminiService(
     @Value("\${gemini.api.key}") private val apiKey: String,
-    @Value("\${gemini.api.model:gemini-2.5-flash}") private val model: String,
+    // 앞에서부터 시도하고, 쿼터 소진(429)·서버 오류(5xx)면 다음 모델로 폴백한다
+    @Value("\${gemini.api.models:gemini-2.5-flash,gemini-3.1-flash-lite}")
+    private val models: List<String>,
 ) {
     private val logger = LoggerFactory.getLogger(GeminiService::class.java)
     private val restClient = RestClient.create()
     private val baseUrl = "https://generativelanguage.googleapis.com/v1beta/models"
 
     init {
-        logger.info("[GeminiService] Initialized with model: $model")
+        logger.info("[GeminiService] Initialized with models: $models")
+    }
+
+    /**
+     * 모델 목록을 순서대로 시도한다.
+     * 다음 경우에만 다음 모델로 넘어간다.
+     *  - 429: 쿼터·레이트 초과 (RPM 초과는 1분을 기다려야 회복되므로 대기 없이 바로 폴백)
+     *  - 5xx: 일시적 과부하(503 등)
+     *  - 404: 모델이 없거나 지원 종료됨 (모델 은퇴 시 서비스가 멈추지 않도록)
+     * 인증(401/403)·요청 형식(400) 오류는 모델을 바꿔도 동일하게 실패하므로 즉시 던진다.
+     */
+    private fun generateContent(prompt: String): GeminiResponse? {
+        val request = GeminiRequest(contents = listOf(Content(parts = listOf(Part(text = prompt)))))
+
+        models.forEachIndexed { index, model ->
+            try {
+                return restClient
+                    .post()
+                    .uri("$baseUrl/$model:generateContent?key=$apiKey")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(request)
+                    .retrieve()
+                    .body(GeminiResponse::class.java)
+            } catch (e: HttpStatusCodeException) {
+                val status = e.statusCode
+                val isRetryable = status.value() == 429 || status.value() == 404 || status.is5xxServerError
+                if (!isRetryable || index == models.lastIndex) throw e
+                logger.warn("[Gemini API] $model 실패($status) → 다음 모델로 폴백 (모델명 오타 여부 확인 필요)")
+            }
+        }
+
+        return null
     }
 
     fun analyzeContent(title: String, description: String?, content: String): AiAnalysisResult {
@@ -46,17 +80,8 @@ class GeminiService(
             - 예시: "JavaScript, 프론트엔드, API, 성능최적화, TypeScript"
             """.trimIndent()
 
-        val request = GeminiRequest(contents = listOf(Content(parts = listOf(Part(text = prompt)))))
-
         logger.info("[Gemini API] Requesting analysis for title: $title")
-        val response =
-            restClient
-                .post()
-                .uri("$baseUrl/$model:generateContent?key=$apiKey")
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(request)
-                .retrieve()
-                .body(GeminiResponse::class.java)
+        val response = generateContent(prompt)
 
         logger.info("[Gemini API] Response received")
         return parseResponse(response)
@@ -92,17 +117,8 @@ class GeminiService(
             - 적합한 카테고리가 없으면 CATEGORY: 뒤를 비워둘 것
             """.trimIndent()
 
-        val request = GeminiRequest(contents = listOf(Content(parts = listOf(Part(text = prompt)))))
-
         logger.info("[Gemini API] Requesting category classification for title: $title")
-        val response =
-            restClient
-                .post()
-                .uri("$baseUrl/$model:generateContent?key=$apiKey")
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(request)
-                .retrieve()
-                .body(GeminiResponse::class.java)
+        val response = generateContent(prompt)
 
         return parseCategories(response)
     }
