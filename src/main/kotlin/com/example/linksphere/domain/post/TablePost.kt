@@ -22,9 +22,9 @@ class TablePost(
     @Column(name = "id", nullable = false)
     val id: UUID? = null,
     @Column(name = "user_id", nullable = false) val userId: UUID,
-    @Column(name = "url", nullable = false, columnDefinition = "text") val url: String,
+    @Column(name = "url", nullable = false, columnDefinition = "text") var url: String,
     @Column(name = "title", nullable = false, columnDefinition = "text") var title: String,
-    @Column(name = "description", columnDefinition = "text") val description: String? = null,
+    @Column(name = "description", columnDefinition = "text") var description: String? = null,
     @Column(name = "tags") @JdbcTypeCode(SqlTypes.ARRAY) var tags: List<String>? = null,
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
@@ -33,7 +33,7 @@ class TablePost(
         inverseJoinColumns = [JoinColumn(name = "category_id")],
     )
     val categories: MutableSet<TableCategory> = mutableSetOf(),
-    @Column(name = "og_image", columnDefinition = "text") val ogImage: String? = null,
+    @Column(name = "og_image", columnDefinition = "text") var ogImage: String? = null,
     @Column(name = "ai_summary", columnDefinition = "text") var aiSummary: String? = null,
     @Column(name = "view_count") val viewCount: Int? = 0,
     @Column(name = "created_at") val createdAt: LocalDateTime? = LocalDateTime.now(),

@@ -165,14 +165,51 @@ class PostService(
         val post = postRepository.findById(id).orElseThrow { PostNotFoundException(id) }
         if (post.userId != userId) throw ForbiddenException("You are not the owner of this post")
 
-        post.title = request.title
+        // 제목을 비워 보내면 새 링크에서 가져오겠다는 뜻이므로 기존 제목을 유지한다(빈 제목 저장 방지).
+        post.title = request.title?.takeIf { it.isNotBlank() } ?: post.title
         post.isPrivate = request.isPrivate
         post.categories.clear()
         if (!request.categoryIds.isNullOrEmpty()) {
             post.categories.addAll(categoryRepository.findAllByIdIn(request.categoryIds))
         }
 
-        return convertToResponse(postRepository.save(post), userId)
+        // URL이 바뀌면 기존 메타데이터·AI 요약이 옛 링크 기준으로 남으므로 생성 때와 동일하게 재수집한다.
+        // 이때 제목은 사용자가 입력한 값 대신 새 링크에서 크롤링한 제목으로 덮어쓴다.
+        val newUrl = request.url?.takeIf { it != post.url }
+        val metadata =
+            newUrl?.let {
+                validateUrl(it)
+                urlMetadataExtractor.extract(it)
+            }
+        if (newUrl != null && metadata != null) {
+            post.url = newUrl
+            // 크롤링 실패 시 metadata.title은 URL 문자열이므로, 그때는 위에서 정한 제목을 그대로 둔다.
+            if (metadata.pageContent != null) post.title = metadata.title
+            post.description = metadata.description
+            post.tags = metadata.tags.toMutableList()
+            post.ogImage = metadata.ogImage
+            post.aiSummary = null
+            post.aiStatus = if (metadata.pageContent != null) AiStatus.PENDING else AiStatus.NONE
+        }
+
+        val savedPost = postRepository.save(post)
+
+        val pageContent = metadata?.pageContent
+        if (metadata != null && pageContent != null) {
+            logger.info("[AI Async] URL 변경으로 PostCreatedEvent 발행 - postId: ${savedPost.id}")
+            eventPublisher.publishEvent(
+                PostCreatedEvent(
+                    postId = savedPost.id!!,
+                    userId = userId,
+                    title = metadata.title,
+                    description = metadata.description,
+                    content = pageContent,
+                    existingTags = metadata.tags,
+                ),
+            )
+        }
+
+        return convertToResponse(savedPost, userId)
     }
 
     @Transactional
