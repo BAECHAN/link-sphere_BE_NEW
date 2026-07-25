@@ -185,14 +185,18 @@ aws lambda add-permission \
   --function-url-auth-type NONE
 ```
 
-### 6. 워밍 핑 (EventBridge 스케줄 룰) — **미적용**
-
-> ⚠️ 2026-07-25 기준 **아직 적용되지 않았다.** 배포용 IAM 사용자 `link-sphere-user`에
-> `events:*` / `scheduler:*` 권한이 없어 CLI로 생성할 수 없다(`events:PutRule` AccessDenied).
-> 적용하려면 먼저 콘솔에서 해당 IAM 사용자에 `events:PutRule`, `events:PutTargets`,
-> `events:DeleteRule`, `events:RemoveTargets` 권한을 부여하거나, 콘솔에서 직접 규칙을 만든다.
+### 6. 워밍 핑 (EventBridge 스케줄 룰) — 적용 완료 (2026-07-25)
 
 콜드스타트 발생 비율을 낮추기 위해 5분마다 `prod` alias를 호출해 컨테이너 1개를 살려둔다.
+
+> **타겟은 반드시 `prod` alias여야 한다.** `$LATEST`를 호출하면 SnapStart 스냅샷이 없는
+> 별개 컨테이너가 데워질 뿐, 실제 사용자 트래픽이 가는 `prod` 컨테이너는 여전히 콜드다.
+> EventBridge 콘솔의 Lambda 타겟 선택 UI는 alias 지정이 노출되지 않을 수 있으므로
+> 아래처럼 CLI로 ARN에 `:prod`를 명시해 연결한다.
+
+> **IAM**: 이 셋업에는 `events:PutRule`, `events:PutTargets`, `lambda:AddPermission`이
+> 필요하다. `link-sphere-user`에는 원래 없어서 인라인 정책 `warmup-rule-setup`으로 부여했다.
+> **1회성 셋업 권한이므로 규칙 생성 후 회수해도 규칙은 그대로 동작한다** (롤백 시 다시 필요).
 
 ```bash
 # 5분마다 실행되는 규칙 생성
