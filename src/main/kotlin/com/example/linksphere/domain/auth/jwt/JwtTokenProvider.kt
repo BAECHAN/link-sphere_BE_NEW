@@ -49,7 +49,7 @@ class JwtTokenProvider(
             logger.error("Invalid JWT token: {}", e.message)
             throw e
         } catch (e: ExpiredJwtException) {
-            logger.error("JWT token is expired: {}", e.message)
+            logger.warn("JWT token is expired: {}", e.message)
             throw e
         } catch (e: UnsupportedJwtException) {
             logger.error("JWT token is unsupported: {}", e.message)
