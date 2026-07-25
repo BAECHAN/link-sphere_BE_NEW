@@ -35,8 +35,15 @@ import java.util.Base64
 class LambdaHandler : RequestStreamHandler {
 
     companion object {
+        private val logger = org.slf4j.LoggerFactory.getLogger(LambdaHandler::class.java)
         private val mapper = ObjectMapper()
         private val mockMvc: MockMvc
+
+        // handleRequest가 context-path(/api)를 제거하므로 MockMvc에는 서블릿 경로만 전달한다.
+        // 실제 매핑과 정확히 일치해야 한다 — 404가 나면 DispatcherServlet만 데워지고
+        // 정작 중요한 Hibernate·HikariCP는 건너뛴다(CategoryController는 category-option 단수형).
+        private val WARMUP_PATHS = listOf("/actuator/health", "/common/category-option")
+        private const val WARMUP_ITERATIONS = 3
 
         init {
             // Lambda 시스템 classloader에는 shadow JAR의 jakarta.servlet.Servlet이 없다.
@@ -59,6 +66,41 @@ class LambdaHandler : RequestStreamHandler {
             val builder = MockMvcBuilders.webAppContextSetup(ctx as WebApplicationContext)
             builder.addFilters<org.springframework.test.web.servlet.setup.DefaultMockMvcBuilder>(securityFilter)
             mockMvc = builder.build()
+
+            warmUp()
+        }
+
+        /**
+         * SnapStart 체크포인트 이전(init 단계)에 실제 요청을 흘려보내 초기화 비용을 스냅샷에 굽는다.
+         *
+         * 이 과정이 없으면 DispatcherServlet 초기화, Security 필터 체인 첫 통과,
+         * Hibernate 메타모델·쿼리플랜 생성, HikariCP 커넥션 확보가 전부 복원 이후 첫 요청으로 밀린다.
+         * 실측상 restore 자체는 약 0.65초인데 그 뒤 첫 요청이 약 2.9초였던 원인이 이것이다.
+         *
+         * 주의 — 2026-07-25에 한 번 실패했다. 당시에는 Lambda Web Adapter 레이어가 붙어 있어
+         * Tomcat이 실트래픽을 처리했는데, init에서 MockMvc를 건드리자 복원 후 LWA가 8080에
+         * 접속하지 못해 호출 전체가 502로 실패했다. LWA 레이어를 제거해 MockMvc가 실제 서빙
+         * 경로가 된 뒤에야 이 워밍업이 성립한다. 자세한 경위는 docs/PERFORMANCE.md 6장 참고.
+         *
+         * DataSourceCracHook의 suspendPool()은 체크포인트 시점에 호출되므로 이 DB 워밍업과
+         * 충돌하지 않는다. 워밍업이 실패해도 부팅은 계속한다 — 배포 시점에 DB가 닿지 않아도
+         * Lambda는 기동되어야 한다.
+         */
+        private fun warmUp() {
+            // JIT를 인터프리터 단계 밖으로 밀어내기 위해 반복 호출한다
+            repeat(WARMUP_ITERATIONS) {
+                WARMUP_PATHS.forEach { path ->
+                    try {
+                        val status = mockMvc.perform(MockMvcRequestBuilders.get(path)).andReturn().response.status
+                        // 경로 오타로 404가 나도 조용히 지나가면 "워밍업했다"는 착각만 남는다
+                        if (status !in 200..299) {
+                            logger.warn("Warmup did not succeed: {} -> {}", path, status)
+                        }
+                    } catch (e: Exception) {
+                        logger.warn("Warmup failed: {} ({})", path, e.message)
+                    }
+                }
+            }
         }
     }
 
