@@ -20,8 +20,11 @@ spring:
       keepalive-time: 30000  # 30초마다 idle 커넥션 핑 → 유휴 중 끊김 방지
       connection-test-query: SELECT 1  # pool에서 꺼낼 때 연결 유효성 검사 → SnapStart 복원 후 죽은 연결 즉시 교체
       allow-pool-suspension: true  # SnapStart 체크포인트 전 pool 일시 중단 허용 (미설정 시 checkpoint 경고)
+  jmx:
+    enabled: false  # 기동 시 MBean 등록 단계 생략 → 콜드스타트 단축
   jpa:
     database: POSTGRESQL
+    open-in-view: false  # 요청당 커넥션을 뷰 렌더까지 붙들지 않음 (미설정 시 기본 true + 기동 경고)
     show-sql: false
     hibernate:
       ddl-auto: none

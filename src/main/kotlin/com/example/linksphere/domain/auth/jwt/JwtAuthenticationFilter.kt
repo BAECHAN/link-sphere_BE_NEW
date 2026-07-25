@@ -33,7 +33,8 @@ class JwtAuthenticationFilter(private val jwtTokenProvider: JwtTokenProvider) : 
                 SecurityContextHolder.getContext().authentication = auth
             }
         } catch (e: ExpiredJwtException) {
-            logger.error("Expired JWT token", e)
+            // 토큰 만료는 정상 흐름(FE가 refresh로 복구)이므로 스택트레이스를 남기지 않는다
+            logger.warn("Expired JWT token")
             request.setAttribute("exception", "TOKEN_EXPIRED")
         } catch (e: JwtException) {
             logger.error("Invalid JWT token", e)

@@ -42,6 +42,7 @@ SnapStart는 Lambda init phase를 스냅샷으로 저장해 cold start를 단축
 1. Init phase:
    - LambdaHandler.companion.init { } 실행
    - Spring Boot 시작 (MockMvc 초기화 포함)
+   - warmUp() 실행 — 읽기 전용 엔드포인트로 실제 요청을 흘려보냄
    - SnapStart가 이 상태를 스냅샷으로 저장
 
 2. 요청 수신 (cold start):
@@ -52,6 +53,23 @@ SnapStart는 Lambda init phase를 스냅샷으로 저장해 cold start를 단축
 3. 요청 수신 (warm start):
    - 동일 컨테이너 재사용, 즉시 handleRequest() 호출
 ```
+
+### init 단계에서 워밍업을 실행하는 이유
+
+`companion object init`은 체크포인트 **이전**에 실행되므로, 여기서 수행한 초기화가 전부 스냅샷에 포함된다. 워밍업이 없으면 아래가 모두 복원 이후 첫 요청으로 밀린다.
+
+- `DispatcherServlet` 최초 초기화
+- Spring Security 필터 체인 첫 통과
+- Hibernate 메타모델·쿼리플랜 캐시 생성
+- HikariCP 실제 커넥션 확보
+- JIT 미적용 상태(인터프리터) 실행
+
+실측상 restore 자체는 약 0.65초인데 그 뒤 첫 요청이 약 2.9초였던 원인이 이것이다. 자세한 측정·분석은 [PERFORMANCE.md](./PERFORMANCE.md) 참고.
+
+주의사항:
+- 워밍업은 **읽기 전용·`permitAll` 엔드포인트만** 사용한다 (부작용 방지)
+- 실패해도 부팅은 계속한다 — 배포 시점에 DB가 닿지 않아도 Lambda는 기동되어야 한다
+- `DataSourceCracHook.beforeCheckpoint`의 `suspendPool()`은 체크포인트 시점에 호출되므로 init 단계의 DB 워밍업과 충돌하지 않는다. **순서를 바꾸지 말 것**
 
 ### Shadow JAR에서 spring.factories를 append하는 이유
 
@@ -114,13 +132,22 @@ aws lambda create-function \
   --handler com.example.linksphere.LambdaHandler \
   --role arn:aws:iam::ACCOUNT_ID:role/lambda-execution-role \
   --code S3Bucket=link-sphere-lambda-deploy,S3Key=initial.jar \
-  --memory-size 1024 \
+  --memory-size 2048 \
   --timeout 30 \
   --architectures arm64 \
   --snap-start ApplyOn=PublishedVersions
 ```
 
 Lambda 실행 역할 필요 권한: `AWSLambdaBasicExecutionRole`
+
+> **메모리 2048MB인 이유**: Lambda는 메모리에 비례해 vCPU를 준다(1024MB ≈ 0.58 vCPU → 2048MB ≈ 1.15 vCPU). 콜드스타트 첫 요청은 클래스 로딩·JIT 위주의 CPU 바운드라 메모리를 올리면 거의 선형으로 빨라진다. 실사용 메모리는 460MB 수준이므로 메모리 자체가 목적이 아니다. `GB × 초` 과금이라 실행 시간이 줄어 **비용은 거의 중립**이다. ([PERFORMANCE.md](./PERFORMANCE.md))
+
+기존 함수의 메모리를 바꿀 때는 설정 변경 후 새 버전을 발행해야 스냅샷에 반영된다.
+
+```bash
+aws lambda update-function-configuration \
+  --function-name link-sphere-api --memory-size 2048 --region ap-northeast-1
+```
 
 ### 4. Lambda 환경변수 설정
 
@@ -157,6 +184,69 @@ aws lambda add-permission \
   --principal "*" \
   --function-url-auth-type NONE
 ```
+
+### 6. 워밍 핑 (EventBridge 스케줄 룰) — **미적용**
+
+> ⚠️ 2026-07-25 기준 **아직 적용되지 않았다.** 배포용 IAM 사용자 `link-sphere-user`에
+> `events:*` / `scheduler:*` 권한이 없어 CLI로 생성할 수 없다(`events:PutRule` AccessDenied).
+> 적용하려면 먼저 콘솔에서 해당 IAM 사용자에 `events:PutRule`, `events:PutTargets`,
+> `events:DeleteRule`, `events:RemoveTargets` 권한을 부여하거나, 콘솔에서 직접 규칙을 만든다.
+
+콜드스타트 발생 비율을 낮추기 위해 5분마다 `prod` alias를 호출해 컨테이너 1개를 살려둔다.
+
+```bash
+# 5분마다 실행되는 규칙 생성
+aws events put-rule \
+  --name link-sphere-api-warmup \
+  --schedule-expression "rate(5 minutes)" \
+  --region ap-northeast-1
+
+# Lambda가 EventBridge 호출을 허용하도록 권한 부여
+aws lambda add-permission \
+  --function-name link-sphere-api \
+  --qualifier prod \
+  --statement-id EventBridgeWarmup \
+  --action lambda:InvokeFunction \
+  --principal events.amazonaws.com \
+  --source-arn arn:aws:events:ap-northeast-1:ACCOUNT_ID:rule/link-sphere-api-warmup \
+  --region ap-northeast-1
+
+# 대상 지정 — LambdaHandler가 rawPath/requestContext.http.method를 읽으므로
+# 합성 이벤트를 constant input으로 넘겨야 정상 라우팅된다 (빈 이벤트면 GET / 로 404)
+aws events put-targets \
+  --rule link-sphere-api-warmup \
+  --region ap-northeast-1 \
+  --targets '[{
+    "Id": "warmup",
+    "Arn": "arn:aws:lambda:ap-northeast-1:ACCOUNT_ID:function:link-sphere-api:prod",
+    "Input": "{\"rawPath\":\"/api/actuator/health\",\"requestContext\":{\"http\":{\"method\":\"GET\"}}}"
+  }]'
+```
+
+- `/actuator/health`는 `management.health.db.enabled: false`라 DB를 건드리지 않아 가볍다
+- **한계**: 컨테이너 1개만 유지한다. 동시 요청이 늘면 초과분은 여전히 콜드다
+- classic 스케줄 룰은 호출 과금 대상이 아니다
+
+### 7. S3 배포 버킷 수명 주기 — 적용 완료 (2026-07-25)
+
+배포마다 85MB jar가 `deployments/`에 쌓이는데 정리 규칙이 없으면 계속 증가한다(실측: 39개 / 3.31GB). Lambda 컴퓨트보다 큰 비용 항목이 되므로 30일 만료 규칙을 건다.
+
+```bash
+aws s3api put-bucket-lifecycle-configuration \
+  --bucket link-sphere-lambda-deploy \
+  --lifecycle-configuration '{
+    "Rules": [{
+      "ID": "expire-old-deployments",
+      "Status": "Enabled",
+      "Filter": { "Prefix": "deployments/" },
+      "Expiration": { "Days": 30 }
+    }]
+  }'
+```
+
+- Lambda는 코드를 자체 복사해 보관하므로 S3에서 과거 jar가 지워져도 기존 버전·스냅샷은 정상 동작한다
+- 최근 한 달치가 남아 롤백 능력은 유지된다
+- 버킷 버전 관리가 켜져 있으면 `NoncurrentVersionExpiration`도 함께 걸어야 실제로 줄어든다
 
 ---
 
