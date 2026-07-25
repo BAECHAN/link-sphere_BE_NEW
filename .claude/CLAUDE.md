@@ -78,7 +78,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - **BE**: Spring Boot + Kotlin, port 8080, context-path `/api`
 - **FE**: React + TypeScript + Vite, FSD 아키텍처, port 31119
 - **배포**: CloudFront → `/api/*` Lambda(BE), `/*` S3(FE)
-- **Lambda**: Function URL 기반, CloudFront 뒤에 배치
+- **Lambda**: Function URL 기반, CloudFront 뒤에 배치. arm64 / 2048MB / SnapStart, **레이어 없음**
 - **커밋**: 작업 전 `.gitmessage` 파일 먼저 읽고 형식 준수
 
 ---
@@ -93,6 +93,13 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - **Never** Controller에서 직접 HTTP 상태코드 하드코딩 → `HttpStatus.*` 상수 사용
 - **Never** Security 인증 없이 사용자 식별 → `Authentication?`이 null이면 인증 안 된 것, 명시적으로 처리
 - **Never** 대상 파일 양식 무시하고 코드 생성 → 항상 붙여넣을 파일(및 인접 코드)을 **먼저 읽고** 들여쓰기·네이밍·import 순서·따옴표·주석 밀도·정렬을 그대로 맞춘다. 본인 스타일을 강요하거나 기존 코드를 재포맷하지 않는다
+- **Never** Lambda Web Adapter 레이어를 다시 붙이지 않는다 → 2026-07-25 502 장애의 직접 원인이었고, `LambdaHandler.warmUp()`은 이 레이어가 **없는 상태를 전제**로 한다. 붙이면 워밍업이 깨진다 (`docs/PERFORMANCE.md` 5장)
+- **Never** 검증 없이 `prod` alias 이동 → 반드시 버전을 **직접 연속 호출**해 확인한 뒤 옮긴다. 위 장애는 "복원 후 첫 요청은 성공, 이후 실패" 패턴이라 단발 확인으로는 잡히지 않았다
+  ```bash
+  aws lambda invoke --function-name link-sphere-api:<버전> --log-type Tail \
+    --payload fileb://event.json /tmp/out.json --query 'LogResult' --output text | base64 -d
+  ```
+- **Never** 인프라·배포·아키텍처 변경 후 문서 갱신 누락 → BE `README.md`·`docs/DEPLOY.md`와 함께 **FE `docs/SYSTEM-ARCHITECTURE.md`** 도 확인한다 (BE 인프라를 서술하고 있어 가장 놓치기 쉽다)
 
 ---
 

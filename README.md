@@ -171,7 +171,7 @@ src/main/kotlin/com/example/linksphere/
 서버 실행 후 아래 주소에서 API 문서를 확인할 수 있습니다:
 
 ```
-http://localhost:51119/swagger-ui/index.html
+http://localhost:8080/swagger-ui/index.html
 ```
 
 ---
@@ -217,7 +217,7 @@ FCM을 사용하려면 `src/main/resources/firebase-service-account.json` 파일
 ./gradlew bootRun
 ```
 
-서버가 **`http://localhost:51119`** 에서 시작됩니다.
+서버가 **`http://localhost:8080`** 에서 시작됩니다.
 
 ### 3. 빌드
 
@@ -232,8 +232,10 @@ FCM을 사용하려면 `src/main/resources/firebase-service-account.json` 파일
 이 프로젝트는 **AWS Lambda SnapStart** 기반으로 배포됩니다.
 
 - **GitHub Actions**: CI/CD 자동화 워크플로우
-- **AWS Lambda (SnapStart)**: Shadow JAR 기반 서버리스 실행 (도쿄 리전)
-- **AWS S3**: Lambda 배포 JAR 저장소
+- **AWS Lambda (SnapStart)**: Shadow JAR 기반 서버리스 실행 (도쿄 리전, arm64 / 2048MB)
+- **AWS S3**: Lambda 배포 JAR 저장소 (`deployments/` 30일 만료 수명 주기)
+- **Amazon EventBridge**: 5분 간격 워밍 핑 — 콜드스타트 발생 빈도를 낮춤
+- **Amazon CloudFront**: `/api/*` → Lambda, 그 외 → S3(FE). FE와 같은 오리진
 - **Supabase**: 클라우드 PostgreSQL 데이터베이스 (도쿄 리전)
 
 > App Runner로 운영했던 이전 배포 방식은 [**docs/DEPLOY_WHEN_APP_RUNNER.md**](./docs/DEPLOY_WHEN_APP_RUNNER.md)를 참고하세요.
@@ -253,11 +255,22 @@ FCM을 사용하려면 `src/main/resources/firebase-service-account.json` 파일
 Lambda 환경에서는 Tomcat 소켓 문제를 피하기 위해 **MockMvc**로 `DispatcherServlet`을 직접 호출합니다:
 
 ```
-API 요청 → Lambda Function URL
+API 요청 → CloudFront(/api/*) → Lambda Function URL(prod alias)
   → LambdaHandler.handleRequest()
     → MockMvc.perform()
       → Spring DispatcherServlet → 응답
 ```
+
+### 콜드스타트 대응
+
+SnapStart 체크포인트 **이전**(`companion object init`)에 읽기 전용 엔드포인트로 워밍업 요청을
+흘려보내, `DispatcherServlet` 초기화·Security 필터 체인·Hibernate 쿼리플랜·HikariCP 커넥션
+확보를 스냅샷에 포함시킵니다. 동일 조건 비교에서 **콜드 첫 요청 2,210ms → 1,046ms(53% 감소)**.
+
+> ⚠️ 이 워밍업은 **Lambda Web Adapter 레이어가 없는 상태**를 전제로 합니다. 레이어를 되돌리면
+> 워밍업이 깨져 502가 발생합니다. 측정 데이터·장애 사후 분석·측정 방법론은
+> [**docs/PERFORMANCE.md**](./docs/PERFORMANCE.md), 롤백 절차는
+> [**docs/ROLLBACK-2026-07-25.md**](./docs/ROLLBACK-2026-07-25.md)를 참고하세요.
 
 ---
 
