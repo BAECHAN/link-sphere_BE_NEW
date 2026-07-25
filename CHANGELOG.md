@@ -47,14 +47,14 @@
   다르면(과거 404 사례) 조용히 무력화되므로 응답이 2xx가 아니면 WARN을 남긴다.
   동일 조건(1024MB, 같은 엔드포인트) 비교에서 콜드 첫 요청 2,210ms → 1,046ms,
   총합 2,831ms → 1,729ms. 아래 LWA 레이어 제거가 선행되어야 동작한다.
-  측정 방법과 주의사항은 `docs/PERFORMANCE.md` 8장. (`LambdaHandler`)
+  측정 방법과 주의사항은 `docs/PERFORMANCE.md` 7장. (`LambdaHandler`)
 - Lambda 메모리 1024 → 2048MB — 장애와 무관함이 확인됐고(v41 실험) 비용도 사실상 0이라
-  적용했다. 다만 **성능 이득은 아직 확정되지 않았다**(`docs/PERFORMANCE.md` 7장).
+  적용했다. 다만 **성능 이득은 아직 확정되지 않았다**(`docs/PERFORMANCE.md` 6장).
 - Lambda Web Adapter 레이어 제거 — 이 레이어는 `AWS_LAMBDA_EXEC_WRAPPER`가 설정되지 않아
   익스텐션으로만 떠서 `127.0.0.1:8080`을 폴링했고, 접속에 실패하면 panic하며 **호출 전체를
   502로 실패**시켰다(2026-07-25 장애의 직접 원인). 제거 후 요청은 `LambdaHandler`(MockMvc)가
   처리하며, 응답 본문은 제거 전과 동일하다(헤더명 케이싱만 달라지는데 HTTP 헤더명은 대소문자를
-  구분하지 않아 무해). 상세는 `docs/PERFORMANCE.md` 6장.
+  구분하지 않아 무해). 상세는 `docs/PERFORMANCE.md` 5장.
 - 콜드스타트 발생 빈도 감소 — 5분 간격 EventBridge 워밍 핑(`prod` alias 대상)을 추가해
   컨테이너 1개를 살려둔다. 콜드 1회당 소요 시간 자체는 그대로이고, 콜드가 발생하는 비율
   (실측 22%)을 낮추는 변경이다. 측정 기준선은 `docs/PERFORMANCE.md` 참고.
