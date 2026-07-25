@@ -39,14 +39,9 @@
   `GET /post`, `GET /post/{id}`, `GET /post/{id}/comment`, `GET /post/ai-events`를
   `permitAll`에 추가 (HTTP 메서드 지정 방식이라 글·댓글 작성/수정/삭제 등 쓰기
   요청은 인증 유지. 카테고리 조회는 기존 `/common/**` 공개 범위에 이미 포함)
-- Lambda 콜드스타트 단축 — 첫 요청이 3~4초 걸리던 문제. SnapStart 복원 자체(약 0.65초)가
-  아니라 **복원 이후 첫 요청(약 2.9초)** 이 병목이었다. `DispatcherServlet` 초기화,
-  Security 필터 체인 첫 통과, Hibernate 쿼리플랜 생성, HikariCP 커넥션 확보가 전부
-  스냅샷 바깥에 남아 있었기 때문. 체크포인트 이전(`companion object init`)에 읽기 전용
-  엔드포인트로 워밍업 요청을 흘려보내 이 비용을 스냅샷에 포함시켰다. 함께 Lambda 메모리를
-  1024→2048MB로 올리고(메모리 비례로 vCPU가 늘어 CPU 바운드인 첫 요청이 빨라짐),
-  5분 간격 EventBridge 워밍 핑으로 콜드 발생 자체를 줄였다.
-  측정 기준선과 재측정 방법은 `docs/PERFORMANCE.md` 참고. (`LambdaHandler`)
+- 콜드스타트 발생 빈도 감소 — 5분 간격 EventBridge 워밍 핑(`prod` alias 대상)을 추가해
+  컨테이너 1개를 살려둔다. 콜드 1회당 소요 시간 자체는 그대로이고, 콜드가 발생하는 비율
+  (실측 22%)을 낮추는 변경이다. 측정 기준선은 `docs/PERFORMANCE.md` 참고.
 - `spring.jpa.open-in-view`를 `false`로 명시 — 미설정 시 기본값 true라 요청당 커넥션을
   뷰 렌더 시점까지 붙들고 있었고 기동 시마다 경고 로그가 남았다. 함께 `spring.jmx.enabled`를
   `false`로 두어 기동 시 MBean 등록 단계를 생략한다. (`application.yml`)
