@@ -39,6 +39,11 @@
   `GET /post`, `GET /post/{id}`, `GET /post/{id}/comment`, `GET /post/ai-events`를
   `permitAll`에 추가 (HTTP 메서드 지정 방식이라 글·댓글 작성/수정/삭제 등 쓰기
   요청은 인증 유지. 카테고리 조회는 기존 `/common/**` 공개 범위에 이미 포함)
+- Lambda Web Adapter 레이어 제거 — 이 레이어는 `AWS_LAMBDA_EXEC_WRAPPER`가 설정되지 않아
+  익스텐션으로만 떠서 `127.0.0.1:8080`을 폴링했고, 접속에 실패하면 panic하며 **호출 전체를
+  502로 실패**시켰다(2026-07-25 장애의 직접 원인). 제거 후 요청은 `LambdaHandler`(MockMvc)가
+  처리하며, 응답 본문은 제거 전과 동일하다(헤더명 케이싱만 달라지는데 HTTP 헤더명은 대소문자를
+  구분하지 않아 무해). 상세는 `docs/PERFORMANCE.md` 6장.
 - 콜드스타트 발생 빈도 감소 — 5분 간격 EventBridge 워밍 핑(`prod` alias 대상)을 추가해
   컨테이너 1개를 살려둔다. 콜드 1회당 소요 시간 자체는 그대로이고, 콜드가 발생하는 비율
   (실측 22%)을 낮추는 변경이다. 측정 기준선은 `docs/PERFORMANCE.md` 참고.
