@@ -39,12 +39,15 @@
   `GET /post`, `GET /post/{id}`, `GET /post/{id}/comment`, `GET /post/ai-events`를
   `permitAll`에 추가 (HTTP 메서드 지정 방식이라 글·댓글 작성/수정/삭제 등 쓰기
   요청은 인증 유지. 카테고리 조회는 기존 `/common/**` 공개 범위에 이미 포함)
-- 콜드스타트 첫 요청 단축 시도 — SnapStart 체크포인트 이전(`companion object init`)에
+- **콜드스타트 첫 요청 53% 단축** — SnapStart 체크포인트 이전(`companion object init`)에
   읽기 전용 엔드포인트로 워밍업 요청을 흘려보내, `DispatcherServlet` 초기화·Security 필터
   체인·Hibernate 쿼리플랜·HikariCP 커넥션 확보를 스냅샷에 포함시킨다. 경로가 실제 매핑과
   다르면(과거 404 사례) 조용히 무력화되므로 응답이 2xx가 아니면 WARN을 남긴다.
-  **효과는 아직 미확정** — 콜드 표본이 부족해 24시간 뒤 정식 측정 예정(`docs/PERFORMANCE.md`).
-  아래 LWA 레이어 제거가 선행되어야 동작한다. (`LambdaHandler`)
+  동일 조건(1024MB, 같은 엔드포인트) 비교에서 콜드 첫 요청 2,210ms → 1,046ms,
+  총합 2,831ms → 1,729ms. 아래 LWA 레이어 제거가 선행되어야 동작한다.
+  측정 방법과 주의사항은 `docs/PERFORMANCE.md` 8장. (`LambdaHandler`)
+- Lambda 메모리 1024 → 2048MB — 장애와 무관함이 확인됐고(v41 실험) 비용도 사실상 0이라
+  적용했다. 다만 **성능 이득은 아직 확정되지 않았다**(`docs/PERFORMANCE.md` 7장).
 - Lambda Web Adapter 레이어 제거 — 이 레이어는 `AWS_LAMBDA_EXEC_WRAPPER`가 설정되지 않아
   익스텐션으로만 떠서 `127.0.0.1:8080`을 폴링했고, 접속에 실패하면 panic하며 **호출 전체를
   502로 실패**시켰다(2026-07-25 장애의 직접 원인). 제거 후 요청은 `LambdaHandler`(MockMvc)가
