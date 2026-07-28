@@ -12,9 +12,17 @@ class FcmTokenService(private val fcmTokenRepository: FcmTokenRepository) {
 
     @Transactional
     fun registerToken(userId: UUID, token: String, platform: String) {
-        // 동일 토큰이 이미 있으면 덮어쓰지 않음 (UNIQUE 제약)
-        if (fcmTokenRepository.existsByToken(token)) {
-            logger.debug("[FCM] Token already registered - userId: $userId")
+        val existing = fcmTokenRepository.findByToken(token)
+        if (existing != null) {
+            // 같은 기기에서 계정을 전환하면 토큰이 이전 사용자에게 묶인 채 남아
+            // 이전 사용자의 알림이 새 사용자 기기로 가는 문제가 있어, 소유자를 갱신한다.
+            if (existing.userId != userId) {
+                fcmTokenRepository.deleteByToken(token)
+                fcmTokenRepository.save(TableFcmToken(userId = userId, token = token, platform = platform))
+                logger.info("[FCM] Token reassigned to new userId: $userId")
+            } else {
+                logger.debug("[FCM] Token already registered - userId: $userId")
+            }
             return
         }
         fcmTokenRepository.save(
@@ -24,9 +32,9 @@ class FcmTokenService(private val fcmTokenRepository: FcmTokenRepository) {
     }
 
     @Transactional
-    fun deleteToken(token: String) {
-        fcmTokenRepository.deleteByToken(token)
-        logger.info("[FCM] Token deleted")
+    fun deleteToken(userId: UUID, token: String) {
+        fcmTokenRepository.deleteByUserIdAndToken(userId, token)
+        logger.info("[FCM] Token deleted - userId: $userId")
     }
 
     @Transactional

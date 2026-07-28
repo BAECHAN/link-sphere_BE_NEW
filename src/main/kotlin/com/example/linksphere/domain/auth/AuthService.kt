@@ -1,6 +1,7 @@
 package com.example.linksphere.domain.auth
 
 import com.example.linksphere.domain.auth.jwt.JwtTokenProvider
+import com.example.linksphere.domain.auth.jwt.TokenType
 import com.example.linksphere.domain.member.MemberService
 import com.example.linksphere.domain.member.TableMember
 import com.example.linksphere.global.common.SupabaseStorageService
@@ -47,7 +48,7 @@ class AuthService(
 
     fun refresh(refreshToken: String): AuthResult {
         try {
-            jwtTokenProvider.validateToken(refreshToken)
+            jwtTokenProvider.validateToken(refreshToken, TokenType.REFRESH)
         } catch (e: Exception) {
             throw com.example.linksphere.global.exception.InvalidTokenException(
                 "Invalid refresh token",

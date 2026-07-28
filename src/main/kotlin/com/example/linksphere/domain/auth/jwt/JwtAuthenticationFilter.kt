@@ -21,13 +21,10 @@ class JwtAuthenticationFilter(private val jwtTokenProvider: JwtTokenProvider) : 
         filterChain: FilterChain,
     ) {
         val token = resolveToken(request)
-        logger.info(
-            "JwtAuthenticationFilter: Processing ${request.method} ${request.requestURI}, Token: ${token?.take(10)}...",
-        )
 
         try {
             if (token != null) {
-                jwtTokenProvider.validateToken(token)
+                jwtTokenProvider.validateToken(token, TokenType.ACCESS)
                 val userId = jwtTokenProvider.getUserId(token)
                 val auth = UsernamePasswordAuthenticationToken(userId, null, emptyList())
                 SecurityContextHolder.getContext().authentication = auth
@@ -52,18 +49,6 @@ class JwtAuthenticationFilter(private val jwtTokenProvider: JwtTokenProvider) : 
         if (bearerToken != null && bearerToken.startsWith("Bearer ")) {
             return bearerToken.substring(7)
         }
-        // SSE 연결 시 EventSource는 커스텀 헤더를 지원하지 않으므로
-        // 쿼리 파라미터에서 토큰을 읽어옴
-        val queryToken = request.getParameter("token")
-        if (!queryToken.isNullOrBlank()) {
-            logger.info(
-                "JwtAuthenticationFilter: Found token in query param: ${queryToken.take(10)}...",
-            )
-            return queryToken
-        }
-        logger.info(
-            "JwtAuthenticationFilter: No token found in header or query. URI: ${request.requestURI}",
-        )
         return null
     }
 }

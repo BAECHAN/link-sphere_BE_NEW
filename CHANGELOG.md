@@ -7,6 +7,35 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **비공개 게시글·댓글 조회 인가 누락 수정** — 상세 조회(`GET /post/{id}`)와 댓글 조회
+  (`GET /post/{id}/comment`)에 목록·북마크 조회에만 있던 가시성 검증이 빠져 있어, 비로그인
+  사용자도 게시글 UUID만 알면 남의 비공개 글과 댓글을 그대로 읽을 수 있었다. 소유자가
+  아니면 404로 응답하도록 수정. (`PostService.getPostById`, `CommentService.getComments`)
+- **URL 크롤링 SSRF 차단** — 게시글·댓글 등록 시 서버가 사용자가 입력한 URL로 직접
+  요청(크롤링)을 보내는데, 스킴 검사만 있어 내부망·클라우드 메타데이터 엔드포인트
+  (예: `169.254.169.254`)로 요청을 보내 응답을 읽어낼 수 있었다. 호스트를 DNS 해석해
+  사설/루프백/링크로컬 대역이면 거부하는 `SafeUrlValidator`를 추가하고, 리다이렉트도
+  매 홉마다 재검증하도록 변경. (`SafeUrlValidator` 신규, `PostService`, `UrlMetadataExtractor`)
+- **JWT access/refresh 토큰이 서로 대체 가능하던 문제 수정** — 두 토큰이 유효기간만
+  다르고 페이로드가 동일해, 7일짜리 refresh 토큰을 `Authorization` 헤더로 보내면
+  access 토큰처럼 인증되고 반대도 가능했다. 토큰에 타입(`typ`) 클레임을 추가해 용도가
+  다르면 거부하도록 수정. **배포 시 기존 발급 토큰이 모두 무효화되어 전 사용자 재로그인이
+  필요하다.** (`JwtTokenProvider`, `JwtAuthenticationFilter`, `AuthService`)
+- FCM 토큰 삭제(`DELETE /fcm/token`)에 소유권 검증이 없어 로그인한 사용자가 타인의
+  토큰 문자열만 알면 그 사람의 푸시를 끊을 수 있던 문제 수정. 같은 기기에서 계정을
+  전환하면 토큰이 이전 사용자에게 묶인 채 남아 알림이 잘못 전달되던 문제도 함께 수정.
+  (`FcmTokenController`, `FcmTokenService`)
+- 죽은 SSE 엔드포인트(`GET /post/ai-events`, 항상 503 고정) 제거 — 쿼리 파라미터로도
+  인증을 허용하던 통로였고 실제 사용처가 없어, 토큰이 액세스 로그에 남는 경로만
+  남아 있었다. 매 요청마다 토큰 앞부분을 로깅하던 코드도 함께 제거.
+
+### Security
+
+- 운영 JWT 시크릿이 공개 저장소 소스의 기본값(`@Value` 폴백)과 동일하게 설정되어 있던
+  것을 확인하고 교체함. 소스의 하드코딩 기본값도 제거해 설정 누락 시 기동이 실패하도록 변경.
+
 ## [0.4.0] - 2026-07-28
 
 ### Added

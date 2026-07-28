@@ -7,6 +7,7 @@ import com.example.linksphere.domain.member.TableMember
 import com.example.linksphere.domain.post.PostRepository
 import com.example.linksphere.domain.post.UrlMetadataExtractor
 import com.example.linksphere.global.common.SupabaseStorageService
+import com.example.linksphere.global.exception.PostNotFoundException
 import com.example.linksphere.infra.fcm.FcmNotificationService
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
@@ -31,6 +32,10 @@ class CommentService(
 
     @Transactional(readOnly = true)
     fun getComments(postId: UUID, currentUserId: UUID?): List<CommentResponse> {
+        val post = postRepository.findById(postId).orElseThrow { PostNotFoundException(postId) }
+        // 비공개 글의 댓글도 상세 조회와 동일한 기준으로 소유자에게만 보여준다.
+        if (post.isPrivate && post.userId != currentUserId) throw PostNotFoundException(postId)
+
         val comments = commentRepository.findAllByPostIdOrderByCreatedAtAsc(postId)
 
         val commentIds = comments.map { it.id }

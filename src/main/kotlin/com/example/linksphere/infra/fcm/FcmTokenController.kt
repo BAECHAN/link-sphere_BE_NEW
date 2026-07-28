@@ -25,9 +25,12 @@ class FcmTokenController(private val fcmTokenService: FcmTokenService) {
     // 기기 FCM 토큰 삭제 (로그아웃 시 호출)
     @DeleteMapping("/token")
     fun deleteToken(
+        authentication: Authentication,
         @Valid @RequestBody request: DeleteFcmTokenRequest,
     ): ResponseEntity<Void> {
-        fcmTokenService.deleteToken(request.token)
+        val userId = authentication.getUserId()
+            ?: return ResponseEntity.status(401).build()
+        fcmTokenService.deleteToken(userId, request.token)
         return ResponseEntity.ok().build()
     }
 }

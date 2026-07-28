@@ -54,7 +54,6 @@ class SecurityConfig(
                     "/post",
                     "/post/*",
                     "/post/*/comment",
-                    "/post/ai-events",
                 )
                     .permitAll()
                 it.anyRequest().authenticated()

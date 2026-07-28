@@ -14,8 +14,6 @@ import org.springframework.context.ApplicationEventPublisher
 import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
-import java.net.URI
-import java.net.URISyntaxException
 import java.util.UUID
 
 @Service
@@ -29,6 +27,7 @@ class PostService(
     private val commentRepository: CommentRepository,
     private val eventPublisher: ApplicationEventPublisher,
     private val urlMetadataExtractor: UrlMetadataExtractor,
+    private val safeUrlValidator: SafeUrlValidator,
 ) {
 
     private val logger = LoggerFactory.getLogger(PostService::class.java)
@@ -173,6 +172,9 @@ class PostService(
     @Transactional
     fun getPostById(id: UUID, currentUserId: UUID?): PostResponse {
         val post = postRepository.findById(id).orElseThrow { PostNotFoundException(id) }
+        // 목록/북마크 조회에는 있는 가시성 검증이 상세 조회에는 빠져 있었다.
+        // 존재 여부를 알려주지 않도록 403이 아닌 404로 던진다.
+        if (post.isPrivate && post.userId != currentUserId) throw PostNotFoundException(id)
         postRepository.incrementViewCount(id)
         return convertToResponse(post, currentUserId)
     }
@@ -245,17 +247,7 @@ class PostService(
         postRepository.delete(post)
     }
 
-    private fun validateUrl(url: String) {
-        if (url.isBlank()) throw IllegalArgumentException("URL cannot be blank")
-        try {
-            val uri = URI(url)
-            if (uri.scheme !in listOf("http", "https")) {
-                throw IllegalArgumentException("URL must use http or https scheme")
-            }
-        } catch (e: URISyntaxException) {
-            throw IllegalArgumentException("Invalid URL format: $url")
-        }
-    }
+    private fun validateUrl(url: String) = safeUrlValidator.validate(url)
 
     private fun convertToResponse(post: TablePost, currentUserId: UUID?): PostResponse {
         val postId = post.id ?: throw IllegalStateException("Post ID cannot be null")
