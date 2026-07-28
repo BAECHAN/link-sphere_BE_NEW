@@ -163,7 +163,9 @@ class CommentService(
 
         val post =
             postRepository.findByIdOrNull(postId)
-                ?: throw IllegalArgumentException("Post not found")
+                ?: throw PostNotFoundException(postId)
+        // 조회·댓글 목록과 동일한 기준: 읽을 수 없는 비공개 글에는 댓글도 달 수 없다.
+        if (post.isPrivate && post.userId != userId) throw PostNotFoundException(postId)
         val member =
             memberRepository.findByIdOrNull(userId)
                 ?: throw IllegalArgumentException("User not found")
@@ -219,6 +221,12 @@ class CommentService(
                 "Reply to reply is not allowed (Max Depth 1)",
             )
         }
+
+        val post =
+            postRepository.findByIdOrNull(parent.postId)
+                ?: throw PostNotFoundException(parent.postId)
+        // 조회·댓글 목록과 동일한 기준: 읽을 수 없는 비공개 글에는 답글도 달 수 없다.
+        if (post.isPrivate && post.userId != userId) throw PostNotFoundException(parent.postId)
 
         val member =
             memberRepository.findByIdOrNull(userId)

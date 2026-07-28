@@ -13,6 +13,12 @@
   (`GET /post/{id}/comment`)에 목록·북마크 조회에만 있던 가시성 검증이 빠져 있어, 비로그인
   사용자도 게시글 UUID만 알면 남의 비공개 글과 댓글을 그대로 읽을 수 있었다. 소유자가
   아니면 404로 응답하도록 수정. (`PostService.getPostById`, `CommentService.getComments`)
+- **비공개 게시글 좋아요·북마크·댓글·답글 인가 누락 수정** — 위 조회 경로 수정에서 쓰기
+  경로가 빠져 있어, 로그인한 타인이 남의 비공개 글에 좋아요·북마크를 남기거나 댓글·답글을
+  달 수 있었고 200/404 응답 차이로 비공개 글의 존재 여부를 알아낼 수 있었다(존재 여부
+  오라클). 소유자가 아니면 404로 응답하도록 통일. (`InteractionService.toggleLike`,
+  `InteractionService.toggleBookmark`, `CommentService.createComment`,
+  `CommentService.createReply`)
 - **URL 크롤링 SSRF 차단** — 게시글·댓글 등록 시 서버가 사용자가 입력한 URL로 직접
   요청(크롤링)을 보내는데, 스킴 검사만 있어 내부망·클라우드 메타데이터 엔드포인트
   (예: `169.254.169.254`)로 요청을 보내 응답을 읽어낼 수 있었다. 호스트를 DNS 해석해

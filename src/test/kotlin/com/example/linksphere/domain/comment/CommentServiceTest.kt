@@ -73,4 +73,35 @@ class CommentServiceTest {
             commentService.getComments(postId, null)
         }
     }
+
+    @Test
+    fun `createComment throws PostNotFoundException when another user comments on a private post`() {
+        val ownerId = UUID.randomUUID()
+        val otherUserId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val post = TablePost(id = postId, userId = ownerId, url = "https://example.com", title = "제목", isPrivate = true)
+
+        `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
+
+        assertThrows(PostNotFoundException::class.java) {
+            commentService.createComment(postId, otherUserId, "댓글 내용", null)
+        }
+    }
+
+    @Test
+    fun `createReply throws PostNotFoundException when another user replies on a comment of a private post`() {
+        val ownerId = UUID.randomUUID()
+        val otherUserId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val parentId = UUID.randomUUID()
+        val post = TablePost(id = postId, userId = ownerId, url = "https://example.com", title = "제목", isPrivate = true)
+        val parentComment = TableComment(id = parentId, postId = postId, userId = ownerId, content = "부모 댓글")
+
+        `when`(commentRepository.findById(parentId)).thenReturn(Optional.of(parentComment))
+        `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
+
+        assertThrows(PostNotFoundException::class.java) {
+            commentService.createReply(parentId, otherUserId, "답글 내용", null)
+        }
+    }
 }
