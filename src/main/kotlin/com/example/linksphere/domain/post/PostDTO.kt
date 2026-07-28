@@ -63,15 +63,22 @@ data class PostPageResponse(
     val totalElements: Long,
     val totalPages: Int,
     val last: Boolean,
+    // 한/영 자판 미스매칭 보정으로 재검색했을 때만 채워진다 (예: spdlqj -> 네이버)
+    val correctedSearch: String? = null,
 ) {
     companion object {
-        fun from(page: Page<TablePost>, postResponses: List<PostResponse>): PostPageResponse = PostPageResponse(
+        fun from(
+            page: Page<TablePost>,
+            postResponses: List<PostResponse>,
+            correctedSearch: String? = null,
+        ): PostPageResponse = PostPageResponse(
             content = postResponses,
             page = page.number,
             size = page.size,
             totalElements = page.totalElements,
             totalPages = page.totalPages,
             last = page.isLast,
+            correctedSearch = correctedSearch,
         )
     }
 }

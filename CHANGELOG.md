@@ -7,6 +7,16 @@
 
 ## [Unreleased]
 
+### Added
+
+- 게시글/북마크 검색에 한/영 자판 미스매칭 보정 폴백 추가 — 검색 결과가 0건일 때만
+  2벌식 자판 기준으로 변환한 후보(예: `spdlqj` → `네이버`, `메ㅔㅣㄷ` → `apple`)로
+  한 번 더 검색한다. 항상 변환하면 정상 영단어까지 깨질 수 있어 0건일 때만 폴백하며,
+  재검색도 0건이면 원문 결과를 그대로 반환한다. 응답(`PostPageResponse`)에
+  `correctedSearch` 필드를 추가해 보정 발생 여부를 FE에 전달한다.
+  (`HangulKeyboardConverter`, `PostService.getAllPosts`,
+  `BookmarkFolderService.getBookmarkedPosts`) — FE 이슈 #8
+
 ## [0.3.0] - 2026-07-25
 
 ### Added

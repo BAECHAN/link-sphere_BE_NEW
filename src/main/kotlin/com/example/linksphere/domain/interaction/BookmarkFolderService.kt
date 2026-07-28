@@ -1,5 +1,6 @@
 package com.example.linksphere.domain.interaction
 
+import com.example.linksphere.domain.post.HangulKeyboardConverter
 import com.example.linksphere.domain.post.PostPageResponse
 import com.example.linksphere.domain.post.PostService
 import com.example.linksphere.global.exception.BookmarkFolderNotFoundException
@@ -234,6 +235,30 @@ class BookmarkFolderService(
                 search,
                 pageable,
             )
+
+        // 검색 결과가 없으면 한/영 자판 미스매칭 보정 후보로 한 번 더 검색한다 (예: spdlqj -> 네이버)
+        if (postPage.totalElements == 0L && !search.isNullOrBlank()) {
+            val correctedSearch = HangulKeyboardConverter.convertIfMislayout(search)
+            if (correctedSearch != null) {
+                val correctedPage =
+                    bookmarkRepository.findBookmarkedPosts(
+                        userId,
+                        folderId,
+                        onlyUncategorized,
+                        sort ?: "latest",
+                        correctedSearch,
+                        pageable,
+                    )
+                if (correctedPage.totalElements > 0L) {
+                    return PostPageResponse.from(
+                        correctedPage,
+                        postService.buildResponsesFromPosts(correctedPage.content, userId),
+                        correctedSearch,
+                    )
+                }
+            }
+        }
+
         return PostPageResponse.from(postPage, postService.buildResponsesFromPosts(postPage.content, userId))
     }
 }

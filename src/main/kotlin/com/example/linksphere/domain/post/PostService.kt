@@ -88,6 +88,23 @@ class PostService(
     ): PostPageResponse {
         val pageable = PageRequest.of(page, size)
         val postPage = postRepository.findPosts(category, search, filter, nickname, currentUserId, pageable)
+
+        // 검색 결과가 없으면 한/영 자판 미스매칭 보정 후보로 한 번 더 검색한다 (예: spdlqj -> 네이버)
+        if (postPage.totalElements == 0L && !search.isNullOrBlank()) {
+            val correctedSearch = HangulKeyboardConverter.convertIfMislayout(search)
+            if (correctedSearch != null) {
+                val correctedPage =
+                    postRepository.findPosts(category, correctedSearch, filter, nickname, currentUserId, pageable)
+                if (correctedPage.totalElements > 0L) {
+                    return PostPageResponse.from(
+                        correctedPage,
+                        buildResponsesFromPosts(correctedPage.content, currentUserId),
+                        correctedSearch,
+                    )
+                }
+            }
+        }
+
         return PostPageResponse.from(postPage, buildResponsesFromPosts(postPage.content, currentUserId))
     }
 
