@@ -324,6 +324,12 @@ curl https://<function-url>/actuator/health
 
 # SnapStart 동작 확인 (CloudWatch Logs)
 # RESTORE_START / RESTORE_END 로그가 보이면 SnapStart 정상 동작
+
+# CloudFront를 거쳐도 403/404가 그대로 오는지 확인 (존재하지 않는 ID로)
+# 아래처럼 200 + server: AmazonS3 가 나오면 CloudFront가 에러를 index.html로 가리고 있는 것 —
+# CustomErrorResponses에 403/404가 다시 들어갔는지 확인할 것 (FE docs/SYSTEM-ARCHITECTURE.md 참고)
+curl -sD - -o /dev/null https://<cloudfront-domain>/api/post/00000000-0000-0000-0000-000000000000
+# 기대: HTTP/2 404, body에 POST_NOT_FOUND, server: AmazonS3 헤더 없음
 ```
 
 ---

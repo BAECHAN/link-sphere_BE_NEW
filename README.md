@@ -236,6 +236,11 @@ FCM을 사용하려면 `src/main/resources/firebase-service-account.json` 파일
 - **AWS S3**: Lambda 배포 JAR 저장소 (`deployments/` 30일 만료 수명 주기)
 - **Amazon EventBridge**: 5분 간격 워밍 핑 — 콜드스타트 발생 빈도를 낮춤
 - **Amazon CloudFront**: `/api/*` → Lambda, 그 외 → S3(FE). FE와 같은 오리진
+  - SPA 클라이언트 라우팅 폴백은 CloudFront Function(FE 저장소 `infra/cloudfront-functions/`)이
+    담당하며 S3 비헤이비어에만 연결되어 있다. **배포 레벨 `CustomErrorResponses`에 403/404를
+    다시 추가하지 말 것** — 오리진 구분 없이 걸려서 이 API가 반환하는 403/404까지 index.html로
+    가려버린 적이 있다(2026-07-28). 자세한 내용은 FE 저장소
+    `docs/SYSTEM-ARCHITECTURE.md`의 "SPA 라우팅 폴백" 절 참고
 - **Supabase**: 클라우드 PostgreSQL 데이터베이스 (도쿄 리전)
 
 > App Runner로 운영했던 이전 배포 방식은 [**docs/DEPLOY_WHEN_APP_RUNNER.md**](./docs/DEPLOY_WHEN_APP_RUNNER.md)를 참고하세요.
