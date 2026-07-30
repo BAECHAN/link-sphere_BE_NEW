@@ -322,6 +322,12 @@ SnapStart 체크포인트 **이전**(`companion object init`)에 읽기 전용 �
 
 ---
 
+## 문서
+
+- [변경 이력](CHANGELOG.md) — 버전별 변경 사항 (Keep a Changelog)
+
+---
+
 ## Frontend
 
 프론트엔드 프로젝트: [link-sphere_FE_NEW](https://github.com/BAECHAN/link-sphere_FE_NEW)
