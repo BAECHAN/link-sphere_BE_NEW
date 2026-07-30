@@ -50,25 +50,58 @@ class InteractionController(
         )
     }
 
-    @PatchMapping("/bookmark/{postId}/folder")
-    fun moveBookmark(
+    @PostMapping("/bookmark/{postId}/folders/{folderId}")
+    fun addBookmarkFolder(
         @PathVariable postId: UUID,
-        @RequestBody request: MoveBookmarkRequest,
+        @PathVariable folderId: UUID,
         authentication: Authentication?,
-    ): ApiResponse<Unit> {
+    ): ApiResponse<BookmarkFoldersResponse> {
         val userId = authentication.getUserId() ?: throw IllegalArgumentException("User not authenticated")
-        bookmarkFolderService.moveBookmark(userId, postId, request.folderId)
-        return ApiResponse(200, "북마크 폴더 이동 성공", Unit)
+        val result = interactionService.addBookmarkFolder(postId, folderId, userId)
+        return ApiResponse(200, "폴더에 저장 성공", result)
     }
 
-    @PostMapping("/bookmark/batch/move")
-    fun batchMoveBookmarks(
-        @RequestBody request: BatchMoveBookmarksRequest,
+    @DeleteMapping("/bookmark/{postId}/folders/{folderId}")
+    fun removeBookmarkFolder(
+        @PathVariable postId: UUID,
+        @PathVariable folderId: UUID,
+        authentication: Authentication?,
+    ): ApiResponse<BookmarkFoldersResponse> {
+        val userId = authentication.getUserId() ?: throw IllegalArgumentException("User not authenticated")
+        val result = interactionService.removeBookmarkFolder(postId, folderId, userId)
+        return ApiResponse(200, "폴더에서 제거 성공", result)
+    }
+
+    @DeleteMapping("/bookmark/{postId}/folders")
+    fun clearBookmarkFolders(
+        @PathVariable postId: UUID,
+        authentication: Authentication?,
+    ): ApiResponse<BookmarkFoldersResponse> {
+        val userId = authentication.getUserId() ?: throw IllegalArgumentException("User not authenticated")
+        val result = interactionService.clearBookmarkFolders(postId, userId)
+        return ApiResponse(200, "폴더 소속 전체 해제 성공", result)
+    }
+
+    @PostMapping("/bookmark/batch/folders/{folderId}/add")
+    fun batchAddBookmarksToFolder(
+        @PathVariable folderId: UUID,
+        @RequestBody request: BatchFolderBookmarksRequest,
         authentication: Authentication?,
     ): ApiResponse<BatchResultResponse> {
         val userId = authentication.getUserId() ?: throw IllegalArgumentException("User not authenticated")
-        val moved = bookmarkFolderService.batchMoveBookmarks(userId, request.postIds, request.folderId)
-        return ApiResponse(200, "북마크 일괄 이동 성공", BatchResultResponse(moved))
+        val added = bookmarkFolderService.batchAddBookmarksToFolder(userId, folderId, request.postIds)
+        return ApiResponse(200, "북마크 일괄 추가 성공", BatchResultResponse(added))
+    }
+
+    @PostMapping("/bookmark/batch/folders/{folderId}/remove")
+    fun batchRemoveBookmarksFromFolder(
+        @PathVariable folderId: UUID,
+        @RequestBody request: BatchFolderBookmarksRequest,
+        authentication: Authentication?,
+    ): ApiResponse<BatchResultResponse> {
+        val userId = authentication.getUserId() ?: throw IllegalArgumentException("User not authenticated")
+        val removed = bookmarkFolderService.batchRemoveBookmarksFromFolder(userId, folderId, request.postIds)
+        return ApiResponse(200, "북마크 일괄 제거 성공", BatchResultResponse(removed))
     }
 
     @PostMapping("/bookmark/batch/delete")

@@ -59,12 +59,21 @@ src/main/kotlin/com/example/linksphere/
 │   │   ├── CommentRepository.kt
 │   │   ├── CommentService.kt            # FCM 알림 트리거 포함
 │   │   └── TableComment.kt
-│   ├── interaction/                     # 좋아요·북마크 도메인
-│   │   ├── InteractionController.kt
+│   ├── interaction/                     # 좋아요·북마크(폴더 다중 소속 포함) 도메인
+│   │   ├── InteractionController.kt     # 좋아요 + 북마크 토글 + 폴더 소속 추가/제거
 │   │   ├── InteractionService.kt
+│   │   ├── BookmarkFolderController.kt  # 폴더 CRUD·순서·폴더별 게시글 조회
+│   │   ├── BookmarkFolderService.kt
+│   │   ├── BookmarkFolderDTO.kt
 │   │   ├── BookmarkRepository.kt
+│   │   ├── BookmarkRepositoryCustom.kt
+│   │   ├── BookmarkRepositoryImpl.kt    # 폴더 필터 EXISTS/NOT EXISTS 세미조인
+│   │   ├── BookmarkFolderRepository.kt
+│   │   ├── BookmarkFolderItemRepository.kt  # bookmark_folder_items (N:M 소속)
 │   │   ├── ReactionRepository.kt
 │   │   ├── TableBookmark.kt
+│   │   ├── TableBookmarkFolder.kt
+│   │   ├── TableBookmarkFolderItem.kt
 │   │   └── TableReaction.kt
 │   └── category/                        # 카테고리 도메인
 │       ├── CategoryController.kt
@@ -146,11 +155,33 @@ src/main/kotlin/com/example/linksphere/
 
 ### ❤️ Interaction
 
-| Method | Endpoint                       | 설명              | 인증 |
-| ------ | ------------------------------ | ----------------- | ---- |
-| `POST` | `/post/{postId}/like`          | 게시글 좋아요 토글 | ✅   |
-| `POST` | `/comment/{commentId}/like`    | 댓글 좋아요 토글  | ✅   |
-| `POST` | `/post/{postId}/bookmark`      | 게시글 북마크 토글 | ✅   |
+| Method   | Endpoint                              | 설명                                     | 인증 |
+| -------- | -------------------------------------- | ---------------------------------------- | ---- |
+| `POST`   | `/post/{postId}/like`                  | 게시글 좋아요 토글                       | ✅   |
+| `POST`   | `/comment/{commentId}/like`            | 댓글 좋아요 토글                         | ✅   |
+| `POST`   | `/post/{postId}/bookmark`              | 게시글 북마크 토글 (해제 시 소속도 전부 삭제) | ✅   |
+| `POST`   | `/bookmark/{postId}/folders/{folderId}` | 폴더에 추가 (북마크 없으면 자동 생성)    | ✅   |
+| `DELETE` | `/bookmark/{postId}/folders/{folderId}` | 그 폴더에서만 제거 (북마크는 유지)       | ✅   |
+| `DELETE` | `/bookmark/{postId}/folders`           | 폴더 소속 전체 해제 (→ 미분류)           | ✅   |
+
+북마크 하나가 **여러 폴더에 동시에 소속**될 수 있다(N:M). 위 세 엔드포인트는 모두
+멱등 — 이미 그 상태여도 200을 반환하며 404를 던지지 않는다. 자세한 폴더 모델은 아래
+Bookmark Folder 섹션 참고.
+
+### 📁 Bookmark Folder (`/bookmark/folders`)
+
+| Method   | Endpoint                          | 설명                                             | 인증 |
+| -------- | ---------------------------------- | ------------------------------------------------ | ---- |
+| `GET`    | `/bookmark/folders`                | 내 폴더 목록 (폴더별 소속 수 + 미분류 수)         | ✅   |
+| `POST`   | `/bookmark/folders`                | 폴더 생성                                         | ✅   |
+| `PATCH`  | `/bookmark/folders/{folderId}`     | 폴더 이름 수정                                    | ✅   |
+| `PATCH`  | `/bookmark/folders/reorder`        | 폴더 순서 일괄 재정렬 (본인 폴더 ID 전체 필요)    | ✅   |
+| `DELETE` | `/bookmark/folders/{folderId}`     | 폴더 삭제 (그 폴더에만 있던 북마크만 미분류로)    | ✅   |
+| `GET`    | `/bookmark/folders/{folderKey}/posts` | 폴더별 게시글 조회. `folderKey`: `all` \| `uncategorized` \| 폴더 UUID | ✅   |
+
+**미분류** = 어느 폴더에도 소속되지 않은 상태(소속 row 0개), `folder_id IS NULL`이 아니다.
+**전체**(`all`)는 소속 폴더 수와 무관하게 북마크 하나당 한 번만 나온다(EXISTS 세미조인으로
+중복 방지).
 
 ### 📁 Category (`/common/category-option`)
 

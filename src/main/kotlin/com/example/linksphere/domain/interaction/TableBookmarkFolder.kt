@@ -12,6 +12,11 @@ import java.util.UUID
             name = "uk_bookmark_folders_user_name",
             columnNames = ["user_id", "name"],
         ),
+        // bookmark_folder_items 의 복합 FK (user_id, folder_id) 대상 — 소속의 소유자 == 폴더의 소유자를 DB가 강제
+        UniqueConstraint(
+            name = "uk_bookmark_folders_user_id",
+            columnNames = ["user_id", "id"],
+        ),
     ],
     indexes = [
         Index(

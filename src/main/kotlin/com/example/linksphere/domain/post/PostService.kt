@@ -3,6 +3,7 @@ package com.example.linksphere.domain.post
 import com.example.linksphere.domain.category.CategoryRepository
 import com.example.linksphere.domain.category.CategoryResponse
 import com.example.linksphere.domain.comment.CommentRepository
+import com.example.linksphere.domain.interaction.BookmarkFolderItemRepository
 import com.example.linksphere.domain.interaction.BookmarkRepository
 import com.example.linksphere.domain.interaction.ReactionRepository
 import com.example.linksphere.domain.interaction.TargetType
@@ -23,6 +24,7 @@ class PostService(
     private val categoryRepository: CategoryRepository,
     private val memberRepository: MemberRepository,
     private val bookmarkRepository: BookmarkRepository,
+    private val bookmarkFolderItemRepository: BookmarkFolderItemRepository,
     private val reactionRepository: ReactionRepository,
     private val commentRepository: CommentRepository,
     private val eventPublisher: ApplicationEventPublisher,
@@ -132,7 +134,13 @@ class PostService(
                 emptyList()
             }
         val bookmarkedPostIds = myBookmarks.map { it.postId }.toSet()
-        val bookmarkFolderMap = myBookmarks.associate { it.postId to it.folderId }
+        val folderIdsByPost: Map<UUID, List<UUID>> =
+            if (currentUserId != null) {
+                bookmarkFolderItemRepository.findAllByUserIdAndPostIdIn(currentUserId, postIds)
+                    .groupBy({ it.postId }, { it.folderId })
+            } else {
+                emptyMap()
+            }
 
         val allReactions = reactionRepository.findAllByTargetIdInAndTargetType(postIds, TargetType.POST)
         val reactionCountMap = allReactions.groupingBy { it.targetId }.eachCount()
@@ -163,7 +171,7 @@ class PostService(
                 isLiked = postId in reactedPostIds,
                 bookmarkCount = bookmarkCountMap[postId] ?: 0,
                 isBookmarked = postId in bookmarkedPostIds,
-                bookmarkFolderId = bookmarkFolderMap[postId],
+                bookmarkFolderIds = folderIdsByPost[postId] ?: emptyList(),
                 commentCount = commentCountMap[postId] ?: 0,
             )
         }
@@ -263,9 +271,15 @@ class PostService(
                 image = dbAuthor.image,
             )
 
-        val myBookmark = currentUserId?.let {
-            bookmarkRepository.findById(com.example.linksphere.domain.interaction.BookmarkId(it, postId)).orElse(null)
-        }
+        val isBookmarked = currentUserId?.let { bookmarkRepository.existsByUserIdAndPostId(it, postId) } ?: false
+        // isBookmarked 가 true 인 경우는 currentUserId != null 인 경로(위 let)를 통해서만 나올 수 있으므로
+        // 컴파일러가 이 분기 안에서 currentUserId 를 non-null 로 스마트캐스트한다.
+        val bookmarkFolderIds =
+            if (isBookmarked) {
+                bookmarkFolderItemRepository.findFolderIdsByUserIdAndPostId(currentUserId, postId)
+            } else {
+                emptyList()
+            }
         return buildPostResponse(
             post = post,
             postId = postId,
@@ -276,8 +290,8 @@ class PostService(
                 reactionRepository.existsByTargetIdAndTargetTypeAndUserId(postId, TargetType.POST, it)
             } ?: false,
             bookmarkCount = bookmarkRepository.countByPostId(postId).toInt(),
-            isBookmarked = myBookmark != null,
-            bookmarkFolderId = myBookmark?.folderId,
+            isBookmarked = isBookmarked,
+            bookmarkFolderIds = bookmarkFolderIds,
             commentCount = commentRepository.countByPostId(postId).toInt(),
         )
     }
@@ -290,7 +304,7 @@ class PostService(
         isLiked: Boolean,
         bookmarkCount: Int,
         isBookmarked: Boolean,
-        bookmarkFolderId: UUID? = null,
+        bookmarkFolderIds: List<UUID> = emptyList(),
         commentCount: Int,
     ): PostResponse = PostResponse(
         id = postId,
@@ -315,7 +329,7 @@ class PostService(
         userInteractions = PostUserInteractions(
             isLiked = isLiked,
             isBookmarked = isBookmarked,
-            bookmarkFolderId = bookmarkFolderId,
+            bookmarkFolderIds = bookmarkFolderIds,
         ),
         author = author,
     )

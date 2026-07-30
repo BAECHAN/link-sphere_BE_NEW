@@ -35,7 +35,7 @@ data class PostStats(
 data class PostUserInteractions(
     val isLiked: Boolean,
     val isBookmarked: Boolean,
-    val bookmarkFolderId: UUID? = null,
+    val bookmarkFolderIds: List<UUID> = emptyList(),
 )
 
 data class PostResponse(

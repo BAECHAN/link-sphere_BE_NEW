@@ -25,13 +25,24 @@ class BookmarkRepositoryImpl : BookmarkRepositoryCustom {
     ): Page<TablePost> {
         val cb = entityManager.criteriaBuilder
 
-        // 1) count query — bookmark 기준 (post와 1:1 매칭이므로 동일)
+        // 1) count query — bookmark 기준 (post와 1:1 매칭이므로 동일). 폴더 필터는 EXISTS 세미조인이라 row가 증식하지 않는다.
         val countQuery = cb.createQuery(Long::class.java)
         val countBookmarkRoot = countQuery.from(TableBookmark::class.java)
         val countPostJoin = countBookmarkRoot.join<TableBookmark, TablePost>("post", JoinType.INNER)
         countQuery
             .select(cb.count(countBookmarkRoot))
-            .where(*buildPredicates(cb, countBookmarkRoot, countPostJoin, userId, folderId, onlyUncategorized, search).toTypedArray())
+            .where(
+                *buildPredicates(
+                    cb,
+                    countQuery,
+                    countBookmarkRoot,
+                    countPostJoin,
+                    userId,
+                    folderId,
+                    onlyUncategorized,
+                    search,
+                ).toTypedArray(),
+            )
         val total = entityManager.createQuery(countQuery).singleResult
 
         if (total == 0L) return PageImpl(emptyList(), pageable, 0L)
@@ -43,9 +54,21 @@ class BookmarkRepositoryImpl : BookmarkRepositoryCustom {
 
         query
             .select(postJoin)
-            .where(*buildPredicates(cb, bookmarkRoot, postJoin, userId, folderId, onlyUncategorized, search).toTypedArray())
+            .where(
+                *buildPredicates(
+                    cb,
+                    query,
+                    bookmarkRoot,
+                    postJoin,
+                    userId,
+                    folderId,
+                    onlyUncategorized,
+                    search,
+                ).toTypedArray(),
+            )
 
         // sort — 검색어가 있고 기본(latest) 정렬이면 관련도순, 그 외엔 사용자 선택 유지
+        // 모든 뷰(전체/미분류/폴더)에서 "최신순"은 bookmarks.created_at 기준 — 폴더별 소속 시각이 아니다.
         val searchTokens = PostSearchQuery.tokenize(search)
         val orders =
             if (searchTokens.isNotEmpty() && sort == "latest") {
@@ -77,6 +100,7 @@ class BookmarkRepositoryImpl : BookmarkRepositoryCustom {
 
     private fun buildPredicates(
         cb: jakarta.persistence.criteria.CriteriaBuilder,
+        query: jakarta.persistence.criteria.AbstractQuery<*>,
         bookmarkRoot: jakarta.persistence.criteria.Root<TableBookmark>,
         postJoin: jakarta.persistence.criteria.Join<TableBookmark, TablePost>,
         userId: UUID,
@@ -88,10 +112,25 @@ class BookmarkRepositoryImpl : BookmarkRepositoryCustom {
 
         predicates.add(cb.equal(bookmarkRoot.get<UUID>("userId"), userId))
 
-        when {
-            onlyUncategorized -> predicates.add(cb.isNull(bookmarkRoot.get<UUID>("folderId")))
-            folderId != null -> predicates.add(cb.equal(bookmarkRoot.get<UUID>("folderId"), folderId))
-            // else: all — no folder filter
+        // 폴더 필터 — bookmark_folder_items 상관 서브쿼리 (EXISTS/NOT EXISTS). DISTINCT 금지:
+        // 이 쿼리는 bookmarks.created_at / PostSearchQuery.relevanceScore 로 정렬하는데 둘 다
+        // select 목록(postJoin)에 없어 Postgres가 SELECT DISTINCT ... ORDER BY 를 거부한다.
+        // 세미조인은 row를 증식시키지 않으므로 DISTINCT 없이도 중복이 발생하지 않는다.
+        if (folderId != null || onlyUncategorized) {
+            val sub = query.subquery(UUID::class.java)
+            val item = sub.from(TableBookmarkFolderItem::class.java)
+            val correlated = sub.correlate(bookmarkRoot)
+            sub.select(item.get<UUID>("postId"))
+
+            val subConditions =
+                mutableListOf(
+                    cb.equal(item.get<UUID>("userId"), userId),
+                    cb.equal(item.get<UUID>("postId"), correlated.get<UUID>("postId")),
+                )
+            folderId?.let { subConditions.add(cb.equal(item.get<UUID>("folderId"), it)) }
+            sub.where(*subConditions.toTypedArray())
+
+            predicates.add(if (onlyUncategorized) cb.not(cb.exists(sub)) else cb.exists(sub))
         }
 
         // Search Filter (Title, Description, or Tags) — 토큰 분리 후 OR 매칭 (피드 검색과 동일 로직)

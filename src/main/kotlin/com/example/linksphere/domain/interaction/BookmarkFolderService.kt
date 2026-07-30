@@ -4,7 +4,6 @@ import com.example.linksphere.domain.post.HangulKeyboardConverter
 import com.example.linksphere.domain.post.PostPageResponse
 import com.example.linksphere.domain.post.PostService
 import com.example.linksphere.global.exception.BookmarkFolderNotFoundException
-import com.example.linksphere.global.exception.BookmarkNotFoundException
 import com.example.linksphere.global.exception.DuplicateFolderNameException
 import com.example.linksphere.global.exception.ForbiddenException
 import com.example.linksphere.global.exception.InvalidInputException
@@ -19,23 +18,28 @@ import java.util.UUID
 class BookmarkFolderService(
     private val bookmarkFolderRepository: BookmarkFolderRepository,
     private val bookmarkRepository: BookmarkRepository,
+    private val bookmarkFolderItemRepository: BookmarkFolderItemRepository,
     private val postService: PostService,
 ) {
 
     @Transactional(readOnly = true)
     fun getFolders(userId: UUID): FolderListResponse {
         val folders = bookmarkFolderRepository.findByUserIdOrderBySortOrderAsc(userId)
+        val countByFolderId =
+            bookmarkFolderItemRepository.countByUserIdGroupByFolderId(userId)
+                .associate { it.folderId to it.count.toInt() }
+        val uncategorizedCount = bookmarkRepository.countUncategorizedByUserId(userId).toInt()
+
         val folderResponses = folders.map { folder ->
             FolderResponse(
                 id = folder.id,
                 name = folder.name,
                 sortOrder = folder.sortOrder,
-                bookmarkCount = bookmarkRepository.countByUserIdAndFolderId(userId, folder.id).toInt(),
+                bookmarkCount = countByFolderId[folder.id] ?: 0,
                 createdAt = folder.createdAt,
                 updatedAt = folder.updatedAt,
             )
         }
-        val uncategorizedCount = bookmarkRepository.countByUserIdAndFolderIdIsNull(userId).toInt()
         return FolderListResponse(folders = folderResponses, uncategorizedCount = uncategorizedCount)
     }
 
@@ -84,7 +88,7 @@ class BookmarkFolderService(
         folder.name = newName
         folder.updatedAt = LocalDateTime.now()
 
-        val bookmarkCount = bookmarkRepository.countByUserIdAndFolderId(userId, folder.id).toInt()
+        val bookmarkCount = bookmarkFolderItemRepository.countByFolderId(folder.id).toInt()
         return FolderResponse(
             id = folder.id,
             name = folder.name,
@@ -101,7 +105,10 @@ class BookmarkFolderService(
             ?: throw BookmarkFolderNotFoundException(folderId)
         if (folder.userId != userId) throw ForbiddenException("Cannot delete another user's folder")
 
-        // FK ON DELETE SET NULL 로 안의 북마크들의 folder_id 가 자동 NULL 처리됨 (= 미분류 이동)
+        // 그 폴더의 소속만 삭제 — 다른 폴더에도 있는 북마크는 그대로 유지된다.
+        // FK ON DELETE CASCADE 로도 처리되지만, 통합 테스트 하네스가 없는 이 레포에서 단위 테스트로
+        // 검증 가능하도록 명시적으로 먼저 지운다.
+        bookmarkFolderItemRepository.deleteByFolderId(folderId)
         bookmarkFolderRepository.delete(folder)
     }
 
@@ -134,60 +141,50 @@ class BookmarkFolderService(
     }
 
     /**
-     * 다중 선택 일괄 이동.
-     * - folderId 지정 시 폴더 소유 검증 (실패 시 전체 거부, 403/404)
-     * - 본인 북마크에 한해서만 이동 (postIds 중 본인 것이 아닌 ID는 무시)
-     * - 반환: 실제로 처리된 row 수
+     * 다중 선택 일괄 추가 — 단건 addBookmarkFolder 와 동일하게 북마크가 없으면 자동 생성한다.
+     * (같은 동작이 선택 개수에 따라 의미가 달라지지 않도록 단건과 계약을 맞춘다.)
+     * 반환: 처리한 postId 수.
      */
     @Transactional
-    fun batchMoveBookmarks(userId: UUID, postIds: List<UUID>, folderId: UUID?): Int {
+    fun batchAddBookmarksToFolder(userId: UUID, folderId: UUID, postIds: List<UUID>): Int {
         if (postIds.isEmpty()) return 0
 
-        if (folderId != null) {
-            val folder = bookmarkFolderRepository.findByIdOrNull(folderId)
-                ?: throw BookmarkFolderNotFoundException(folderId)
-            if (folder.userId != userId) {
-                throw ForbiddenException("Cannot move bookmarks to another user's folder")
-            }
+        val folder = bookmarkFolderRepository.findByIdOrNull(folderId)
+            ?: throw BookmarkFolderNotFoundException(folderId)
+        if (folder.userId != userId) {
+            throw ForbiddenException("Cannot add bookmarks to another user's folder")
         }
 
-        val bookmarks = bookmarkRepository.findAllByUserIdAndPostIdIn(userId, postIds)
-        if (bookmarks.isEmpty()) return 0
-        bookmarks.forEach { it.folderId = folderId }
-        bookmarkRepository.saveAll(bookmarks)
-        return bookmarks.size
+        postIds.forEach { postId ->
+            bookmarkRepository.insertIgnoreConflict(userId, postId)
+            bookmarkFolderItemRepository.insertIgnoreConflict(userId, postId, folderId)
+        }
+        return postIds.size
     }
 
     /**
-     * 다중 선택 일괄 삭제 — 본인 북마크에 한해서만. 본인 것이 아닌 ID는 무시.
+     * 다중 선택 일괄 제거 — 그 폴더에서만 뺀다 (북마크 자체는 유지).
+     * 반환: 실제로 삭제된 소속 row 수.
+     */
+    @Transactional
+    fun batchRemoveBookmarksFromFolder(userId: UUID, folderId: UUID, postIds: List<UUID>): Int {
+        if (postIds.isEmpty()) return 0
+        return postIds.sumOf { postId ->
+            bookmarkFolderItemRepository.deleteByUserIdAndPostIdAndFolderId(userId, postId, folderId)
+        }
+    }
+
+    /**
+     * 다중 선택 일괄 삭제 — 본인 북마크에 한해서만. 본인 것이 아닌 ID는 무시. 소속도 함께 삭제한다.
      */
     @Transactional
     fun batchDeleteBookmarks(userId: UUID, postIds: List<UUID>): Int {
         if (postIds.isEmpty()) return 0
         val bookmarks = bookmarkRepository.findAllByUserIdAndPostIdIn(userId, postIds)
         if (bookmarks.isEmpty()) return 0
+        bookmarkFolderItemRepository.deleteByUserIdAndPostIdIn(userId, postIds)
         bookmarkRepository.deleteAll(bookmarks)
         return bookmarks.size
-    }
-
-    /**
-     * 북마크를 다른 폴더로 이동. folderId = null → 미분류.
-     */
-    @Transactional
-    fun moveBookmark(userId: UUID, postId: UUID, folderId: UUID?) {
-        val bookmark = bookmarkRepository.findById(BookmarkId(userId, postId))
-            .orElseThrow { BookmarkNotFoundException(userId, postId) }
-
-        if (folderId != null) {
-            val folder = bookmarkFolderRepository.findByIdOrNull(folderId)
-                ?: throw BookmarkFolderNotFoundException(folderId)
-            if (folder.userId != userId) {
-                throw ForbiddenException("Cannot move bookmark to another user's folder")
-            }
-        }
-
-        bookmark.folderId = folderId
-        bookmarkRepository.save(bookmark)
     }
 
     /**

@@ -60,19 +60,6 @@ class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response)
     }
 
-    @ExceptionHandler(BookmarkNotFoundException::class)
-    fun handleBookmarkNotFoundException(
-        e: BookmarkNotFoundException,
-    ): ResponseEntity<ErrorResponse> {
-        val response =
-            ErrorResponse(
-                status = HttpStatus.NOT_FOUND.value(),
-                code = "BOOKMARK_NOT_FOUND",
-                message = e.message ?: "Bookmark not found",
-            )
-        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response)
-    }
-
     @ExceptionHandler(DuplicateFolderNameException::class)
     fun handleDuplicateFolderNameException(
         e: DuplicateFolderNameException,

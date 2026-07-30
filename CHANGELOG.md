@@ -7,6 +7,63 @@
 
 ## [Unreleased]
 
+### Added
+
+- **북마크 다중 폴더 소속 지원** — 북마크 하나를 여러 폴더에 동시에 저장할 수 있도록
+  `bookmark_folder_items` 소속 테이블을 신설. 신규 엔드포인트 3종: `POST/DELETE
+  /bookmark/{postId}/folders/{folderId}`(폴더에 추가/그 폴더에서만 제거), `DELETE
+  /bookmark/{postId}/folders`(소속 전체 해제 → 미분류). 추가/제거 모두 멱등(같은 요청
+  반복해도 200) — 없는 소속을 제거해도 404를 던지지 않는다. 폴더 추가 시 북마크가 없으면
+  자동 생성한다("북마크 보장 + 소속 보장"). 배치 엔드포인트도 다중 폴더 대응:
+  `POST /bookmark/batch/folders/{folderId}/add`, `POST
+  /bookmark/batch/folders/{folderId}/remove` 신규 추가. (`TableBookmarkFolderItem`,
+  `BookmarkFolderItemRepository`, `InteractionService.addBookmarkFolder` 등,
+  `BookmarkFolderService.batchAddBookmarksToFolder` 등)
+- `PostUserInteractions.bookmarkFolderIds: List<UUID>` — 게시글이 속한 모든 폴더 ID
+  목록. 기존 단일 `bookmarkFolderId` 필드를 대체.
+
+### Changed
+
+- **폴더 삭제 시 다른 폴더에도 있는 북마크는 그대로 유지** — 기존엔 폴더를 삭제하면 안의
+  북마크가 전부 미분류로 이동했다(DB `ON DELETE SET NULL`). 이제는 삭제된 그 폴더의
+  소속만 없어지고, 다른 폴더에도 속해 있던 북마크는 그 폴더에 그대로 남는다. 미분류가
+  되는 건 그 폴더가 마지막 소속이었던 경우뿐. (`BookmarkFolderService.deleteFolder`)
+- `BookmarkFolderService.getFolders` — 폴더 개수만큼 COUNT 쿼리를 날리던 N+1을 그룹
+  카운트 쿼리 1회로 교체. (`BookmarkFolderItemRepository.countByUserIdGroupByFolderId`)
+- `BookmarkRepositoryImpl.findBookmarkedPosts`의 폴더 필터를 `bookmarks.folder_id`
+  단일 컬럼 비교에서 `bookmark_folder_items` 상관 EXISTS/NOT EXISTS 세미조인으로 교체
+  — 북마크 하나가 여러 폴더에 속해도 `전체`/검색 결과에 중복 없이 정확히 한 번만 나온다.
+
+### Removed
+
+- `PATCH /bookmark/{postId}/folder`(단건 이동), `POST /bookmark/batch/move`(일괄 이동)
+  — "폴더 하나로 교체"라는 단일 소속 시대의 API로, 다중 소속에서는 의미가 없어 폴더별
+  추가/제거 엔드포인트로 대체됨.
+- `bookmarks.folder_id` 컬럼(마이그레이션 Phase C에서 제거, 아래 참고),
+  `PostUserInteractions.bookmarkFolderId`(단일), `BookmarkNotFoundException`
+  — `moveBookmark`가 유일한 사용처였음.
+
+### Migration
+
+`ddl-auto: none`이라 아래 SQL을 수동 실행해야 한다.
+
+1. **배포 전** — `src/main/resources/sql/create_bookmark_folder_items.sql` 실행.
+   파일 헤더의 `\d bookmarks` 사전 확인(복합 PK/UNIQUE, `post_id` FK 존재 여부)을 먼저
+   수행할 것. 기존 `bookmarks.folder_id` 값을 `bookmark_folder_items`로 백필하고,
+   실행 후 출력되는 검증 SELECT 두 값이 일치하는지 확인한다. 구버전 BE와 공존 가능
+   (가산적 변경).
+2. **BE 배포 직후** — 1번의 백필 INSERT를 한 번 더 실행 (`ON CONFLICT DO NOTHING`이라
+   안전) — 백필~컷오버 사이 구버전이 만든 지정을 회수하기 위함.
+3. **배포 후 수동 검증 4항목** (BE 테스트에 DB가 없어 자동화 불가, SQL 파일 헤더 참고):
+   - 2개 폴더에 든 글이 `GET /bookmark/folders/all/posts`에 한 번만 나오고
+     `totalElements` 일치
+   - `GET /bookmark/folders/{uuid}/posts?search=...`가 200 (관련도 정렬에 DISTINCT가
+     안 끼었음을 증명 — 끼면 Postgres가 `SELECT DISTINCT ... ORDER BY` 오류로 500)
+   - 다른 폴더에도 있는 글이 담긴 폴더를 삭제해도 `bookmarks` 수는 불변
+   - 2개 폴더에 든 글을 북마크 해제하면 관련 `bookmark_folder_items`가 0건
+4. **검증 완료 후에만** — `src/main/resources/sql/drop_bookmarks_folder_id.sql` 실행
+   (파괴적, `bookmarks.folder_id` 컬럼 제거).
+
 ### Fixed
 
 - **비공개 게시글·댓글 조회 인가 누락 수정** — 상세 조회(`GET /post/{id}`)와 댓글 조회
