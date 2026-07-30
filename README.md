@@ -163,8 +163,10 @@ src/main/kotlin/com/example/linksphere/
 | `POST`   | `/bookmark/{postId}/folders/{folderId}` | 폴더에 추가 (북마크 없으면 자동 생성)    | ✅   |
 | `DELETE` | `/bookmark/{postId}/folders/{folderId}` | 그 폴더에서만 제거 (북마크는 유지)       | ✅   |
 | `DELETE` | `/bookmark/{postId}/folders`           | 폴더 소속 전체 해제 (→ 미분류)           | ✅   |
+| `POST`   | `/bookmark/batch/folders/{folderId}/add`    | 여러 게시글을 한 폴더에 일괄 추가 (북마크 없으면 자동 생성) | ✅   |
+| `POST`   | `/bookmark/batch/folders/{folderId}/remove` | 여러 게시글을 한 폴더에서 일괄 제거      | ✅   |
 
-북마크 하나가 **여러 폴더에 동시에 소속**될 수 있다(N:M). 위 세 엔드포인트는 모두
+북마크 하나가 **여러 폴더에 동시에 소속**될 수 있다(N:M). 위 단건 세 엔드포인트는 모두
 멱등 — 이미 그 상태여도 200을 반환하며 404를 던지지 않는다. 자세한 폴더 모델은 아래
 Bookmark Folder 섹션 참고.
 
