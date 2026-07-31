@@ -4,9 +4,14 @@ import com.example.linksphere.infra.ai.dto.*
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.MediaType
+import org.springframework.http.client.JdkClientHttpRequestFactory
+import org.springframework.scheduling.annotation.Async
 import org.springframework.stereotype.Service
 import org.springframework.web.client.HttpStatusCodeException
 import org.springframework.web.client.RestClient
+import java.net.http.HttpClient
+import java.time.Duration
+import java.util.concurrent.CompletableFuture
 
 @Service
 class GeminiService(
@@ -16,7 +21,14 @@ class GeminiService(
     private val models: List<String>,
 ) {
     private val logger = LoggerFactory.getLogger(GeminiService::class.java)
-    private val restClient = RestClient.create()
+
+    // 타임아웃 미설정 시 무제한 대기 → 별도 Lambda 호출(AiJobDispatcher)에서 AI 분석 전용으로
+    // 실행되므로 CloudFront 60초 제약은 없지만, Lambda 함수 자체 타임아웃(120초) 안에는
+    // 들어와야 하므로 커넥트/응답 상한은 그대로 둔다.
+    private val requestFactory =
+        JdkClientHttpRequestFactory(HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build())
+            .apply { setReadTimeout(Duration.ofSeconds(45)) }
+    private val restClient = RestClient.builder().requestFactory(requestFactory).build()
     private val baseUrl = "https://generativelanguage.googleapis.com/v1beta/models"
 
     init {
@@ -86,6 +98,12 @@ class GeminiService(
         logger.info("[Gemini API] Response received")
         return parseResponse(response)
     }
+
+    // analyzeContent와 classifyCategories(PostCategoryClassifier 경유)를 순차가 아닌 병렬로
+    // 돌리기 위한 래퍼. 반드시 다른 빈(PostAIService)에서 호출해야 @Async 프록시가 적용된다 —
+    // 같은 빈 내부에서 this로 호출하면 프록시를 우회해 동기로 실행된다.
+    @Async
+    fun analyzeContentAsync(title: String, description: String?, content: String): CompletableFuture<AiAnalysisResult> = CompletableFuture.completedFuture(analyzeContent(title, description, content))
 
     fun classifyCategories(
         title: String,

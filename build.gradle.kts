@@ -119,6 +119,16 @@ dependencies {
     // SnapStart CRaC 지원: 체크포인트 전 Tomcat/HikariCP 소켓을 자동으로 닫고 복원 후 재연결
     // 이 의존성 없이는 열린 소켓 때문에 SnapStart 체크포인트가 State:Failed가 된다
     implementation("org.crac:crac")
+
+    // AI 분석을 별도 Lambda 호출로 위임(self-invoke)하기 위한 클라이언트.
+    // url-connection-client는 커넥션 풀을 유지하지 않아(요청마다 새로 열고 닫음) SnapStart
+    // 체크포인트 시점에 열린 소켓이 남지 않는다 — Apache/Netty 클라이언트는 풀링 때문에 위험하다.
+    implementation(platform("software.amazon.awssdk:bom:2.29.52"))
+    implementation("software.amazon.awssdk:lambda") {
+        exclude(group = "software.amazon.awssdk", module = "netty-nio-client")
+        exclude(group = "software.amazon.awssdk", module = "apache-client")
+    }
+    implementation("software.amazon.awssdk:url-connection-client")
 }
 
 kotlin {

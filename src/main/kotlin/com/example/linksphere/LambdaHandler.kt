@@ -2,7 +2,10 @@ package com.example.linksphere
 
 import com.amazonaws.services.lambda.runtime.Context
 import com.amazonaws.services.lambda.runtime.RequestStreamHandler
-import com.fasterxml.jackson.databind.ObjectMapper
+import com.example.linksphere.domain.post.PostAIService
+import com.example.linksphere.domain.post.PostCreatedEvent
+import com.fasterxml.jackson.databind.JsonNode
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import jakarta.servlet.http.Cookie
 import org.springframework.boot.SpringApplication
 import org.springframework.boot.WebApplicationType
@@ -36,8 +39,12 @@ class LambdaHandler : RequestStreamHandler {
 
     companion object {
         private val logger = org.slf4j.LoggerFactory.getLogger(LambdaHandler::class.java)
-        private val mapper = ObjectMapper()
+
+        // AI 작업 페이로드(PostCreatedEvent)의 Kotlin data class 역직렬화에 KotlinModule이 필요하다.
+        // readTree/writeValue(Map) 용도에는 영향 없어 기존 동작은 그대로 유지된다.
+        private val mapper = jacksonObjectMapper()
         private val mockMvc: MockMvc
+        private val applicationContext: ConfigurableApplicationContext
 
         // handleRequest가 context-path(/api)를 제거하므로 MockMvc에는 서블릿 경로만 전달한다.
         // 실제 매핑과 정확히 일치해야 한다 — 404가 나면 DispatcherServlet만 데워지고
@@ -60,6 +67,7 @@ class LambdaHandler : RequestStreamHandler {
             }
             app.webApplicationType = WebApplicationType.SERVLET
             val ctx = app.run()
+            applicationContext = ctx
             // webAppContextSetup()만으로는 FilterChainProxy(Spring Security)가 MockMvc 필터 체인에
             // 자동 포함되지 않는다. 명시적으로 추가해야 JwtAuthenticationFilter 등 보안 필터가 실행된다.
             val securityFilter = ctx.getBean("springSecurityFilterChain") as jakarta.servlet.Filter
@@ -106,6 +114,14 @@ class LambdaHandler : RequestStreamHandler {
 
     override fun handleRequest(input: InputStream, output: OutputStream, context: Context) {
         val event = mapper.readTree(input)
+
+        // AiJobDispatcher가 self-invoke로 보낸 내부 작업이면 HTTP 라우팅(MockMvc)을 거치지 않고
+        // 바로 처리한다 — rawPath/requestContext가 없는, Function URL 이벤트와 다른 모양이다.
+        if (event.get("linksphereJob")?.asText() == "ai-analysis") {
+            handleAiJob(event, output)
+            return
+        }
+
         // rawPath에는 CloudFront가 forward한 전체 경로(/api/auth/login)가 담겨있다.
         // MockMvc는 Tomcat과 달리 context-path(/api)를 자동으로 스트립하지 않으므로,
         // Spring Security의 requestMatchers("/auth/login")가 /api/auth/login과 매칭 실패해 401이 된다.
@@ -164,5 +180,15 @@ class LambdaHandler : RequestStreamHandler {
                 "body" to response.contentAsString,
             ),
         )
+    }
+
+    // AiJobDispatcher가 위임한 AI 분석 작업을 처리한다. 원래 요청의 응답 흐름과 완전히
+    // 별도인 실행 환경(비동기 self-invoke)이라 여기서 오래 걸려도 무방하다.
+    // InvocationType.EVENT라 이 함수의 리턴값을 읽는 호출자가 없으므로 output 내용 자체는 의미가 없다.
+    private fun handleAiJob(event: JsonNode, output: OutputStream) {
+        val payload = mapper.treeToValue(event.get("event"), PostCreatedEvent::class.java)
+        val postAIService = applicationContext.getBean(PostAIService::class.java)
+        postAIService.processAiJob(payload)
+        mapper.writeValue(output, mapOf("statusCode" to 200, "body" to "ok"))
     }
 }

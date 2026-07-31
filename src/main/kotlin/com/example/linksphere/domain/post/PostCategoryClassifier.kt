@@ -4,7 +4,9 @@ import com.example.linksphere.domain.category.CategoryRepository
 import com.example.linksphere.domain.category.TableCategory
 import com.example.linksphere.infra.ai.GeminiService
 import org.slf4j.LoggerFactory
+import org.springframework.scheduling.annotation.Async
 import org.springframework.stereotype.Component
+import java.util.concurrent.CompletableFuture
 
 // 카테고리가 비어 있는 게시글에 카테고리를 자동으로 채운다.
 // 1) 태그 ↔ 카테고리 name/slug 정규화 매칭 (비용 0, 결정론적)
@@ -38,4 +40,9 @@ class PostCategoryClassifier(
         logger.info("[Category] Gemini 분류 결과 - $suggestedNames → ${aiMatched.map { it.name }}")
         return aiMatched
     }
+
+    // classify를 GeminiService.analyzeContentAsync와 병렬로 돌리기 위한 래퍼.
+    // PostAIService(다른 빈)에서만 호출해야 @Async 프록시가 적용된다.
+    @Async
+    fun classifyAsync(title: String, description: String?, tags: List<String>): CompletableFuture<List<TableCategory>> = CompletableFuture.completedFuture(classify(title, description, tags))
 }

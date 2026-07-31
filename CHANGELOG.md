@@ -7,6 +7,24 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **게시글 등록(POST /post) 시 AI 분석을 별도 Lambda 비동기 호출로 위임** — 기존엔
+  크롤링 이후 Gemini 요약·카테고리 분류가 끝날 때까지 응답을 미룬 채 동기로 기다렸다
+  (Lambda가 `handleRequest()` 반환 후 컨테이너를 얼려버려 `@Async` 백그라운드 스레드로는
+  AI 처리를 이어갈 수 없었기 때문에 과거 이 방식으로 되돌렸던 것). 크롤링·AI 처리 합산
+  시간이 CloudFront origin timeout을 넘기면 클라이언트는 504를 받지만 서버는 계속
+  실행돼 게시글은 이미 커밋된 채 응답만 유실되는 문제가 있었다. 이제 커밋 후 AI 작업을
+  Lambda 자기 자신에 대한 비동기(Event) 호출로 위임해 완전히 독립된 실행 환경에서
+  처리한다 — POST /post 응답은 크롤링만 끝나면 바로 나가고, AI 결과는 백그라운드에서
+  반영된 뒤 `GET /post/{id}` 재조회 시 확인된다. 요약과 카테고리 분류도 순차 대신
+  병렬로 실행한다(카테고리 분류 입력은 AI 태그 대신 크롤링 시점 기존 태그만 사용하도록
+  변경 — 병렬화를 위해 순차 의존을 끊음). (`AiJobDispatcher`, `LambdaHandler.handleAiJob`,
+  `PostAIService.processAiJob`, `GeminiService.analyzeContentAsync`,
+  `PostCategoryClassifier.classifyAsync`)
+- Gemini `RestClient` 타임아웃 명시(커넥트 5초/응답 45초) — 기존엔 타임아웃 미설정으로
+  무제한 대기가 가능해 CloudFront timeout의 주요 원인 중 하나였다. (`GeminiService`)
+
 ### Fixed
 
 - **유튜브 등 리다이렉트 링크 등록 시 크롤링·AI 요약 실패** — SSRF 방지를 위해 리다이렉트를

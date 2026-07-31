@@ -1,9 +1,9 @@
 package com.example.linksphere.domain.post
 
 import com.example.linksphere.infra.ai.GeminiService
+import com.example.linksphere.infra.aws.AiJobDispatcher
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
-import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.transaction.event.TransactionPhase
 import org.springframework.transaction.event.TransactionalEventListener
@@ -13,22 +13,29 @@ class PostAIService(
     private val postRepository: PostRepository,
     private val geminiService: GeminiService,
     private val postCategoryClassifier: PostCategoryClassifier,
+    private val aiJobDispatcher: AiJobDispatcher,
 ) {
 
     private val logger = LoggerFactory.getLogger(PostAIService::class.java)
 
-    // 동기 처리: POST /post 응답 전에 AI 분석을 완료한다.
-    // 결과는 DB에 저장되므로 프론트엔드는 GET /post/{id}로 확인한다.
+    // 여기서 직접 Gemini를 호출하지 않는다 — 원래 요청(POST /post)과 같은 실행 환경 안에서
+    // 계속 처리하면 handleRequest() 반환 후 컨테이너가 얼어붙는 문제를 다시 겪는다.
+    // 별도 Lambda 호출(AiJobDispatcher)로 위임만 하고 즉시 리턴한다.
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
     fun handlePostCreatedEvent(event: PostCreatedEvent) {
+        logger.info("[AI] 이벤트 수신 (커밋 후), 별도 Lambda 호출로 위임 - postId: ${event.postId}")
+        aiJobDispatcher.dispatch(event)
+    }
+
+    // AiJobDispatcher가 위임한 별도 Lambda 호출 안에서 LambdaHandler가 직접 호출하는 실제 처리부.
+    // 원래 요청과 완전히 독립된 실행 환경이므로 여기서 오래 걸려도 CloudFront/원래 응답에 영향 없다.
+    @Transactional
+    fun processAiJob(event: PostCreatedEvent) {
         val postId = event.postId
         val title = event.title
         val description = event.description
         val content = event.content
         val existingTags = event.existingTags
-
-        logger.info("[AI] 이벤트 수신 (커밋 후) - postId: $postId")
 
         val post = postRepository.findById(postId).orElse(null)
         if (post == null) {
@@ -37,8 +44,18 @@ class PostAIService(
         }
 
         try {
-            val analysisResult = geminiService.analyzeContent(title, description, content)
+            // 요약과 카테고리 분류를 병렬로 돌린다. 카테고리 분류는 요약이 만들어낼 AI 태그
+            // 대신 크롤링 시점의 기존 태그만 입력으로 쓴다 — 순차 의존을 끊어야 병렬화가 되고,
+            // 태그 매칭 1차 필터는 기존 태그만으로도 대체로 충분하다.
+            val summaryFuture = geminiService.analyzeContentAsync(title, description, content)
+            val categoryFuture =
+                if (post.categories.isEmpty()) {
+                    postCategoryClassifier.classifyAsync(title, description, existingTags)
+                } else {
+                    null
+                }
 
+            val analysisResult = summaryFuture.join()
             if (analysisResult.summary.isNullOrBlank()) {
                 throw RuntimeException("AI Analysis returned empty summary")
             }
@@ -52,9 +69,8 @@ class PostAIService(
             post.aiSummary = analysisResult.summary
             post.tags = mergedTags
 
-            // 사용자가 카테고리를 지정하지 않은 글만 자동 분류로 채운다.
-            if (post.categories.isEmpty()) {
-                post.categories.addAll(postCategoryClassifier.classify(title, description, mergedTags))
+            if (categoryFuture != null) {
+                post.categories.addAll(categoryFuture.join())
             }
 
             post.aiStatus = AiStatus.COMPLETED
