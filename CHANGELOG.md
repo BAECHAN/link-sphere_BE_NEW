@@ -19,7 +19,11 @@
   처리한다 — POST /post 응답은 크롤링만 끝나면 바로 나가고, AI 결과는 백그라운드에서
   반영된 뒤 `GET /post/{id}` 재조회 시 확인된다. 요약과 카테고리 분류도 순차 대신
   병렬로 실행한다(카테고리 분류 입력은 AI 태그 대신 크롤링 시점 기존 태그만 사용하도록
-  변경 — 병렬화를 위해 순차 의존을 끊음). (`AiJobDispatcher`, `LambdaHandler.handleAiJob`,
+  변경 — 병렬화를 위해 순차 의존을 끊음). self-invoke 시 qualifier를 `prod`로 명시해
+  SnapStart 최적화(스냅샷 복원)를 그대로 받는다 — qualifier 없이 호출하면 AWS가
+  기본값인 `$LATEST`로 보내는데, SnapStart는 `ApplyOn=PublishedVersions`라 `$LATEST`엔
+  적용되지 않아 매번 완전 콜드스타트를 물게 된다(EventBridge 워밍 핑과 동일한 함정,
+  `docs/DEPLOY.md` 6장). (`AiJobDispatcher`, `LambdaHandler.handleAiJob`,
   `PostAIService.processAiJob`, `GeminiService.analyzeContentAsync`,
   `PostCategoryClassifier.classifyAsync`)
 - Gemini `RestClient` 타임아웃 명시(커넥트 5초/응답 45초) — 기존엔 타임아웃 미설정으로

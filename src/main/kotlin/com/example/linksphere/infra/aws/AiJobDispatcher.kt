@@ -21,6 +21,13 @@ class AiJobDispatcher(
     private val logger = LoggerFactory.getLogger(AiJobDispatcher::class.java)
     private val functionName: String? = System.getenv("AWS_LAMBDA_FUNCTION_NAME")
 
+    // qualifier를 안 주면 AWS가 $LATEST로 호출하는데, SnapStart는 ApplyOn=PublishedVersions라
+    // $LATEST엔 스냅샷 최적화가 적용되지 않아 매번 완전 콜드스타트를 물게 된다.
+    // EventBridge 워밍 핑과 동일한 이유로 반드시 prod alias를 명시해야 한다 (docs/DEPLOY.md 6장).
+    private companion object {
+        const val PROD_QUALIFIER = "prod"
+    }
+
     private val lambdaClient: LambdaClient by lazy {
         LambdaClient.builder()
             .region(Region.of(System.getenv("AWS_REGION") ?: "ap-northeast-1"))
@@ -39,6 +46,7 @@ class AiJobDispatcher(
         val request =
             InvokeRequest.builder()
                 .functionName(fnName)
+                .qualifier(PROD_QUALIFIER)
                 .invocationType(InvocationType.EVENT)
                 .payload(SdkBytes.fromUtf8String(payload))
                 .build()
