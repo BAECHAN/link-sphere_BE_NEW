@@ -80,6 +80,10 @@ class UrlMetadataExtractor(
                     .referrer("http://google.com")
                     .timeout(5000)
                     .followRedirects(false)
+                    // 리다이렉트 응답(예: youtu.be → youtube.com)은 Content-Type이
+                    // text/html이 아닌 경우가 많아(예: application/binary), 검사를 끄지
+                    // 않으면 아래 상태코드 분기 전에 execute()가 예외를 던져버린다.
+                    .ignoreContentType(true)
                     .execute()
 
             if (response.statusCode() !in 300..399) return response

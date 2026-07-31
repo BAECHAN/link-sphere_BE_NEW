@@ -7,6 +7,16 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **유튜브 등 리다이렉트 링크 등록 시 크롤링·AI 요약 실패** — SSRF 방지를 위해 리다이렉트를
+  홉마다 직접 따라가도록 바꾼 뒤(0.4.0), 중간 리다이렉트 응답의 Content-Type이
+  `text/html`이 아니면(예: youtu.be의 303 응답은 `application/binary`) Jsoup이 상태
+  코드를 확인하기도 전에 `UnsupportedMimeTypeException`을 던져 크롤링 전체가 실패하고
+  있었다. 크롤링 실패 시 `pageContent`가 null이 되어 `aiStatus`가 `PENDING`으로 올라가지
+  않아 AI 분석 이벤트 자체가 발행되지 않았다. `safeConnect()`의 Jsoup 커넥션에
+  `ignoreContentType(true)`를 추가해 해결. (`UrlMetadataExtractor.safeConnect`)
+
 ## [0.5.0] - 2026-07-31
 
 ### Added
