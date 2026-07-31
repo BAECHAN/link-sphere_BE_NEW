@@ -3,6 +3,7 @@ package com.example.linksphere.domain.post
 import com.example.linksphere.infra.ai.GeminiService
 import com.example.linksphere.infra.aws.AiJobDispatcher
 import org.slf4j.LoggerFactory
+import org.springframework.orm.ObjectOptimisticLockingFailureException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.transaction.event.TransactionPhase
@@ -39,7 +40,8 @@ class PostAIService(
 
         val post = postRepository.findById(postId).orElse(null)
         if (post == null) {
-            logger.error("[AI] Post를 찾을 수 없음 - postId: $postId")
+            // AI 작업이 위임된 뒤(또는 처리되는 동안) 사용자가 post를 삭제한 정상적인 레이스다.
+            logger.info("[AI] Post가 이미 삭제됨 - postId: $postId")
             return
         }
 
@@ -75,12 +77,23 @@ class PostAIService(
 
             post.aiStatus = AiStatus.COMPLETED
 
-            postRepository.save(post)
+            // save()만으로는 UPDATE가 실제 트랜잭션 커밋 시점(이 메서드 바깥, try/catch 밖)에
+            // 지연 flush되어, 그 사이 post가 삭제됐을 때 발생하는 낙관적 락 예외를 여기서
+            // 잡지 못하고 조용히 삼켜지거나(과거) 호출자에게 새는(현재 구조) 문제가 있었다.
+            // saveAndFlush로 즉시 flush시켜 예외가 여기 catch 블록 범위 안에서 나게 만든다.
+            postRepository.saveAndFlush(post)
             logger.info("[AI] 분석 완료 - postId: $postId, summary: ${analysisResult.summary.take(100)}, tags: $mergedTags")
+        } catch (e: ObjectOptimisticLockingFailureException) {
+            // 분석 도중 사용자가 post를 삭제한 정상적인 레이스다 — 재시도할 필요 없는 에러.
+            logger.info("[AI] 분석 완료 전에 post가 삭제됨 - postId: $postId")
         } catch (e: Exception) {
             logger.error("[AI] 분석 실패 - postId: $postId", e)
-            post.aiStatus = AiStatus.FAILED
-            postRepository.save(post)
+            try {
+                post.aiStatus = AiStatus.FAILED
+                postRepository.saveAndFlush(post)
+            } catch (raceEx: ObjectOptimisticLockingFailureException) {
+                logger.info("[AI] 실패 상태 저장 전에 post가 삭제됨 - postId: $postId")
+            }
         }
     }
 }

@@ -31,6 +31,15 @@
 
 ### Fixed
 
+- **AI 분석 중인 게시글을 삭제하면 예외가 조용히 삼켜지거나(구조 변경 전) 불필요한
+  Lambda 재시도가 발생하는(방금 반영한 비동기 위임 구조) 문제** — `postRepository.save()`는
+  UPDATE를 즉시 실행하지 않고 트랜잭션 커밋 시점까지 지연시키는데, 그 사이 다른 요청이
+  같은 post를 삭제하면 커밋 시 Hibernate가 "0 rows updated"를 감지해
+  `ObjectOptimisticLockingFailureException`을 던진다. 이 예외가 try/catch 블록 바깥(커밋
+  경계)에서 발생해 잡히지 않았다. `saveAndFlush()`로 바꿔 UPDATE를 catch 블록 안에서
+  즉시 실행시키고, 이 예외를 "삭제로 인한 정상적인 레이스"로 명시적으로 구분해 INFO
+  레벨로 로깅하도록 수정(AI 분석 실패로 오인해 재시도하지 않는다). 실제 프로덕션
+  CloudWatch 로그에서 재현·확인. (`PostAIService.processAiJob`)
 - **유튜브 등 리다이렉트 링크 등록 시 크롤링·AI 요약 실패** — SSRF 방지를 위해 리다이렉트를
   홉마다 직접 따라가도록 바꾼 뒤(0.4.0), 중간 리다이렉트 응답의 Content-Type이
   `text/html`이 아니면(예: youtu.be의 303 응답은 `application/binary`) Jsoup이 상태
