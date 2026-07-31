@@ -276,7 +276,7 @@ FCM을 사용하려면 `src/main/resources/firebase-service-account.json` 파일
     `docs/SYSTEM-ARCHITECTURE.md`의 "SPA 라우팅 폴백" 절 참고
 - **Supabase**: 클라우드 PostgreSQL 데이터베이스 (도쿄 리전)
 
-> App Runner로 운영했던 이전 배포 방식은 [**docs/DEPLOY_WHEN_APP_RUNNER.md**](./docs/DEPLOY_WHEN_APP_RUNNER.md)를 참고하세요.
+> App Runner로 운영했던 이전 배포 방식은 [**docs/DEPLOY-WHEN-APP-RUNNER.md**](./docs/DEPLOY-WHEN-APP-RUNNER.md)를 참고하세요.
 
 ### 배포 프로세스 요약
 
