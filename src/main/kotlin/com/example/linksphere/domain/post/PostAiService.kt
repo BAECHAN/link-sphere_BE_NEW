@@ -84,16 +84,17 @@ class PostAIService(
             postRepository.saveAndFlush(post)
             logger.info("[AI] 분석 완료 - postId: $postId, summary: ${analysisResult.summary.take(100)}, tags: $mergedTags")
         } catch (e: ObjectOptimisticLockingFailureException) {
-            // 분석 도중 사용자가 post를 삭제한 정상적인 레이스다 — 재시도할 필요 없는 에러.
-            logger.info("[AI] 분석 완료 전에 post가 삭제됨 - postId: $postId")
+            // saveAndFlush가 실패하면 Hibernate 세션이 이미 오염돼(rollback-only) 이 트랜잭션은
+            // 커밋할 수 없다. 여기서 삼키고 정상 리턴하면 트랜잭션 매니저가 커밋을 시도하다가
+            // rollback-only를 발견해 UnexpectedRollbackException을 새로 던진다(실제로 겪음).
+            // 반드시 다시 던져 정상적으로 롤백시키고, 호출자(LambdaHandler)가 "삭제로 인한
+            // 정상 레이스"로 처리하게 한다.
+            logger.info("[AI] 분석 중 post가 삭제됨 - postId: $postId")
+            throw e
         } catch (e: Exception) {
             logger.error("[AI] 분석 실패 - postId: $postId", e)
-            try {
-                post.aiStatus = AiStatus.FAILED
-                postRepository.saveAndFlush(post)
-            } catch (raceEx: ObjectOptimisticLockingFailureException) {
-                logger.info("[AI] 실패 상태 저장 전에 post가 삭제됨 - postId: $postId")
-            }
+            post.aiStatus = AiStatus.FAILED
+            postRepository.saveAndFlush(post)
         }
     }
 }

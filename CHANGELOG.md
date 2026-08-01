@@ -37,9 +37,13 @@
   같은 post를 삭제하면 커밋 시 Hibernate가 "0 rows updated"를 감지해
   `ObjectOptimisticLockingFailureException`을 던진다. 이 예외가 try/catch 블록 바깥(커밋
   경계)에서 발생해 잡히지 않았다. `saveAndFlush()`로 바꿔 UPDATE를 catch 블록 안에서
-  즉시 실행시키고, 이 예외를 "삭제로 인한 정상적인 레이스"로 명시적으로 구분해 INFO
-  레벨로 로깅하도록 수정(AI 분석 실패로 오인해 재시도하지 않는다). 실제 프로덕션
-  CloudWatch 로그에서 재현·확인. (`PostAIService.processAiJob`)
+  즉시 실행되게 했다 — 다만 이 예외를 catch 블록에서 삼키고 정상 리턴하면, Hibernate
+  세션이 이미 rollback-only로 오염된 상태라 트랜잭션 매니저가 커밋을 시도하다
+  `UnexpectedRollbackException`을 새로 던지는 것을 실제 프로덕션 로그로 확인했다(같은
+  트랜잭션 안에서는 "삼키고 계속 진행"이 불가능함). 최종적으로 예외를 다시 던져
+  트랜잭션을 정상 롤백시키고, 호출자(`LambdaHandler.handleAiJob`)가 그 경계 바깥에서
+  "삭제로 인한 정상 레이스"로 INFO 레벨 로깅 후 흡수하도록 수정 — Lambda가 이 호출을
+  실패로 보고 재시도하지 않는다. (`PostAIService.processAiJob`, `LambdaHandler.handleAiJob`)
 - **유튜브 등 리다이렉트 링크 등록 시 크롤링·AI 요약 실패** — SSRF 방지를 위해 리다이렉트를
   홉마다 직접 따라가도록 바꾼 뒤(0.4.0), 중간 리다이렉트 응답의 Content-Type이
   `text/html`이 아니면(예: youtu.be의 303 응답은 `application/binary`) Jsoup이 상태

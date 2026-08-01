@@ -12,6 +12,7 @@ import org.springframework.boot.WebApplicationType
 import org.springframework.boot.web.servlet.context.AnnotationConfigServletWebServerApplicationContext
 import org.springframework.context.ConfigurableApplicationContext
 import org.springframework.http.HttpMethod
+import org.springframework.orm.ObjectOptimisticLockingFailureException
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders
 import org.springframework.test.web.servlet.setup.MockMvcBuilders
@@ -188,7 +189,14 @@ class LambdaHandler : RequestStreamHandler {
     private fun handleAiJob(event: JsonNode, output: OutputStream) {
         val payload = mapper.treeToValue(event.get("event"), PostCreatedEvent::class.java)
         val postAIService = applicationContext.getBean(PostAIService::class.java)
-        postAIService.processAiJob(payload)
+        try {
+            postAIService.processAiJob(payload)
+        } catch (e: ObjectOptimisticLockingFailureException) {
+            // AI 분석 도중 post가 삭제된 정상적인 레이스 — processAiJob이 로그를 남기고
+            // 트랜잭션을 정상 롤백한 뒤 다시 던진 것이다. 여기서 삼켜야 Lambda가 이 호출을
+            // 실패로 보고 불필요하게 재시도하지 않는다.
+            logger.info("[AI Job] 처리 중 post가 삭제됨 - postId: ${payload.postId}")
+        }
         mapper.writeValue(output, mapOf("statusCode" to 200, "body" to "ok"))
     }
 }
