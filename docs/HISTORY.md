@@ -2,6 +2,15 @@
 
 프로젝트의 주요 변경 사항과 커밋 기록을 관리합니다.
 
+> **📌 2026-08-01부터 이 문서는 더 이상 갱신하지 않습니다.**
+> FE·BE를 같은 앱으로 1인 개발하고 있어, 프로젝트 전체 히스토리는 FE 레포
+> ([link-sphere_FE_NEW](https://github.com/BAECHAN/link-sphere_FE_NEW))의
+> `docs/HISTORY.md`로 통합 관리하기로 했습니다. FE에는 커밋마다 Gemini가 자동으로
+> 정리해주는 워크플로(`.github/workflows/history.yml`)가 이미 있고, BE 커밋까지
+> 포함하도록 확장할 예정입니다(아직 미착수). BE 자체의 상세 변경 이력은
+> [`CHANGELOG.md`](../CHANGELOG.md)를 참고하세요. 아래는 2026-03-11까지의 기록을
+> 아카이브로 남겨둔 것입니다.
+
 ## 2026-03-11
 
 - **feat(post)**: 포스트 검색에 태그 배열 검색 추가 (`1c29770`)
