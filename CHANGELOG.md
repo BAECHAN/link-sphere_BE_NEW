@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-08-02
+
 ### Changed
 
 - **게시글 등록(POST /post) 시 AI 분석을 별도 Lambda 비동기 호출로 위임** — 기존엔
@@ -265,7 +267,8 @@
   - `bookmark_folders` 테이블 생성 (`user_id` + `name` UNIQUE)
   - `bookmarks` 테이블에 `folder_id` 컬럼 및 FK(`ON DELETE SET NULL`) 추가
 
-[Unreleased]: https://github.com/BAECHAN/link-sphere_BE_NEW/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/BAECHAN/link-sphere_BE_NEW/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/BAECHAN/link-sphere_BE_NEW/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/BAECHAN/link-sphere_BE_NEW/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/BAECHAN/link-sphere_BE_NEW/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/BAECHAN/link-sphere_BE_NEW/compare/v0.2.0...v0.3.0
