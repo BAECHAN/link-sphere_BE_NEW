@@ -70,6 +70,26 @@ POST /post
 사용하도록 바꿨다 — 순차 의존을 끊어야 병렬화가 가능하기 때문이며, 태그 매칭 1차
 필터는 기존 태그만으로도 대체로 충분하다는 판단.
 
+### 2.1 결과 확인 방식 — 실시간 알림 없음
+
+self-invoke 구조로 바꾼 뒤에도 **비동기라는 사실 자체는 그대로다.** 위에서
+SSE(`GET /post/ai-events`)를 걷어낸 이유는 "AI 처리가 동기화돼서"가 아니라,
+SSE가 전제하는 "커넥션을 열어둔 채 컨테이너가 계속 살아있어야 한다"는 조건이
+Lambda 환경에서 애초에 성립하지 않았기 때문이다(1절). self-invoke로 옮긴
+뒤에는 원래 요청의 커넥션이 이미 끊어진 뒤에 별도 실행 환경에서 처리가
+끝나므로, 그 커넥션으로 결과를 push할 방법 자체가 없다.
+
+즉 SSE를 대체하는 폴링이나 웹소켓도 도입하지 않았다 — **완료 시점을 클라이언트에
+능동적으로 알려주는 경로가 없다.** 클라이언트는 `post.aiStatus`
+(`NONE`/`PENDING`/`COMPLETED`/`FAILED`)를 보고 처리 여부를 판단해야 하는데,
+값이 갱신되는 시점은 오직 클라이언트가 `GET /post` 또는 `GET /post/{id}`를
+**다시 호출했을 때**뿐이다. 방금 만든 게시글을 응답으로 받은 직후에는 항상
+`PENDING`이고, AI 처리가 끝났는지는 그 이후의 재조회로만 확인 가능하다.
+
+현재 FE는 이 필드를 읽어 UI를 분기하지 않는다(`aiSummary`가 채워져 있으면
+그냥 보여줄 뿐) — PENDING 상태를 사용자에게 "AI 분석 중" 등으로 노출하려면
+FE에서 이 필드를 소비하는 로직이 별도로 필요하다.
+
 관련 파일: `AiJobDispatcher`, `LambdaHandler.handleAiJob`,
 `PostAIService.processAiJob`, `GeminiService.analyzeContentAsync`,
 `PostCategoryClassifier.classifyAsync`
