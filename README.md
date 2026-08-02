@@ -325,6 +325,7 @@ SnapStart 체크포인트 **이전**(`companion object init`)에 읽기 전용 �
 ## 문서
 
 - [변경 이력](CHANGELOG.md) — 버전별 변경 사항 (Keep a Changelog)
+- [BE·FE 버전 호환 매트릭스](docs/VERSION-COMPATIBILITY.md) — 어느 FE 버전이 어느 BE 버전을 요구하는지
 
 ---
 
