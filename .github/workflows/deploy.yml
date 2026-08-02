@@ -133,6 +133,7 @@ jobs:
             --query 'Version' --output text)
           echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Published version: $VERSION"
+          echo "::notice::Published version: $VERSION (아직 prod에 승격되지 않음 — 검증 후 수동 승격 필요)"
 
       # ─────────────────────────────────────────────
       # 12. SnapStart 최적화 완료 대기 (스냅샷 생성까지 1~5분 소요)
@@ -144,23 +145,12 @@ jobs:
             --qualifier "${{ steps.publish.outputs.VERSION }}"
 
       # ─────────────────────────────────────────────
-      # 13. prod alias를 새 버전으로 업데이트
-      #     이미 존재하면 update, 없으면 create
-      # ─────────────────────────────────────────────
-      - name: Update prod alias
-        run: |
-          VERSION="${{ steps.publish.outputs.VERSION }}"
-          aws lambda update-alias \
-            --function-name "${{ vars.LAMBDA_FUNCTION_NAME }}" \
-            --name prod \
-            --function-version "$VERSION" \
-          || aws lambda create-alias \
-            --function-name "${{ vars.LAMBDA_FUNCTION_NAME }}" \
-            --name prod \
-            --function-version "$VERSION"
-
-      # ─────────────────────────────────────────────
-      # 14. 배포된 Function URL 출력
+      # 13. 배포된 Function URL 출력
+      #     prod alias는 여기서 자동으로 옮기지 않는다 — 검증 없이 사용자 트래픽이
+      #     새 버전으로 전환되는 걸 막기 위함(2026-07-25 502 장애 이후 결정).
+      #     검증 통과 후 아래 명령으로 수동 승격한다:
+      #       aws lambda update-alias --function-name <FUNCTION_NAME> --name prod \
+      #         --function-version <VERSION> --region <REGION>
       # ─────────────────────────────────────────────
       - name: Show deployed Function URL
         run: |
@@ -169,5 +159,5 @@ jobs:
             --qualifier prod \
             --query 'FunctionUrl' --output text 2>/dev/null \
             || echo "(Function URL not configured yet)")
-          echo "::notice::Deployed URL: $URL"
+          echo "::notice::Current prod URL (still serving the previous version until manual promotion): $URL"
           echo "Deployed to: $URL"
