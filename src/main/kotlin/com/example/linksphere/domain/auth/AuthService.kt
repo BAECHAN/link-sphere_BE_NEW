@@ -4,11 +4,9 @@ import com.example.linksphere.domain.auth.jwt.JwtTokenProvider
 import com.example.linksphere.domain.auth.jwt.TokenType
 import com.example.linksphere.domain.member.MemberService
 import com.example.linksphere.domain.member.TableMember
-import com.example.linksphere.global.common.SupabaseStorageService
 import com.example.linksphere.global.exception.InvalidCredentialsException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
-import org.springframework.web.multipart.MultipartFile
 import java.time.format.DateTimeFormatter
 import java.util.UUID
 
@@ -18,7 +16,6 @@ class AuthService(
     private val memberService: MemberService,
     private val jwtTokenProvider: JwtTokenProvider,
     private val passwordEncoder: org.springframework.security.crypto.password.PasswordEncoder,
-    private val supabaseStorageService: SupabaseStorageService,
 ) {
 
     @Transactional
@@ -63,11 +60,6 @@ class AuthService(
 
     @Transactional
     fun updateAccount(userId: String, request: UpdateAccountRequest): AccountResponse = toAccountResponse(memberService.updateAccount(UUID.fromString(userId), request))
-
-    fun uploadAvatar(file: MultipartFile): AvatarUploadResponse {
-        val imageUrl = supabaseStorageService.uploadFile(file)
-        return AvatarUploadResponse(imageUrl)
-    }
 
     private fun toAccountResponse(member: TableMember): AccountResponse {
         val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME

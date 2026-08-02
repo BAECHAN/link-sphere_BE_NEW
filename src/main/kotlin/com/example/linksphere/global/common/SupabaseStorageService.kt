@@ -2,14 +2,12 @@ package com.example.linksphere.global.common
 
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
-import org.springframework.core.io.ByteArrayResource
 import org.springframework.http.HttpEntity
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpMethod
 import org.springframework.http.MediaType
 import org.springframework.stereotype.Service
 import org.springframework.web.client.RestTemplate
-import org.springframework.web.multipart.MultipartFile
 import java.util.UUID
 
 @Service
@@ -21,69 +19,56 @@ class SupabaseStorageService(
     private val log = LoggerFactory.getLogger(javaClass)
     private val restTemplate = RestTemplate()
 
-    fun uploadFile(file: MultipartFile): String = uploadFile(file, bucketName)
+    data class SignedUploadUrl(val uploadUrl: String, val token: String, val publicUrl: String)
 
-    fun uploadFile(file: MultipartFile, bucket: String): String {
-        log.info(
-            "Starting upload to Supabase Storage: bucket={}, fileName={}",
-            bucket,
-            file.originalFilename,
-        )
-        val originalFilename = file.originalFilename ?: "unknown.tmp"
-        val extension = originalFilename.substringAfterLast('.', "")
-        val uniqueFileName = "${UUID.randomUUID()}.$extension"
+    private data class SignUploadUrlApiResponse(val url: String, val token: String)
 
-        val uploadUrl = "$supabaseUrl/storage/v1/object/$bucket/$uniqueFileName"
+    /**
+     * 클라이언트가 이 스토리지로 직접 업로드할 수 있는 서명된 URL을 발급한다.
+     * (Signed Upload URL — https://supabase.com/docs/reference/kotlin/v1/storage-from-createsigneduploadurl)
+     *
+     * 이 서명 발급 자체는 service role 키로 인증하지만, 반환된 uploadUrl/token은 그 자체가
+     * 인증 수단이라 클라이언트는 별도 키 없이 이 값만으로 실제 업로드(PUT)를 수행할 수 있다 —
+     * service role 키가 클라이언트에 노출되지 않는다.
+     */
+    fun createSignedUploadUrl(fileExtension: String): SignedUploadUrl {
+        val uniqueFileName = "${UUID.randomUUID()}.$fileExtension"
+        val signUrl = "$supabaseUrl/storage/v1/object/upload/sign/$bucketName/$uniqueFileName"
 
         val headers = HttpHeaders()
         headers.set("Authorization", "Bearer $supabaseKey")
         headers.set("apikey", supabaseKey)
-
-        // Supabase requires the file's content type accurately or defaults to octet-stream
-        val contentType = file.contentType ?: MediaType.APPLICATION_OCTET_STREAM_VALUE
-        headers.contentType = MediaType.parseMediaType(contentType)
-
-        // Supabase REST endpoint expects the raw binary in the body for single file upload
-        // https://supabase.com/docs/reference/javascript/storage-from-upload
-        val resource =
-            object : ByteArrayResource(file.bytes) {
-                override fun getFilename(): String = uniqueFileName
-            }
-        val requestEntity = HttpEntity(resource, headers)
+        headers.contentType = MediaType.APPLICATION_JSON
+        val requestEntity = HttpEntity("{}", headers)
 
         try {
             val response =
                 restTemplate.exchange(
-                    uploadUrl,
+                    signUrl,
                     HttpMethod.POST,
                     requestEntity,
-                    String::class.java,
+                    SignUploadUrlApiResponse::class.java,
                 )
-            if (response.statusCode.is2xxSuccessful) {
-                val publicUrl =
-                    "$supabaseUrl/storage/v1/object/public/$bucket/$uniqueFileName"
-                log.info("Successfully uploaded file. Public URL: {}", publicUrl)
-                return publicUrl
-            } else {
-                log.error(
-                    "Failed to upload file to Supabase. Status: {}, Body: {}",
-                    response.statusCode,
-                    response.body,
-                )
-                throw RuntimeException("File upload to Supabase failed")
-            }
+            val body =
+                response.body
+                    ?: throw RuntimeException("Signed upload URL response body was empty")
+
+            return SignedUploadUrl(
+                uploadUrl = "$supabaseUrl/storage/v1${body.url}",
+                token = body.token,
+                publicUrl = "$supabaseUrl/storage/v1/object/public/$bucketName/$uniqueFileName",
+            )
         } catch (e: org.springframework.web.client.HttpStatusCodeException) {
             log.error(
-                "HTTP error during Supabase upload. Status: {}, Body: {}",
+                "HTTP error while creating signed upload URL. Status: {}, Body: {}",
                 e.statusCode,
                 e.responseBodyAsString,
                 e,
             )
-            throw RuntimeException("Failed to upload file")
+            throw RuntimeException("Failed to create signed upload URL")
         } catch (e: Exception) {
-            log.error("Error during Supabase storage upload. Message: {}", e.message, e)
-            e.printStackTrace()
-            throw RuntimeException("Failed to upload file: ${e.message}")
+            log.error("Error while creating signed upload URL. Message: {}", e.message, e)
+            throw RuntimeException("Failed to create signed upload URL: ${e.message}")
         }
     }
 }

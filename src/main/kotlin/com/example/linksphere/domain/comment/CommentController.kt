@@ -1,10 +1,8 @@
 package com.example.linksphere.domain.comment
 
 import com.example.linksphere.global.common.ApiResponse
-import org.springframework.http.MediaType
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.web.bind.annotation.*
-import org.springframework.web.multipart.MultipartFile
 import java.util.UUID
 
 @RestController
@@ -21,24 +19,22 @@ class CommentController(private val commentService: CommentService) {
         @AuthenticationPrincipal principal: String?,
     ): ApiResponse<List<CommentResponse>> = ApiResponse(200, "댓글 조회 성공", commentService.getComments(postId, principal.toOptionalUserId()))
 
-    @PostMapping("/post/{postId}/comment", consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
+    @PostMapping("/post/{postId}/comment")
     fun createComment(
         @PathVariable postId: UUID,
-        @RequestParam(required = false) content: String?,
-        @RequestParam(required = false) images: List<MultipartFile>?,
+        @RequestBody request: CreateCommentRequest,
         @AuthenticationPrincipal principal: String?,
     ): ApiResponse<CommentResponse> {
-        val comment = commentService.createComment(postId, principal.toRequiredUserId(), content, images)
+        val comment = commentService.createComment(postId, principal.toRequiredUserId(), request.content, request.images)
         return ApiResponse(201, "댓글 작성 성공", comment)
     }
 
-    @PostMapping("/comment/{commentId}/reply", consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
+    @PostMapping("/comment/{commentId}/reply")
     fun createReply(
         @PathVariable commentId: UUID,
-        @RequestParam(required = false) content: String?,
-        @RequestParam(required = false) images: List<MultipartFile>?,
+        @RequestBody request: CreateCommentRequest,
         @AuthenticationPrincipal principal: String?,
-    ): ApiResponse<CommentResponse> = ApiResponse(201, "답글 작성 성공", commentService.createReply(commentId, principal.toRequiredUserId(), content, images))
+    ): ApiResponse<CommentResponse> = ApiResponse(201, "답글 작성 성공", commentService.createReply(commentId, principal.toRequiredUserId(), request.content, request.images))
 
     @DeleteMapping("/comment/{commentId}")
     fun deleteComment(
@@ -49,11 +45,10 @@ class CommentController(private val commentService: CommentService) {
         return ApiResponse(200, "댓글 삭제 성공", Unit)
     }
 
-    @PatchMapping("/comment/{commentId}", consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
+    @PatchMapping("/comment/{commentId}")
     fun updateComment(
         @PathVariable commentId: UUID,
-        @RequestParam(required = false) content: String?,
-        @RequestParam(required = false) images: List<MultipartFile>?,
+        @RequestBody request: CreateCommentRequest,
         @AuthenticationPrincipal principal: String?,
-    ): ApiResponse<CommentResponse> = ApiResponse(200, "댓글 수정 성공", commentService.updateComment(commentId, principal.toRequiredUserId(), content, images))
+    ): ApiResponse<CommentResponse> = ApiResponse(200, "댓글 수정 성공", commentService.updateComment(commentId, principal.toRequiredUserId(), request.content, request.images))
 }

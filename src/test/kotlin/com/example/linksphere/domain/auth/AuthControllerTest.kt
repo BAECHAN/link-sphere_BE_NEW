@@ -12,13 +12,11 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest
 import org.springframework.context.annotation.ComponentScan
 import org.springframework.context.annotation.FilterType
 import org.springframework.http.MediaType
-import org.springframework.mock.web.MockMultipartFile
 import org.springframework.security.test.context.support.WithMockUser
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf
 import org.springframework.security.web.SecurityFilterChain
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.test.web.servlet.MockMvc
-import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
@@ -96,22 +94,6 @@ class AuthControllerTest {
         )
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.data.nickname").value("newNick"))
-    }
-
-    @Test
-    @WithMockUser
-    fun `uploadAvatar returns 200 with imageUrl`() {
-        val mockFile = MockMultipartFile("file", "avatar.png", "image/png", "fake-image".toByteArray())
-        val response = AvatarUploadResponse(imageUrl = "https://supabase.co/avatars/abc.png")
-        `when`(authService.uploadAvatar(mockFile)).thenReturn(response)
-
-        mockMvc.perform(
-            multipart("/auth/account/avatar")
-                .file(mockFile)
-                .with(csrf()),
-        )
-            .andExpect(status().isOk)
-            .andExpect(jsonPath("$.data.imageUrl").value("https://supabase.co/avatars/abc.png"))
     }
 
     @Test

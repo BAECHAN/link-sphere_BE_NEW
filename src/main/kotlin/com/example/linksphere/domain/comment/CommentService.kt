@@ -6,13 +6,11 @@ import com.example.linksphere.domain.member.MemberRepository
 import com.example.linksphere.domain.member.TableMember
 import com.example.linksphere.domain.post.PostRepository
 import com.example.linksphere.domain.post.UrlMetadataExtractor
-import com.example.linksphere.global.common.SupabaseStorageService
 import com.example.linksphere.global.exception.PostNotFoundException
 import com.example.linksphere.infra.fcm.FcmNotificationService
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
-import org.springframework.web.multipart.MultipartFile
 import java.util.UUID
 
 private const val DELETED_COMMENT_CONTENT = "삭제된 댓글입니다."
@@ -25,7 +23,6 @@ class CommentService(
     private val postRepository: PostRepository,
     private val memberRepository: MemberRepository,
     private val reactionRepository: ReactionRepository,
-    private val supabaseStorageService: SupabaseStorageService,
     private val fcmNotificationService: FcmNotificationService,
     private val urlMetadataExtractor: UrlMetadataExtractor,
 ) {
@@ -135,7 +132,7 @@ class CommentService(
         postId: UUID,
         userId: UUID,
         content: String?,
-        images: List<MultipartFile>?,
+        images: List<String>?,
         parentId: UUID? = null,
     ): CommentResponse {
         if (content.isNullOrBlank() && images?.isEmpty() ?: true) {
@@ -205,7 +202,7 @@ class CommentService(
         parentId: UUID,
         userId: UUID,
         content: String?,
-        images: List<MultipartFile>?,
+        images: List<String>?,
     ): CommentResponse {
         if (content.isNullOrBlank() && images?.isEmpty() ?: true) {
             throw IllegalArgumentException("Content or image must be provided")
@@ -287,7 +284,7 @@ class CommentService(
         commentId: UUID,
         userId: UUID,
         content: String?,
-        images: List<MultipartFile>?,
+        images: List<String>?,
     ): CommentResponse {
         if (content.isNullOrBlank() && images?.isEmpty() ?: true) {
             throw IllegalArgumentException("Content or image must be provided")
@@ -322,12 +319,9 @@ class CommentService(
         return toCommentResponse(updated, member)
     }
 
-    private fun buildFinalContent(content: String?, images: List<MultipartFile>?): String {
+    private fun buildFinalContent(content: String?, images: List<String>?): String {
         val text = content.orEmpty()
-        val urls = images
-            ?.filter { !it.isEmpty }
-            ?.map { supabaseStorageService.uploadFile(it) }
-            ?: emptyList()
+        val urls = images?.filter { it.isNotBlank() } ?: emptyList()
         return when {
             urls.isEmpty() -> text
             text.isNotBlank() -> "$text\n\n${urls.joinToString("\n")}"

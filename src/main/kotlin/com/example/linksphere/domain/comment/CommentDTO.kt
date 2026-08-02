@@ -28,4 +28,7 @@ data class CommentResponse(
 
 data class CommentAuthor(val id: UUID, val nickname: String, val image: String?)
 
-data class CreateCommentRequest(val content: String)
+data class CreateCommentRequest(
+    val content: String? = null,
+    val images: List<String>? = null,
+)

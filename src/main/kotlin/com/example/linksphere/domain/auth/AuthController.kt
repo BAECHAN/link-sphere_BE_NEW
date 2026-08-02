@@ -3,7 +3,6 @@ package com.example.linksphere.domain.auth
 import com.example.linksphere.global.common.ApiResponse
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
-import org.springframework.http.MediaType
 import org.springframework.http.ResponseCookie
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.CookieValue
@@ -12,9 +11,7 @@ import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
-import org.springframework.web.bind.annotation.RequestPart
 import org.springframework.web.bind.annotation.RestController
-import org.springframework.web.multipart.MultipartFile
 import java.security.Principal
 
 @RestController
@@ -66,11 +63,6 @@ class AuthController(private val authService: AuthService) {
         @RequestBody request: UpdateAccountRequest,
         principal: Principal,
     ): ResponseEntity<ApiResponse<AccountResponse>> = ResponseEntity.ok(ApiResponse(HttpStatus.OK.value(), "Account updated", authService.updateAccount(principal.name, request)))
-
-    @PostMapping("/account/avatar", consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
-    fun uploadAvatar(
-        @RequestPart("file") file: MultipartFile,
-    ): ResponseEntity<ApiResponse<AvatarUploadResponse>> = ResponseEntity.ok(ApiResponse(HttpStatus.OK.value(), "Avatar uploaded", authService.uploadAvatar(file)))
 
     private fun createCookieResponse(
         authResult: AuthResult,

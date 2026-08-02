@@ -5,7 +5,6 @@ import com.example.linksphere.domain.member.MemberRepository
 import com.example.linksphere.domain.post.PostRepository
 import com.example.linksphere.domain.post.TablePost
 import com.example.linksphere.domain.post.UrlMetadataExtractor
-import com.example.linksphere.global.common.SupabaseStorageService
 import com.example.linksphere.global.exception.PostNotFoundException
 import com.example.linksphere.infra.fcm.FcmNotificationService
 import org.junit.jupiter.api.Assertions.assertThrows
@@ -28,8 +27,6 @@ class CommentServiceTest {
     @Mock private lateinit var memberRepository: MemberRepository
 
     @Mock private lateinit var reactionRepository: ReactionRepository
-
-    @Mock private lateinit var supabaseStorageService: SupabaseStorageService
 
     @Mock private lateinit var fcmNotificationService: FcmNotificationService
 

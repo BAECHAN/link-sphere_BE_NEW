@@ -7,6 +7,30 @@
 
 ## [Unreleased]
 
+### Added
+
+- **`POST /upload/signed-url` 신설 — 클라이언트가 스토리지에 직접 업로드하도록 서명된
+  업로드 URL을 발급** — 이 CloudFront 배포에 붙은 WAF(`AWSManagedRulesCommonRuleSet`의
+  `SizeRestrictions_BODY`)가 요청 바디 8KB 초과 시 무조건 차단해, 실제 사진 첨부가
+  거의 전부 막혀 있었다(위 멀티파트 버그를 고쳐도 이 문제는 그대로 남음). 이미지 바이트가
+  CloudFront/WAF/Lambda를 아예 거치지 않고 Supabase Storage로 직접 전송되도록 바꿔
+  이 제한 자체를 무관하게 만든다. (`UploadController`, `UploadService`,
+  `SupabaseStorageService.createSignedUploadUrl`)
+
+### Changed
+
+- **댓글 생성/답글/수정 API가 `multipart/form-data`에서 JSON으로 변경됨** — `images`가
+  업로드할 파일이 아니라 이미 업로드된 이미지 URL 목록(`List<String>`)이 된다. 클라이언트는
+  먼저 `/upload/signed-url`로 URL을 발급받아 Supabase에 직접 업로드한 뒤, 그 결과 URL을
+  담아 요청한다. (`CommentController`, `CommentDTO.CreateCommentRequest`, `CommentService`)
+
+### Removed
+
+- **`POST /auth/account/avatar` 엔드포인트 제거** — 위 신규 서명 URL 발급 + 기존
+  `PATCH /auth/account`(`image` 필드)로 완전히 대체되어 중복이었다. 같은 이유로
+  `SupabaseStorageService.uploadFile`(서버가 대신 업로드하던 구 방식)과
+  `AvatarUploadResponse` DTO도 함께 제거. (`AuthController`, `AuthService`, `AuthDTO`)
+
 ### Fixed
 
 - **댓글 작성/답글/수정, 아바타 업로드 시 첨부 파일이 있으면 항상 "Content or image must be
