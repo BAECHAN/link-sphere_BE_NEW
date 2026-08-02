@@ -7,6 +7,18 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **댓글 작성/답글/수정, 아바타 업로드 시 첨부 파일이 있으면 항상 "Content or image must be
+  provided" 오류가 발생하던 문제** — Lambda 환경에서 MockMvc로 요청을 처리하는
+  `LambdaHandler`가 raw multipart 바이트를 그대로 `.content()`에 넣었는데,
+  `MockHttpServletRequest.getParts()`는 raw body를 파싱하지 않고 사전 등록된 Part만
+  반환해(spring-test는 테스트 전용 더블이라 파싱 로직 자체가 없음) `@RequestParam`이
+  클라이언트가 무엇을 보냈는지와 무관하게 항상 null로 바인딩됐다. Tomcat이 이미 번들하고
+  있는 스트리밍 파서(`org.apache.tomcat.util.http.fileupload.FileUpload`)로 raw 바이트를
+  직접 해석해 등록하도록 수정했다(`MultipartRequestParser` 신설, 새 의존성 추가 없음).
+  임시방편이며 장기 해법은 `aws-serverless-java-container-springboot3`로의 마이그레이션.
+
 ## [0.5.1] - 2026-08-02
 
 ### Changed

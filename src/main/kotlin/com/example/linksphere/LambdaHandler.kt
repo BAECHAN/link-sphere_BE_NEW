@@ -12,8 +12,10 @@ import org.springframework.boot.WebApplicationType
 import org.springframework.boot.web.servlet.context.AnnotationConfigServletWebServerApplicationContext
 import org.springframework.context.ConfigurableApplicationContext
 import org.springframework.http.HttpMethod
+import org.springframework.mock.web.MockMultipartFile
 import org.springframework.orm.ObjectOptimisticLockingFailureException
 import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders
 import org.springframework.test.web.servlet.setup.MockMvcBuilders
 import org.springframework.web.context.WebApplicationContext
@@ -133,9 +135,44 @@ class LambdaHandler : RequestStreamHandler {
         val method = event.at("/requestContext/http/method").asText("GET")
         val body = event.get("body")?.asText()
         val isBase64 = event.get("isBase64Encoded")?.asBoolean() ?: false
+        val bytes: ByteArray? =
+            body?.takeIf { it.isNotEmpty() }?.let {
+                if (isBase64) Base64.getDecoder().decode(it) else it.toByteArray()
+            }
 
         val uri = if (rawQuery != null) URI.create("$path?$rawQuery") else URI.create(path)
-        val requestBuilder = MockMvcRequestBuilders.request(HttpMethod.valueOf(method), uri)
+
+        // MockHttpServletRequest.getParts()는 raw body를 파싱하지 않고 사전 등록된 Part만 반환한다
+        // (spring-test 자체에 multipart 파싱 로직이 없음). 그래서 일반 request() 빌더에 raw 멀티파트
+        // 바이트를 .content()로 넣기만 하면 @RequestParam이 항상 null로 바인딩된다 — 클라이언트가
+        // 무엇을 보냈는지와 무관하게 매번 실패한다. multipart(...) 빌더로 Part/파라미터를 명시적으로
+        // 등록해야 하므로, MultipartRequestParser로 raw 바이트를 직접 파싱해 등록한다.
+        val contentTypeHeader =
+            event.get("headers")?.let { headers ->
+                val names = headers.fieldNames()
+                var found: String? = null
+                while (names.hasNext()) {
+                    val key = names.next()
+                    if (key.equals("content-type", ignoreCase = true)) {
+                        found = headers.get(key).asText()
+                    }
+                }
+                found
+            }
+        val isMultipart = contentTypeHeader?.startsWith("multipart/", ignoreCase = true) == true
+
+        val requestBuilder: MockHttpServletRequestBuilder =
+            if (isMultipart && bytes != null) {
+                val parsed = MultipartRequestParser.parse(bytes, contentTypeHeader!!)
+                MockMvcRequestBuilders.multipart(HttpMethod.valueOf(method), uri).also { builder ->
+                    parsed.fields.forEach { (name, values) -> builder.param(name, *values.toTypedArray()) }
+                    parsed.files.forEach { file ->
+                        builder.file(MockMultipartFile(file.fieldName, file.filename, file.contentType, file.bytes))
+                    }
+                }
+            } else {
+                MockMvcRequestBuilders.request(HttpMethod.valueOf(method), uri)
+            }
 
         var cookieHeader: String? = null
         event.get("headers")?.let { headers ->
@@ -164,8 +201,7 @@ class LambdaHandler : RequestStreamHandler {
             }
         }
 
-        if (!body.isNullOrEmpty()) {
-            val bytes = if (isBase64) Base64.getDecoder().decode(body) else body.toByteArray()
+        if (!isMultipart && bytes != null) {
             requestBuilder.content(bytes)
         }
 
