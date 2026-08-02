@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-08-03
+
 ### Added
 
 - **`POST /upload/signed-url` 신설 — 클라이언트가 스토리지에 직접 업로드하도록 서명된
@@ -303,7 +305,8 @@
   - `bookmark_folders` 테이블 생성 (`user_id` + `name` UNIQUE)
   - `bookmarks` 테이블에 `folder_id` 컬럼 및 FK(`ON DELETE SET NULL`) 추가
 
-[Unreleased]: https://github.com/BAECHAN/link-sphere_BE_NEW/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/BAECHAN/link-sphere_BE_NEW/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/BAECHAN/link-sphere_BE_NEW/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/BAECHAN/link-sphere_BE_NEW/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/BAECHAN/link-sphere_BE_NEW/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/BAECHAN/link-sphere_BE_NEW/compare/v0.3.0...v0.4.0
