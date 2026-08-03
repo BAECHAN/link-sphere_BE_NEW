@@ -3,10 +3,10 @@ package com.example.linksphere.domain.post
 import com.example.linksphere.domain.category.CategoryRepository
 import com.example.linksphere.domain.category.CategoryResponse
 import com.example.linksphere.domain.comment.CommentRepository
+import com.example.linksphere.domain.comment.CommentService
 import com.example.linksphere.domain.interaction.BookmarkFolderItemRepository
 import com.example.linksphere.domain.interaction.BookmarkRepository
-import com.example.linksphere.domain.interaction.ReactionRepository
-import com.example.linksphere.domain.interaction.TargetType
+import com.example.linksphere.domain.interaction.PostReactionRepository
 import com.example.linksphere.domain.member.MemberRepository
 import com.example.linksphere.global.exception.ForbiddenException
 import com.example.linksphere.global.exception.PostNotFoundException
@@ -25,8 +25,9 @@ class PostService(
     private val memberRepository: MemberRepository,
     private val bookmarkRepository: BookmarkRepository,
     private val bookmarkFolderItemRepository: BookmarkFolderItemRepository,
-    private val reactionRepository: ReactionRepository,
+    private val postReactionRepository: PostReactionRepository,
     private val commentRepository: CommentRepository,
+    private val commentService: CommentService,
     private val eventPublisher: ApplicationEventPublisher,
     private val urlMetadataExtractor: UrlMetadataExtractor,
     private val safeUrlValidator: SafeUrlValidator,
@@ -142,13 +143,13 @@ class PostService(
                 emptyMap()
             }
 
-        val allReactions = reactionRepository.findAllByTargetIdInAndTargetType(postIds, TargetType.POST)
-        val reactionCountMap = allReactions.groupingBy { it.targetId }.eachCount()
+        val allReactions = postReactionRepository.findAllByPostIdIn(postIds)
+        val reactionCountMap = allReactions.groupingBy { it.postId }.eachCount()
         val reactedPostIds =
             if (currentUserId != null) {
-                reactionRepository
-                    .findAllByUserIdAndTargetIdInAndTargetType(currentUserId, postIds, TargetType.POST)
-                    .map { it.targetId }
+                postReactionRepository
+                    .findAllByUserIdAndPostIdIn(currentUserId, postIds)
+                    .map { it.postId }
                     .toSet()
             } else {
                 emptySet()
@@ -252,6 +253,9 @@ class PostService(
     fun deletePost(id: UUID, userId: UUID) {
         val post = postRepository.findById(id).orElseThrow { PostNotFoundException(id) }
         if (post.userId != userId) throw ForbiddenException("You are not the owner of this post")
+        // comments.post_id FK가 ON DELETE CASCADE라 댓글 row는 DB에서 자동 삭제되지만,
+        // 댓글에 딸린 스토리지 이미지는 정리되지 않으므로 게시글이 지워지기 전에 먼저 정리한다.
+        commentService.deleteImagesForPost(id)
         postRepository.delete(post)
     }
 
@@ -284,10 +288,10 @@ class PostService(
             post = post,
             postId = postId,
             author = author,
-            likeCount = reactionRepository.countByTargetIdAndTargetType(postId, TargetType.POST).toInt(),
+            likeCount = postReactionRepository.countByPostId(postId).toInt(),
             isLiked =
             currentUserId?.let {
-                reactionRepository.existsByTargetIdAndTargetTypeAndUserId(postId, TargetType.POST, it)
+                postReactionRepository.existsByUserIdAndPostId(it, postId)
             } ?: false,
             bookmarkCount = bookmarkRepository.countByPostId(postId).toInt(),
             isBookmarked = isBookmarked,

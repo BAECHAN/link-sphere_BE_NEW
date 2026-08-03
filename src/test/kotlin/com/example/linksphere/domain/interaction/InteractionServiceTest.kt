@@ -6,6 +6,7 @@ import com.example.linksphere.domain.post.PostRepository
 import com.example.linksphere.domain.post.TablePost
 import com.example.linksphere.global.exception.BookmarkFolderNotFoundException
 import com.example.linksphere.global.exception.ForbiddenException
+import com.example.linksphere.global.exception.InvalidInputException
 import com.example.linksphere.global.exception.PostNotFoundException
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -23,7 +24,9 @@ import java.util.UUID
 @ExtendWith(MockitoExtension::class)
 class InteractionServiceTest {
 
-    @Mock private lateinit var reactionRepository: ReactionRepository
+    @Mock private lateinit var postReactionRepository: PostReactionRepository
+
+    @Mock private lateinit var commentReactionRepository: CommentReactionRepository
 
     @Mock private lateinit var bookmarkRepository: BookmarkRepository
 
@@ -38,7 +41,7 @@ class InteractionServiceTest {
     @InjectMocks private lateinit var interactionService: InteractionService
 
     @Test
-    fun `toggleLike on POST throws PostNotFoundException when another user likes a private post`() {
+    fun `togglePostLike throws PostNotFoundException when another user likes a private post`() {
         val ownerId = UUID.randomUUID()
         val otherUserId = UUID.randomUUID()
         val postId = UUID.randomUUID()
@@ -47,23 +50,23 @@ class InteractionServiceTest {
         `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
 
         assertThrows(PostNotFoundException::class.java) {
-            interactionService.toggleLike(postId, TargetType.POST, otherUserId)
+            interactionService.togglePostLike(postId, otherUserId)
         }
     }
 
     @Test
-    fun `toggleLike on POST throws PostNotFoundException when post does not exist`() {
+    fun `togglePostLike throws PostNotFoundException when post does not exist`() {
         val postId = UUID.randomUUID()
         val userId = UUID.randomUUID()
         `when`(postRepository.findById(postId)).thenReturn(Optional.empty())
 
         assertThrows(PostNotFoundException::class.java) {
-            interactionService.toggleLike(postId, TargetType.POST, userId)
+            interactionService.togglePostLike(postId, userId)
         }
     }
 
     @Test
-    fun `toggleLike on COMMENT throws PostNotFoundException when another user likes a comment on a private post`() {
+    fun `toggleCommentLike throws PostNotFoundException when another user likes a comment on a private post`() {
         val ownerId = UUID.randomUUID()
         val otherUserId = UUID.randomUUID()
         val postId = UUID.randomUUID()
@@ -75,7 +78,43 @@ class InteractionServiceTest {
         `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
 
         assertThrows(PostNotFoundException::class.java) {
-            interactionService.toggleLike(commentId, TargetType.COMMENT, otherUserId)
+            interactionService.toggleCommentLike(commentId, otherUserId)
+        }
+    }
+
+    @Test
+    fun `toggleCommentLike 는 삭제된 댓글이면 InvalidInputException`() {
+        val ownerId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val commentId = UUID.randomUUID()
+        val post = TablePost(id = postId, userId = ownerId, url = "https://example.com", title = "제목", isPrivate = false)
+        val comment =
+            TableComment(id = commentId, postId = postId, userId = ownerId, content = "삭제된 댓글입니다.", isDeleted = true)
+
+        `when`(commentRepository.findById(commentId)).thenReturn(Optional.of(comment))
+        `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
+
+        assertThrows(InvalidInputException::class.java) {
+            interactionService.toggleCommentLike(commentId, ownerId)
+        }
+        verify(commentReactionRepository, never()).existsByUserIdAndCommentId(ownerId, commentId)
+    }
+
+    @Test
+    fun `toggleCommentLike 는 톰스톤 검사보다 비공개 글 검증을 먼저 한다`() {
+        val ownerId = UUID.randomUUID()
+        val otherUserId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val commentId = UUID.randomUUID()
+        val post = TablePost(id = postId, userId = ownerId, url = "https://example.com", title = "제목", isPrivate = true)
+        val comment =
+            TableComment(id = commentId, postId = postId, userId = ownerId, content = "삭제된 댓글입니다.", isDeleted = true)
+
+        `when`(commentRepository.findById(commentId)).thenReturn(Optional.of(comment))
+        `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
+
+        assertThrows(PostNotFoundException::class.java) {
+            interactionService.toggleCommentLike(commentId, otherUserId)
         }
     }
 

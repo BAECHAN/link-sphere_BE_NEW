@@ -1,11 +1,11 @@
 package com.example.linksphere.domain.comment
 
-import com.example.linksphere.domain.interaction.ReactionRepository
-import com.example.linksphere.domain.interaction.TargetType
+import com.example.linksphere.domain.interaction.CommentReactionRepository
 import com.example.linksphere.domain.member.MemberRepository
 import com.example.linksphere.domain.member.TableMember
 import com.example.linksphere.domain.post.PostRepository
 import com.example.linksphere.domain.post.UrlMetadataExtractor
+import com.example.linksphere.global.common.SupabaseStorageService
 import com.example.linksphere.global.exception.PostNotFoundException
 import com.example.linksphere.infra.fcm.FcmNotificationService
 import org.springframework.data.repository.findByIdOrNull
@@ -22,9 +22,10 @@ class CommentService(
     private val commentRepository: CommentRepository,
     private val postRepository: PostRepository,
     private val memberRepository: MemberRepository,
-    private val reactionRepository: ReactionRepository,
+    private val commentReactionRepository: CommentReactionRepository,
     private val fcmNotificationService: FcmNotificationService,
     private val urlMetadataExtractor: UrlMetadataExtractor,
+    private val supabaseStorageService: SupabaseStorageService,
 ) {
 
     @Transactional(readOnly = true)
@@ -37,20 +38,16 @@ class CommentService(
 
         val commentIds = comments.map { it.id }
         val likeCounts =
-            reactionRepository
-                .findAllByTargetIdInAndTargetType(commentIds, TargetType.COMMENT)
-                .groupingBy { it.targetId }
+            commentReactionRepository
+                .findAllByCommentIdIn(commentIds)
+                .groupingBy { it.commentId }
                 .eachCount()
 
         val userLikes =
             currentUserId?.let { uid ->
-                reactionRepository
-                    .findAllByUserIdAndTargetIdInAndTargetType(
-                        uid,
-                        commentIds,
-                        TargetType.COMMENT,
-                    )
-                    .map { it.targetId }
+                commentReactionRepository
+                    .findAllByUserIdAndCommentIdIn(uid, commentIds)
+                    .map { it.commentId }
                     .toSet()
             }
                 ?: emptySet()
@@ -86,8 +83,10 @@ class CommentService(
                     createdAt = comment.createdAt,
                     updatedAt = comment.updatedAt,
                     author = author,
-                    isLiked = userLikes.contains(comment.id),
-                    likeCount = likeCounts[comment.id] ?: 0,
+                    // 삭제된(톰스톤) 댓글은 좋아요도 함께 지워지지만, 삭제와 좋아요가 동시에 일어나는
+                    // 경쟁 상황의 잔여값이 표현 계층까지 새지 않도록 여기서도 명시적으로 0/false로 고정한다.
+                    isLiked = !comment.isDeleted && userLikes.contains(comment.id),
+                    likeCount = if (comment.isDeleted) 0 else likeCounts[comment.id] ?: 0,
                     linkMetadata = if (comment.isDeleted) {
                         null
                     } else {
@@ -269,6 +268,11 @@ class CommentService(
             throw IllegalAccessException("Not authorized to delete this comment")
         }
 
+        supabaseStorageService.deleteObjectsByPublicUrls(extractManagedImageUrls(comment.content))
+        // 톰스톤은 comments row가 살아남아 FK 캐스케이드가 발동하지 않으므로 명시 삭제가 유일한 수단이다.
+        // 하드 삭제 경로에서는 comment_reactions FK ON DELETE CASCADE 가 백스톱으로 남는다.
+        commentReactionRepository.deleteByCommentId(commentId)
+
         val hasReplies = commentRepository.existsByParentId(commentId)
         if (hasReplies) {
             comment.content = DELETED_COMMENT_CONTENT
@@ -278,6 +282,23 @@ class CommentService(
             commentRepository.delete(comment)
         }
     }
+
+    /**
+     * 게시글 삭제 시 호출된다. comments.post_id FK가 ON DELETE CASCADE라 DB에서는
+     * 게시글과 함께 자동으로 지워지지만, 그 댓글들에 딸린 스토리지 이미지는 별도로
+     * 정리해야 하므로 게시글이 실제로 삭제되기 전에 댓글 내용을 읽어 URL을 추출해둔다.
+     */
+    @Transactional(readOnly = true)
+    fun deleteImagesForPost(postId: UUID) {
+        val comments = commentRepository.findAllByPostIdOrderByCreatedAtAsc(postId)
+        val imageUrls = comments.flatMap { extractManagedImageUrls(it.content) }
+        supabaseStorageService.deleteObjectsByPublicUrls(imageUrls)
+    }
+
+    private fun extractManagedImageUrls(content: String): List<String> = URL_REGEX.findAll(content)
+        .map { it.value }
+        .filter { supabaseStorageService.isManagedUrl(it) }
+        .toList()
 
     @Transactional
     fun updateComment(

@@ -18,7 +18,7 @@ class InteractionController(
         authentication: Authentication?,
     ): ApiResponse<Map<String, Boolean>> {
         val userId = authentication.getUserId() ?: throw IllegalArgumentException("User not authenticated")
-        val isLiked = interactionService.toggleLike(postId, TargetType.POST, userId)
+        val isLiked = interactionService.togglePostLike(postId, userId)
         return ApiResponse(200, if (isLiked) "좋아요 성공" else "좋아요 취소 성공", mapOf("isLiked" to isLiked))
     }
 
@@ -28,7 +28,7 @@ class InteractionController(
         authentication: Authentication?,
     ): ApiResponse<Map<String, Boolean>> {
         val userId = authentication.getUserId() ?: throw IllegalArgumentException("User not authenticated")
-        val isLiked = interactionService.toggleLike(commentId, TargetType.COMMENT, userId)
+        val isLiked = interactionService.toggleCommentLike(commentId, userId)
         return ApiResponse(
             200,
             if (isLiked) "댓글 좋아요 성공" else "댓글 좋아요 취소 성공",

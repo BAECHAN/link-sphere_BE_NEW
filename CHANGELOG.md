@@ -7,6 +7,30 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **게시글·댓글 삭제 시 첨부 이미지가 스토리지에 고아 파일로 남던 문제** — 댓글은
+  `comments.post_id` FK가 `ON DELETE CASCADE`라 게시글 삭제 시 row 자체는 DB에서 함께
+  지워지지만, 댓글 본문에 포함된 업로드 이미지는 별도로 정리되지 않았다. 게시글/댓글
+  삭제 시 본문에서 이 버킷 소속 이미지 URL을 추출해 Supabase Storage에서 함께 삭제하도록
+  변경. (`SupabaseStorageService.deleteObjectsByPublicUrls`, `CommentService.deleteComment`,
+  `CommentService.deleteImagesForPost`, `PostService.deletePost`)
+- **게시글·댓글 삭제 시 좋아요(reactions)가 영구히 고아로 남던 문제** — `reactions` 테이블이
+  `target_id`+`target_type` 폴리모픽 구조라 posts/comments로 FK를 걸 수 없었다. `post_reactions`
+  `comment_reactions` 두 테이블로 분리해 `ON DELETE CASCADE` FK를 걸어 DB가 정리를 보장하도록
+  변경. 부수적으로 답글이 있어 소프트 삭제(톰스톤)된 댓글도 좋아요가 삭제되고, 톰스톤 댓글에는
+  새 좋아요를 누를 수 없도록 막음(`InteractionService.toggleCommentLike`). API 계약(URL·요청·
+  응답)은 변경 없음. (`InteractionService`, `PostService`, `CommentService`,
+  `PostReactionRepository`, `CommentReactionRepository`)
+
+### Migration
+
+- `src/main/resources/sql/create_post_comment_reactions.sql` 실행 (BE 배포 **전**) —
+  `post_reactions`/`comment_reactions` 신설 + `reactions`에서 백필. BE 배포 직후 백필 블록(3번)을
+  한 번 더 실행할 것(컷오버 창에서 생긴 좋아요 회수).
+- 소크 기간을 거쳐 문제 없음을 확인한 뒤 `src/main/resources/sql/drop_reactions.sql` 실행 —
+  구 `reactions` 테이블 제거(파괴적, 헤더의 실행 전제 확인 필수).
+
 ## [0.6.0] - 2026-08-03
 
 ### Added

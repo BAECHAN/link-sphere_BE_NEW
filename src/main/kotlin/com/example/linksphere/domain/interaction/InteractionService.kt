@@ -4,6 +4,7 @@ import com.example.linksphere.domain.comment.CommentRepository
 import com.example.linksphere.domain.post.PostRepository
 import com.example.linksphere.global.exception.BookmarkFolderNotFoundException
 import com.example.linksphere.global.exception.ForbiddenException
+import com.example.linksphere.global.exception.InvalidInputException
 import com.example.linksphere.global.exception.PostNotFoundException
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
@@ -12,7 +13,8 @@ import java.util.UUID
 
 @Service
 class InteractionService(
-    private val reactionRepository: ReactionRepository,
+    private val postReactionRepository: PostReactionRepository,
+    private val commentReactionRepository: CommentReactionRepository,
     private val bookmarkRepository: BookmarkRepository,
     private val postRepository: PostRepository,
     private val commentRepository: CommentRepository,
@@ -20,31 +22,36 @@ class InteractionService(
     private val bookmarkFolderItemRepository: BookmarkFolderItemRepository,
 ) {
     @Transactional
-    fun toggleLike(targetId: UUID, targetType: TargetType, userId: UUID): Boolean {
-        when (targetType) {
-            TargetType.POST -> assertPostVisible(targetId, userId)
-            TargetType.COMMENT -> {
-                val comment =
-                    commentRepository.findByIdOrNull(targetId)
-                        ?: throw IllegalArgumentException("Comment not found: $targetId")
-                // 비공개 글에 달린 댓글도 글 소유자 외에는 좋아요를 달 수 없어야 한다.
-                assertPostVisible(comment.postId, userId)
-            }
-        }
+    fun togglePostLike(postId: UUID, userId: UUID): Boolean {
+        assertPostVisible(postId, userId)
 
-        val exists = reactionRepository.existsByTargetIdAndTargetTypeAndUserId(targetId, targetType, userId)
+        val exists = postReactionRepository.existsByUserIdAndPostId(userId, postId)
         return if (exists) {
-            reactionRepository.deleteByTargetIdAndTargetTypeAndUserId(targetId, targetType, userId)
+            postReactionRepository.deleteByUserIdAndPostId(userId, postId)
             false
         } else {
-            reactionRepository.save(
-                TableReaction(
-                    userId = userId,
-                    targetId = targetId,
-                    targetType = targetType,
-                    reactionType = ReactionType.LIKE,
-                ),
-            )
+            postReactionRepository.save(TablePostReaction(userId = userId, postId = postId))
+            true
+        }
+    }
+
+    @Transactional
+    fun toggleCommentLike(commentId: UUID, userId: UUID): Boolean {
+        val comment =
+            commentRepository.findByIdOrNull(commentId)
+                ?: throw IllegalArgumentException("Comment not found: $commentId")
+        // 비공개 글에 달린 댓글도 글 소유자 외에는 좋아요를 달 수 없어야 한다.
+        assertPostVisible(comment.postId, userId)
+        // 비공개 글 검증 뒤에 확인해야 한다 — 순서를 바꾸면 남의 비공개 글의 삭제된 댓글에
+        // 404 대신 400이 나가면서 "그 댓글이 존재한다"는 사실이 새어나간다.
+        if (comment.isDeleted) throw InvalidInputException("삭제된 댓글에는 좋아요를 누를 수 없습니다.")
+
+        val exists = commentReactionRepository.existsByUserIdAndCommentId(userId, commentId)
+        return if (exists) {
+            commentReactionRepository.deleteByUserIdAndCommentId(userId, commentId)
+            false
+        } else {
+            commentReactionRepository.save(TableCommentReaction(userId = userId, commentId = commentId))
             true
         }
     }

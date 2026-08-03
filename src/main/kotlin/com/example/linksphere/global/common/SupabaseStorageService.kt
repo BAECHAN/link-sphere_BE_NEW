@@ -18,6 +18,7 @@ class SupabaseStorageService(
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val restTemplate = RestTemplate()
+    private val publicUrlPrefix = "$supabaseUrl/storage/v1/object/public/$bucketName/"
 
     data class SignedUploadUrl(val uploadUrl: String, val token: String, val publicUrl: String)
 
@@ -69,6 +70,31 @@ class SupabaseStorageService(
         } catch (e: Exception) {
             log.error("Error while creating signed upload URL. Message: {}", e.message, e)
             throw RuntimeException("Failed to create signed upload URL: ${e.message}")
+        }
+    }
+
+    /** 이 버킷의 공개 URL 형태(`.../object/public/$bucketName/...`)인지 여부. 외부 링크는 false. */
+    fun isManagedUrl(url: String): Boolean = url.startsWith(publicUrlPrefix)
+
+    /**
+     * 댓글/아바타 이미지 등 이 버킷에 업로드된 공개 URL들을 스토리지에서 삭제한다.
+     * 게시글·댓글 삭제에 딸린 정리 작업이라 실패해도 본 삭제 트랜잭션은 막지 않고 로그만 남긴다.
+     */
+    fun deleteObjectsByPublicUrls(urls: Collection<String>) {
+        val fileNames = urls.filter { isManagedUrl(it) }.map { it.removePrefix(publicUrlPrefix) }.distinct()
+        if (fileNames.isEmpty()) return
+
+        val deleteUrl = "$supabaseUrl/storage/v1/object/$bucketName"
+        val headers = HttpHeaders()
+        headers.set("Authorization", "Bearer $supabaseKey")
+        headers.set("apikey", supabaseKey)
+        headers.contentType = MediaType.APPLICATION_JSON
+        val requestEntity = HttpEntity(mapOf("prefixes" to fileNames), headers)
+
+        try {
+            restTemplate.exchange(deleteUrl, HttpMethod.DELETE, requestEntity, String::class.java)
+        } catch (e: Exception) {
+            log.error("Failed to delete storage objects. fileNames: {}", fileNames, e)
         }
     }
 }

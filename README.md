@@ -70,11 +70,13 @@ src/main/kotlin/com/example/linksphere/
 │   │   ├── BookmarkRepositoryImpl.kt    # 폴더 필터 EXISTS/NOT EXISTS 세미조인
 │   │   ├── BookmarkFolderRepository.kt
 │   │   ├── BookmarkFolderItemRepository.kt  # bookmark_folder_items (N:M 소속)
-│   │   ├── ReactionRepository.kt
+│   │   ├── PostReactionRepository.kt
+│   │   ├── CommentReactionRepository.kt
 │   │   ├── TableBookmark.kt
 │   │   ├── TableBookmarkFolder.kt
 │   │   ├── TableBookmarkFolderItem.kt
-│   │   └── TableReaction.kt
+│   │   ├── TablePostReaction.kt
+│   │   └── TableCommentReaction.kt
 │   └── category/                        # 카테고리 도메인
 │       ├── CategoryController.kt
 │       ├── CategoryDTO.kt

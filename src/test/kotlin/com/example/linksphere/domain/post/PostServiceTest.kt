@@ -2,11 +2,11 @@ package com.example.linksphere.domain.post
 
 import com.example.linksphere.domain.category.CategoryRepository
 import com.example.linksphere.domain.comment.CommentRepository
+import com.example.linksphere.domain.comment.CommentService
 import com.example.linksphere.domain.interaction.BookmarkFolderItemRepository
 import com.example.linksphere.domain.interaction.BookmarkRepository
-import com.example.linksphere.domain.interaction.ReactionRepository
+import com.example.linksphere.domain.interaction.PostReactionRepository
 import com.example.linksphere.domain.interaction.TableBookmarkFolderItem
-import com.example.linksphere.domain.interaction.TargetType
 import com.example.linksphere.domain.member.MemberRepository
 import com.example.linksphere.domain.member.TableMember
 import com.example.linksphere.global.exception.PostNotFoundException
@@ -38,9 +38,11 @@ class PostServiceTest {
 
     @Mock private lateinit var bookmarkFolderItemRepository: BookmarkFolderItemRepository
 
-    @Mock private lateinit var reactionRepository: ReactionRepository
+    @Mock private lateinit var postReactionRepository: PostReactionRepository
 
     @Mock private lateinit var commentRepository: CommentRepository
+
+    @Mock private lateinit var commentService: CommentService
 
     @Mock private lateinit var eventPublisher: ApplicationEventPublisher
 
@@ -68,9 +70,8 @@ class PostServiceTest {
         `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
         `when`(memberRepository.findById(ownerId)).thenReturn(Optional.of(owner))
         `when`(bookmarkRepository.existsByUserIdAndPostId(ownerId, postId)).thenReturn(false)
-        lenient().`when`(reactionRepository.countByTargetIdAndTargetType(postId, TargetType.POST)).thenReturn(0L)
-        lenient().`when`(reactionRepository.existsByTargetIdAndTargetTypeAndUserId(postId, TargetType.POST, ownerId))
-            .thenReturn(false)
+        lenient().`when`(postReactionRepository.countByPostId(postId)).thenReturn(0L)
+        lenient().`when`(postReactionRepository.existsByUserIdAndPostId(ownerId, postId)).thenReturn(false)
         lenient().`when`(bookmarkRepository.countByPostId(postId)).thenReturn(0L)
         lenient().`when`(commentRepository.countByPostId(postId)).thenReturn(0L)
 
@@ -121,9 +122,8 @@ class PostServiceTest {
         `when`(bookmarkRepository.existsByUserIdAndPostId(ownerId, postId)).thenReturn(true)
         `when`(bookmarkFolderItemRepository.findFolderIdsByUserIdAndPostId(ownerId, postId))
             .thenReturn(listOf(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID()))
-        lenient().`when`(reactionRepository.countByTargetIdAndTargetType(postId, TargetType.POST)).thenReturn(0L)
-        lenient().`when`(reactionRepository.existsByTargetIdAndTargetTypeAndUserId(postId, TargetType.POST, ownerId))
-            .thenReturn(false)
+        lenient().`when`(postReactionRepository.countByPostId(postId)).thenReturn(0L)
+        lenient().`when`(postReactionRepository.existsByUserIdAndPostId(ownerId, postId)).thenReturn(false)
         lenient().`when`(commentRepository.countByPostId(postId)).thenReturn(0L)
 
         val result = postService.getPostById(postId, ownerId)
@@ -156,15 +156,10 @@ class PostServiceTest {
                     TableBookmarkFolderItem(userId, postId1, folderId2),
                 ),
             )
-        `when`(reactionRepository.findAllByTargetIdInAndTargetType(listOf(postId1, postId2), TargetType.POST))
+        `when`(postReactionRepository.findAllByPostIdIn(listOf(postId1, postId2)))
             .thenReturn(emptyList())
-        `when`(
-            reactionRepository.findAllByUserIdAndTargetIdInAndTargetType(
-                userId,
-                listOf(postId1, postId2),
-                TargetType.POST,
-            ),
-        ).thenReturn(emptyList())
+        `when`(postReactionRepository.findAllByUserIdAndPostIdIn(userId, listOf(postId1, postId2)))
+            .thenReturn(emptyList())
         `when`(commentRepository.countByPostIdIn(listOf(postId1, postId2))).thenReturn(emptyList())
 
         val result = postService.buildResponsesFromPosts(listOf(post1, post2), userId)
