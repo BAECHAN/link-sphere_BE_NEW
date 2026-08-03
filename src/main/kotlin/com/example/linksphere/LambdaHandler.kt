@@ -2,6 +2,8 @@ package com.example.linksphere
 
 import com.amazonaws.services.lambda.runtime.Context
 import com.amazonaws.services.lambda.runtime.RequestStreamHandler
+import com.example.linksphere.domain.comment.CommentPostProcessEvent
+import com.example.linksphere.domain.comment.CommentPostProcessService
 import com.example.linksphere.domain.post.PostAIService
 import com.example.linksphere.domain.post.PostCreatedEvent
 import com.fasterxml.jackson.databind.JsonNode
@@ -118,11 +120,17 @@ class LambdaHandler : RequestStreamHandler {
     override fun handleRequest(input: InputStream, output: OutputStream, context: Context) {
         val event = mapper.readTree(input)
 
-        // AiJobDispatcher가 self-invoke로 보낸 내부 작업이면 HTTP 라우팅(MockMvc)을 거치지 않고
-        // 바로 처리한다 — rawPath/requestContext가 없는, Function URL 이벤트와 다른 모양이다.
-        if (event.get("linksphereJob")?.asText() == "ai-analysis") {
-            handleAiJob(event, output)
-            return
+        // AiJobDispatcher/CommentJobDispatcher가 self-invoke로 보낸 내부 작업이면 HTTP 라우팅(MockMvc)을
+        // 거치지 않고 바로 처리한다 — rawPath/requestContext가 없는, Function URL 이벤트와 다른 모양이다.
+        when (event.get("linksphereJob")?.asText()) {
+            "ai-analysis" -> {
+                handleAiJob(event, output)
+                return
+            }
+            "comment-postprocess" -> {
+                handleCommentJob(event, output)
+                return
+            }
         }
 
         // rawPath에는 CloudFront가 forward한 전체 경로(/api/auth/login)가 담겨있다.
@@ -233,6 +241,16 @@ class LambdaHandler : RequestStreamHandler {
             // 실패로 보고 불필요하게 재시도하지 않는다.
             logger.info("[AI Job] 처리 중 post가 삭제됨 - postId: ${payload.postId}")
         }
+        mapper.writeValue(output, mapOf("statusCode" to 200, "body" to "ok"))
+    }
+
+    // CommentJobDispatcher가 위임한 댓글 후처리(알림 발송 + 링크 프리뷰 크롤링)를 처리한다.
+    // 삭제 레이스는 CommentPostProcessService.processCommentJob이 조용히 return하므로
+    // handleAiJob과 달리 별도 예외 처리가 필요 없다.
+    private fun handleCommentJob(event: JsonNode, output: OutputStream) {
+        val payload = mapper.treeToValue(event.get("event"), CommentPostProcessEvent::class.java)
+        val commentPostProcessService = applicationContext.getBean(CommentPostProcessService::class.java)
+        commentPostProcessService.processCommentJob(payload)
         mapper.writeValue(output, mapOf("statusCode" to 200, "body" to "ok"))
     }
 }

@@ -3,22 +3,24 @@ package com.example.linksphere.domain.comment
 import com.example.linksphere.domain.interaction.CommentReactionRepository
 import com.example.linksphere.domain.interaction.TableCommentReaction
 import com.example.linksphere.domain.member.MemberRepository
+import com.example.linksphere.domain.member.TableMember
 import com.example.linksphere.domain.post.PostRepository
 import com.example.linksphere.domain.post.TablePost
-import com.example.linksphere.domain.post.UrlMetadataExtractor
 import com.example.linksphere.global.common.SupabaseStorageService
 import com.example.linksphere.global.exception.PostNotFoundException
-import com.example.linksphere.infra.fcm.FcmNotificationService
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
+import org.mockito.ArgumentCaptor
 import org.mockito.InjectMocks
 import org.mockito.Mock
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 import org.mockito.junit.jupiter.MockitoExtension
+import org.springframework.context.ApplicationEventPublisher
 import java.util.Optional
 import java.util.UUID
 
@@ -33,11 +35,9 @@ class CommentServiceTest {
 
     @Mock private lateinit var commentReactionRepository: CommentReactionRepository
 
-    @Mock private lateinit var fcmNotificationService: FcmNotificationService
-
-    @Mock private lateinit var urlMetadataExtractor: UrlMetadataExtractor
-
     @Mock private lateinit var supabaseStorageService: SupabaseStorageService
+
+    @Mock private lateinit var eventPublisher: ApplicationEventPublisher
 
     @InjectMocks private lateinit var commentService: CommentService
 
@@ -90,6 +90,49 @@ class CommentServiceTest {
         assertThrows(PostNotFoundException::class.java) {
             commentService.createComment(postId, otherUserId, "댓글 내용", null)
         }
+    }
+
+    @Test
+    fun `createComment은 이미지 URL만 있는 댓글의 linkUrl을 null로 저장한다`() {
+        val userId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val post = TablePost(id = postId, userId = userId, url = "https://example.com", title = "제목", isPrivate = false)
+        val member = TableMember(id = userId, email = "a@a.com", password = "pw", nickname = "tester")
+        val imageUrl = "https://xyz.supabase.co/storage/v1/object/public/comments/abc.png"
+
+        `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
+        `when`(memberRepository.findById(userId)).thenReturn(Optional.of(member))
+        `when`(supabaseStorageService.isManagedUrl(imageUrl)).thenReturn(true)
+
+        val captor = ArgumentCaptor.forClass(TableComment::class.java)
+        `when`(commentRepository.save(captor.capture())).thenAnswer { captor.value }
+
+        commentService.createComment(postId, userId, null, listOf(imageUrl))
+
+        assertNull(captor.value.linkUrl)
+    }
+
+    @Test
+    fun `createComment은 이미지 URL보다 먼저 등장해도 이미지는 건너뛰고 다음 URL을 linkUrl로 저장한다`() {
+        val userId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val post = TablePost(id = postId, userId = userId, url = "https://example.com", title = "제목", isPrivate = false)
+        val member = TableMember(id = userId, email = "a@a.com", password = "pw", nickname = "tester")
+        val imageUrl = "https://xyz.supabase.co/storage/v1/object/public/comments/abc.png"
+        val articleUrl = "https://example.com/article"
+
+        `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
+        `when`(memberRepository.findById(userId)).thenReturn(Optional.of(member))
+        `when`(supabaseStorageService.isManagedUrl(imageUrl)).thenReturn(true)
+        `when`(supabaseStorageService.isManagedUrl(articleUrl)).thenReturn(false)
+
+        val captor = ArgumentCaptor.forClass(TableComment::class.java)
+        `when`(commentRepository.save(captor.capture())).thenAnswer { captor.value }
+
+        // 이미지 URL이 먼저 등장하지만(예: 첨부 이미지 뒤에 이어붙인 링크), isManagedUrl인 첫 URL은 건너뛴다.
+        commentService.createComment(postId, userId, "$imageUrl 참고: $articleUrl", null)
+
+        assertEquals(articleUrl, captor.value.linkUrl)
     }
 
     @Test

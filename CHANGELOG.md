@@ -7,7 +7,29 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **댓글 등록/수정 요청 경로에서 링크 프리뷰 크롤링과 FCM 알림 발송을 제거, 커밋 후
+  별도 Lambda self-invoke로 위임** — 링크 크롤링은 리다이렉트 5홉 × 5초 타임아웃으로 최악
+  25초 이상, FCM(`sendEachForMulticast`)도 타임아웃 미설정 블로킹 호출이라 댓글 등록이 이
+  둘의 응답 속도에 그대로 묶여 있었다. `PostAIService`와 동일한 패턴(`AFTER_COMMIT` 이벤트 →
+  자기 자신 Lambda EVENT 호출)으로 분리해 요청 경로에는 검증+INSERT만 남긴다. 응답의
+  `linkMetadata`는 등록 직후엔 `{url, title: url}`만 채워지고 제목·설명·OG 이미지는 다음
+  조회 시 채워진다(Slack 방식). (`CommentPostProcessService`, `CommentJobDispatcher`,
+  `LambdaSelfInvoker`, `CommentService.createComment/createReply/updateComment`,
+  `LambdaHandler.handleCommentJob`)
+
 ### Fixed
+
+- **FCM 전송 실패가 댓글 등록 자체를 롤백시키던 버그** — `FcmService.sendToUser`가
+  `@Transactional`이라 댓글 저장 트랜잭션에 합류했고, catch 대상이
+  `FirebaseMessagingException`뿐이라 전송 계층의 다른 예외가 나면 댓글 INSERT까지 롤백됐다.
+  알림을 요청 경로 밖으로 옮기고 catch 범위도 `Exception`으로 넓혔다. (`FcmService.sendToUser`)
+- **링크 없이 이미지만 첨부한 댓글이 자기 자신의 이미지 URL을 크롤링하던 버그** — 업로드된
+  이미지 URL이 본문 뒤에 이어붙여지는데, 링크 추출 정규식이 이 합쳐진 문자열의 첫 URL을
+  그대로 집어 크롤링 대상으로 삼았다. `SupabaseStorageService.isManagedUrl`로 이 버킷
+  소속 URL을 걸러내고 첫 "이미지가 아닌" URL만 채택하도록 수정.
+  (`CommentService.extractFirstNonImageUrl`)
 
 - **게시글·댓글 삭제 시 첨부 이미지가 스토리지에 고아 파일로 남던 문제** — 댓글은
   `comments.post_id` FK가 `ON DELETE CASCADE`라 게시글 삭제 시 row 자체는 DB에서 함께

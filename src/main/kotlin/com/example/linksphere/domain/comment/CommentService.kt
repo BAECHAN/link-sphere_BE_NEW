@@ -4,10 +4,9 @@ import com.example.linksphere.domain.interaction.CommentReactionRepository
 import com.example.linksphere.domain.member.MemberRepository
 import com.example.linksphere.domain.member.TableMember
 import com.example.linksphere.domain.post.PostRepository
-import com.example.linksphere.domain.post.UrlMetadataExtractor
 import com.example.linksphere.global.common.SupabaseStorageService
 import com.example.linksphere.global.exception.PostNotFoundException
-import com.example.linksphere.infra.fcm.FcmNotificationService
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -23,9 +22,8 @@ class CommentService(
     private val postRepository: PostRepository,
     private val memberRepository: MemberRepository,
     private val commentReactionRepository: CommentReactionRepository,
-    private val fcmNotificationService: FcmNotificationService,
-    private val urlMetadataExtractor: UrlMetadataExtractor,
     private val supabaseStorageService: SupabaseStorageService,
+    private val eventPublisher: ApplicationEventPublisher,
 ) {
 
     @Transactional(readOnly = true)
@@ -167,7 +165,6 @@ class CommentService(
                 ?: throw IllegalArgumentException("User not found")
 
         val finalContent = buildFinalContent(content, images)
-        val linkMeta = extractFirstLinkMetadata(finalContent)
 
         val comment =
             TableComment(
@@ -175,23 +172,15 @@ class CommentService(
                 userId = userId,
                 parentId = parentId,
                 content = finalContent,
-                linkUrl = linkMeta?.first,
-                linkTitle = linkMeta?.second?.title,
-                linkDescription = linkMeta?.second?.description,
-                linkOgImage = linkMeta?.second?.ogImage,
+                linkUrl = extractFirstNonImageUrl(finalContent),
             )
         val saved = commentRepository.save(comment)
 
-        // 내 포스트에 타인이 댓글을 달면 알림 (루트 댓글만, 자기 자신 제외)
-        if (parentId == null && post.userId != userId) {
-            fcmNotificationService.sendCommentNotification(
-                postAuthorId = post.userId,
-                commenterNickname = member.nickname ?: "누군가",
-                commentContent = finalContent.take(50),
-                postId = postId,
-                commentId = saved.id,
-            )
-        }
+        // 알림·링크 프리뷰는 요청 경로 밖(커밋 후 별도 Lambda)에서 처리한다 - CommentPostProcessService 참고.
+        // 알림 조건(루트 댓글만, 자기 자신 제외)은 지금 판정해 이벤트에 실어 보낸다.
+        eventPublisher.publishEvent(
+            CommentPostProcessEvent(commentId = saved.id, notify = parentId == null && post.userId != userId),
+        )
 
         return toCommentResponse(saved, member)
     }
@@ -229,7 +218,6 @@ class CommentService(
                 ?: throw IllegalArgumentException("User not found")
 
         val finalContent = buildFinalContent(content, images)
-        val linkMeta = extractFirstLinkMetadata(finalContent)
 
         val comment =
             TableComment(
@@ -237,23 +225,15 @@ class CommentService(
                 userId = userId,
                 parentId = parentId,
                 content = finalContent,
-                linkUrl = linkMeta?.first,
-                linkTitle = linkMeta?.second?.title,
-                linkDescription = linkMeta?.second?.description,
-                linkOgImage = linkMeta?.second?.ogImage,
+                linkUrl = extractFirstNonImageUrl(finalContent),
             )
         val saved = commentRepository.save(comment)
 
-        // 내 댓글에 타인이 답글을 달면 알림 (자기 자신 제외)
-        if (parent.userId != userId) {
-            fcmNotificationService.sendReplyNotification(
-                parentCommentAuthorId = parent.userId,
-                replierNickname = member.nickname ?: "누군가",
-                replyContent = finalContent.take(50),
-                postId = saved.postId,
-                commentId = saved.id,
-            )
-        }
+        // 알림·링크 프리뷰는 요청 경로 밖(커밋 후 별도 Lambda)에서 처리한다 - CommentPostProcessService 참고.
+        // 알림 조건(자기 자신 제외)은 지금 판정해 이벤트에 실어 보낸다.
+        eventPublisher.publishEvent(
+            CommentPostProcessEvent(commentId = saved.id, notify = parent.userId != userId),
+        )
 
         return toCommentResponse(saved, member)
     }
@@ -324,14 +304,17 @@ class CommentService(
         }
 
         val finalContent = buildFinalContent(content, images)
-        val linkMeta = extractFirstLinkMetadata(finalContent)
 
         comment.content = finalContent
-        comment.linkUrl = linkMeta?.first
-        comment.linkTitle = linkMeta?.second?.title
-        comment.linkDescription = linkMeta?.second?.description
-        comment.linkOgImage = linkMeta?.second?.ogImage
+        comment.linkUrl = extractFirstNonImageUrl(finalContent)
+        // 링크가 바뀌었을 수 있으니 이전 프리뷰는 비우고, 후처리 job이 다시 채운다.
+        comment.linkTitle = null
+        comment.linkDescription = null
+        comment.linkOgImage = null
         val updated = commentRepository.save(comment)
+
+        // 알림은 보내지 않는다(수정은 알림 대상 아님) - 링크 프리뷰만 커밋 후 별도 Lambda에서 갱신.
+        eventPublisher.publishEvent(CommentPostProcessEvent(commentId = updated.id, notify = false))
 
         val member =
             memberRepository.findByIdOrNull(userId)
@@ -350,12 +333,15 @@ class CommentService(
         }
     }
 
-    /** content에서 첫 번째 URL을 찾아 메타데이터를 추출. URL이 없으면 null 반환 */
-    private fun extractFirstLinkMetadata(content: String): Pair<String, com.example.linksphere.domain.post.UrlMetadata>? {
-        val url = URL_REGEX.find(content)?.value ?: return null
-        val meta = urlMetadataExtractor.extract(url)
-        return url to meta
-    }
+    /**
+     * content에서 첫 번째 "이미지 아닌" URL을 찾는다. buildFinalContent가 업로드된 이미지 URL을
+     * content 뒤에 이어붙이므로, 이걸 걸러내지 않으면 텍스트에 링크가 없는 이미지 댓글이
+     * 자기 자신의 Supabase 이미지 URL을 크롤링 대상으로 잡는다. 메타데이터 크롤링 자체는
+     * 커밋 후 별도 Lambda(CommentPostProcessService)에서 수행한다.
+     */
+    private fun extractFirstNonImageUrl(content: String): String? = URL_REGEX.findAll(content)
+        .map { it.value }
+        .firstOrNull { !supabaseStorageService.isManagedUrl(it) }
 
     private fun toCommentResponse(comment: TableComment, member: TableMember) = CommentResponse(
         id = comment.id,

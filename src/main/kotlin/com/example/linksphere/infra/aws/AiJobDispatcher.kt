@@ -1,14 +1,8 @@
 package com.example.linksphere.infra.aws
 
 import com.example.linksphere.domain.post.PostCreatedEvent
-import com.fasterxml.jackson.databind.ObjectMapper
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
-import software.amazon.awssdk.core.SdkBytes
-import software.amazon.awssdk.regions.Region
-import software.amazon.awssdk.services.lambda.LambdaClient
-import software.amazon.awssdk.services.lambda.model.InvocationType
-import software.amazon.awssdk.services.lambda.model.InvokeRequest
 
 // AI 분석 작업을 이 Lambda 함수 자신에게 비동기(Event) 호출로 위임한다.
 // 같은 실행 환경 안에서 스레드만 백그라운드로 돌리면 handleRequest() 반환 후
@@ -16,43 +10,15 @@ import software.amazon.awssdk.services.lambda.model.InvokeRequest
 // 실행 환경으로 넘기면 원래 요청의 응답 흐름과 무관해진다.
 @Component
 class AiJobDispatcher(
-    private val objectMapper: ObjectMapper,
+    private val lambdaSelfInvoker: LambdaSelfInvoker,
 ) {
     private val logger = LoggerFactory.getLogger(AiJobDispatcher::class.java)
-    private val functionName: String? = System.getenv("AWS_LAMBDA_FUNCTION_NAME")
-
-    // qualifier를 안 주면 AWS가 $LATEST로 호출하는데, SnapStart는 ApplyOn=PublishedVersions라
-    // $LATEST엔 스냅샷 최적화가 적용되지 않아 매번 완전 콜드스타트를 물게 된다.
-    // EventBridge 워밍 핑과 동일한 이유로 반드시 prod alias를 명시해야 한다 (docs/DEPLOY.md 6장).
-    private companion object {
-        const val PROD_QUALIFIER = "prod"
-    }
-
-    private val lambdaClient: LambdaClient by lazy {
-        LambdaClient.builder()
-            .region(Region.of(System.getenv("AWS_REGION") ?: "ap-northeast-1"))
-            .httpClientBuilder(software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient.builder())
-            .build()
-    }
 
     fun dispatch(event: PostCreatedEvent) {
-        val fnName = functionName
-        if (fnName.isNullOrBlank()) {
-            logger.warn("[AiJobDispatcher] AWS_LAMBDA_FUNCTION_NAME 없음 - AI 작업 발행 생략(로컬 환경으로 추정) - postId: ${event.postId}")
-            return
+        val dispatched = lambdaSelfInvoker.invoke(AiJobPayload(event = event), "postId: ${event.postId}")
+        if (!dispatched) {
+            logger.warn("[AiJobDispatcher] AI 작업 발행 생략(로컬 환경으로 추정) - postId: ${event.postId}")
         }
-
-        val payload = objectMapper.writeValueAsString(AiJobPayload(event = event))
-        val request =
-            InvokeRequest.builder()
-                .functionName(fnName)
-                .qualifier(PROD_QUALIFIER)
-                .invocationType(InvocationType.EVENT)
-                .payload(SdkBytes.fromUtf8String(payload))
-                .build()
-
-        val response = lambdaClient.invoke(request)
-        logger.info("[AiJobDispatcher] AI 작업 발행 - postId: ${event.postId}, statusCode: ${response.statusCode()}")
     }
 }
 

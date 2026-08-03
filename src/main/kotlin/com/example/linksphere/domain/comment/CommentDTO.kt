@@ -32,3 +32,10 @@ data class CreateCommentRequest(
     val content: String? = null,
     val images: List<String>? = null,
 )
+
+// 댓글 생성/수정 커밋 후 발행되는 후처리 이벤트 (알림 발송 + 링크 프리뷰 크롤링).
+// commentId만 싣고 나머지는 처리 시점에 DB에서 다시 읽는다 - stale 데이터 방지.
+data class CommentPostProcessEvent(
+    val commentId: UUID,
+    val notify: Boolean,
+)

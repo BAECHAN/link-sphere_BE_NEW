@@ -62,7 +62,10 @@ class FcmService(
                     fcmTokenRepository.deleteByToken(token)
                 }
             }
-        } catch (e: FirebaseMessagingException) {
+        } catch (e: Exception) {
+            // 알림은 이제 요청 경로 밖(CommentPostProcessService 등 커밋 후 비동기 job)에서만
+            // 호출된다. 전송 계층 예외(FirebaseMessagingException 외)까지 여기서 흡수해야
+            // 후처리 job의 나머지 작업(링크 프리뷰 갱신)이 알림 실패로 함께 죽지 않는다.
             logger.error("[FCM] Failed to send notification to userId: $userId", e)
         }
     }
