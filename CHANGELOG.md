@@ -32,11 +32,9 @@
 
 ### Migration
 
-- `src/main/resources/sql/create_post_comment_reactions.sql` 실행 (BE 배포 **전**) —
-  `post_reactions`/`comment_reactions` 신설 + `reactions`에서 백필. BE 배포 직후 백필 블록(3번)을
-  한 번 더 실행할 것(컷오버 창에서 생긴 좋아요 회수).
-- 소크 기간을 거쳐 문제 없음을 확인한 뒤 `src/main/resources/sql/drop_reactions.sql` 실행 —
-  구 `reactions` 테이블 제거(파괴적, 헤더의 실행 전제 확인 필수).
+- `src/main/resources/sql/create_post_comment_reactions.sql` 실행 완료 — `post_reactions`/
+  `comment_reactions` 신설 + `reactions`에서 백필, 컷오버 창 회수 백필까지 완료.
+- 소크 기간 확인 후 구 `reactions` 테이블 drop 완료(`drop_reactions.sql` 실행 후 파일 제거).
 
 ## [0.6.0] - 2026-08-03
 
