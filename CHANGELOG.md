@@ -34,7 +34,9 @@
 
 - `src/main/resources/sql/create_post_comment_reactions.sql` 실행 완료 — `post_reactions`/
   `comment_reactions` 신설 + `reactions`에서 백필, 컷오버 창 회수 백필까지 완료.
-- 소크 기간 확인 후 구 `reactions` 테이블 drop 완료(`drop_reactions.sql` 실행 후 파일 제거).
+- 소크 기간 확인 후 `src/main/resources/sql/drop_reactions.sql` 실행, 구 `reactions` 테이블
+  drop 완료. 파일은 스키마 변경 이력 기록 목적으로 계속 보관(`drop_bookmarks_folder_id.sql`과
+  동일 관례).
 
 ## [0.6.0] - 2026-08-03
 
