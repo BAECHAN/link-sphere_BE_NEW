@@ -170,4 +170,18 @@ class PostServiceTest {
         verify(bookmarkFolderItemRepository, times(1))
             .findAllByUserIdAndPostIdIn(userId, listOf(postId1, postId2))
     }
+
+    @Test
+    fun `deletePost 는 댓글 이미지를 정리한 뒤 게시글을 삭제한다`() {
+        val ownerId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val post = TablePost(id = postId, userId = ownerId, url = "https://example.com", title = "제목", isPrivate = false)
+
+        `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
+
+        postService.deletePost(postId, ownerId)
+
+        verify(commentService).deleteImagesForPost(postId)
+        verify(postRepository).delete(post)
+    }
 }

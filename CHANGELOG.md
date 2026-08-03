@@ -22,6 +22,13 @@
   새 좋아요를 누를 수 없도록 막음(`InteractionService.toggleCommentLike`). API 계약(URL·요청·
   응답)은 변경 없음. (`InteractionService`, `PostService`, `CommentService`,
   `PostReactionRepository`, `CommentReactionRepository`)
+- **게시글 삭제가 실제로 실패하던 문제** — 위 이미지 정리 수정이 댓글을 `TableComment` 엔티티로
+  로드해뒀는데, 같은 트랜잭션에서 그 댓글이 속한 게시글을 `postRepository.delete()`로 지우면
+  커밋 시점에 `TransientObjectException`(댓글의 지연 로딩 `post` 연관관계 때문)이 발생해 배포
+  직후 실제 삭제 요청이 500으로 실패했다. 댓글 본문만 필요하므로 엔티티 대신 스칼라 프로젝션으로
+  조회하도록 변경해 애초에 영속성 컨텍스트에 올라가지 않게 함. 단위 테스트는 실제 Hibernate
+  세션을 쓰지 않아 이 문제를 못 잡았음(통합 테스트 부재). (`CommentRepository.findAllContentByPostId`,
+  `CommentService.deleteImagesForPost`)
 
 ### Migration
 

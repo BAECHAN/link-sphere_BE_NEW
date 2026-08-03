@@ -290,8 +290,8 @@ class CommentService(
      */
     @Transactional(readOnly = true)
     fun deleteImagesForPost(postId: UUID) {
-        val comments = commentRepository.findAllByPostIdOrderByCreatedAtAsc(postId)
-        val imageUrls = comments.flatMap { extractManagedImageUrls(it.content) }
+        val contents = commentRepository.findAllContentByPostId(postId)
+        val imageUrls = contents.flatMap { extractManagedImageUrls(it) }
         supabaseStorageService.deleteObjectsByPublicUrls(imageUrls)
     }
 
