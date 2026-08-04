@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-08-04
+
 ### Fixed
 
 - **크롤링 실패 시 URL 전문이 그대로 게시글 제목으로 저장되던 문제** — `UrlMetadataExtractor`의
@@ -373,7 +375,8 @@
   - `bookmark_folders` 테이블 생성 (`user_id` + `name` UNIQUE)
   - `bookmarks` 테이블에 `folder_id` 컬럼 및 FK(`ON DELETE SET NULL`) 추가
 
-[Unreleased]: https://github.com/BAECHAN/link-sphere_BE_NEW/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/BAECHAN/link-sphere_BE_NEW/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/BAECHAN/link-sphere_BE_NEW/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/BAECHAN/link-sphere_BE_NEW/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/BAECHAN/link-sphere_BE_NEW/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/BAECHAN/link-sphere_BE_NEW/compare/v0.4.0...v0.5.0
