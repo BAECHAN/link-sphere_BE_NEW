@@ -61,6 +61,8 @@ class AuthService(
     @Transactional
     fun updateAccount(userId: String, request: UpdateAccountRequest): AccountResponse = toAccountResponse(memberService.updateAccount(UUID.fromString(userId), request))
 
+    fun isNicknameAvailable(userId: String, nickname: String): NicknameAvailabilityResponse = NicknameAvailabilityResponse(memberService.isNicknameAvailable(UUID.fromString(userId), nickname))
+
     private fun toAccountResponse(member: TableMember): AccountResponse {
         val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
         return AccountResponse(

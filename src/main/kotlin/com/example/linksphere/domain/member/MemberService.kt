@@ -57,4 +57,9 @@ class MemberService(private val memberRepository: MemberRepository) {
         member.updatedAt = LocalDateTime.now()
         return memberRepository.save(member)
     }
+
+    fun isNicknameAvailable(id: UUID, nickname: String): Boolean {
+        val member = findById(id)
+        return nickname == member.nickname || !memberRepository.existsByNickname(nickname)
+    }
 }

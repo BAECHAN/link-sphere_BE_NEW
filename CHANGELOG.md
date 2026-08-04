@@ -7,6 +7,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- **닉네임 가용성 사전 조회 엔드포인트 추가** — FE 마이페이지 프로필 수정이 저장 시 서버
+  응답(중복 실패 시 409)을 기다리지 않고 즉시 닫히도록 바꾸면서, 중복 여부를 제출 전에
+  미리 알려줄 방법이 필요해졌다. `updateAccount`의 기존 중복 검사 조건(자기 자신의 현재
+  닉네임은 허용)을 그대로 재사용한다. (`GET /auth/account/nickname-availability`,
+  `MemberService.isNicknameAvailable`, `AuthController.checkNicknameAvailability`)
+
 ### Changed
 
 - **댓글 등록/수정 요청 경로에서 링크 프리뷰 크롤링과 FCM 알림 발송을 제거, 커밋 후

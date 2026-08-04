@@ -27,3 +27,5 @@ data class UpdateAccountRequest(
     val nickname: String? = null,
     val image: String? = null,
 )
+
+data class NicknameAvailabilityResponse(val available: Boolean)

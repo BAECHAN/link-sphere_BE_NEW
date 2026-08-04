@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 import java.security.Principal
 
@@ -63,6 +64,14 @@ class AuthController(private val authService: AuthService) {
         @RequestBody request: UpdateAccountRequest,
         principal: Principal,
     ): ResponseEntity<ApiResponse<AccountResponse>> = ResponseEntity.ok(ApiResponse(HttpStatus.OK.value(), "Account updated", authService.updateAccount(principal.name, request)))
+
+    @GetMapping("/account/nickname-availability")
+    fun checkNicknameAvailability(
+        @RequestParam nickname: String,
+        principal: Principal,
+    ): ResponseEntity<ApiResponse<NicknameAvailabilityResponse>> = ResponseEntity.ok(
+        ApiResponse(HttpStatus.OK.value(), "Nickname availability checked", authService.isNicknameAvailable(principal.name, nickname)),
+    )
 
     private fun createCookieResponse(
         authResult: AuthResult,
