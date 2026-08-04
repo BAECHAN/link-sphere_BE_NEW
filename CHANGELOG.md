@@ -7,6 +7,13 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **크롤링 실패 시 URL 전문이 그대로 게시글 제목으로 저장되던 문제** — `UrlMetadataExtractor`의
+  실패 폴백이 `title = url`로 URL을 통째로 제목에 넣고 있어, 긴 URL이 그대로 저장되는
+  케이스가 있었다. 폴백 제목만 100자로 절삭한다(정상 크롤링된 `og:title`/`<title>`은 원본
+  그대로 저장). (`UrlMetadataExtractor.extract`)
+
 ### Added
 
 - **닉네임 가용성 사전 조회 엔드포인트 추가** — FE 마이페이지 프로필 수정이 저장 시 서버

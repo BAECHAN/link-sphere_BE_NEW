@@ -62,7 +62,7 @@ class UrlMetadataExtractor(
         )
     } catch (e: Exception) {
         logger.error("[Crawling] 크롤링 실패: $url", e)
-        UrlMetadata(title = url, description = null, ogImage = null, tags = emptyList(), pageContent = null)
+        UrlMetadata(title = url.take(100), description = null, ogImage = null, tags = emptyList(), pageContent = null)
     }
 
     /**
