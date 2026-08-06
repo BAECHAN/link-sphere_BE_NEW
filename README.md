@@ -310,7 +310,7 @@ SnapStart 체크포인트 **이전**(`companion object init`)에 읽기 전용 �
 > ⚠️ 이 워밍업은 **Lambda Web Adapter 레이어가 없는 상태**를 전제로 합니다. 레이어를 되돌리면
 > 워밍업이 깨져 502가 발생합니다. 측정 데이터·장애 사후 분석·측정 방법론은
 > [**docs/PERFORMANCE.md**](./docs/PERFORMANCE.md), 롤백 절차는
-> [**docs/ROLLBACK-2026-07-25.md**](./docs/ROLLBACK-2026-07-25.md)를 참고하세요.
+> [**docs/LAMBDA-CONFIG-ROLLBACK.md**](./docs/LAMBDA-CONFIG-ROLLBACK.md)를 참고하세요.
 
 ---
 
