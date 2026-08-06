@@ -7,6 +7,13 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **게시글 썸네일(og:image)이 http로 저장되어 HTTPS 페이지에서 Mixed Content 경고가
+  뜨던 문제** — 크롤링 대상 사이트가 `og:image`를 http URL로 내리는 경우가 있어, 검증
+  없이 그대로 저장하고 있었다. 추출 직후 http를 https로 정규화한다(신규 크롤링 건만
+  적용, 기존 게시글은 FE 렌더링 시점에서 별도 처리). (`UrlMetadataExtractor.extract`)
+
 ## [0.7.0] - 2026-08-04
 
 ### Fixed

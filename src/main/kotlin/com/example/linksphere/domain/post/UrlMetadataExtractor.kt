@@ -53,6 +53,10 @@ class UrlMetadataExtractor(
             }
         }
 
+        // 크롤링 대상 사이트가 og:image를 http로 내리는 경우가 있다 - FE가 https로
+        // 서빙되는 이상 그대로 저장하면 Mixed Content 경고가 뜨므로 저장 전에 정규화한다.
+        ogImage = ogImage?.replace(Regex("^http://"), "https://")
+
         UrlMetadata(
             title = title,
             description = description,
