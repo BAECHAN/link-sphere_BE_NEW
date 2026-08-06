@@ -94,6 +94,55 @@ FE에서 이 필드를 소비하는 로직이 별도로 필요하다.
 `PostAIService.processAiJob`, `GeminiService.analyzeContentAsync`,
 `PostCategoryClassifier.classifyAsync`
 
+### 2.2 로컬 환경에서는 AI 처리가 아예 스킵됨 (버그 아님)
+
+self-invoke는 "이 Lambda 함수 자기 자신"을 호출하는 구조라, 호출할 함수 이름을
+알아야 한다. `LambdaSelfInvoker`는 이를 `AWS_LAMBDA_FUNCTION_NAME` 환경변수로
+판단하는데, 이 값은 실제 Lambda 실행 환경에서만 존재한다.
+
+```kotlin
+// LambdaSelfInvoker.kt
+private val functionName: String? = System.getenv("AWS_LAMBDA_FUNCTION_NAME")
+
+fun invoke(payload: Any, logContext: String): Boolean {
+    val fnName = functionName
+    if (fnName.isNullOrBlank()) {
+        logger.warn("[LambdaSelfInvoker] AWS_LAMBDA_FUNCTION_NAME 없음 - 위임 생략(로컬 환경으로 추정) - $logContext")
+        return false
+    }
+    ...
+```
+
+`./gradlew bootRun`으로 로컬 실행하면 이 환경변수가 없으므로 `invoke()`가 즉시
+`false`를 반환하고 끝난다. `AiJobDispatcher.dispatch()`도 그 결과를 그대로
+받아 경고 로그만 남기고 리턴한다:
+
+```
+[LambdaSelfInvoker] AWS_LAMBDA_FUNCTION_NAME 없음 - 위임 생략(로컬 환경으로 추정) - postId: ...
+[AiJobDispatcher] AI 작업 발행 생략(로컬 환경으로 추정) - postId: ...
+```
+
+즉 **로컬에서 게시글을 등록하면 크롤링·저장까지는 정상 동작하지만, Gemini
+요약·태그·카테고리 분류는 절대 실행되지 않는다** — `aiSummary`는 계속
+`null`, `aiStatus`는 계속 `PENDING`으로 남는다. `gemini.api.key`가 로컬에
+올바르게 설정돼 있어도 마찬가지다(호출 자체가 발행되지 않으므로 키 유효성과
+무관).
+
+2026-08-06 로컬 게시글 등록 후 "AI 응답이 안 오는 것 같다"는 문의로 재확인한
+사례: 프로덕션(배포된 Lambda)에 동일하게 게시글을 등록하자 `Requesting
+analysis` → `Response received` → `[AI] 분석 완료`까지 9초 내 정상 완료됐고,
+CloudWatch 로그 전 구간에 401/403 등 인증 오류는 없었다. 즉 API 키 문제가
+아니라 이 절에서 설명하는 로컬 환경의 구조적 스킵이었다.
+
+**로컬에서 AI 파이프라인 자체를 검증하려면** 배포된 환경(prod alias)에 직접
+게시글을 등록하고 CloudWatch(`/aws/lambda/link-sphere-api`)에서
+`[Gemini API]`, `[AI] 분석 완료` 로그를 확인하는 방법뿐이다. 로컬에서 이
+경로까지 동작하게 하려면 `AiJobDispatcher.dispatch()`가 `invoke()`
+실패(`false`) 시 `PostAIService.processAiJob(event)`를 직접 동기 호출하는
+fallback을 추가해야 하는데, 아직 구현하지 않았다 — 필요성이 제기됐을 때
+평가만 하고 보류한 상태(과한 작업은 아니라고 판단됨, 트레이드오프는 로컬
+게시글 등록 응답이 Gemini 호출 시간만큼 느려진다는 점).
+
 ## 3. 시행착오 1 — self-invoke가 `$LATEST`를 타던 문제
 
 `AiJobDispatcher`가 `InvokeRequest`에 qualifier를 지정하지 않고 배포했더니, AWS가
