@@ -1,6 +1,6 @@
 name: Deploy to AWS Lambda (SnapStart)
 
-# main 브랜치에 소스 변경이 push될 때만 실행
+# main 브랜치에 소스 변경이 push될 때 실행 + 수동 재실행 가능
 on:
   push:
     branches: ["main"]
@@ -10,6 +10,7 @@ on:
       - "settings.gradle.kts"
       - "gradle/**"
       - ".github/workflows/deploy.yml"
+  workflow_dispatch:
 
 jobs:
   deploy:
