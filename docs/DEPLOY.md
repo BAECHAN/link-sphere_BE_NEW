@@ -313,6 +313,16 @@ aws s3api put-bucket-lifecycle-configuration \
 - `gradle/**`
 - `.github/workflows/deploy.yml`
 
+### GitHub Actions 수동 재실행
+
+push 트리거 외 `workflow_dispatch`도 열려 있다 — GitHub Actions push 이벤트
+전달 장애(2026-08-06, 실제로 fbd32eb 커밋의 배포를 놓친 사례 있음) 등으로
+자동 트리거가 안 될 때 Actions 탭 또는 아래 명령으로 재실행한다.
+
+```bash
+gh workflow run deploy.yml --repo BAECHAN/link-sphere_BE_NEW --ref main
+```
+
 ---
 
 ## 배포 후 검증
