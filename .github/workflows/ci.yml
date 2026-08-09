@@ -1,0 +1,50 @@
+name: CI
+
+# PR과 main push 시 코드 스타일·테스트를 검증한다.
+# deploy.yml은 ktlintCheck만 수행하고 배포로 넘어가므로, 여기서 test까지 통과를 강제해
+# 머지 전에 회귀를 잡는다.
+on:
+  pull_request:
+    branches: ["main"]
+  push:
+    branches: ["main"]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+      # ─────────────────────────────────────────────
+      # 1. 소스 체크아웃
+      # ─────────────────────────────────────────────
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      # ─────────────────────────────────────────────
+      # 2. Java 17 설치 (Amazon Corretto — Lambda java17 런타임과 동일 JDK 계열)
+      # ─────────────────────────────────────────────
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: "corretto"
+
+      # ─────────────────────────────────────────────
+      # 3. Gradle 의존성 캐시 (빌드 시간 단축)
+      # ─────────────────────────────────────────────
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: ${{ runner.os }}-gradle-
+
+      # ─────────────────────────────────────────────
+      # 4. Ktlint 검사 + 테스트
+      #    firebase-service-account.json 없이도 테스트는 통과한다
+      #    (FcmConfig가 키 파일 부재를 nullable로 처리 — infra/fcm/FcmConfig.kt)
+      # ─────────────────────────────────────────────
+      - name: Ktlint check & Test
+        run: chmod +x gradlew && ./gradlew ktlintCheck test --no-daemon
