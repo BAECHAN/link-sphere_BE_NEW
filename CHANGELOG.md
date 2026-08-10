@@ -30,6 +30,19 @@
 
 ### Fixed
 
+- **댓글 수정으로 이미지를 제거해도 스토리지 파일이 영구히 남던 문제** — `updateComment`가
+  content만 덮어쓸 뿐 빠진 이미지의 스토리지 정리 로직이 없었다. 저장 전후 content에서
+  관리 대상 이미지 URL을 비교해 제거된 것만 트랜잭션 커밋 이후(`afterCommit`)에 삭제한다
+  — 커밋 전에 지우면 이후 조회 실패로 롤백될 때 DB엔 URL이 남고 파일은 사라진 상태가 될
+  수 있다. 본문 텍스트에 직접 써둔 URL은 보존된다. (`CommentService.updateComment`)
+- **댓글·게시글 삭제 시에도 스토리지 이미지를 트랜잭션 커밋 이전에 지워 파일만 사라지고
+  DB엔 남는 위험이 있던 문제** — `updateComment`는 이미 `afterCommit`으로 처리하고
+  있었지만 `deleteComment`(댓글 삭제)와 `deleteImagesForPost`(게시글 삭제 시 딸린 댓글
+  이미지 정리)는 DB 작업보다 먼저 스토리지부터 동기로 지우고 있었다 — 뒤이은 좋아요
+  삭제·톰스톤/하드 삭제(또는 게시글 삭제)가 실패해 롤백되면 댓글·게시글은 DB에 그대로
+  남았는데 파일만 사라진 상태가 될 수 있었다. 두 경로 모두 `updateComment`와 동일한
+  `afterCommit` 패턴으로 통일했다. (`CommentService.deleteComment`,
+  `CommentService.deleteImagesForPost`)
 - **게시글 썸네일(og:image)이 http로 저장되어 HTTPS 페이지에서 Mixed Content 경고가
   뜨던 문제** — 크롤링 대상 사이트가 `og:image`를 http URL로 내리는 경우가 있어, 검증
   없이 그대로 저장하고 있었다. 추출 직후 http를 https로 정규화한다(신규 크롤링 건만

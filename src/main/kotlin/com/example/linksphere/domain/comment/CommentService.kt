@@ -11,6 +11,8 @@ import org.springframework.context.ApplicationEventPublisher
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionSynchronization
+import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.util.UUID
 
 private const val DELETED_COMMENT_CONTENT = "삭제된 댓글입니다."
@@ -259,7 +261,8 @@ class CommentService(
             throw IllegalAccessException("Not authorized to delete this comment")
         }
 
-        supabaseStorageService.deleteObjectsByPublicUrls(extractManagedImageUrls(comment.content))
+        val imageUrls = extractManagedImageUrls(comment.content)
+
         // 톰스톤은 comments row가 살아남아 FK 캐스케이드가 발동하지 않으므로 명시 삭제가 유일한 수단이다.
         // 하드 삭제 경로에서는 comment_reactions FK ON DELETE CASCADE 가 백스톱으로 남는다.
         commentReactionRepository.deleteByCommentId(commentId)
@@ -272,18 +275,41 @@ class CommentService(
         } else {
             commentRepository.delete(comment)
         }
+
+        // 이미지 삭제는 반드시 커밋 이후에 실행한다 - updateComment와 동일한 이유: 위 DB 작업이
+        // 실패해 트랜잭션이 롤백되면 댓글은 DB에 그대로 남았는데 파일만 사라진 상태가 된다.
+        if (imageUrls.isNotEmpty()) {
+            TransactionSynchronizationManager.registerSynchronization(
+                object : TransactionSynchronization {
+                    override fun afterCommit() {
+                        supabaseStorageService.deleteObjectsByPublicUrls(imageUrls)
+                    }
+                },
+            )
+        }
     }
 
     /**
      * 게시글 삭제 시 호출된다. comments.post_id FK가 ON DELETE CASCADE라 DB에서는
      * 게시글과 함께 자동으로 지워지지만, 그 댓글들에 딸린 스토리지 이미지는 별도로
      * 정리해야 하므로 게시글이 실제로 삭제되기 전에 댓글 내용을 읽어 URL을 추출해둔다.
+     * 실제 스토리지 삭제는 deleteComment/updateComment와 동일한 이유로 커밋 이후로 미룬다 -
+     * 호출부(PostService.deletePost)의 postRepository.delete가 실패해 롤백되면 게시글·댓글은
+     * DB에 그대로 남았는데 파일만 사라진 상태가 되는 걸 막는다.
      */
     @Transactional(readOnly = true)
     fun deleteImagesForPost(postId: UUID) {
         val contents = commentRepository.findAllContentByPostId(postId)
         val imageUrls = contents.flatMap { extractManagedImageUrls(it) }
-        supabaseStorageService.deleteObjectsByPublicUrls(imageUrls)
+        if (imageUrls.isNotEmpty()) {
+            TransactionSynchronizationManager.registerSynchronization(
+                object : TransactionSynchronization {
+                    override fun afterCommit() {
+                        supabaseStorageService.deleteObjectsByPublicUrls(imageUrls)
+                    }
+                },
+            )
+        }
     }
 
     private fun extractManagedImageUrls(content: String): List<String> = URL_REGEX.findAll(content)
@@ -317,6 +343,8 @@ class CommentService(
             throw IllegalStateException("Cannot update a deleted comment")
         }
 
+        val previousImageUrls = extractManagedImageUrls(comment.content)
+
         val finalContent = buildFinalContent(content, images)
 
         comment.content = finalContent
@@ -326,6 +354,21 @@ class CommentService(
         comment.linkDescription = null
         comment.linkOgImage = null
         val updated = commentRepository.save(comment)
+
+        // 이미지 삭제는 반드시 커밋 이후에 실행한다 - 아래 memberRepository 조회가 실패하면
+        // 트랜잭션이 롤백되는데, 여기서 바로 지우면 DB엔 옛 URL이 남고 파일은 이미 사라진
+        // 상태가 되어 깨진 이미지가 된다. 본문 텍스트에 직접 써둔 URL은 새 content에도
+        // 남으므로 차집합에서 빠져 보존된다.
+        val removedImageUrls = previousImageUrls - extractManagedImageUrls(finalContent).toSet()
+        if (removedImageUrls.isNotEmpty()) {
+            TransactionSynchronizationManager.registerSynchronization(
+                object : TransactionSynchronization {
+                    override fun afterCommit() {
+                        supabaseStorageService.deleteObjectsByPublicUrls(removedImageUrls)
+                    }
+                },
+            )
+        }
 
         // 알림은 보내지 않는다(수정은 알림 대상 아님) - 링크 프리뷰만 커밋 후 별도 Lambda에서 갱신.
         eventPublisher.publishEvent(CommentPostProcessEvent(commentId = updated.id, notify = false))
