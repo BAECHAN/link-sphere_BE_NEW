@@ -7,6 +7,27 @@
 
 ## [Unreleased]
 
+### Added
+
+- **댓글 이미지 첨부 최대 5장 제한 서버 검증 추가** — FE에 첨부 버튼·드래그앤드롭이 새로
+  생기며 1회 첨부 개수에 사실상 상한이 없던 게 두드러지게 됐다. `createComment`/
+  `createReply`/`updateComment` 세 곳 모두 `images.size`가 5를 넘으면 400
+  (`INVALID_INPUT`)으로 거부한다 — `IllegalArgumentException`을 쓰면
+  `GlobalExceptionHandler`가 404로 잘못 매핑하므로 기존 `InvalidInputException`을 재사용했다.
+  (`CommentService.kt`)
+- **업로드 서명 URL 발급 시 이미지 확장자 allowlist 추가** — 기존엔 영숫자만 걸러내 `exe`·
+  `sh`도 통과했다. FE가 실제로 다루는 이미지 포맷(`jpg`, `jpeg`, `png`, `gif`, `webp`,
+  `avif`, `heic`, `heif`, `svg`)으로 제한한다. (`UploadService.kt`)
+- **서명 URL 미제출 고아 이미지 정리 도구 추가 (로컬 전용, 자동화 아님)** — 댓글 이미지
+  5장 확장으로 이 노출이 최대 5배로 늘어난다. 이 코드베이스에 admin/role 개념이 없어 REST
+  엔드포인트로 노출하면 로그인한 아무나 전체 버킷을 조회·삭제할 수 있게 되므로,
+  `@Profile("cleanup-orphans")`로 가드된 `CommandLineRunner`로 개발자가 필요할 때 로컬에서
+  직접 실행하는 형태로 만들었다. Lambda는 `LambdaHandler`가 별도 진입점이라 `main()`을
+  거치지 않으므로 배포에는 영향이 없다. 기본은 dry-run(보고만)이고 `--delete` 인자를
+  줘야 실제 삭제한다. (`tools/OrphanImageCleanupRunner.kt`,
+  `CommentRepository.findAllContent`, `MemberRepository.findAllImageUrls`,
+  `SupabaseStorageService.listAllObjectUrls`)
+
 ### Fixed
 
 - **게시글 썸네일(og:image)이 http로 저장되어 HTTPS 페이지에서 Mixed Content 경고가

@@ -7,6 +7,7 @@ import com.example.linksphere.domain.member.TableMember
 import com.example.linksphere.domain.post.PostRepository
 import com.example.linksphere.domain.post.TablePost
 import com.example.linksphere.global.common.SupabaseStorageService
+import com.example.linksphere.global.exception.InvalidInputException
 import com.example.linksphere.global.exception.PostNotFoundException
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
@@ -15,9 +16,11 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import org.mockito.ArgumentCaptor
+import org.mockito.ArgumentMatchers.any
 import org.mockito.InjectMocks
 import org.mockito.Mock
 import org.mockito.Mockito.verify
+import org.mockito.Mockito.verifyNoInteractions
 import org.mockito.Mockito.`when`
 import org.mockito.junit.jupiter.MockitoExtension
 import org.springframework.context.ApplicationEventPublisher
@@ -191,5 +194,49 @@ class CommentServiceTest {
 
         assertEquals(0, result[0].likeCount)
         assertEquals(false, result[0].isLiked)
+    }
+
+    private fun imageUrls(count: Int): List<String> = (1..count).map {
+        "https://xyz.supabase.co/storage/v1/object/public/comments/img$it.png"
+    }
+
+    @Test
+    fun `createComment throws InvalidInputException when images exceed the limit`() {
+        assertThrows(InvalidInputException::class.java) {
+            commentService.createComment(UUID.randomUUID(), UUID.randomUUID(), "내용", imageUrls(6))
+        }
+        verifyNoInteractions(postRepository)
+    }
+
+    @Test
+    fun `createReply throws InvalidInputException when images exceed the limit`() {
+        assertThrows(InvalidInputException::class.java) {
+            commentService.createReply(UUID.randomUUID(), UUID.randomUUID(), "내용", imageUrls(6))
+        }
+        verifyNoInteractions(commentRepository)
+    }
+
+    @Test
+    fun `updateComment throws InvalidInputException when images exceed the limit`() {
+        assertThrows(InvalidInputException::class.java) {
+            commentService.updateComment(UUID.randomUUID(), UUID.randomUUID(), "내용", imageUrls(6))
+        }
+        verifyNoInteractions(commentRepository)
+    }
+
+    @Test
+    fun `createComment accepts exactly the maximum allowed images`() {
+        val userId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val post = TablePost(id = postId, userId = userId, url = "https://example.com", title = "제목", isPrivate = false)
+        val member = TableMember(id = userId, email = "a@a.com", password = "pw", nickname = "tester")
+
+        `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
+        `when`(memberRepository.findById(userId)).thenReturn(Optional.of(member))
+        `when`(commentRepository.save(any(TableComment::class.java)))
+            .thenAnswer { it.arguments[0] }
+
+        // 예외 없이 끝까지 진행되면 5장은 통과한다는 뜻이다.
+        commentService.createComment(postId, userId, "내용", imageUrls(5))
     }
 }

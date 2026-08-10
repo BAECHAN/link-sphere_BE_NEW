@@ -5,6 +5,7 @@ import com.example.linksphere.domain.member.MemberRepository
 import com.example.linksphere.domain.member.TableMember
 import com.example.linksphere.domain.post.PostRepository
 import com.example.linksphere.global.common.SupabaseStorageService
+import com.example.linksphere.global.exception.InvalidInputException
 import com.example.linksphere.global.exception.PostNotFoundException
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.data.repository.findByIdOrNull
@@ -25,6 +26,10 @@ class CommentService(
     private val supabaseStorageService: SupabaseStorageService,
     private val eventPublisher: ApplicationEventPublisher,
 ) {
+
+    companion object {
+        private const val MAX_COMMENT_IMAGES = 5
+    }
 
     @Transactional(readOnly = true)
     fun getComments(postId: UUID, currentUserId: UUID?): List<CommentResponse> {
@@ -135,6 +140,9 @@ class CommentService(
         if (content.isNullOrBlank() && images?.isEmpty() ?: true) {
             throw IllegalArgumentException("Content or image must be provided")
         }
+        if ((images?.size ?: 0) > MAX_COMMENT_IMAGES) {
+            throw InvalidInputException("Comment images cannot exceed $MAX_COMMENT_IMAGES")
+        }
 
         // Depth Check (fail fast, before image upload)
         if (parentId != null) {
@@ -194,6 +202,9 @@ class CommentService(
     ): CommentResponse {
         if (content.isNullOrBlank() && images?.isEmpty() ?: true) {
             throw IllegalArgumentException("Content or image must be provided")
+        }
+        if ((images?.size ?: 0) > MAX_COMMENT_IMAGES) {
+            throw InvalidInputException("Comment images cannot exceed $MAX_COMMENT_IMAGES")
         }
 
         val parent =
@@ -289,6 +300,9 @@ class CommentService(
     ): CommentResponse {
         if (content.isNullOrBlank() && images?.isEmpty() ?: true) {
             throw IllegalArgumentException("Content or image must be provided")
+        }
+        if ((images?.size ?: 0) > MAX_COMMENT_IMAGES) {
+            throw InvalidInputException("Comment images cannot exceed $MAX_COMMENT_IMAGES")
         }
 
         val comment =

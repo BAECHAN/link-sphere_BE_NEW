@@ -28,4 +28,8 @@ interface CommentRepository : JpaRepository<TableComment, UUID> {
     // 엔티티로 로드하면 flush 시점에 TransientObjectException이 난다(실제 배포 후 재현됨).
     @Query("SELECT c.content FROM TableComment c WHERE c.postId = :postId")
     fun findAllContentByPostId(@Param("postId") postId: UUID): List<String>
+
+    // 고아 이미지 정리 도구(OrphanImageCleanupRunner)용 — 위와 같은 이유로 스칼라 프로젝션을 쓴다.
+    @Query("SELECT c.content FROM TableComment c")
+    fun findAllContent(): List<String>
 }

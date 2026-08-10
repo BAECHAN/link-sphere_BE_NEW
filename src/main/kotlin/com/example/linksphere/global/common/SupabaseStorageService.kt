@@ -24,6 +24,8 @@ class SupabaseStorageService(
 
     private data class SignUploadUrlApiResponse(val url: String, val token: String)
 
+    private data class StorageObjectApiResponse(val name: String)
+
     /**
      * 클라이언트가 이 스토리지로 직접 업로드할 수 있는 서명된 URL을 발급한다.
      * (Signed Upload URL — https://supabase.com/docs/reference/kotlin/v1/storage-from-createsigneduploadurl)
@@ -96,5 +98,50 @@ class SupabaseStorageService(
         } catch (e: Exception) {
             log.error("Failed to delete storage objects. fileNames: {}", fileNames, e)
         }
+    }
+
+    /**
+     * 버킷에 있는 모든 객체의 공개 URL을 페이지네이션을 따라가며 전부 모은다.
+     * 고아 이미지 정리 도구(OrphanImageCleanupRunner) 전용 — 일반 요청 경로에서는 쓰지 않는다.
+     */
+    fun listAllObjectUrls(): List<String> {
+        val listUrl = "$supabaseUrl/storage/v1/object/list/$bucketName"
+        val headers = HttpHeaders()
+        headers.set("Authorization", "Bearer $supabaseKey")
+        headers.set("apikey", supabaseKey)
+        headers.contentType = MediaType.APPLICATION_JSON
+
+        val limit = 100
+        var offset = 0
+        val names = mutableListOf<String>()
+
+        while (true) {
+            val body =
+                mapOf(
+                    "limit" to limit,
+                    "offset" to offset,
+                    "sortBy" to mapOf("column" to "name", "order" to "asc"),
+                )
+            val requestEntity = HttpEntity(body, headers)
+
+            val page =
+                try {
+                    restTemplate.exchange(
+                        listUrl,
+                        HttpMethod.POST,
+                        requestEntity,
+                        Array<StorageObjectApiResponse>::class.java,
+                    ).body?.toList() ?: emptyList()
+                } catch (e: Exception) {
+                    log.error("Failed to list storage objects. offset: {}", offset, e)
+                    throw RuntimeException("Failed to list storage objects")
+                }
+
+            names += page.map { it.name }
+            if (page.size < limit) break
+            offset += limit
+        }
+
+        return names.map { "$publicUrlPrefix$it" }
     }
 }
