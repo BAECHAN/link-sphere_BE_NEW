@@ -20,4 +20,9 @@ data class GeminiResponse(val candidates: List<Candidate>?)
 
 data class Candidate(val content: Content?, val finishReason: String?, val index: Int?)
 
-data class AiAnalysisResult(val summary: String?, val tags: List<String>)
+data class AiAnalysisResult(
+    val summary: String?,
+    val tags: List<String>,
+    val title: String? = null,
+    val description: String? = null,
+)

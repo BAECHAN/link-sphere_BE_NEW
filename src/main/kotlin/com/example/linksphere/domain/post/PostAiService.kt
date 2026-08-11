@@ -33,7 +33,6 @@ class PostAIService(
     @Transactional
     fun processAiJob(event: PostCreatedEvent) {
         val postId = event.postId
-        val title = event.title
         val description = event.description
         val content = event.content
         val existingTags = event.existingTags
@@ -46,13 +45,18 @@ class PostAIService(
         }
 
         try {
+            // 제목이 빈약하면 프롬프트에 URL 문자열을 넣어 모델을 오염시키지 않는다.
+            // AI가 새 제목을 쓸지 판단하는 게이트도 이 값 하나로 통일한다.
+            val titleIsWeak = WeakTitleDetector.isWeak(post.title, post.url)
+            val promptTitle = if (titleIsWeak) "" else post.title
+
             // 요약과 카테고리 분류를 병렬로 돌린다. 카테고리 분류는 요약이 만들어낼 AI 태그
             // 대신 크롤링 시점의 기존 태그만 입력으로 쓴다 — 순차 의존을 끊어야 병렬화가 되고,
             // 태그 매칭 1차 필터는 기존 태그만으로도 대체로 충분하다.
-            val summaryFuture = geminiService.analyzeContentAsync(title, description, content)
+            val summaryFuture = geminiService.analyzeContentAsync(promptTitle, description, content)
             val categoryFuture =
                 if (post.categories.isEmpty()) {
-                    postCategoryClassifier.classifyAsync(title, description, existingTags)
+                    postCategoryClassifier.classifyAsync(promptTitle, description, existingTags)
                 } else {
                     null
                 }
@@ -70,6 +74,14 @@ class PostAIService(
 
             post.aiSummary = analysisResult.summary
             post.tags = mergedTags
+
+            // 크롤링이 건진 값이 있으면 절대 덮지 않는다 — 순수 폴백.
+            if (titleIsWeak && !analysisResult.title.isNullOrBlank()) {
+                post.title = analysisResult.title
+            }
+            if (post.description.isNullOrBlank() && !analysisResult.description.isNullOrBlank()) {
+                post.description = analysisResult.description
+            }
 
             if (categoryFuture != null) {
                 post.categories.addAll(categoryFuture.join())

@@ -74,15 +74,24 @@ class GeminiService(
 
         val prompt =
             """
-            다음 웹페이지를 분석해서 요약과 태그를 추출해줘:
+            다음 웹페이지를 분석해서 제목·설명·요약과 태그를 추출해줘:
 
             제목: $title
             설명: ${description ?: ""}
             내용: $content
 
             반드시 다음 형식을 지켜서 응답해줘:
+            TITLE: [내용을 대표하는 제목 60자 이내]
+            DESCRIPTION: [내용을 1~2문장으로 요약한 짧은 설명]
             SUMMARY: [핵심 내용 10문장 요약]
             TAGS: [관련 키워드 3~5개를 쉼표로 구분]
+
+            제목·설명 규칙:
+            - 위 '제목'이 이미 채워져 있으면 TITLE: 뒤를 비워둘 것
+            - 위 '설명'이 이미 채워져 있으면 DESCRIPTION: 뒤를 비워둘 것
+            - 내용이 부족해 판단할 수 없으면 해당 항목 뒤를 비워둘 것
+            - 원문 언어를 그대로 쓸 것 (한국어 페이지면 한국어로)
+            - 제목에 URL·사이트명·"홈" 같은 무의미한 값을 넣지 말 것
 
             태그 규칙:
             - 각 태그는 반드시 1~2단어의 짧은 키워드여야 함 (예: "React", "웹개발", "머신러닝")
@@ -156,7 +165,25 @@ class GeminiService(
             .filter { it.isNotBlank() }
     }
 
-    private fun parseResponse(response: GeminiResponse?): AiAnalysisResult {
+    // parseResponse가 섹션 경계를 인식하는 데 쓰는 라벨. 프롬프트의 출력 형식과 반드시 일치해야 한다.
+    private val sectionLabels = listOf("TITLE", "DESCRIPTION", "SUMMARY", "TAGS")
+
+    // "LABEL:" 다음부터 다른 라벨이 나오기 전까지를 잘라낸다.
+    // 모델이 **LABEL:** 처럼 마크다운 강조를 붙여 오는 경우가 있어 앞의 * 는 허용하고,
+    // "LABEL:**"처럼 콜론 바로 뒤에 닫는 강조 기호가 남는 경우도 값에서 걷어낸다.
+    private fun extractSection(text: String, label: String): String? {
+        val others = sectionLabels.filter { it != label }.joinToString("|")
+        return Regex("$label:\\s*([\\s\\S]*?)(?=\\**\\s*(?:$others)\\s*:|$)", RegexOption.IGNORE_CASE)
+            .find(text)
+            ?.groupValues
+            ?.get(1)
+            ?.trim()
+            ?.trimStart('*')
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+    }
+
+    internal fun parseResponse(response: GeminiResponse?): AiAnalysisResult {
         val text = response?.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
 
         if (text == null) {
@@ -166,42 +193,24 @@ class GeminiService(
 
         logger.info("[Gemini API] Raw Response Text: $text")
 
-        var summary: String? = null
-        val tags = mutableListOf<String>()
+        // 모델이 형식을 완전히 무시한 경우에만 전체 텍스트를 요약으로 간주한다.
+        // 라벨이 하나라도 있으면 그건 형식을 지킨 응답이므로 TITLE/DESCRIPTION까지 요약에 섞으면 안 된다.
+        val summary =
+            extractSection(text, "SUMMARY")
+                ?: text.trim().takeIf { sectionLabels.none { l -> text.contains("$l:", ignoreCase = true) } }
 
-        val summaryMatch =
-            Regex(
-                "SUMMARY:\\s*([\\s\\S]+?)(?=TAGS:|\\*\\*TAGS:|\\s*TAGS:|$)",
-                RegexOption.IGNORE_CASE,
-            )
-                .find(text)
-        val tagsMatch = Regex("TAGS:\\s*([\\s\\S]+?)$", RegexOption.IGNORE_CASE).find(text)
+        val tags =
+            extractSection(text, "TAGS")
+                ?.split(",")
+                ?.map { it.trim().removePrefix("#").trim() }
+                ?.filter { it.isNotBlank() && it.length <= 20 }
+                ?: emptyList()
 
-        if (summaryMatch != null) {
-            summary = summaryMatch.groupValues[1].trim()
-        } else if (!text.contains("TAGS:", ignoreCase = true)) {
-            // "SUMMARY:" 또는 "TAGS:"가 없으면 전체 텍스트를 요약으로 간주
-            summary = text.trim()
-        } else if (text.contains("SUMMARY:", ignoreCase = true)) {
-            // Prefix는 있는데 Regex가 실패한 경우 (드문 경우)
-            val startIndex = text.indexOf("SUMMARY:", ignoreCase = true) + 8
-            val endIndex =
-                text.indexOf("TAGS:", ignoreCase = true).let {
-                    if (it == -1) text.length else it
-                }
-            summary = text.substring(startIndex, endIndex).trim()
-        }
-
-        if (tagsMatch != null) {
-            val tagsText = tagsMatch.groupValues[1].trim()
-            tags.addAll(
-                tagsText.split(",").map { it.trim().removePrefix("#").trim() }.filter {
-                    it.isNotBlank() && it.length <= 20
-                },
-            )
-        }
+        // 모델이 요약 전체를 TITLE/DESCRIPTION에 쏟아붓는 오작동을 막는 안전망 — 길이 초과는 잘라내지 않고 버린다.
+        val title = extractSection(text, "TITLE")?.takeIf { it.length <= 120 }
+        val description = extractSection(text, "DESCRIPTION")?.takeIf { it.length <= 500 }
 
         logger.info("[Gemini API] Parsed Summary: ${summary?.take(50)}..., Tags: $tags")
-        return AiAnalysisResult(summary, tags)
+        return AiAnalysisResult(summary, tags, title, description)
     }
 }

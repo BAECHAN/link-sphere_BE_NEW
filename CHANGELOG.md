@@ -9,6 +9,16 @@
 
 ### Added
 
+- **게시글 제목·설명 AI 폴백 추가** — 크롤링이 `og:title`/`<title>`을 못 건져 제목이
+  URL 문자열로 남거나(`WeakTitleDetector`로 판정), `og:description`이 없어 설명이
+  계속 비어 있던 경우를 AI 분석 잡이 페이지 내용을 보고 대신 채운다. 기존
+  `GeminiService.analyzeContent` 프롬프트에 `TITLE`/`DESCRIPTION` 섹션만 추가한
+  것이라 Gemini 호출 횟수는 늘지 않았고, 크롤링이 이미 건진 값은 절대 덮지 않는
+  순수 폴백이다(URL 수정 시 새 크롤링 값이 없어졌을 때도 동일하게 적용됨). 크롤링
+  자체가 실패해 페이지 내용이 없는 경우(AI 잡 자체가 발행되지 않음)는 이번 범위에서
+  제외했다. 이미 비동기로 도는 AI 잡 안에서 처리되므로 등록 응답에는 반영되지 않고
+  재조회해야 보인다(FE 변경 없음, `docs/AI-ASYNC-PROCESSING.md` 참고).
+  (`GeminiService.kt`, `WeakTitleDetector.kt`, `PostAiService.kt`)
 - **댓글 이미지 첨부 최대 5장 제한 서버 검증 추가** — FE에 첨부 버튼·드래그앤드롭이 새로
   생기며 1회 첨부 개수에 사실상 상한이 없던 게 두드러지게 됐다. `createComment`/
   `createReply`/`updateComment` 세 곳 모두 `images.size`가 5를 넘으면 400

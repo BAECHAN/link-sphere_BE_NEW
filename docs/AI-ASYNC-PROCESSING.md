@@ -60,7 +60,7 @@ POST /post
 (완전히 별도의 Lambda 실행 환경)
   → LambdaHandler.handleAiJob()
     → PostAIService.processAiJob()
-      → Gemini 요약 + 카테고리 분류 (병렬)
+      → Gemini 요약(+제목·설명 폴백) + 카테고리 분류 (병렬)
       → DB 저장 (aiStatus: PENDING → COMPLETED/FAILED)
 ```
 
@@ -69,6 +69,15 @@ POST /post
 재사용). 카테고리 분류 입력은 요약이 만들어낼 AI 태그 대신 크롤링 시점의 기존 태그만
 사용하도록 바꿨다 — 순차 의존을 끊어야 병렬화가 가능하기 때문이며, 태그 매칭 1차
 필터는 기존 태그만으로도 대체로 충분하다는 판단.
+
+`analyzeContentAsync` 호출 하나가 요약·태그뿐 아니라 제목·설명 폴백까지 함께
+만들어낸다(`GeminiService`의 프롬프트에 `TITLE`/`DESCRIPTION` 섹션을 추가한
+것뿐, Gemini 호출 횟수는 늘지 않았다). `PostAIService.processAiJob`은
+`WeakTitleDetector`로 크롤링된 제목이 URL·사이트명 수준으로 빈약한지 판단해
+그럴 때만 AI 제목으로 교체하고, `description`은 크롤링 결과가 `null`/빈
+문자열일 때만 AI 설명으로 채운다 — 크롤링이 건진 값은 절대 덮지 않는 순수
+폴백이다. 크롤링 자체가 실패해 `pageContent`가 없는 경우는 애초에 이 AI
+잡이 발행되지 않으므로(`PostService.createPost`) 이 폴백의 대상이 아니다.
 
 ### 2.1 결과 확인 방식 — 실시간 알림 없음
 
@@ -84,7 +93,9 @@ Lambda 환경에서 애초에 성립하지 않았기 때문이다(1절). self-in
 (`NONE`/`PENDING`/`COMPLETED`/`FAILED`)를 보고 처리 여부를 판단해야 하는데,
 값이 갱신되는 시점은 오직 클라이언트가 `GET /post` 또는 `GET /post/{id}`를
 **다시 호출했을 때**뿐이다. 방금 만든 게시글을 응답으로 받은 직후에는 항상
-`PENDING`이고, AI 처리가 끝났는지는 그 이후의 재조회로만 확인 가능하다.
+`PENDING`이고, AI 처리가 끝났는지는 그 이후의 재조회로만 확인 가능하다. 크롤링
+제목·설명이 빈약해 AI 폴백이 적용된 경우도 마찬가지라, 등록 응답에는 여전히
+크롤링 시점 값(URL 문자열 등)이 실리고 재조회해야 AI가 채운 값을 본다.
 
 현재 FE는 이 필드를 읽어 UI를 분기하지 않는다(`aiSummary`가 채워져 있으면
 그냥 보여줄 뿐) — PENDING 상태를 사용자에게 "AI 분석 중" 등으로 노출하려면
