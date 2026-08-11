@@ -134,6 +134,7 @@ class GlobalExceptionHandler {
 
     @ExceptionHandler(InvalidInputException::class)
     fun handleInvalidInputException(e: InvalidInputException): ResponseEntity<ErrorResponse> {
+        logger.warn("Invalid input: {}", e.message)
         val response =
             ErrorResponse(
                 status = HttpStatus.BAD_REQUEST.value(),

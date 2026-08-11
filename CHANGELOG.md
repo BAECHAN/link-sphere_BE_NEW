@@ -30,6 +30,17 @@
 
 ### Fixed
 
+- **URL에 공백이 포함되면 게시글 등록·수정이 항상 400(`INVALID_INPUT`)으로 실패하던 문제** —
+  FE `zod .url()`(WHATWG `URL` 파서)은 앞뒤·중간 공백이 섞인 URL도 통과시키지만, BE
+  `SafeUrlValidator`가 쓰는 `java.net.URI`는 RFC 2396 엄격 파서라 생 공백에
+  `URISyntaxException`을 던진다. FE 검증을 통과한 값이 서버에서 거부되는 계약 불일치였다.
+  FE에서 공백을 브라우저 표준과 동일하게 정리(`trim` + 내부 공백 `%20` 인코딩, 한글 등
+  비-공백 문자는 원문 보존)해 보내도록 하고, 구버전 클라이언트를 대비해 BE도 저장 전
+  앞뒤 공백을 제거한다. (`shared/utils/url.util.ts`, `PostService.createPost`,
+  `PostService.updatePost`)
+- **400(`INVALID_INPUT`) 응답이 로그를 전혀 남기지 않아 원인 조사가 CloudFront 지표
+  역추적에 의존해야 했던 문제** — `handleInvalidInputException`에 `logger.warn` 추가.
+  (`GlobalExceptionHandler.kt`)
 - **댓글 수정으로 이미지를 제거해도 스토리지 파일이 영구히 남던 문제** — `updateComment`가
   content만 덮어쓸 뿐 빠진 이미지의 스토리지 정리 로직이 없었다. 저장 전후 content에서
   관리 대상 이미지 URL을 비교해 제거된 것만 트랜잭션 커밋 이후(`afterCommit`)에 삭제한다

@@ -37,8 +37,9 @@ class PostService(
 
     @Transactional
     fun createPost(userId: UUID, request: PostCreateRequest): PostResponse {
-        validateUrl(request.url)
-        val metadata = urlMetadataExtractor.extract(request.url)
+        val url = request.url.trim()
+        validateUrl(url)
+        val metadata = urlMetadataExtractor.extract(url)
 
         val title = if (!request.title.isNullOrBlank()) request.title else metadata.title
         val categories =
@@ -51,7 +52,7 @@ class PostService(
         val newPost =
             TablePost(
                 userId = userId,
-                url = request.url,
+                url = url,
                 title = title,
                 description = metadata.description,
                 tags = metadata.tags.toMutableList(),
@@ -203,7 +204,7 @@ class PostService(
 
         // URL이 바뀌면 기존 메타데이터·AI 요약이 옛 링크 기준으로 남으므로 생성 때와 동일하게 재수집한다.
         // 이때 제목은 사용자가 입력한 값 대신 새 링크에서 크롤링한 제목으로 덮어쓴다.
-        val newUrl = request.url?.takeIf { it != post.url }
+        val newUrl = request.url?.trim()?.takeIf { it != post.url }
         val metadata =
             newUrl?.let {
                 validateUrl(it)
