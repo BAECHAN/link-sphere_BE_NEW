@@ -42,6 +42,8 @@ class SecurityConfig(
                     "/auth/login",
                     "/auth/refresh",
                     "/auth/logout",
+                    "/auth/email-availability",
+                    "/auth/account/nickname-availability", // 가입 화면(비로그인)도 조회 가능 - 마이페이지와 겸용
                     "/common/**",
                     "/swagger-ui/**",
                     "/v3/api-docs/**",

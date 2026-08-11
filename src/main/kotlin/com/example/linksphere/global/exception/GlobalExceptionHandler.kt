@@ -157,6 +157,22 @@ class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response)
     }
 
+    // @Valid 검증 실패 - 이 핸들러가 없으면 handleException(500)으로 떨어진다
+    @ExceptionHandler(org.springframework.web.bind.MethodArgumentNotValidException::class)
+    fun handleMethodArgumentNotValidException(
+        e: org.springframework.web.bind.MethodArgumentNotValidException,
+    ): ResponseEntity<ErrorResponse> {
+        val message = e.bindingResult.fieldErrors.joinToString("; ") { "${it.field}: ${it.defaultMessage}" }
+        logger.warn("Validation failed: {}", message)
+        val response =
+            ErrorResponse(
+                status = HttpStatus.BAD_REQUEST.value(),
+                code = "INVALID_INPUT",
+                message = message.ifBlank { "Invalid input" },
+            )
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response)
+    }
+
     @ExceptionHandler(org.springframework.web.method.annotation.MethodArgumentTypeMismatchException::class)
     fun handleMethodArgumentTypeMismatchException(
         e: org.springframework.web.method.annotation.MethodArgumentTypeMismatchException,

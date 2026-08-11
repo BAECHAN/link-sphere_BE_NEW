@@ -61,7 +61,12 @@ class AuthService(
     @Transactional
     fun updateAccount(userId: String, request: UpdateAccountRequest): AccountResponse = toAccountResponse(memberService.updateAccount(UUID.fromString(userId), request))
 
-    fun isNicknameAvailable(userId: String, nickname: String): NicknameAvailabilityResponse = NicknameAvailabilityResponse(memberService.isNicknameAvailable(UUID.fromString(userId), nickname))
+    // userId가 없으면(가입 화면, 비로그인 조회) 본인 제외 없이 순수 존재 여부만 확인한다
+    fun isNicknameAvailable(userId: String?, nickname: String): NicknameAvailabilityResponse = NicknameAvailabilityResponse(
+        memberService.isNicknameAvailable(userId?.let { UUID.fromString(it) }, nickname),
+    )
+
+    fun isEmailAvailable(email: String): EmailAvailabilityResponse = EmailAvailabilityResponse(memberService.isEmailAvailable(email))
 
     private fun toAccountResponse(member: TableMember): AccountResponse {
         val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME

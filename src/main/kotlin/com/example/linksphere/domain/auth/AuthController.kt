@@ -1,10 +1,13 @@
 package com.example.linksphere.domain.auth
 
 import com.example.linksphere.global.common.ApiResponse
+import com.example.linksphere.global.common.getUserId
+import jakarta.validation.Valid
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseCookie
 import org.springframework.http.ResponseEntity
+import org.springframework.security.core.Authentication
 import org.springframework.web.bind.annotation.CookieValue
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PatchMapping
@@ -20,7 +23,7 @@ import java.security.Principal
 class AuthController(private val authService: AuthService) {
 
     @PostMapping("/signup")
-    fun signup(@RequestBody request: SignupRequest): ResponseEntity<ApiResponse<AccountResponse>> = ResponseEntity.status(HttpStatus.CREATED)
+    fun signup(@Valid @RequestBody request: SignupRequest): ResponseEntity<ApiResponse<AccountResponse>> = ResponseEntity.status(HttpStatus.CREATED)
         .body(ApiResponse(HttpStatus.CREATED.value(), "Signup successful", authService.signup(request)))
 
     @PostMapping("/login")
@@ -65,12 +68,27 @@ class AuthController(private val authService: AuthService) {
         principal: Principal,
     ): ResponseEntity<ApiResponse<AccountResponse>> = ResponseEntity.ok(ApiResponse(HttpStatus.OK.value(), "Account updated", authService.updateAccount(principal.name, request)))
 
+    // 마이페이지(로그인)와 가입 화면(비로그인) 둘 다에서 쓴다 - permitAll 경로라 인증 안 된
+    // 요청은 authentication이 null이 아니라 이름이 "anonymousUser"인 익명 토큰으로 들어오고,
+    // getUserId()가 UUID 파싱에 실패해 null을 반환한다(AuthService가 그 null을 "본인 제외 없이
+    // 순수 존재 여부만 확인"으로 처리)
     @GetMapping("/account/nickname-availability")
     fun checkNicknameAvailability(
         @RequestParam nickname: String,
-        principal: Principal,
+        authentication: Authentication?,
     ): ResponseEntity<ApiResponse<NicknameAvailabilityResponse>> = ResponseEntity.ok(
-        ApiResponse(HttpStatus.OK.value(), "Nickname availability checked", authService.isNicknameAvailable(principal.name, nickname)),
+        ApiResponse(
+            HttpStatus.OK.value(),
+            "Nickname availability checked",
+            authService.isNicknameAvailable(authentication.getUserId()?.toString(), nickname),
+        ),
+    )
+
+    @GetMapping("/email-availability")
+    fun checkEmailAvailability(
+        @RequestParam email: String,
+    ): ResponseEntity<ApiResponse<EmailAvailabilityResponse>> = ResponseEntity.ok(
+        ApiResponse(HttpStatus.OK.value(), "Email availability checked", authService.isEmailAvailable(email)),
     )
 
     private fun createCookieResponse(

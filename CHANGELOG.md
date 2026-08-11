@@ -37,9 +37,25 @@
   줘야 실제 삭제한다. (`tools/OrphanImageCleanupRunner.kt`,
   `CommentRepository.findAllContent`, `MemberRepository.findAllImageUrls`,
   `SupabaseStorageService.listAllObjectUrls`)
+- **`GET /auth/email-availability` 신설 — 가입 화면 실시간 이메일 중복확인 (비로그인 공개)**
+  — 지금까지 이메일 중복 여부는 가입을 실제로 시도해 409를 받아야만 알 수 있었다.
+  (`AuthController.checkEmailAvailability`, `MemberService.isEmailAvailable`)
+- **`GET /auth/account/nickname-availability`를 비로그인에서도 호출 가능하도록 확장** —
+  기존엔 `Principal` 필수라 마이페이지(로그인 후)에서만 쓸 수 있었다. `Authentication?`으로
+  바꿔 익명 요청(가입 화면)도 허용하되, 로그인 상태면 여전히 본인의 현재 닉네임은 중복에서
+  제외한다. (`AuthController.checkNicknameAvailability`, `MemberService.isNicknameAvailable`,
+  `SecurityConfig`)
 
 ### Changed
 
+- **회원가입 요청에 서버 측 입력 검증 추가** — `SignupRequest`에 애노테이션이 하나도 없어
+  `@Valid`도 안 걸려 있었다. FE Zod 규칙(이메일 형식, 비밀번호 8~20자+영문/숫자/특수문자,
+  닉네임 2~20자+허용 문자)과 동일한 제약을 서버에도 걸어, curl 등으로 검증을 우회한 가입을
+  막는다. 이메일은 형식만 검증하고 실제 도달 가능성은 확인하지 않는다(이메일 인증 미도입).
+  (`AuthDTO.SignupRequest`, `AuthController.signup`)
+- **회원가입 시 닉네임이 필수가 됨** — 기존엔 BE가 `nickname: String? = null`로 선택
+  값이었는데 FE Zod는 이미 필수로 요구하고 있어 계약이 어긋나 있었다. FE가 항상 닉네임을
+  보내므로 실사용에는 영향이 없다. (`AuthDTO.SignupRequest`, `MemberService.signup`)
 - **닉네임 중복 판정을 대소문자 무시로 변경** — 기존엔 `existsByNickname`이 대소문자를
   구분해 `Tester02`와 `tester02`처럼 표시상 같아 보이는 계정이 실제로 둘 다 생길 수 있었다
   (2026-08-11 실DB 점검에서 실제 사례 확인, Migration 참고). 표시값은 원문 그대로 저장하고
@@ -87,6 +103,8 @@
   메시지에서도 제출값 반사(`"Email already exists: ${email}"`)를 없앴다 — FE는 메시지를
   표시하지 않고 code로만 분기하므로 반사할 이유가 없었다. (`DuplicateNicknameException.kt`,
   `GlobalExceptionHandler.kt`, `MemberService.signup`)
+- **회원가입 409 응답을 검증하는 유일한 테스트에 `@Test`가 빠져 있어 한 번도 실행된 적이
+  없던 문제** — 위 계약 변경을 검증하며 함께 발견해 복구했다. (`AuthControllerTest.kt`)
 - **동시 가입 요청이 겹쳐 사전 중복 체크를 둘 다 통과한 뒤 DB 유니크 제약에서 걸린 경우
   (레이스), 이메일/닉네임 어느 쪽이 겹쳤든 무조건 409 `DUPLICATE_RESOURCE`(한글 메시지)로
   뭉뚱그려져 위의 `DUPLICATE_MEMBER`/`DUPLICATE_NICKNAME` 구분과 코드가 갈라지던 문제** —
