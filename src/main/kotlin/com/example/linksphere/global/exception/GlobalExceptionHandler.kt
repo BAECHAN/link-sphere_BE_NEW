@@ -47,6 +47,19 @@ class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(response)
     }
 
+    @ExceptionHandler(DuplicateNicknameException::class)
+    fun handleDuplicateNicknameException(
+        e: DuplicateNicknameException,
+    ): ResponseEntity<ErrorResponse> {
+        val response =
+            ErrorResponse(
+                status = HttpStatus.CONFLICT.value(),
+                code = "DUPLICATE_NICKNAME",
+                message = e.message ?: "Duplicate nickname",
+            )
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(response)
+    }
+
     @ExceptionHandler(BookmarkFolderNotFoundException::class)
     fun handleBookmarkFolderNotFoundException(
         e: BookmarkFolderNotFoundException,

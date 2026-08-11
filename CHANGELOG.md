@@ -38,6 +38,14 @@
   `CommentRepository.findAllContent`, `MemberRepository.findAllImageUrls`,
   `SupabaseStorageService.listAllObjectUrls`)
 
+### Changed
+
+- **닉네임 중복 판정을 대소문자 무시로 변경** — 기존엔 `existsByNickname`이 대소문자를
+  구분해 `Tester02`와 `tester02`처럼 표시상 같아 보이는 계정이 실제로 둘 다 생길 수 있었다
+  (2026-08-11 실DB 점검에서 실제 사례 확인, Migration 참고). 표시값은 원문 그대로 저장하고
+  비교만 대소문자 무시로 바꿨다. (`MemberRepository.existsByNicknameIgnoreCase`,
+  `MemberService`)
+
 ### Fixed
 
 - **URL에 공백이 포함되면 게시글 등록·수정이 항상 400(`INVALID_INPUT`)으로 실패하던 문제** —
@@ -68,6 +76,34 @@
   뜨던 문제** — 크롤링 대상 사이트가 `og:image`를 http URL로 내리는 경우가 있어, 검증
   없이 그대로 저장하고 있었다. 추출 직후 http를 https로 정규화한다(신규 크롤링 건만
   적용, 기존 게시글은 FE 렌더링 시점에서 별도 처리). (`UrlMetadataExtractor.extract`)
+- **이메일 대소문자·공백 차이로 별개 계정이 생기고, 대문자로 가입한 사용자는 소문자로
+  로그인할 수 없던 문제** — Gmail·Outlook 등 주요 서비스도 저장 전 소문자로 정규화한다
+  (RFC 5321이 local-part의 대소문자 구분을 규정하지만, 같은 문서가 실제 활용은
+  상호운용성을 해치므로 권장하지 않는다고 명시). 가입·로그인 조회 양쪽에 적용했다.
+  (`MemberService.normalizeEmail`, Migration 참고)
+- **이메일·닉네임 중복이 같은 409(`DUPLICATE_MEMBER`)로 뭉뚱그려져, 닉네임이 겹쳤는데도
+  FE가 "이메일이 이미 가입돼 있어요"로 잘못 안내하던 문제** — 닉네임 중복을
+  `DuplicateNicknameException` → 409 `DUPLICATE_NICKNAME`으로 분리했다. 이메일 쪽 예외
+  메시지에서도 제출값 반사(`"Email already exists: ${email}"`)를 없앴다 — FE는 메시지를
+  표시하지 않고 code로만 분기하므로 반사할 이유가 없었다. (`DuplicateNicknameException.kt`,
+  `GlobalExceptionHandler.kt`, `MemberService.signup`)
+- **동시 가입 요청이 겹쳐 사전 중복 체크를 둘 다 통과한 뒤 DB 유니크 제약에서 걸린 경우
+  (레이스), 이메일/닉네임 어느 쪽이 겹쳤든 무조건 409 `DUPLICATE_RESOURCE`(한글 메시지)로
+  뭉뚱그려져 위의 `DUPLICATE_MEMBER`/`DUPLICATE_NICKNAME` 구분과 코드가 갈라지던 문제** —
+  `MemberService.signup`의 `save` 호출을 감싸 `DataIntegrityViolationException`의 원인
+  메시지에서 어느 유니크 인덱스(`members_email_lower_key`/`members_nickname_lower_key`)가
+  깨졌는지로 같은 예외를 다시 던지도록 했다. 못 알아본 제약이면 기존 전역 핸들러로 폴백한다.
+  (`MemberService.signup`)
+
+### Migration
+
+- `src/main/resources/sql/normalize_member_email.sql` 실행 완료 — 이메일 소문자·공백
+  정규화(대상 0행) + `lower(email)` 유니크 인덱스 신설. 기존엔 `members.email`에 유니크
+  제약이 전혀 없었다(엔티티의 `unique = true`는 `ddl-auto: none`이라 DB에 도달한 적이
+  없음) — 동시 가입 경쟁 시 중복 계정이 생겨 로그인이 영구히 깨질 수 있는 상태였다.
+- `src/main/resources/sql/dedupe_member_nickname.sql` 실행 완료 — 실DB 점검에서 발견한
+  기존 닉네임 대소문자 중복(`Tester02`/`tester02`, 활동 0건인 테스트 계정) 2건을 삭제하고
+  `lower(nickname)` 유니크 인덱스 신설. 표시용 대소문자는 다른 계정에서는 그대로 보존된다.
 
 ## [0.7.0] - 2026-08-04
 
