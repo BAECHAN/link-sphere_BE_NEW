@@ -45,6 +45,15 @@
   바꿔 익명 요청(가입 화면)도 허용하되, 로그인 상태면 여전히 본인의 현재 닉네임은 중복에서
   제외한다. (`AuthController.checkNicknameAvailability`, `MemberService.isNicknameAvailable`,
   `SecurityConfig`)
+- **`POST /post`(게시글 등록) 요청에 `bookmark`/`folderIds` 필드 추가 — 등록과 동시에
+  북마크 생성 가능** — 지금까지는 등록 후 별도로 `POST /bookmark/{postId}/folders/{folderId}`를
+  호출해야 폴더에 담을 수 있었다. `PostService.createPost` 트랜잭션 안에서
+  `InteractionService.addBookmarkFolder`와 동일한 검증·insert 순서(멱등 `insertIgnoreConflict`)로
+  북마크+폴더 소속을 함께 생성한다. 존재하지 않거나 남의 폴더 ID가 오면 게시글 등록 자체가
+  404/403으로 롤백된다(크롤링 결과도 함께 버려짐). 두 필드 모두 기본값(`false`/`null`)이 있어
+  기존 요청은 영향 없음. 응답 `userInteractions.isBookmarked`/`bookmarkFolderIds`는 기존
+  `convertToResponse` 로직이 그대로 채운다(응답 DTO 변경 없음). (`PostDTO.PostCreateRequest`,
+  `PostService.createPost`, `PostService.saveBookmarkWithFolders`)
 
 ### Changed
 

@@ -10,6 +10,10 @@ data class PostCreateRequest(
     val title: String? = null,
     val categoryIds: List<Long>? = emptyList(),
     val isPrivate: Boolean = false,
+    // 폴더 없이 북마크만(미분류)
+    val bookmark: Boolean = false,
+    // 소속시킬 폴더들
+    val folderIds: List<UUID>? = null,
 )
 
 data class PostVisibilityUpdateRequest(val isPrivate: Boolean)

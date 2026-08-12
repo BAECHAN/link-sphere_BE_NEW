@@ -4,19 +4,26 @@ import com.example.linksphere.domain.category.CategoryRepository
 import com.example.linksphere.domain.comment.CommentRepository
 import com.example.linksphere.domain.comment.CommentService
 import com.example.linksphere.domain.interaction.BookmarkFolderItemRepository
+import com.example.linksphere.domain.interaction.BookmarkFolderRepository
 import com.example.linksphere.domain.interaction.BookmarkRepository
 import com.example.linksphere.domain.interaction.PostReactionRepository
+import com.example.linksphere.domain.interaction.TableBookmarkFolder
 import com.example.linksphere.domain.interaction.TableBookmarkFolderItem
 import com.example.linksphere.domain.member.MemberRepository
 import com.example.linksphere.domain.member.TableMember
+import com.example.linksphere.global.exception.BookmarkFolderNotFoundException
+import com.example.linksphere.global.exception.ForbiddenException
 import com.example.linksphere.global.exception.PostNotFoundException
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
+import org.mockito.ArgumentMatchers
+import org.mockito.ArgumentMatchers.any
 import org.mockito.InjectMocks
 import org.mockito.Mock
 import org.mockito.Mockito.lenient
+import org.mockito.Mockito.never
 import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
@@ -37,6 +44,8 @@ class PostServiceTest {
     @Mock private lateinit var bookmarkRepository: BookmarkRepository
 
     @Mock private lateinit var bookmarkFolderItemRepository: BookmarkFolderItemRepository
+
+    @Mock private lateinit var bookmarkFolderRepository: BookmarkFolderRepository
 
     @Mock private lateinit var postReactionRepository: PostReactionRepository
 
@@ -183,5 +192,163 @@ class PostServiceTest {
 
         verify(commentService).deleteImagesForPost(postId)
         verify(postRepository).delete(post)
+    }
+
+    // Kotlin에서 선언된 insertIgnoreConflict(userId: UUID, ...)는 파라미터가 non-null이라
+    // ArgumentMatchers.any()의 실제 반환값(null)을 그대로 verify에 넘기면 NPE가 난다 —
+    // OrphanImageCleanupRunnerTest.anyCollection()과 동일한 우회.
+    private fun <T> anyUuid(): T {
+        ArgumentMatchers.any<T>()
+        @Suppress("UNCHECKED_CAST")
+        return null as T
+    }
+
+    // 크롤링을 항상 성공 취급(pageContent = null)해 AI 이벤트 발행 경로를 건드리지 않는다 —
+    // 아래 등록+북마크 테스트들의 관심사가 아니므로 고정값으로 단순화.
+    private fun stubMetadataExtraction(url: String) {
+        `when`(urlMetadataExtractor.extract(url)).thenReturn(
+            UrlMetadata(title = "제목", description = null, ogImage = null, tags = emptyList(), pageContent = null),
+        )
+    }
+
+    // convertToResponse 가 요구하는 조회들을 채운다 — 값 자체는 각 테스트의 관심사가 아니다.
+    private fun stubResponseBuild(userId: UUID, postId: UUID, isBookmarked: Boolean, bookmarkCount: Long) {
+        val member = TableMember(id = userId, email = "user@example.com", password = "enc", nickname = "user")
+        `when`(memberRepository.findById(userId)).thenReturn(Optional.of(member))
+        `when`(bookmarkRepository.existsByUserIdAndPostId(userId, postId)).thenReturn(isBookmarked)
+        lenient().`when`(postReactionRepository.countByPostId(postId)).thenReturn(0L)
+        lenient().`when`(postReactionRepository.existsByUserIdAndPostId(userId, postId)).thenReturn(false)
+        lenient().`when`(bookmarkRepository.countByPostId(postId)).thenReturn(bookmarkCount)
+        lenient().`when`(commentRepository.countByPostId(postId)).thenReturn(0L)
+    }
+
+    @Test
+    fun `folderIds 를 지정하지 않고 등록하면 북마크를 생성하지 않는다`() {
+        val userId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val url = "https://example.com/no-bookmark"
+        val savedPost = TablePost(id = postId, userId = userId, url = url, title = "제목", isPrivate = false)
+
+        stubMetadataExtraction(url)
+        `when`(postRepository.save(any())).thenReturn(savedPost)
+        stubResponseBuild(userId, postId, isBookmarked = false, bookmarkCount = 0L)
+
+        postService.createPost(userId, PostCreateRequest(url = url))
+
+        verify(bookmarkRepository, never()).insertIgnoreConflict(anyUuid(), anyUuid())
+        verify(bookmarkFolderItemRepository, never()).insertIgnoreConflict(anyUuid(), anyUuid(), anyUuid())
+        verify(bookmarkFolderRepository, never()).findAllById(any())
+    }
+
+    @Test
+    fun `folderIds 를 지정해 등록하면 북마크와 폴더 소속을 함께 생성한다`() {
+        val userId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val folderId1 = UUID.randomUUID()
+        val folderId2 = UUID.randomUUID()
+        val url = "https://example.com/with-folders"
+        val savedPost = TablePost(id = postId, userId = userId, url = url, title = "제목", isPrivate = false)
+        val folder1 = TableBookmarkFolder(id = folderId1, userId = userId, name = "폴더1")
+        val folder2 = TableBookmarkFolder(id = folderId2, userId = userId, name = "폴더2")
+
+        stubMetadataExtraction(url)
+        `when`(postRepository.save(any())).thenReturn(savedPost)
+        `when`(bookmarkFolderRepository.findAllById(listOf(folderId1, folderId2)))
+            .thenReturn(listOf(folder1, folder2))
+        `when`(bookmarkFolderItemRepository.findFolderIdsByUserIdAndPostId(userId, postId))
+            .thenReturn(listOf(folderId1, folderId2))
+        stubResponseBuild(userId, postId, isBookmarked = true, bookmarkCount = 1L)
+
+        val result =
+            postService.createPost(userId, PostCreateRequest(url = url, folderIds = listOf(folderId1, folderId2)))
+
+        verify(postRepository).flush()
+        verify(bookmarkRepository).insertIgnoreConflict(userId, postId)
+        verify(bookmarkFolderItemRepository).insertIgnoreConflict(userId, postId, folderId1)
+        verify(bookmarkFolderItemRepository).insertIgnoreConflict(userId, postId, folderId2)
+        assertEquals(true, result.userInteractions.isBookmarked)
+        assertEquals(listOf(folderId1, folderId2), result.userInteractions.bookmarkFolderIds)
+    }
+
+    @Test
+    fun `bookmark 플래그만 true 면 폴더 소속 없이 미분류 북마크만 생성한다`() {
+        val userId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val url = "https://example.com/uncategorized"
+        val savedPost = TablePost(id = postId, userId = userId, url = url, title = "제목", isPrivate = false)
+
+        stubMetadataExtraction(url)
+        `when`(postRepository.save(any())).thenReturn(savedPost)
+        `when`(bookmarkFolderItemRepository.findFolderIdsByUserIdAndPostId(userId, postId))
+            .thenReturn(emptyList())
+        stubResponseBuild(userId, postId, isBookmarked = true, bookmarkCount = 1L)
+
+        postService.createPost(userId, PostCreateRequest(url = url, bookmark = true))
+
+        verify(bookmarkRepository).insertIgnoreConflict(userId, postId)
+        verify(bookmarkFolderItemRepository, never()).insertIgnoreConflict(anyUuid(), anyUuid(), anyUuid())
+        verify(bookmarkFolderRepository, never()).findAllById(any())
+    }
+
+    @Test
+    fun `남의 폴더로 등록하면 ForbiddenException 이 발생하고 북마크가 생성되지 않는다`() {
+        val userId = UUID.randomUUID()
+        val otherUserId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val folderId = UUID.randomUUID()
+        val url = "https://example.com/forbidden-folder"
+        val savedPost = TablePost(id = postId, userId = userId, url = url, title = "제목", isPrivate = false)
+        val foreignFolder = TableBookmarkFolder(id = folderId, userId = otherUserId, name = "남의 폴더")
+
+        stubMetadataExtraction(url)
+        `when`(postRepository.save(any())).thenReturn(savedPost)
+        `when`(bookmarkFolderRepository.findAllById(listOf(folderId))).thenReturn(listOf(foreignFolder))
+
+        assertThrows(ForbiddenException::class.java) {
+            postService.createPost(userId, PostCreateRequest(url = url, folderIds = listOf(folderId)))
+        }
+
+        verify(bookmarkRepository, never()).insertIgnoreConflict(anyUuid(), anyUuid())
+    }
+
+    @Test
+    fun `존재하지 않는 폴더로 등록하면 BookmarkFolderNotFoundException 이 발생한다`() {
+        val userId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val folderId = UUID.randomUUID()
+        val url = "https://example.com/missing-folder"
+        val savedPost = TablePost(id = postId, userId = userId, url = url, title = "제목", isPrivate = false)
+
+        stubMetadataExtraction(url)
+        `when`(postRepository.save(any())).thenReturn(savedPost)
+        `when`(bookmarkFolderRepository.findAllById(listOf(folderId))).thenReturn(emptyList())
+
+        assertThrows(BookmarkFolderNotFoundException::class.java) {
+            postService.createPost(userId, PostCreateRequest(url = url, folderIds = listOf(folderId)))
+        }
+
+        verify(bookmarkRepository, never()).insertIgnoreConflict(anyUuid(), anyUuid())
+    }
+
+    @Test
+    fun `중복된 folderId 는 한 번만 소속시킨다`() {
+        val userId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val folderId = UUID.randomUUID()
+        val url = "https://example.com/duplicate-folder"
+        val savedPost = TablePost(id = postId, userId = userId, url = url, title = "제목", isPrivate = false)
+        val folder = TableBookmarkFolder(id = folderId, userId = userId, name = "폴더")
+
+        stubMetadataExtraction(url)
+        `when`(postRepository.save(any())).thenReturn(savedPost)
+        `when`(bookmarkFolderRepository.findAllById(listOf(folderId))).thenReturn(listOf(folder))
+        `when`(bookmarkFolderItemRepository.findFolderIdsByUserIdAndPostId(userId, postId))
+            .thenReturn(listOf(folderId))
+        stubResponseBuild(userId, postId, isBookmarked = true, bookmarkCount = 1L)
+
+        postService.createPost(userId, PostCreateRequest(url = url, folderIds = listOf(folderId, folderId)))
+
+        verify(bookmarkFolderRepository).findAllById(listOf(folderId))
+        verify(bookmarkFolderItemRepository, times(1)).insertIgnoreConflict(userId, postId, folderId)
     }
 }

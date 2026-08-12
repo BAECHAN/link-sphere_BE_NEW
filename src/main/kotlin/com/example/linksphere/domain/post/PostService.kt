@@ -5,9 +5,11 @@ import com.example.linksphere.domain.category.CategoryResponse
 import com.example.linksphere.domain.comment.CommentRepository
 import com.example.linksphere.domain.comment.CommentService
 import com.example.linksphere.domain.interaction.BookmarkFolderItemRepository
+import com.example.linksphere.domain.interaction.BookmarkFolderRepository
 import com.example.linksphere.domain.interaction.BookmarkRepository
 import com.example.linksphere.domain.interaction.PostReactionRepository
 import com.example.linksphere.domain.member.MemberRepository
+import com.example.linksphere.global.exception.BookmarkFolderNotFoundException
 import com.example.linksphere.global.exception.ForbiddenException
 import com.example.linksphere.global.exception.PostNotFoundException
 import org.slf4j.LoggerFactory
@@ -25,6 +27,7 @@ class PostService(
     private val memberRepository: MemberRepository,
     private val bookmarkRepository: BookmarkRepository,
     private val bookmarkFolderItemRepository: BookmarkFolderItemRepository,
+    private val bookmarkFolderRepository: BookmarkFolderRepository,
     private val postReactionRepository: PostReactionRepository,
     private val commentRepository: CommentRepository,
     private val commentService: CommentService,
@@ -63,6 +66,11 @@ class PostService(
             )
         val savedPost = postRepository.save(newPost)
 
+        val shouldBookmark = request.bookmark || !request.folderIds.isNullOrEmpty()
+        if (shouldBookmark) {
+            saveBookmarkWithFolders(userId, savedPost.id!!, request.folderIds.orEmpty().distinct())
+        }
+
         if (metadata.pageContent != null) {
             logger.info("[AI Async] PostCreatedEvent 발행 - postId: ${savedPost.id}")
             eventPublisher.publishEvent(
@@ -78,6 +86,27 @@ class PostService(
         }
 
         return convertToResponse(savedPost, userId)
+    }
+
+    /**
+     * 등록과 동시에 북마크 생성. `InteractionService.addBookmarkFolder`와 동일한 검증·insert 순서를 따른다.
+     * insert가 네이티브 쿼리라 posts 행이 먼저 DB에 있어야 하므로 flush 후 실행한다.
+     */
+    private fun saveBookmarkWithFolders(userId: UUID, postId: UUID, folderIds: List<UUID>) {
+        postRepository.flush()
+
+        if (folderIds.isNotEmpty()) {
+            val folders = bookmarkFolderRepository.findAllById(folderIds)
+            val foundIds = folders.map { it.id }.toSet()
+            folderIds.firstOrNull { it !in foundIds }?.let { throw BookmarkFolderNotFoundException(it) }
+            folders.firstOrNull { it.userId != userId }
+                ?.let { throw ForbiddenException("Cannot add bookmark to another user's folder") }
+        }
+
+        bookmarkRepository.insertIgnoreConflict(userId, postId)
+        folderIds.forEach { folderId ->
+            bookmarkFolderItemRepository.insertIgnoreConflict(userId, postId, folderId)
+        }
     }
 
     fun getAllPosts(
