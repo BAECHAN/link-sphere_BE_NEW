@@ -72,21 +72,16 @@ jobs:
             echo "이미 열린 이슈 #$EXISTING 있음 — 스킵"
             exit 0
           fi
+          FUNC="${{ vars.LAMBDA_FUNCTION_NAME }}"
+          LATEST="${{ steps.check.outputs.latest_version }}"
+          BODY=$(printf 'prod alias가 아직 버전 %s을 가리키고 있는데, 최신 발행 버전은 %s입니다(발행된 지 %s시간 경과).\n\n검증 후 승격하세요 (docs/DEPLOY.md "prod 승격 (수동)" 참고):\n\n```bash\naws lambda invoke --function-name %s:%s --payload fileb://event.json /tmp/out.json\n# 안정적으로 나올 때까지 3~5회 반복\n\naws lambda update-alias --function-name %s --name prod --function-version %s\n```\n\n이 이슈는 승격되면 다음 정기 검사(6시간 이내)에서 자동으로 닫힙니다.' \
+            "${{ steps.check.outputs.prod_version }}" "$LATEST" "${{ steps.check.outputs.age_hours }}" \
+            "$FUNC" "$LATEST" "$FUNC" "$LATEST")
+
           gh issue create \
-            --title "prod alias 미승격: 버전 ${{ steps.check.outputs.prod_version }} → ${{ steps.check.outputs.latest_version }} (${{ steps.check.outputs.age_hours }}시간 경과)" \
+            --title "prod alias 미승격: 버전 ${{ steps.check.outputs.prod_version }} → $LATEST (${{ steps.check.outputs.age_hours }}시간 경과)" \
             --label "$DRIFT_LABEL" \
-            --body "prod alias가 아직 버전 ${{ steps.check.outputs.prod_version }}을 가리키고 있는데, 최신 발행 버전은 ${{ steps.check.outputs.latest_version }}입니다(발행된 지 ${{ steps.check.outputs.age_hours }}시간 경과).
-
-검증 후 승격하세요 (docs/DEPLOY.md \"prod 승격 (수동)\" 참고):
-
-\`\`\`bash
-aws lambda invoke --function-name ${{ vars.LAMBDA_FUNCTION_NAME }}:${{ steps.check.outputs.latest_version }} --payload fileb://event.json /tmp/out.json
-# 안정적으로 나올 때까지 3~5회 반복
-
-aws lambda update-alias --function-name ${{ vars.LAMBDA_FUNCTION_NAME }} --name prod --function-version ${{ steps.check.outputs.latest_version }}
-\`\`\`
-
-이 이슈는 승격되면 다음 정기 검사(6시간 이내)에서 자동으로 닫힙니다."
+            --body "$BODY"
 
       - name: 드리프트 해소됐으면 열린 Issue 자동 닫기
         if: steps.check.outputs.drift == 'false'
