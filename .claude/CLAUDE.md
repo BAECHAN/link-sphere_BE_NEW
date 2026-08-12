@@ -161,6 +161,24 @@ get to weigh in on? If not, you decided for them.
     --payload fileb://event.json /tmp/out.json --query 'LogResult' --output text | base64 -d
   ```
 - **Never** 인프라·배포·아키텍처 변경 후 문서 갱신 누락 → BE `README.md`·`docs/DEPLOY.md`와 함께 **FE `docs/SYSTEM-ARCHITECTURE.md`** 도 확인한다 (BE 인프라를 서술하고 있어 가장 놓치기 쉽다)
+- **Never** 워크트리 없이 코드 수정 → 이 레포는 여러 Claude 세션이 동시에 돈다. 코드를 **수정하는**
+  작업(읽기 전용 조사·질문 답변은 예외)을 시작할 때는 항상 `EnterWorktree`로 워크트리를 만들고
+  그 안에서 작업한다. 워킹트리 파일과 `.git/index`(스테이징 영역)를 세션끼리 공유하면 서로
+  덮어쓰거나 무관한 커밋에 남의 변경이 딸려 들어간다 (`docs/DECISIONS.md` 참고)
+- **Never** `git add`/`git rm`으로 변경을 미리 스테이징 → 워크트리를 쓰지 않는 세션이 하나라도
+  있으면 위와 같은 인덱스 오염이 재발한다. 커밋은 항상 `git commit -- <경로...>` 로 대상 파일을
+  직접 지정한다
+- **Never** 워크트리 진입 후 부트스트랩 생략 → `EnterWorktree`로 만든 워크트리는 gitignore된
+  설정 파일이 없다. 진입 직후 반드시 실행:
+  ```bash
+  cp ../../../src/main/resources/application-secret.yml src/main/resources/
+  cp ../../../src/main/resources/firebase-service-account.json src/main/resources/
+  ```
+- **Never** 여러 워크트리에서 동시에 `bootRun` → 포트(8080)와 DB(원격 Postgres, `ddl-auto: none`)
+  는 워크트리로 격리되지 않는다. dev 서버는 한 번에 한 워크트리에서만 띄운다
+- **Never** `EnterWorktree` 기본값(`fresh` = `origin/main` 기준)을 확인 없이 사용 → 다른 세션이
+  로컬 main에만 커밋하고 아직 push하지 않았다면 그 커밋이 빠진 채로 새 워크트리가 갈라진다.
+  작업 시작 전 `git log origin/main..main`으로 미푸시 커밋이 있는지 먼저 확인한다
 
 ---
 
