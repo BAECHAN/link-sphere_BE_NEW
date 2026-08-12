@@ -5,81 +5,145 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/)를 따르며,
 버전 표기는 [유의적 버전(SemVer)](https://semver.org/lang/ko/)을 사용합니다.
 
+각 항목은 `스코프` + 한 줄 요약이며, 배경·구현은 접힌 `배경·구현` 블록에 있습니다.
+
 ## [Unreleased]
 
 ### Added
 
-- **게시글 제목·설명 AI 폴백 추가** — 크롤링이 `og:title`/`<title>`을 못 건져 제목이
-  URL 문자열로 남거나(`WeakTitleDetector`로 판정), `og:description`이 없어 설명이
-  계속 비어 있던 경우를 AI 분석 잡이 페이지 내용을 보고 대신 채운다. 기존
-  `GeminiService.analyzeContent` 프롬프트에 `TITLE`/`DESCRIPTION` 섹션만 추가한
-  것이라 Gemini 호출 횟수는 늘지 않았고, 크롤링이 이미 건진 값은 절대 덮지 않는
-  순수 폴백이다(URL 수정 시 새 크롤링 값이 없어졌을 때도 동일하게 적용됨). 크롤링
-  자체가 실패해 페이지 내용이 없는 경우(AI 잡 자체가 발행되지 않음)는 이번 범위에서
-  제외했다. 이미 비동기로 도는 AI 잡 안에서 처리되므로 등록 응답에는 반영되지 않고
+- `post` 크롤링 실패 시 게시글 제목·설명을 AI가 대신 채움
+  <details><summary>배경·구현</summary>
+
+  크롤링이 `og:title`/`<title>`을 못 건져 제목이 URL 문자열로 남거나
+  (`WeakTitleDetector`로 판정), `og:description`이 없어 설명이 계속 비어 있던 경우를 AI
+  분석 잡이 페이지 내용을 보고 대신 채운다. 기존 `GeminiService.analyzeContent` 프롬프트에
+  `TITLE`/`DESCRIPTION` 섹션만 추가한 것이라 Gemini 호출 횟수는 늘지 않았고, 크롤링이 이미
+  건진 값은 절대 덮지 않는 순수 폴백이다(URL 수정 시 새 크롤링 값이 없어졌을 때도 동일하게
+  적용됨). 크롤링 자체가 실패해 페이지 내용이 없는 경우(AI 잡 자체가 발행되지 않음)는 이번
+  범위에서 제외했다. 이미 비동기로 도는 AI 잡 안에서 처리되므로 등록 응답에는 반영되지 않고
   재조회해야 보인다(FE 변경 없음, `docs/AI-ASYNC-PROCESSING.md` 참고).
   (`GeminiService.kt`, `WeakTitleDetector.kt`, `PostAiService.kt`)
-- **댓글 이미지 첨부 최대 5장 제한 서버 검증 추가** — FE에 첨부 버튼·드래그앤드롭이 새로
-  생기며 1회 첨부 개수에 사실상 상한이 없던 게 두드러지게 됐다. `createComment`/
-  `createReply`/`updateComment` 세 곳 모두 `images.size`가 5를 넘으면 400
-  (`INVALID_INPUT`)으로 거부한다 — `IllegalArgumentException`을 쓰면
-  `GlobalExceptionHandler`가 404로 잘못 매핑하므로 기존 `InvalidInputException`을 재사용했다.
-  (`CommentService.kt`)
-- **업로드 서명 URL 발급 시 이미지 확장자 allowlist 추가** — 기존엔 영숫자만 걸러내 `exe`·
-  `sh`도 통과했다. FE가 실제로 다루는 이미지 포맷(`jpg`, `jpeg`, `png`, `gif`, `webp`,
-  `avif`, `heic`, `heif`, `svg`)으로 제한한다. (`UploadService.kt`)
-- **서명 URL 미제출 고아 이미지 정리 도구 추가 (로컬 전용, 자동화 아님)** — 댓글 이미지
-  5장 확장으로 이 노출이 최대 5배로 늘어난다. 이 코드베이스에 admin/role 개념이 없어 REST
-  엔드포인트로 노출하면 로그인한 아무나 전체 버킷을 조회·삭제할 수 있게 되므로,
-  `@Profile("cleanup-orphans")`로 가드된 `CommandLineRunner`로 개발자가 필요할 때 로컬에서
-  직접 실행하는 형태로 만들었다. Lambda는 `LambdaHandler`가 별도 진입점이라 `main()`을
-  거치지 않으므로 배포에는 영향이 없다. 기본은 dry-run(보고만)이고 `--delete` 인자를
-  줘야 실제 삭제한다. (`tools/OrphanImageCleanupRunner.kt`,
+
+  </details>
+
+- `comment` 이미지 첨부 개수 서버측 5장 제한 추가
+  <details><summary>배경·구현</summary>
+
+  FE에 첨부 버튼·드래그앤드롭이 새로 생기며 1회 첨부 개수에 사실상 상한이 없던 게
+  두드러지게 됐다. `createComment`/`createReply`/`updateComment` 세 곳 모두
+  `images.size`가 5를 넘으면 400(`INVALID_INPUT`)으로 거부한다 —
+  `IllegalArgumentException`을 쓰면 `GlobalExceptionHandler`가 404로 잘못 매핑하므로
+  기존 `InvalidInputException`을 재사용했다. (`CommentService.kt`)
+
+  </details>
+
+- `upload` 서명 URL 발급 시 이미지 확장자 allowlist 적용
+  <details><summary>배경·구현</summary>
+
+  기존엔 영숫자만 걸러내 `exe`·`sh`도 통과했다. FE가 실제로 다루는 이미지 포맷(`jpg`,
+  `jpeg`, `png`, `gif`, `webp`, `avif`, `heic`, `heif`, `svg`)으로 제한한다.
+  (`UploadService.kt`)
+
+  </details>
+
+- `upload` 서명 URL 미제출 고아 이미지 정리 도구 추가 (로컬 전용, 자동화 아님)
+  <details><summary>배경·구현</summary>
+
+  댓글 이미지 5장 확장으로 이 노출이 최대 5배로 늘어난다. 이 코드베이스에 admin/role
+  개념이 없어 REST 엔드포인트로 노출하면 로그인한 아무나 전체 버킷을 조회·삭제할 수 있게
+  되므로, `@Profile("cleanup-orphans")`로 가드된 `CommandLineRunner`로 개발자가 필요할 때
+  로컬에서 직접 실행하는 형태로 만들었다. Lambda는 `LambdaHandler`가 별도 진입점이라
+  `main()`을 거치지 않으므로 배포에는 영향이 없다. 기본은 dry-run(보고만)이고 `--delete`
+  인자를 줘야 실제 삭제한다. (`tools/OrphanImageCleanupRunner.kt`,
   `CommentRepository.findAllContent`, `MemberRepository.findAllImageUrls`,
   `SupabaseStorageService.listAllObjectUrls`)
-- **`GET /auth/email-availability` 신설 — 가입 화면 실시간 이메일 중복확인 (비로그인 공개)**
-  — 지금까지 이메일 중복 여부는 가입을 실제로 시도해 409를 받아야만 알 수 있었다.
+
+  </details>
+
+- `auth` 이메일 중복확인 엔드포인트 신설 (비로그인 공개)
+  <details><summary>배경·구현</summary>
+
+  `GET /auth/email-availability` 신설 — 가입 화면 실시간 이메일 중복확인. 지금까지
+  이메일 중복 여부는 가입을 실제로 시도해 409를 받아야만 알 수 있었다.
   (`AuthController.checkEmailAvailability`, `MemberService.isEmailAvailable`)
-- **`GET /auth/account/nickname-availability`를 비로그인에서도 호출 가능하도록 확장** —
-  기존엔 `Principal` 필수라 마이페이지(로그인 후)에서만 쓸 수 있었다. `Authentication?`으로
-  바꿔 익명 요청(가입 화면)도 허용하되, 로그인 상태면 여전히 본인의 현재 닉네임은 중복에서
-  제외한다. (`AuthController.checkNicknameAvailability`, `MemberService.isNicknameAvailable`,
+
+  </details>
+
+- `auth` 닉네임 중복확인 엔드포인트를 비로그인에서도 호출 가능하도록 확장
+  <details><summary>배경·구현</summary>
+
+  `GET /auth/account/nickname-availability`. 기존엔 `Principal` 필수라 마이페이지(로그인
+  후)에서만 쓸 수 있었다. `Authentication?`으로 바꿔 익명 요청(가입 화면)도 허용하되,
+  로그인 상태면 여전히 본인의 현재 닉네임은 중복에서 제외한다.
+  (`AuthController.checkNicknameAvailability`, `MemberService.isNicknameAvailable`,
   `SecurityConfig`)
-- **`GET /bookmark/folders` 응답에 `lastUsedAt` 필드 추가 — FE 북마크 폴더 목록 "최근 저장한
-  폴더" 상단 구획용** — 새 컬럼·마이그레이션 없이 기존 `bookmark_folder_items.created_at`을
-  `MAX(...) GROUP BY folder_id`로 배치 조회해 폴더별로 매핑한다(`countByFolderId`와 동일한
-  N+1 방지 패턴, 쿼리 1회 고정). 한 번도 저장 안 된 폴더는 `null`. 기존 필드 유지 + 신규
-  nullable 필드 추가라 하위 호환. (`BookmarkFolderItemRepository.findLastUsedByUserIdGroupByFolderId`,
+
+  </details>
+
+- `bookmark` 폴더 목록 응답에 최근 저장 시각(`lastUsedAt`) 추가
+  <details><summary>배경·구현</summary>
+
+  FE 북마크 폴더 목록 "최근 저장한 폴더" 상단 구획용. 새 컬럼·마이그레이션 없이 기존
+  `bookmark_folder_items.created_at`을 `MAX(...) GROUP BY folder_id`로 배치 조회해
+  폴더별로 매핑한다(`countByFolderId`와 동일한 N+1 방지 패턴, 쿼리 1회 고정). 한 번도
+  저장 안 된 폴더는 `null`. 기존 필드 유지 + 신규 nullable 필드 추가라 하위 호환.
+  (`BookmarkFolderItemRepository.findLastUsedByUserIdGroupByFolderId`,
   `BookmarkFolderDTO.FolderResponse`, `BookmarkFolderService.getFolders`)
-- **`POST /post`(게시글 등록) 요청에 `bookmark`/`folderIds` 필드 추가 — 등록과 동시에
-  북마크 생성 가능** — 지금까지는 등록 후 별도로 `POST /bookmark/{postId}/folders/{folderId}`를
-  호출해야 폴더에 담을 수 있었다. `PostService.createPost` 트랜잭션 안에서
-  `InteractionService.addBookmarkFolder`와 동일한 검증·insert 순서(멱등 `insertIgnoreConflict`)로
-  북마크+폴더 소속을 함께 생성한다. 존재하지 않거나 남의 폴더 ID가 오면 게시글 등록 자체가
-  404/403으로 롤백된다(크롤링 결과도 함께 버려짐). 두 필드 모두 기본값(`false`/`null`)이 있어
-  기존 요청은 영향 없음. 응답 `userInteractions.isBookmarked`/`bookmarkFolderIds`는 기존
+
+  </details>
+
+- `post` 게시글 등록 시 북마크 폴더를 함께 지정 가능
+  <details><summary>배경·구현</summary>
+
+  `POST /post` 요청에 `bookmark`/`folderIds` 필드 추가. 지금까지는 등록 후 별도로
+  `POST /bookmark/{postId}/folders/{folderId}`를 호출해야 폴더에 담을 수 있었다.
+  `PostService.createPost` 트랜잭션 안에서 `InteractionService.addBookmarkFolder`와
+  동일한 검증·insert 순서(멱등 `insertIgnoreConflict`)로 북마크+폴더 소속을 함께
+  생성한다. 존재하지 않거나 남의 폴더 ID가 오면 게시글 등록 자체가 404/403으로
+  롤백된다(크롤링 결과도 함께 버려짐). 두 필드 모두 기본값(`false`/`null`)이 있어 기존
+  요청은 영향 없음. 응답 `userInteractions.isBookmarked`/`bookmarkFolderIds`는 기존
   `convertToResponse` 로직이 그대로 채운다(응답 DTO 변경 없음). (`PostDTO.PostCreateRequest`,
   `PostService.createPost`, `PostService.saveBookmarkWithFolders`)
 
+  </details>
+
 ### Changed
 
-- **회원가입 요청에 서버 측 입력 검증 추가** — `SignupRequest`에 애노테이션이 하나도 없어
-  `@Valid`도 안 걸려 있었다. FE Zod 규칙(이메일 형식, 비밀번호 8~20자+영문/숫자/특수문자,
-  닉네임 2~20자+허용 문자)과 동일한 제약을 서버에도 걸어, curl 등으로 검증을 우회한 가입을
-  막는다. 이메일은 형식만 검증하고 실제 도달 가능성은 확인하지 않는다(이메일 인증 미도입).
-  (`AuthDTO.SignupRequest`, `AuthController.signup`)
-- **회원가입 시 닉네임이 필수가 됨** — 기존엔 BE가 `nickname: String? = null`로 선택
-  값이었는데 FE Zod는 이미 필수로 요구하고 있어 계약이 어긋나 있었다. FE가 항상 닉네임을
-  보내므로 실사용에는 영향이 없다. (`AuthDTO.SignupRequest`, `MemberService.signup`)
-- **닉네임 중복 판정을 대소문자 무시로 변경** — 기존엔 `existsByNickname`이 대소문자를
-  구분해 `Tester02`와 `tester02`처럼 표시상 같아 보이는 계정이 실제로 둘 다 생길 수 있었다
-  (2026-08-11 실DB 점검에서 실제 사례 확인, Migration 참고). 표시값은 원문 그대로 저장하고
-  비교만 대소문자 무시로 바꿨다. (`MemberRepository.existsByNicknameIgnoreCase`,
-  `MemberService`)
+- `auth` 회원가입 요청에 서버 측 입력 검증 추가
+  <details><summary>배경·구현</summary>
+
+  `SignupRequest`에 애노테이션이 하나도 없어 `@Valid`도 안 걸려 있었다. FE Zod 규칙(이메일
+  형식, 비밀번호 8~20자+영문/숫자/특수문자, 닉네임 2~20자+허용 문자)과 동일한 제약을
+  서버에도 걸어, curl 등으로 검증을 우회한 가입을 막는다. 이메일은 형식만 검증하고 실제
+  도달 가능성은 확인하지 않는다(이메일 인증 미도입). (`AuthDTO.SignupRequest`,
+  `AuthController.signup`)
+
+  </details>
+
+- `auth` 회원가입 시 닉네임이 필수값이 됨
+  <details><summary>배경·구현</summary>
+
+  기존엔 BE가 `nickname: String? = null`로 선택 값이었는데 FE Zod는 이미 필수로 요구하고
+  있어 계약이 어긋나 있었다. FE가 항상 닉네임을 보내므로 실사용에는 영향이 없다.
+  (`AuthDTO.SignupRequest`, `MemberService.signup`)
+
+  </details>
+
+- `member` 닉네임 중복 판정을 대소문자 무시로 변경
+  <details><summary>배경·구현</summary>
+
+  기존엔 `existsByNickname`이 대소문자를 구분해 `Tester02`와 `tester02`처럼 표시상 같아
+  보이는 계정이 실제로 둘 다 생길 수 있었다(2026-08-11 실DB 점검에서 실제 사례 확인,
+  Migration 참고). 표시값은 원문 그대로 저장하고 비교만 대소문자 무시로 바꿨다.
+  (`MemberRepository.existsByNicknameIgnoreCase`, `MemberService`)
+
+  </details>
 
 ### Fixed
 
-- **URL에 공백이 포함되면 게시글 등록·수정이 항상 400(`INVALID_INPUT`)으로 실패하던 문제** —
+- `post` URL에 공백이 있으면 등록·수정이 항상 400으로 실패하던 문제
+  <details><summary>배경·구현</summary>
+
   FE `zod .url()`(WHATWG `URL` 파서)은 앞뒤·중간 공백이 섞인 URL도 통과시키지만, BE
   `SafeUrlValidator`가 쓰는 `java.net.URI`는 RFC 2396 엄격 파서라 생 공백에
   `URISyntaxException`을 던진다. FE 검증을 통과한 값이 서버에서 거부되는 계약 불일치였다.
@@ -87,46 +151,90 @@
   비-공백 문자는 원문 보존)해 보내도록 하고, 구버전 클라이언트를 대비해 BE도 저장 전
   앞뒤 공백을 제거한다. (`shared/utils/url.util.ts`, `PostService.createPost`,
   `PostService.updatePost`)
-- **400(`INVALID_INPUT`) 응답이 로그를 전혀 남기지 않아 원인 조사가 CloudFront 지표
-  역추적에 의존해야 했던 문제** — `handleInvalidInputException`에 `logger.warn` 추가.
-  (`GlobalExceptionHandler.kt`)
-- **댓글 수정으로 이미지를 제거해도 스토리지 파일이 영구히 남던 문제** — `updateComment`가
-  content만 덮어쓸 뿐 빠진 이미지의 스토리지 정리 로직이 없었다. 저장 전후 content에서
-  관리 대상 이미지 URL을 비교해 제거된 것만 트랜잭션 커밋 이후(`afterCommit`)에 삭제한다
-  — 커밋 전에 지우면 이후 조회 실패로 롤백될 때 DB엔 URL이 남고 파일은 사라진 상태가 될
-  수 있다. 본문 텍스트에 직접 써둔 URL은 보존된다. (`CommentService.updateComment`)
-- **댓글·게시글 삭제 시에도 스토리지 이미지를 트랜잭션 커밋 이전에 지워 파일만 사라지고
-  DB엔 남는 위험이 있던 문제** — `updateComment`는 이미 `afterCommit`으로 처리하고
-  있었지만 `deleteComment`(댓글 삭제)와 `deleteImagesForPost`(게시글 삭제 시 딸린 댓글
-  이미지 정리)는 DB 작업보다 먼저 스토리지부터 동기로 지우고 있었다 — 뒤이은 좋아요
-  삭제·톰스톤/하드 삭제(또는 게시글 삭제)가 실패해 롤백되면 댓글·게시글은 DB에 그대로
-  남았는데 파일만 사라진 상태가 될 수 있었다. 두 경로 모두 `updateComment`와 동일한
-  `afterCommit` 패턴으로 통일했다. (`CommentService.deleteComment`,
-  `CommentService.deleteImagesForPost`)
-- **게시글 썸네일(og:image)이 http로 저장되어 HTTPS 페이지에서 Mixed Content 경고가
-  뜨던 문제** — 크롤링 대상 사이트가 `og:image`를 http URL로 내리는 경우가 있어, 검증
-  없이 그대로 저장하고 있었다. 추출 직후 http를 https로 정규화한다(신규 크롤링 건만
-  적용, 기존 게시글은 FE 렌더링 시점에서 별도 처리). (`UrlMetadataExtractor.extract`)
-- **이메일 대소문자·공백 차이로 별개 계정이 생기고, 대문자로 가입한 사용자는 소문자로
-  로그인할 수 없던 문제** — Gmail·Outlook 등 주요 서비스도 저장 전 소문자로 정규화한다
-  (RFC 5321이 local-part의 대소문자 구분을 규정하지만, 같은 문서가 실제 활용은
-  상호운용성을 해치므로 권장하지 않는다고 명시). 가입·로그인 조회 양쪽에 적용했다.
-  (`MemberService.normalizeEmail`, Migration 참고)
-- **이메일·닉네임 중복이 같은 409(`DUPLICATE_MEMBER`)로 뭉뚱그려져, 닉네임이 겹쳤는데도
-  FE가 "이메일이 이미 가입돼 있어요"로 잘못 안내하던 문제** — 닉네임 중복을
-  `DuplicateNicknameException` → 409 `DUPLICATE_NICKNAME`으로 분리했다. 이메일 쪽 예외
-  메시지에서도 제출값 반사(`"Email already exists: ${email}"`)를 없앴다 — FE는 메시지를
-  표시하지 않고 code로만 분기하므로 반사할 이유가 없었다. (`DuplicateNicknameException.kt`,
+
+  </details>
+
+- `infra` 400(`INVALID_INPUT`) 응답이 로그를 남기지 않던 문제
+  <details><summary>배경·구현</summary>
+
+  원인 조사가 CloudFront 지표 역추적에 의존해야 했다. `handleInvalidInputException`에
+  `logger.warn` 추가. (`GlobalExceptionHandler.kt`)
+
+  </details>
+
+- `comment` 댓글 수정으로 제거한 이미지가 스토리지에 영구히 남던 문제
+  <details><summary>배경·구현</summary>
+
+  `updateComment`가 content만 덮어쓸 뿐 빠진 이미지의 스토리지 정리 로직이 없었다. 저장
+  전후 content에서 관리 대상 이미지 URL을 비교해 제거된 것만 트랜잭션 커밋 이후
+  (`afterCommit`)에 삭제한다 — 커밋 전에 지우면 이후 조회 실패로 롤백될 때 DB엔 URL이
+  남고 파일은 사라진 상태가 될 수 있다. 본문 텍스트에 직접 써둔 URL은 보존된다.
+  (`CommentService.updateComment`)
+
+  </details>
+
+- `comment` 댓글·게시글 삭제 시 스토리지 이미지를 커밋 전에 지워 파일만 사라질 위험
+  <details><summary>배경·구현</summary>
+
+  `updateComment`는 이미 `afterCommit`으로 처리하고 있었지만 `deleteComment`(댓글 삭제)와
+  `deleteImagesForPost`(게시글 삭제 시 딸린 댓글 이미지 정리)는 DB 작업보다 먼저
+  스토리지부터 동기로 지우고 있었다 — 뒤이은 좋아요 삭제·톰스톤/하드 삭제(또는 게시글
+  삭제)가 실패해 롤백되면 댓글·게시글은 DB에 그대로 남았는데 파일만 사라진 상태가 될 수
+  있었다. 두 경로 모두 `updateComment`와 동일한 `afterCommit` 패턴으로 통일했다.
+  (`CommentService.deleteComment`, `CommentService.deleteImagesForPost`)
+
+  </details>
+
+- `post` 게시글 썸네일이 http로 저장돼 Mixed Content 경고가 뜨던 문제
+  <details><summary>배경·구현</summary>
+
+  크롤링 대상 사이트가 `og:image`를 http URL로 내리는 경우가 있어, 검증 없이 그대로
+  저장하고 있었다. 추출 직후 http를 https로 정규화한다(신규 크롤링 건만 적용, 기존
+  게시글은 FE 렌더링 시점에서 별도 처리). (`UrlMetadataExtractor.extract`)
+
+  </details>
+
+- `member` 이메일 대소문자·공백 차이로 별개 계정이 생기던 문제
+  <details><summary>배경·구현</summary>
+
+  대문자로 가입한 사용자는 소문자로 로그인할 수 없었다. Gmail·Outlook 등 주요 서비스도
+  저장 전 소문자로 정규화한다(RFC 5321이 local-part의 대소문자 구분을 규정하지만, 같은
+  문서가 실제 활용은 상호운용성을 해치므로 권장하지 않는다고 명시). 가입·로그인 조회
+  양쪽에 적용했다. (`MemberService.normalizeEmail`, Migration 참고)
+
+  </details>
+
+- `member` 이메일·닉네임 중복이 같은 409로 뭉뚱그려지던 문제
+  <details><summary>배경·구현</summary>
+
+  둘 다 `DUPLICATE_MEMBER`였어서, 닉네임이 겹쳤는데도 FE가 "이메일이 이미 가입돼
+  있어요"로 잘못 안내했다. 닉네임 중복을 `DuplicateNicknameException` → 409
+  `DUPLICATE_NICKNAME`으로 분리했다. 이메일 쪽 예외 메시지에서도 제출값 반사
+  (`"Email already exists: ${email}"`)를 없앴다 — FE는 메시지를 표시하지 않고 code로만
+  분기하므로 반사할 이유가 없었다. (`DuplicateNicknameException.kt`,
   `GlobalExceptionHandler.kt`, `MemberService.signup`)
-- **회원가입 409 응답을 검증하는 유일한 테스트에 `@Test`가 빠져 있어 한 번도 실행된 적이
-  없던 문제** — 위 계약 변경을 검증하며 함께 발견해 복구했다. (`AuthControllerTest.kt`)
-- **동시 가입 요청이 겹쳐 사전 중복 체크를 둘 다 통과한 뒤 DB 유니크 제약에서 걸린 경우
-  (레이스), 이메일/닉네임 어느 쪽이 겹쳤든 무조건 409 `DUPLICATE_RESOURCE`(한글 메시지)로
-  뭉뚱그려져 위의 `DUPLICATE_MEMBER`/`DUPLICATE_NICKNAME` 구분과 코드가 갈라지던 문제** —
-  `MemberService.signup`의 `save` 호출을 감싸 `DataIntegrityViolationException`의 원인
-  메시지에서 어느 유니크 인덱스(`members_email_lower_key`/`members_nickname_lower_key`)가
-  깨졌는지로 같은 예외를 다시 던지도록 했다. 못 알아본 제약이면 기존 전역 핸들러로 폴백한다.
+
+  </details>
+
+- `member` 회원가입 409 응답 테스트에 `@Test`가 빠져 실행된 적 없던 문제
+  <details><summary>배경·구현</summary>
+
+  위 계약 변경을 검증하며 함께 발견해 복구했다. (`AuthControllerTest.kt`)
+
+  </details>
+
+- `member` 동시 가입 레이스 시 중복 사유가 뭉뚱그려지던 문제
+  <details><summary>배경·구현</summary>
+
+  사전 중복 체크를 둘 다 통과한 뒤 DB 유니크 제약에서 걸린 경우(레이스), 이메일/닉네임
+  어느 쪽이 겹쳤든 무조건 409 `DUPLICATE_RESOURCE`(한글 메시지)로 뭉뚱그려져 위의
+  `DUPLICATE_MEMBER`/`DUPLICATE_NICKNAME` 구분과 코드가 갈라졌다. `MemberService.signup`의
+  `save` 호출을 감싸 `DataIntegrityViolationException`의 원인 메시지에서 어느 유니크
+  인덱스(`members_email_lower_key`/`members_nickname_lower_key`)가 깨졌는지로 같은 예외를
+  다시 던지도록 했다. 못 알아본 제약이면 기존 전역 핸들러로 폴백한다.
   (`MemberService.signup`)
+
+  </details>
 
 ### Migration
 
