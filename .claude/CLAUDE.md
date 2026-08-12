@@ -138,6 +138,9 @@ get to weigh in on? If not, you decided for them.
 - **배포**: CloudFront → `/api/*` Lambda(BE), `/*` S3(FE)
 - **Lambda**: Function URL 기반, CloudFront 뒤에 배치. arm64 / 2048MB / SnapStart, **레이어 없음**
 - **커밋**: 작업 전 `.gitmessage` 파일 먼저 읽고 형식 준수
+- **커밋 단위**: 대화 턴(요청)마다 나누지 않고, 논리적으로 완결된 기능·수정 단위로 나눈다.
+  같은 기능을 다듬는 과정에서 나온 후속 수정(버그 픽스 포함)은 원래 커밋에 합치고,
+  서로 무관한 변경끼리만 별도 커밋으로 분리한다.
 
 ---
 
