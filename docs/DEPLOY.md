@@ -10,8 +10,20 @@ GitHub push (main)
     → S3 업로드
     → Lambda 코드 업데이트
     → 버전 발행 (SnapStart 스냅샷 생성)
-    → prod alias 업데이트
+    → (여기서 CI 끝. prod alias는 자동으로 안 옮겨진다 — 아래 "prod 승격" 참고)
 ```
+
+> ⚠️ **CI가 새 버전을 발행하는 것과 그 버전이 실사용자에게 나가는 것은 별개다.**
+> `prod` alias를 수동으로 옮기기 전까지 이전 버전이 계속 서비스된다. 승격에는 CI
+> 로그의 `::notice::` 한 줄 말고는 **알림·게이트가 전혀 없다** — 사람이 배포 직후
+> 기억해서 옮겨야 한다.
+>
+> 실제로 2026-08-10~08-12 사이 발행된 버전 68~71이 6일간 미승격 상태로 쌓인 사례가
+> 있었다(CloudTrail `UpdateAlias` 이력 확인, 2026-08-13). 직전엔 배포마다 몇 분~몇
+> 시간 안에 꼬박꼬박 승격되고 있었는데(2026-07-11~08-07, 30여 회), 2026-08-06~07
+> GitHub Actions push 이벤트 전달 장애 대응(수동 재트리거 추가·문서화, `fbd32eb` 커밋
+> 참고)에 정신이 팔린 직후부터 승격 루틴이 끊겼다. 알림이 없는 수동 단계라 한 번
+> 흐름이 끊기면 아무도 눈치채지 못한다는 게 근본 문제 — 재발 방지책 없이는 또 생긴다.
 
 ### Lambda 실행 구조
 ```
@@ -299,8 +311,28 @@ aws s3api put-bucket-lifecycle-configuration \
 | 10. 업데이트 대기 | `function-updated` waiter로 완료 확인 |
 | 11. 버전 발행 | `publish-version` → SnapStart 스냅샷 생성 트리거 |
 | 12. SnapStart 대기 | `published-version-active` waiter (1~5분, 스냅샷 완성까지) |
-| 13. alias 업데이트 | `prod` alias를 새 버전으로 교체 |
-| 14. URL 출력 | 배포된 Function URL 확인 |
+| 13. Function URL 출력 | 현재 `prod`가 가리키는 URL을 로그에 표시 (알림용, alias는 안 옮김) |
+
+CI는 여기서 끝난다. **`prod` alias는 이 워크플로우가 자동으로 옮기지 않는다** —
+2026-07-25 502 장애 이후, 검증 없이 새 버전이 사용자 트래픽을 받는 걸 막기 위해
+의도적으로 뺀 단계다. 배포 후 실제로 반영되게 하려면 별도로 수동 승격이 필요하다 —
+아래 "prod 승격 (수동)" 참고.
+
+### prod 승격 (수동)
+
+```bash
+# 1. 대상 버전을 직접 연속으로 호출해 검증 (단발 확인 금지 — docs/LAMBDA-CONFIG-ROLLBACK.md 참고)
+aws lambda invoke --function-name link-sphere-api:<VERSION> --payload fileb://event.json /tmp/out.json
+# 위 명령을 응답이 안정적으로 나올 때까지 3~5회 반복
+
+# 2. 검증 통과 후 승격
+aws lambda update-alias --function-name link-sphere-api --name prod --function-version <VERSION>
+
+# 3. 승격 후에도 CloudFront 경유로 다시 연속 호출해 확인
+```
+
+이 단계는 CI 로그의 `::notice::` 한 줄 말고는 알림이 없다 — 배포했다는 사실 자체를
+잊기 쉬우니, `main` push 후에는 항상 이 단계를 체크리스트로 챙길 것.
 
 ---
 
