@@ -1,0 +1,99 @@
+name: Prod Alias Drift Check
+
+# prod alias는 검증 없이 자동 승격되지 않는다(2026-07-25 502 장애 이후 의도적 설계,
+# docs/DEPLOY.md 참고) — 새 버전 발행 후 사람이 수동으로 승격해야 하는데, 이 승격을
+# 잊으면 CI는 "성공"으로 표시되고도 실제로는 반영이 안 된다. 2026-08-10~08-12 사이
+# 6일간 이 상태가 방치된 사례가 있어(CloudTrail로 확인) 주기적으로 감지해 알린다.
+on:
+  schedule:
+    - cron: '0 */6 * * *' # 6시간마다 (UTC)
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+env:
+  DRIFT_LABEL: deploy-drift
+  GRACE_PERIOD_SECONDS: 7200 # 2시간 — 배포 직후 정상적인 승격 대기 시간은 오탐 처리
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: AWS 자격증명 설정
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: prod alias vs 최신 발행 버전 비교
+        id: check
+        run: |
+          FUNC="${{ vars.LAMBDA_FUNCTION_NAME }}"
+
+          PROD_VERSION=$(aws lambda get-alias --function-name "$FUNC" --name prod \
+            --query 'FunctionVersion' --output text)
+
+          VERSIONS_JSON=$(aws lambda list-versions-by-function --function-name "$FUNC")
+          LATEST_VERSION=$(echo "$VERSIONS_JSON" | jq -r \
+            '[.Versions[] | select(.Version != "$LATEST")] | max_by(.Version | tonumber) | .Version')
+          LATEST_MODIFIED=$(echo "$VERSIONS_JSON" | jq -r --arg v "$LATEST_VERSION" \
+            '.Versions[] | select(.Version == $v) | .LastModified')
+
+          NOW_EPOCH=$(date +%s)
+          LATEST_EPOCH=$(date -d "$LATEST_MODIFIED" +%s)
+          AGE_SECONDS=$((NOW_EPOCH - LATEST_EPOCH))
+
+          echo "prod_version=$PROD_VERSION" >> "$GITHUB_OUTPUT"
+          echo "latest_version=$LATEST_VERSION" >> "$GITHUB_OUTPUT"
+          echo "age_hours=$((AGE_SECONDS / 3600))" >> "$GITHUB_OUTPUT"
+
+          if [ "$PROD_VERSION" != "$LATEST_VERSION" ] && [ "$AGE_SECONDS" -gt "$GRACE_PERIOD_SECONDS" ]; then
+            echo "drift=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "drift=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 라벨 존재 보장 (멱등)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh label create "$DRIFT_LABEL" --color d73a4a \
+            --description "prod alias가 최신 발행 버전보다 뒤처짐" --force
+
+      - name: 드리프트 있으면 Issue 생성 (이미 있으면 스킵)
+        if: steps.check.outputs.drift == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          EXISTING=$(gh issue list --label "$DRIFT_LABEL" --state open --json number -q '.[0].number')
+          if [ -n "$EXISTING" ]; then
+            echo "이미 열린 이슈 #$EXISTING 있음 — 스킵"
+            exit 0
+          fi
+          gh issue create \
+            --title "prod alias 미승격: 버전 ${{ steps.check.outputs.prod_version }} → ${{ steps.check.outputs.latest_version }} (${{ steps.check.outputs.age_hours }}시간 경과)" \
+            --label "$DRIFT_LABEL" \
+            --body "prod alias가 아직 버전 ${{ steps.check.outputs.prod_version }}을 가리키고 있는데, 최신 발행 버전은 ${{ steps.check.outputs.latest_version }}입니다(발행된 지 ${{ steps.check.outputs.age_hours }}시간 경과).
+
+검증 후 승격하세요 (docs/DEPLOY.md \"prod 승격 (수동)\" 참고):
+
+\`\`\`bash
+aws lambda invoke --function-name ${{ vars.LAMBDA_FUNCTION_NAME }}:${{ steps.check.outputs.latest_version }} --payload fileb://event.json /tmp/out.json
+# 안정적으로 나올 때까지 3~5회 반복
+
+aws lambda update-alias --function-name ${{ vars.LAMBDA_FUNCTION_NAME }} --name prod --function-version ${{ steps.check.outputs.latest_version }}
+\`\`\`
+
+이 이슈는 승격되면 다음 정기 검사(6시간 이내)에서 자동으로 닫힙니다."
+
+      - name: 드리프트 해소됐으면 열린 Issue 자동 닫기
+        if: steps.check.outputs.drift == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          EXISTING=$(gh issue list --label "$DRIFT_LABEL" --state open --json number -q '.[0].number')
+          if [ -n "$EXISTING" ]; then
+            gh issue close "$EXISTING" --comment "prod alias가 버전 ${{ steps.check.outputs.prod_version }}으로 승격되어 자동으로 해소됐습니다."
+          fi

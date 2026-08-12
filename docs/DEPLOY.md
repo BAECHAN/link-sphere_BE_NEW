@@ -334,6 +334,10 @@ aws lambda update-alias --function-name link-sphere-api --name prod --function-v
 이 단계는 CI 로그의 `::notice::` 한 줄 말고는 알림이 없다 — 배포했다는 사실 자체를
 잊기 쉬우니, `main` push 후에는 항상 이 단계를 체크리스트로 챙길 것.
 
+이 승격 누락은 `.github/workflows/prod-alias-drift-check.yml`이 6시간마다 자동
+감지해 GitHub Issue(`deploy-drift` 라벨)로 알린다. 발행된 지 2시간이 넘도록 `prod`가
+최신 버전을 안 가리키면 Issue가 열리고, 승격되면 다음 정기 검사에서 자동으로 닫힌다.
+
 ---
 
 ## 배포 트리거 조건
