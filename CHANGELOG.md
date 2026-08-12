@@ -9,8 +9,6 @@
 
 ## [Unreleased]
 
-## [0.8.0] - 2026-08-13
-
 ### Added
 
 - `bookmark` 게시글 목록에 "최근 열람순"(`sort=viewed`) 정렬 추가
@@ -31,6 +29,10 @@
   (순서가 바뀌면 upsert가 테이블 없음 에러로 실패한다).
 
   </details>
+
+## [0.8.0] - 2026-08-13
+
+### Added
 
 - `post` 크롤링 실패 시 게시글 제목·설명을 AI가 대신 채움
   <details><summary>배경·구현</summary>
