@@ -30,6 +30,20 @@
 
   </details>
 
+### Fixed
+
+- `bookmark` "최근 열람순" 정렬에서 미열람 글끼리 순서가 매번 흔들리던 문제
+  <details><summary>배경·구현</summary>
+
+  정렬 기준이 `COALESCE(viewedAt, 1970-01-01)` 한 줄뿐이었는데, 한 번도 안 본 글은
+  전부 이 값이 똑같아(동점) DB가 그 안의 순서를 보장하지 않았다 — 실행할 때마다
+  쿼리 플래너·버퍼 캐시 상태에 따라 달라질 수 있는, SQL 스펙상 원래 그런 동작이다.
+  2차 정렬로 `bookmarks.created_at DESC`(= "latest" 정렬과 같은 기준)를 추가해
+  동점을 없앴다 — 북마크 생성 시각은 마이크로초 단위라 사실상 항상 유일하다(실DB로
+  확인: 미열람 25건, 생성 시각 고유값도 25건). (`BookmarkRepositoryImpl.kt`)
+
+  </details>
+
 ## [0.8.0] - 2026-08-13
 
 ### Added
