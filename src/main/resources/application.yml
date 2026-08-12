@@ -55,8 +55,8 @@ management:
 app:
   cors:
     allowed-origins:
-      - http://localhost:31119
-      - https://localhost:31119
+      - http://localhost:*
+      - https://localhost:*
       - https://dbw3brui6htwk.cloudfront.net
 
 logging:

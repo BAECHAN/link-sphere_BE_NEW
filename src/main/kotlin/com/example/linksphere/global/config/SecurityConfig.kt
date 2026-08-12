@@ -81,7 +81,7 @@ class SecurityConfig(
                 .bind("app.cors.allowed-origins", Bindable.listOf(String::class.java))
                 .orElse(listOf())
 
-        configuration.allowedOrigins = allowedOrigins
+        configuration.allowedOriginPatterns = allowedOrigins
         configuration.allowedMethods = listOf("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
         configuration.allowedHeaders = listOf("*")
         configuration.allowCredentials = true
