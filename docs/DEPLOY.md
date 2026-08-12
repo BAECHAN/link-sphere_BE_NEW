@@ -10,20 +10,23 @@ GitHub push (main)
     → S3 업로드
     → Lambda 코드 업데이트
     → 버전 발행 (SnapStart 스냅샷 생성)
-    → (여기서 CI 끝. prod alias는 자동으로 안 옮겨진다 — 아래 "prod 승격" 참고)
+    → 새 버전을 직접 5회 연속 호출 검증 (하나라도 실패하면 여기서 중단)
+    → 전부 통과하면 prod alias 자동 승격
 ```
 
-> ⚠️ **CI가 새 버전을 발행하는 것과 그 버전이 실사용자에게 나가는 것은 별개다.**
-> `prod` alias를 수동으로 옮기기 전까지 이전 버전이 계속 서비스된다. 승격에는 CI
-> 로그의 `::notice::` 한 줄 말고는 **알림·게이트가 전혀 없다** — 사람이 배포 직후
-> 기억해서 옮겨야 한다.
+> ℹ️ **2026-08-13부터 자동 승격(검증 게이트 포함)으로 전환했다.** 이전엔 CI가
+> 발행까지만 하고 사람이 직접 연속 호출로 검증한 뒤 수동으로 `update-alias`를
+> 실행해야 했는데, 이 수동 단계에 알림이 전혀 없어 2026-08-10~08-12 사이 발행된
+> 버전 68~71이 **6일간 미승격 상태로 방치**된 사례가 있었다(CloudTrail로 확인,
+> 2026-08-13). "사람이 잊지 않고 매번 승격한다"에 의존하는 구조 자체가 근본
+> 문제였다고 판단해, 검증과 승격을 CI 안으로 옮겼다.
 >
-> 실제로 2026-08-10~08-12 사이 발행된 버전 68~71이 6일간 미승격 상태로 쌓인 사례가
-> 있었다(CloudTrail `UpdateAlias` 이력 확인, 2026-08-13). 직전엔 배포마다 몇 분~몇
-> 시간 안에 꼬박꼬박 승격되고 있었는데(2026-07-11~08-07, 30여 회), 2026-08-06~07
-> GitHub Actions push 이벤트 전달 장애 대응(수동 재트리거 추가·문서화, `fbd32eb` 커밋
-> 참고)에 정신이 팔린 직후부터 승격 루틴이 끊겼다. 알림이 없는 수동 단계라 한 번
-> 흐름이 끊기면 아무도 눈치채지 못한다는 게 근본 문제 — 재발 방지책 없이는 또 생긴다.
+> **수동 승격을 처음 도입한 이유(2026-07-25 502 장애)는 여전히 유효하고, 그대로
+> 자동화 안에 반영돼 있다** — 그 장애는 "복원 후 첫 요청은 성공, 이후 실패" 패턴이라
+> 배포 직후 헬스체크 1번으로는 못 잡았다(`docs/PERFORMANCE.md` 5장). 그래서 이번
+> 게이트도 **1번이 아니라 5번 연속 호출**해서 전부 성공해야만 승격한다 — "검증 없이
+> 자동으로 넘어가지 않는다"는 원칙은 그대로고, 그 검증을 사람이 하던 걸 CI가
+> 대신하게 됐을 뿐이다.
 
 ### Lambda 실행 구조
 ```
@@ -128,13 +131,21 @@ Shadow JAR 플러그인의 `mergeServiceFiles()`는 `META-INF/services/**` 파�
         "lambda:UpdateAlias",
         "lambda:GetAlias",
         "lambda:GetFunction",
-        "lambda:GetFunctionConfiguration"
+        "lambda:GetFunctionConfiguration",
+        "lambda:InvokeFunction"
       ],
       "Resource": "arn:aws:lambda:ap-northeast-1:*:function:link-sphere-api*"
     }
   ]
 }
 ```
+
+> ⚠️ **`lambda:InvokeFunction`은 2026-08-13 자동 승격 게이트 도입 시 추가됐다.**
+> 그 이전엔 CI가 발행만 하고 사람이 로컬 자격증명으로 직접 호출했기 때문에 이
+> 권한이 필요 없었다. 실제 IAM 정책이 이 문서보다 오래됐다면(이 권한 조회 자체가
+> `iam:List*` 권한 없이는 안 되므로 콘솔에서 직접 확인해야 한다) deploy.yml의
+> "새 버전 직접 연속 호출 검증" 스텝이 `AccessDenied`로 실패한다 — 이 경우 위
+> 정책에 `lambda:InvokeFunction`을 추가해야 한다.
 
 ### 2. S3 버킷 생성
 
@@ -311,32 +322,38 @@ aws s3api put-bucket-lifecycle-configuration \
 | 10. 업데이트 대기 | `function-updated` waiter로 완료 확인 |
 | 11. 버전 발행 | `publish-version` → SnapStart 스냅샷 생성 트리거 |
 | 12. SnapStart 대기 | `published-version-active` waiter (1~5분, 스냅샷 완성까지) |
-| 13. Function URL 출력 | 현재 `prod`가 가리키는 URL을 로그에 표시 (알림용, alias는 안 옮김) |
+| 13. 연속 호출 검증 | 방금 발행한 **버전 번호를 직접 지정**해 `GET /post`를 5회 연속 호출. 하나라도 `statusCode != 200`이면 워크플로우 실패, 아래 승격 스텝은 실행 안 됨(`prod`는 이전 버전 유지) |
+| 14. prod alias 승격 | 13번을 전부 통과했을 때만 `update-alias`로 `prod`를 이 버전으로 이동 |
+| 15. Function URL 출력 | 승격된(=현재 서빙 중인) `prod` URL을 로그에 표시 |
 
-CI는 여기서 끝난다. **`prod` alias는 이 워크플로우가 자동으로 옮기지 않는다** —
-2026-07-25 502 장애 이후, 검증 없이 새 버전이 사용자 트래픽을 받는 걸 막기 위해
-의도적으로 뺀 단계다. 배포 후 실제로 반영되게 하려면 별도로 수동 승격이 필요하다 —
-아래 "prod 승격 (수동)" 참고.
+**CI가 발행부터 승격까지 전부 자동으로 처리한다** — 사람이 매번 기억해서 승격할
+필요가 없다. 13번 검증 게이트가 2026-07-25 502 장애의 교훈("복원 후 첫 요청은
+성공, 이후 실패" 패턴은 단발 확인으로 못 잡는다)을 그대로 반영한다 — 1번이 아니라
+5번 연속 성공해야 승격되므로, 검증 없이 자동으로 넘어가는 게 아니라 **검증을 CI가
+대신 수행**하는 것이다.
 
-### prod 승격 (수동)
+### 수동 개입이 필요한 경우 (예외 상황)
+
+정상 배포는 위 파이프라인이 전부 처리하므로 아래 명령은 **롤백이나 CI 우회가
+필요한 예외 상황에만** 쓴다.
 
 ```bash
-# 1. 대상 버전을 직접 연속으로 호출해 검증 (단발 확인 금지 — docs/LAMBDA-CONFIG-ROLLBACK.md 참고)
+# 특정 버전으로 직접 호출 검증 (단발 확인 금지 — docs/LAMBDA-CONFIG-ROLLBACK.md 참고)
 aws lambda invoke --function-name link-sphere-api:<VERSION> --payload fileb://event.json /tmp/out.json
-# 위 명령을 응답이 안정적으로 나올 때까지 3~5회 반복
+# 응답이 안정적으로 나올 때까지 3~5회 반복
 
-# 2. 검증 통과 후 승격
+# 검증 통과 후 승격 (예: 문제 있는 최신 버전에서 이전 정상 버전으로 되돌릴 때)
 aws lambda update-alias --function-name link-sphere-api --name prod --function-version <VERSION>
 
-# 3. 승격 후에도 CloudFront 경유로 다시 연속 호출해 확인
+# 승격 후에도 CloudFront 경유로 다시 연속 호출해 확인
 ```
 
-이 단계는 CI 로그의 `::notice::` 한 줄 말고는 알림이 없다 — 배포했다는 사실 자체를
-잊기 쉬우니, `main` push 후에는 항상 이 단계를 체크리스트로 챙길 것.
-
-이 승격 누락은 `.github/workflows/prod-alias-drift-check.yml`이 6시간마다 자동
-감지해 GitHub Issue(`deploy-drift` 라벨)로 알린다. 발행된 지 2시간이 넘도록 `prod`가
-최신 버전을 안 가리키면 Issue가 열리고, 승격되면 다음 정기 검사에서 자동으로 닫힌다.
+`.github/workflows/prod-alias-drift-check.yml`이 6시간마다 `prod`와 최신 발행
+버전을 비교해 2시간 이상 벌어지면 GitHub Issue(`deploy-drift` 라벨)를 연다.
+**자동 승격 체제에서 이 Issue가 뜬다는 건 정상 배포 흐름이 아니라, 대부분 13번
+검증 게이트가 실패해서 승격이 안 된 상황이라는 뜻이다** — 먼저 해당 배포의 Actions
+로그에서 어느 호출이 실패했는지 확인하고, 원인을 고친 뒤 재배포(또는 위 수동
+명령으로 개입)한다.
 
 ---
 

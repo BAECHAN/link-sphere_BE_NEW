@@ -134,7 +134,7 @@ jobs:
             --query 'Version' --output text)
           echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Published version: $VERSION"
-          echo "::notice::Published version: $VERSION (아직 prod에 승격되지 않음 — 검증 후 수동 승격 필요)"
+          echo "::notice::Published version: $VERSION — 연속 호출 검증 후 통과하면 자동 승격됩니다"
 
       # ─────────────────────────────────────────────
       # 12. SnapStart 최적화 완료 대기 (스냅샷 생성까지 1~5분 소요)
@@ -146,12 +146,55 @@ jobs:
             --qualifier "${{ steps.publish.outputs.VERSION }}"
 
       # ─────────────────────────────────────────────
-      # 13. 배포된 Function URL 출력
-      #     prod alias는 여기서 자동으로 옮기지 않는다 — 검증 없이 사용자 트래픽이
-      #     새 버전으로 전환되는 걸 막기 위함(2026-07-25 502 장애 이후 결정).
-      #     검증 통과 후 아래 명령으로 수동 승격한다:
-      #       aws lambda update-alias --function-name <FUNCTION_NAME> --name prod \
-      #         --function-version <VERSION> --region <REGION>
+      # 13. 새 버전 직접 연속 호출 검증 (자동 승격 게이트)
+      #     2026-07-25 502 장애는 "복원 후 첫 요청은 성공, 이후 실패" 패턴이라 단발
+      #     확인으로는 못 잡았다(docs/PERFORMANCE.md 5장). prod가 아니라 방금 발행한
+      #     버전 번호를 직접 지정해 호출하므로 이 단계에서는 사용자 트래픽에 영향이
+      #     없다. 5회 중 하나라도 실패하면 워크플로우가 실패하고 prod는 이전 버전을
+      #     그대로 유지한다 — 아래 승격 스텝 자체가 실행되지 않는다.
+      #     GET /post는 비로그인 공개 엔드포인트라 별도 인증 없이 호출 가능하다
+      #     (docs/PERFORMANCE.md 5장의 검증 페이로드와 동일한 것을 재사용).
+      # ─────────────────────────────────────────────
+      - name: Verify new version with repeated invokes
+        env:
+          VERSION: ${{ steps.publish.outputs.VERSION }}
+        run: |
+          echo '{"rawPath":"/api/post","rawQueryString":"page=0&size=5","requestContext":{"http":{"method":"GET"}}}' \
+            > /tmp/verify-event.json
+
+          for i in 1 2 3 4 5; do
+            aws lambda invoke \
+              --function-name "${{ vars.LAMBDA_FUNCTION_NAME }}:$VERSION" \
+              --payload fileb:///tmp/verify-event.json \
+              "/tmp/verify-out-$i.json" > /dev/null
+
+            STATUS=$(jq -r '.statusCode' "/tmp/verify-out-$i.json")
+            echo "호출 $i: statusCode=$STATUS"
+
+            if [ "$STATUS" != "200" ]; then
+              echo "::error::버전 $VERSION 호출 ${i}회차 실패(statusCode=$STATUS) — 승격 중단, prod는 이전 버전 유지"
+              cat "/tmp/verify-out-$i.json"
+              exit 1
+            fi
+          done
+
+          echo "5회 연속 정상 확인 완료"
+
+      # ─────────────────────────────────────────────
+      # 14. 검증 통과 → prod alias 자동 승격
+      # ─────────────────────────────────────────────
+      - name: Promote prod alias
+        env:
+          VERSION: ${{ steps.publish.outputs.VERSION }}
+        run: |
+          aws lambda update-alias \
+            --function-name "${{ vars.LAMBDA_FUNCTION_NAME }}" \
+            --name prod \
+            --function-version "$VERSION"
+          echo "::notice::prod alias를 버전 $VERSION 으로 승격했습니다"
+
+      # ─────────────────────────────────────────────
+      # 15. 승격된 Function URL 출력
       # ─────────────────────────────────────────────
       - name: Show deployed Function URL
         run: |
@@ -160,5 +203,5 @@ jobs:
             --qualifier prod \
             --query 'FunctionUrl' --output text 2>/dev/null \
             || echo "(Function URL not configured yet)")
-          echo "::notice::Current prod URL (still serving the previous version until manual promotion): $URL"
+          echo "::notice::prod URL (버전 ${{ steps.publish.outputs.VERSION }} 서빙 중): $URL"
           echo "Deployed to: $URL"
