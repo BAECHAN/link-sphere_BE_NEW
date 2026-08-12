@@ -28,6 +28,7 @@ class PostService(
     private val bookmarkRepository: BookmarkRepository,
     private val bookmarkFolderItemRepository: BookmarkFolderItemRepository,
     private val bookmarkFolderRepository: BookmarkFolderRepository,
+    private val postViewRepository: PostViewRepository,
     private val postReactionRepository: PostReactionRepository,
     private val commentRepository: CommentRepository,
     private val commentService: CommentService,
@@ -215,6 +216,7 @@ class PostService(
         // 존재 여부를 알려주지 않도록 403이 아닌 404로 던진다.
         if (post.isPrivate && post.userId != currentUserId) throw PostNotFoundException(id)
         postRepository.incrementViewCount(id)
+        currentUserId?.let { postViewRepository.upsertView(it, id) }
         return convertToResponse(post, currentUserId)
     }
 

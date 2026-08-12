@@ -13,6 +13,25 @@
 
 ### Added
 
+- `bookmark` 게시글 목록에 "최근 열람순"(`sort=viewed`) 정렬 추가
+  <details><summary>배경·구현</summary>
+
+  북마크 폴더 목록에 이미 붙인 "최근 저장한 폴더"의 연장선. 기존 `posts.view_count`는
+  전역 누적 카운터(`sort=views`가 쓰는 값)라 "누가 언제 봤는지"가 없어서, 사용자당
+  게시글당 마지막 열람 시각만 upsert로 기록하는 `post_views` 테이블을 새로 추가했다
+  (append log가 아니라 행 하나만 유지해 무한정 쌓이는 문제를 원천적으로 없앰). 기록
+  시점은 `getPostById`의 기존 `incrementViewCount` 바로 옆 — 로그인 사용자만 기록,
+  비로그인은 스킵. 정렬 쿼리는 `TablePost`와 JPA 연관관계가 없어 JOIN 대신, 이미
+  파일에 있던 폴더 EXISTS 필터와 같은 상관 서브쿼리 모양으로 구현했고, 한 번도 안
+  본 글은 `COALESCE`로 아주 오래된 값으로 치환해 맨 뒤로 밀리게 했다.
+  (`TablePostView.kt`(신규), `PostViewRepository.kt`(신규), `PostService.getPostById`,
+  `BookmarkRepositoryImpl.kt`)
+
+  DB 마이그레이션 필요: `sql/create_post_views.sql`을 BE 배포 **전에** 먼저 실행할 것
+  (순서가 바뀌면 upsert가 테이블 없음 에러로 실패한다).
+
+  </details>
+
 - `post` 크롤링 실패 시 게시글 제목·설명을 AI가 대신 채움
   <details><summary>배경·구현</summary>
 

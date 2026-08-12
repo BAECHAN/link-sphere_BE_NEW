@@ -2,6 +2,7 @@ package com.example.linksphere.domain.interaction
 
 import com.example.linksphere.domain.post.PostSearchQuery
 import com.example.linksphere.domain.post.TablePost
+import com.example.linksphere.domain.post.TablePostView
 import jakarta.persistence.EntityManager
 import jakarta.persistence.PersistenceContext
 import jakarta.persistence.criteria.JoinType
@@ -9,6 +10,7 @@ import jakarta.persistence.criteria.Predicate
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.PageImpl
 import org.springframework.data.domain.Pageable
+import java.time.LocalDateTime
 import java.util.UUID
 
 class BookmarkRepositoryImpl : BookmarkRepositoryCustom {
@@ -82,6 +84,19 @@ class BookmarkRepositoryImpl : BookmarkRepositoryCustom {
                         "oldest" -> cb.asc(bookmarkRoot.get<Any>("createdAt"))
                         "title" -> cb.asc(postJoin.get<Any>("title"))
                         "views" -> cb.desc(postJoin.get<Any>("viewCount"))
+                        "viewed" -> {
+                            // TablePost ↔ TablePostView는 연관관계로 매핑돼 있지 않아 JOIN 대신
+                            // buildPredicates의 폴더 EXISTS 필터와 같은 상관 서브쿼리 모양을 쓴다.
+                            val viewedAtSub = query.subquery(LocalDateTime::class.java)
+                            val viewRoot = viewedAtSub.from(TablePostView::class.java)
+                            viewedAtSub.select(viewRoot.get("viewedAt"))
+                            viewedAtSub.where(
+                                cb.equal(viewRoot.get<UUID>("postId"), postJoin.get<UUID>("id")),
+                                cb.equal(viewRoot.get<UUID>("userId"), userId),
+                            )
+                            // 한 번도 안 본 글은 NULL → 아주 오래된 값으로 치환해 DESC 정렬 시 맨 뒤로 밀린다
+                            cb.desc(cb.coalesce(viewedAtSub, LocalDateTime.of(1970, 1, 1, 0, 0)))
+                        }
                         else -> cb.desc(bookmarkRoot.get<Any>("createdAt")) // "latest" default
                     },
                 )

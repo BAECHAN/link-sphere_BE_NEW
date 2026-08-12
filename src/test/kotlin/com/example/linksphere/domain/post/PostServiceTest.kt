@@ -26,6 +26,7 @@ import org.mockito.Mockito.lenient
 import org.mockito.Mockito.never
 import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
+import org.mockito.Mockito.verifyNoInteractions
 import org.mockito.Mockito.`when`
 import org.mockito.junit.jupiter.MockitoExtension
 import org.springframework.context.ApplicationEventPublisher
@@ -46,6 +47,8 @@ class PostServiceTest {
     @Mock private lateinit var bookmarkFolderItemRepository: BookmarkFolderItemRepository
 
     @Mock private lateinit var bookmarkFolderRepository: BookmarkFolderRepository
+
+    @Mock private lateinit var postViewRepository: PostViewRepository
 
     @Mock private lateinit var postReactionRepository: PostReactionRepository
 
@@ -114,6 +117,44 @@ class PostServiceTest {
         assertThrows(PostNotFoundException::class.java) {
             postService.getPostById(postId, null)
         }
+    }
+
+    @Test
+    fun `getPostById 는 로그인 사용자가 조회하면 post_views 를 upsert 한다`() {
+        val ownerId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val post = TablePost(id = postId, userId = ownerId, url = "https://example.com", title = "제목", isPrivate = false)
+        val owner = TableMember(id = ownerId, email = "owner@example.com", password = "enc", nickname = "owner")
+
+        `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
+        `when`(memberRepository.findById(ownerId)).thenReturn(Optional.of(owner))
+        `when`(bookmarkRepository.existsByUserIdAndPostId(ownerId, postId)).thenReturn(false)
+        lenient().`when`(postReactionRepository.countByPostId(postId)).thenReturn(0L)
+        lenient().`when`(postReactionRepository.existsByUserIdAndPostId(ownerId, postId)).thenReturn(false)
+        lenient().`when`(bookmarkRepository.countByPostId(postId)).thenReturn(0L)
+        lenient().`when`(commentRepository.countByPostId(postId)).thenReturn(0L)
+
+        postService.getPostById(postId, ownerId)
+
+        verify(postViewRepository).upsertView(ownerId, postId)
+    }
+
+    @Test
+    fun `getPostById 는 비로그인 사용자가 조회하면 post_views 를 건드리지 않는다`() {
+        val ownerId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val post = TablePost(id = postId, userId = ownerId, url = "https://example.com", title = "제목", isPrivate = false)
+        val owner = TableMember(id = ownerId, email = "owner@example.com", password = "enc", nickname = "owner")
+
+        `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
+        `when`(memberRepository.findById(ownerId)).thenReturn(Optional.of(owner))
+        lenient().`when`(postReactionRepository.countByPostId(postId)).thenReturn(0L)
+        lenient().`when`(bookmarkRepository.countByPostId(postId)).thenReturn(0L)
+        lenient().`when`(commentRepository.countByPostId(postId)).thenReturn(0L)
+
+        postService.getPostById(postId, null)
+
+        verifyNoInteractions(postViewRepository)
     }
 
     @Test

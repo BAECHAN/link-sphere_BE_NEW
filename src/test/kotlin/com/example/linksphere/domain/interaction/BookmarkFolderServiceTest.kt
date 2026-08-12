@@ -193,6 +193,21 @@ class BookmarkFolderServiceTest {
     }
 
     @Test
+    fun `getBookmarkedPosts 는 sort viewed 를 그대로 전달한다`() {
+        val userId = UUID.randomUUID()
+        val pageable = PageRequest.of(0, 10)
+        val page = PageImpl<TablePost>(emptyList(), pageable, 0)
+
+        `when`(bookmarkRepository.findBookmarkedPosts(userId, null, false, "viewed", null, pageable))
+            .thenReturn(page)
+        `when`(postService.buildResponsesFromPosts(emptyList(), userId)).thenReturn(emptyList())
+
+        bookmarkFolderService.getBookmarkedPosts(userId, "all", "viewed", null, 0, 10)
+
+        verify(bookmarkRepository).findBookmarkedPosts(userId, null, false, "viewed", null, pageable)
+    }
+
+    @Test
     fun `getBookmarkedPosts 는 folderKey uncategorized 면 미분류만 조회한다`() {
         val userId = UUID.randomUUID()
         val pageable = PageRequest.of(0, 10)
