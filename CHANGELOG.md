@@ -9,6 +9,8 @@
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-08-13
+
 ### Added
 
 - `post` 크롤링 실패 시 게시글 제목·설명을 AI가 대신 채움
@@ -614,7 +616,8 @@
   - `bookmark_folders` 테이블 생성 (`user_id` + `name` UNIQUE)
   - `bookmarks` 테이블에 `folder_id` 컬럼 및 FK(`ON DELETE SET NULL`) 추가
 
-[Unreleased]: https://github.com/BAECHAN/link-sphere_BE_NEW/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/BAECHAN/link-sphere_BE_NEW/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/BAECHAN/link-sphere_BE_NEW/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/BAECHAN/link-sphere_BE_NEW/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/BAECHAN/link-sphere_BE_NEW/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/BAECHAN/link-sphere_BE_NEW/compare/v0.5.0...v0.5.1

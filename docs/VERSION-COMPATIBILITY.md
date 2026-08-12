@@ -35,6 +35,7 @@ BE·FE는 레포가 분리돼 있고 SemVer도 각자 독립적으로 올라가�
 | v0.8.0 (2026-08-02) | v0.5.1 (2026-08-02) | 계약 변경 없음 (BE 내부 AI 비동기 처리 리팩터, 응답 스펙 동일) | 배포 순서 무관 |
 | v0.9.0 (2026-08-03) | v0.6.0 (2026-08-03) | 댓글 생성/답글/수정 API가 `multipart/form-data`→JSON, `images`가 업로드 파일이 아닌 URL 배열. 신규 `POST /upload/signed-url`(서명된 업로드 URL 발급). `POST /auth/account/avatar` 엔드포인트 제거 | **BE 먼저 배포 필수** — FE만 먼저 배포하면 댓글 생성이 존재하지 않는 신규 엔드포인트를 호출하고, 구 BE는 JSON body를 멀티파트로 파싱 못 해 전부 실패 |
 | v0.10.0 (2026-08-04) | v0.7.0 (2026-08-04) | 신규 `GET /auth/account/nickname-availability`(마이페이지 닉네임 중복 사전 조회, 인증 필요) | 배포 순서 무관 — FE는 조회 실패(오프라인·구 BE 등) 시 fail-open으로 처리한다(저장은 막지 않되 확인 메시지는 띄우지 않음, 실제 중복은 최종적으로 서버 409가 막음). BE 없이 FE만 배포돼도 이 조회만 조용히 무력화될 뿐 저장 자체는 기존처럼 동작 |
+| v0.12.0 (2026-08-13) | v0.8.0 (2026-08-13) | 신규 `GET /auth/email-availability`(이메일 중복 사전 조회, 비로그인 공개), `GET /auth/account/nickname-availability` 비로그인 허용으로 확장(가입 화면 실시간 중복확인), `POST /post`에 `bookmark`/`folderIds` 필드 추가(등록과 동시에 북마크 생성), `GET /bookmark/folders` 응답에 `lastUsedAt` 필드 추가, 이메일·닉네임 중복 409를 `DUPLICATE_MEMBER`/`DUPLICATE_NICKNAME`으로 분리 | BE 먼저 배포 권장 — 북마크 동시 생성만 BE 먼저 필요(구 BE는 `bookmark`/`folderIds`를 조용히 무시해 등록은 되지만 북마크가 안 생김). 나머지(중복확인 엔드포인트·`lastUsedAt`·`DUPLICATE_NICKNAME`)는 구 BE에서도 fail-open/기존 동작으로 조용히 저하될 뿐 순서 무관 |
 
 ## 앞으로 지켜야 할 규칙
 
