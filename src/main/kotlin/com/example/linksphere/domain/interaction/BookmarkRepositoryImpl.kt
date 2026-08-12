@@ -79,27 +79,30 @@ class BookmarkRepositoryImpl : BookmarkRepositoryCustom {
                     cb.desc(bookmarkRoot.get<Any>("createdAt")),
                 )
             } else {
-                listOf(
-                    when (sort) {
-                        "oldest" -> cb.asc(bookmarkRoot.get<Any>("createdAt"))
-                        "title" -> cb.asc(postJoin.get<Any>("title"))
-                        "views" -> cb.desc(postJoin.get<Any>("viewCount"))
-                        "viewed" -> {
-                            // TablePost ↔ TablePostView는 연관관계로 매핑돼 있지 않아 JOIN 대신
-                            // buildPredicates의 폴더 EXISTS 필터와 같은 상관 서브쿼리 모양을 쓴다.
-                            val viewedAtSub = query.subquery(LocalDateTime::class.java)
-                            val viewRoot = viewedAtSub.from(TablePostView::class.java)
-                            viewedAtSub.select(viewRoot.get("viewedAt"))
-                            viewedAtSub.where(
-                                cb.equal(viewRoot.get<UUID>("postId"), postJoin.get<UUID>("id")),
-                                cb.equal(viewRoot.get<UUID>("userId"), userId),
-                            )
+                when (sort) {
+                    "oldest" -> listOf(cb.asc(bookmarkRoot.get<Any>("createdAt")))
+                    "title" -> listOf(cb.asc(postJoin.get<Any>("title")))
+                    "views" -> listOf(cb.desc(postJoin.get<Any>("viewCount")))
+                    "viewed" -> {
+                        // TablePost ↔ TablePostView는 연관관계로 매핑돼 있지 않아 JOIN 대신
+                        // buildPredicates의 폴더 EXISTS 필터와 같은 상관 서브쿼리 모양을 쓴다.
+                        val viewedAtSub = query.subquery(LocalDateTime::class.java)
+                        val viewRoot = viewedAtSub.from(TablePostView::class.java)
+                        viewedAtSub.select(viewRoot.get("viewedAt"))
+                        viewedAtSub.where(
+                            cb.equal(viewRoot.get<UUID>("postId"), postJoin.get<UUID>("id")),
+                            cb.equal(viewRoot.get<UUID>("userId"), userId),
+                        )
+                        listOf(
                             // 한 번도 안 본 글은 NULL → 아주 오래된 값으로 치환해 DESC 정렬 시 맨 뒤로 밀린다
-                            cb.desc(cb.coalesce(viewedAtSub, LocalDateTime.of(1970, 1, 1, 0, 0)))
-                        }
-                        else -> cb.desc(bookmarkRoot.get<Any>("createdAt")) // "latest" default
-                    },
-                )
+                            cb.desc(cb.coalesce(viewedAtSub, LocalDateTime.of(1970, 1, 1, 0, 0))),
+                            // 미열람 글끼리는 전부 동점(위 값이 똑같음)이라 DB가 순서를 보장하지
+                            // 않는다 — 2차 정렬로 안정시킨다("latest"와 동일 기준: 최근 북마크순)
+                            cb.desc(bookmarkRoot.get<Any>("createdAt")),
+                        )
+                    }
+                    else -> listOf(cb.desc(bookmarkRoot.get<Any>("createdAt"))) // "latest" default
+                }
             }
         query.orderBy(orders)
 
