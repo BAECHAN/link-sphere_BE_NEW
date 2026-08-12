@@ -45,6 +45,12 @@
   바꿔 익명 요청(가입 화면)도 허용하되, 로그인 상태면 여전히 본인의 현재 닉네임은 중복에서
   제외한다. (`AuthController.checkNicknameAvailability`, `MemberService.isNicknameAvailable`,
   `SecurityConfig`)
+- **`GET /bookmark/folders` 응답에 `lastUsedAt` 필드 추가 — FE 북마크 폴더 목록 "최근 저장한
+  폴더" 상단 구획용** — 새 컬럼·마이그레이션 없이 기존 `bookmark_folder_items.created_at`을
+  `MAX(...) GROUP BY folder_id`로 배치 조회해 폴더별로 매핑한다(`countByFolderId`와 동일한
+  N+1 방지 패턴, 쿼리 1회 고정). 한 번도 저장 안 된 폴더는 `null`. 기존 필드 유지 + 신규
+  nullable 필드 추가라 하위 호환. (`BookmarkFolderItemRepository.findLastUsedByUserIdGroupByFolderId`,
+  `BookmarkFolderDTO.FolderResponse`, `BookmarkFolderService.getFolders`)
 - **`POST /post`(게시글 등록) 요청에 `bookmark`/`folderIds` 필드 추가 — 등록과 동시에
   북마크 생성 가능** — 지금까지는 등록 후 별도로 `POST /bookmark/{postId}/folders/{folderId}`를
   호출해야 폴더에 담을 수 있었다. `PostService.createPost` 트랜잭션 안에서

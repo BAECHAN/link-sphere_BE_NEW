@@ -19,10 +19,13 @@ import org.mockito.Mockito.`when`
 import org.mockito.junit.jupiter.MockitoExtension
 import org.springframework.data.domain.PageImpl
 import org.springframework.data.domain.PageRequest
+import java.time.LocalDateTime
 import java.util.Optional
 import java.util.UUID
 
 private data class TestFolderBookmarkCount(override val folderId: UUID, override val count: Long) : FolderBookmarkCount
+
+private data class TestFolderLastUsed(override val folderId: UUID, override val lastUsedAt: LocalDateTime) : FolderLastUsed
 
 @ExtendWith(MockitoExtension::class)
 class BookmarkFolderServiceTest {
@@ -118,6 +121,58 @@ class BookmarkFolderServiceTest {
         val result = bookmarkFolderService.getFolders(userId)
 
         assertEquals(5, result.uncategorizedCount)
+    }
+
+    @Test
+    fun `getFolders 는 폴더 수와 무관하게 lastUsedAt 조회 쿼리를 1회만 호출한다`() {
+        val userId = UUID.randomUUID()
+        val folders = listOf(
+            TableBookmarkFolder(userId = userId, name = "개발", sortOrder = 0),
+            TableBookmarkFolder(userId = userId, name = "디자인", sortOrder = 1),
+        )
+
+        `when`(bookmarkFolderRepository.findByUserIdOrderBySortOrderAsc(userId)).thenReturn(folders)
+        `when`(bookmarkFolderItemRepository.countByUserIdGroupByFolderId(userId)).thenReturn(emptyList())
+        `when`(bookmarkFolderItemRepository.findLastUsedByUserIdGroupByFolderId(userId)).thenReturn(emptyList())
+        `when`(bookmarkRepository.countUncategorizedByUserId(userId)).thenReturn(0L)
+
+        bookmarkFolderService.getFolders(userId)
+
+        verify(bookmarkFolderItemRepository, times(1)).findLastUsedByUserIdGroupByFolderId(userId)
+    }
+
+    @Test
+    fun `getFolders 는 lastUsedAt 조회 결과를 폴더별로 매핑한다`() {
+        val userId = UUID.randomUUID()
+        val folderId = UUID.randomUUID()
+        val folder = TableBookmarkFolder(id = folderId, userId = userId, name = "개발")
+        val lastUsedAt = LocalDateTime.of(2026, 8, 1, 12, 0)
+
+        `when`(bookmarkFolderRepository.findByUserIdOrderBySortOrderAsc(userId)).thenReturn(listOf(folder))
+        `when`(bookmarkFolderItemRepository.countByUserIdGroupByFolderId(userId)).thenReturn(emptyList())
+        `when`(bookmarkFolderItemRepository.findLastUsedByUserIdGroupByFolderId(userId))
+            .thenReturn(listOf(TestFolderLastUsed(folderId, lastUsedAt)))
+        `when`(bookmarkRepository.countUncategorizedByUserId(userId)).thenReturn(0L)
+
+        val result = bookmarkFolderService.getFolders(userId)
+
+        assertEquals(lastUsedAt, result.folders.single().lastUsedAt)
+    }
+
+    @Test
+    fun `getFolders 는 한 번도 저장 안 된 폴더면 lastUsedAt 이 null 이다`() {
+        val userId = UUID.randomUUID()
+        val folderId = UUID.randomUUID()
+        val folder = TableBookmarkFolder(id = folderId, userId = userId, name = "개발")
+
+        `when`(bookmarkFolderRepository.findByUserIdOrderBySortOrderAsc(userId)).thenReturn(listOf(folder))
+        `when`(bookmarkFolderItemRepository.countByUserIdGroupByFolderId(userId)).thenReturn(emptyList())
+        `when`(bookmarkFolderItemRepository.findLastUsedByUserIdGroupByFolderId(userId)).thenReturn(emptyList())
+        `when`(bookmarkRepository.countUncategorizedByUserId(userId)).thenReturn(0L)
+
+        val result = bookmarkFolderService.getFolders(userId)
+
+        assertEquals(null, result.folders.single().lastUsedAt)
     }
 
     // ── getBookmarkedPosts: folderKey 3-way 매핑 ────────────────────

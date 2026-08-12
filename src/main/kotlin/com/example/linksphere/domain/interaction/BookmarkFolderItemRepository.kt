@@ -4,11 +4,17 @@ import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
+import java.time.LocalDateTime
 import java.util.UUID
 
 interface FolderBookmarkCount {
     val folderId: UUID
     val count: Long
+}
+
+interface FolderLastUsed {
+    val folderId: UUID
+    val lastUsedAt: LocalDateTime
 }
 
 interface BookmarkFolderItemRepository : JpaRepository<TableBookmarkFolderItem, BookmarkFolderItemId> {
@@ -26,6 +32,13 @@ interface BookmarkFolderItemRepository : JpaRepository<TableBookmarkFolderItem, 
             "WHERE i.userId = :userId GROUP BY i.folderId",
     )
     fun countByUserIdGroupByFolderId(@Param("userId") userId: UUID): List<FolderBookmarkCount>
+
+    // 폴더별 마지막 저장 시각 — 폴더 수와 무관하게 쿼리 1회 (getFolders 의 N+1 루프 제거용)
+    @Query(
+        "SELECT i.folderId as folderId, MAX(i.createdAt) as lastUsedAt FROM TableBookmarkFolderItem i " +
+            "WHERE i.userId = :userId GROUP BY i.folderId",
+    )
+    fun findLastUsedByUserIdGroupByFolderId(@Param("userId") userId: UUID): List<FolderLastUsed>
 
     // 중복 요청/동시 탭에도 안전한 멱등 insert
     @Modifying

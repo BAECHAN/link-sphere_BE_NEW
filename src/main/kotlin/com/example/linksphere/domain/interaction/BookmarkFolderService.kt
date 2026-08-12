@@ -28,6 +28,9 @@ class BookmarkFolderService(
         val countByFolderId =
             bookmarkFolderItemRepository.countByUserIdGroupByFolderId(userId)
                 .associate { it.folderId to it.count.toInt() }
+        val lastUsedByFolderId =
+            bookmarkFolderItemRepository.findLastUsedByUserIdGroupByFolderId(userId)
+                .associate { it.folderId to it.lastUsedAt }
         val uncategorizedCount = bookmarkRepository.countUncategorizedByUserId(userId).toInt()
 
         val folderResponses = folders.map { folder ->
@@ -38,6 +41,7 @@ class BookmarkFolderService(
                 bookmarkCount = countByFolderId[folder.id] ?: 0,
                 createdAt = folder.createdAt,
                 updatedAt = folder.updatedAt,
+                lastUsedAt = lastUsedByFolderId[folder.id],
             )
         }
         return FolderListResponse(folders = folderResponses, uncategorizedCount = uncategorizedCount)

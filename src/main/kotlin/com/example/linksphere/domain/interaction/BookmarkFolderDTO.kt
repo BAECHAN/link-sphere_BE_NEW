@@ -14,6 +14,7 @@ data class FolderResponse(
     val bookmarkCount: Int,
     val createdAt: LocalDateTime,
     val updatedAt: LocalDateTime,
+    val lastUsedAt: LocalDateTime? = null, // 이 폴더에 마지막으로 저장한 시각 — 한 번도 저장 안 됐으면 null
 )
 
 // 폴더 목록 + 미분류(소속 0개) 북마크 수. 전체 배지는 없음 — 중복 없는 총합을 보여주려면
