@@ -1,6 +1,41 @@
 # Link-Sphere BE — RSS 피드 자동 수집 봇 (2026-09-03)
 
-## 1. 문제
+## 1. RSS가 뭔가요?
+
+RSS는 새로운 기술이 아니라, 블로그나 뉴스 사이트가 오래전부터 공개해온
+**"최신 글 목록" 읽기 전용 API**다. 우리 서비스의 `GET /api/post`를 호출하면
+최근 게시글 목록이 JSON으로 오듯, 대부분의 블로그(우아한형제들 기술블로그,
+토스 테크 등)는 `/feed`나 `/rss.xml` 같은 주소에 자기 최신 글 목록을
+**XML**로 미리 만들어둔다. 형식만 XML일 뿐, 하는 일은 똑같다.
+
+예를 들어 `https://toss.tech/rss.xml`을 열면 이런 게 보인다:
+
+```xml
+<item>
+  <title>1%가 겪은 버그 고쳐야할까요?</title>
+  <link>https://toss.tech/article/qa_hotfix</link>
+  <pubDate>...</pubDate>
+</item>
+<item>
+  <title>토스증권 추천과 검색은 어떻게 진화하고 있을까?</title>
+  <link>https://toss.tech/article/tech_talk_talk_3</link>
+</item>
+```
+
+`GET /api/post`가 JSON 배열을 돌려주는 것처럼, 이건 XML로 된 "최근 글 목록"이다.
+
+이 봇이 하는 일은 단순하다:
+
+1. 매일 정해진 시각에 스케줄러가 9개 블로그의 RSS 주소에 요청을 보낸다
+2. 응답으로 온 XML을 파싱해 "제목 + 링크"만 뽑는다
+3. 아직 등록 안 된 링크라면, **사람이 "링크 등록" 버튼을 눌렀을 때 호출되는 것과
+   완전히 동일한 함수**(`PostService.createPost`)를 봇이 대신 호출한다
+
+앱 입장에서는 "봇이 대신 등록 버튼을 눌러준 것"과 다르지 않다. AI가 글을
+지어내지도, 사이트를 몰래 긁어오지도 않는다 — 그 사이트가 이미 공개적으로
+뿌리고 있는 목록을 그대로 가져올 뿐이다.
+
+## 2. 왜 만들었나
 
 Link-Sphere는 사용자가 링크를 직접 등록해야만 피드가 채워진다. 서비스 초기라
 콘텐츠가 비어 있으면 신규 방문자에게 보여줄 게 없고, 기존 사용자도 다시 들어올
@@ -13,7 +48,7 @@ Link-Sphere는 사용자가 링크를 직접 등록해야만 피드가 채워진
 수집 소스는 임의 사이트 스크래핑이 아니라 RSS/Atom으로 한정했다. RSS는 발행자가
 배포를 명시적으로 허용한 채널이라, 같은 목적을 저작권 문제 없이 달성한다.
 
-## 2. 해결 방향 — 기존 AI 비동기 처리와 동일한 self-invoke 구조
+## 3. 구조 — 3단계로 나눈 이유
 
 피드 9개를 fetch하는 것과 새 글을 하나하나 크롤링하는 것을 한 번의 Lambda 호출
 안에서 다 처리하면 120초 타임아웃을 넘긴다(`docs/AI-ASYNC-PROCESSING.md`가 같은
@@ -33,7 +68,7 @@ EventBridge cron(0 22 * * ? *)   # UTC 22:00 = KST 07:00
 [Stage C] "ai-analysis"  ← 기존 경로, 코드 변경 없음
 ```
 
-### 2.1 chunk를 5건으로 자른 이유
+### 3.1 chunk를 5건으로 자른 이유
 
 신규 URL을 하나씩 개별 Lambda 호출로 넘기면(예: 15건 → 15개 동시 실행):
 
@@ -50,7 +85,7 @@ AI 잡도 시간축에 자연스럽게 퍼진다. 부수 효과: chunk가 타임
 배포 후 `ai_status = FAILED` 비율이 높으면(Gemini RPM 초과 신호) 3으로 낮추도록
 `docs/DEPLOY.md` 8장에 적어뒀다.
 
-## 3. 중복 방지 — `posts.url`을 건드리지 않은 이유
+## 4. 중복 방지 — `posts.url`을 건드리지 않은 이유
 
 봇이 같은 글을 매일 다시 수집하면 안 되지만, 기존 게시글 URL 컬럼(`posts.url`)에는
 unique 제약을 걸지 않았다:
@@ -66,55 +101,29 @@ unique 제약을 걸지 않았다:
 바뀌지 않는다. `post_id`는 nullable + `ON DELETE SET NULL`로 둬서, 봇 글을
 관리자가 지워도 원장은 남아 재수집되지 않는다.
 
-## 4. 시행착오 — `attachPost`가 flush 없이 실행되던 문제
+## 5. 운영 파라미터
 
-### 4.1 증상
+"몇 시에, 몇 번, 몇 개씩 도는지" 한눈에 보는 표. 코드 값은 파일 위치까지 명시한다.
 
-로컬 E2E 검증(`FeedCrawlRunner --commit`) 첫 실행에서 후보 14건이 **전부** 실패했다:
+| 파라미터 | 값 | 실제 위치 |
+| --- | --- | --- |
+| 실행 주기 | 매일 UTC 22:00 (KST 오전 7시) | **AWS EventBridge 룰 자체** (`link-sphere-feed-crawl`, `cron(0 22 * * ? *)`) — 이 프로젝트는 IaC가 없어서 레포 안 어떤 파일에도 이 cron 표현식을 담은 "설정 파일"은 없다. `docs/DEPLOY.md` 8장의 `aws events put-rule` 커맨드가 유일한 기록이자 값을 바꾸는 방법 |
+| 소스당 최대 건수 | 2 | `FeedCrawlService.kt:29` `MAX_ITEMS_PER_SOURCE` |
+| 전체 최대 건수 | 15 | `FeedCrawlService.kt:30` `MAX_ITEMS_TOTAL` |
+| self-invoke chunk 크기 | 5 | `FeedCrawlService.kt:31` `CHUNK_SIZE` |
+| Stage A 마감 가드 | 90,000ms | `FeedCrawlService.kt:32` `DEADLINE_MILLIS` |
+| 피드 소스 목록(9개, 1개 비활성) | `feed_sources` 테이블 | DB (SQL 시딩, `sql/create_feed_sources.sql`이 최초 시딩 기록 — 소스 추가/제거는 이 테이블에 직접 SQL로 한다, 재배포 불필요) |
 
-```
-ERROR: insert or update on table "feed_items" violates foreign key constraint "fk_feed_items_post"
-  Detail: Key (post_id)=(6b4dd5f2-...) is not present in table "posts".
-```
+코드 값들은 `private const val` 컴패니언 오브젝트 상수로, 이미 있는
+`LambdaHandler.kt`의 `WARMUP_PATHS`/`WARMUP_ITERATIONS`와 같은 스타일이다 — 이
+레포는 이런 운영 튜닝값을 `application.yml`로 빼지 않고 코드 상수로 두는 게
+기존 관례라 이번에도 그대로 따랐다.
 
-`feed_items`/`posts` 카운트를 다시 확인해보니 둘 다 0 — claim한 원장 행까지
-포함해 트랜잭션 전체가 롤백돼 있었다.
+**EventBridge 값을 바꾸려면**: `docs/DEPLOY.md` 8장의 `aws events put-rule`
+커맨드를 `--schedule-expression`만 바꿔 재실행하면 된다(같은 이름의 룰에
+다시 `put-rule`을 호출하면 덮어써진다 — 별도 삭제 불필요).
 
-### 4.2 원인
-
-`FeedItemProcessor.processFeedItem`은 한 트랜잭션 안에서 (1) `PostService.createPost`로
-새 `TablePost`를 만들고, (2) `FeedItemRepository.attachPost`(`@Modifying` JPQL
-`UPDATE`)로 방금 만든 postId를 `feed_items`에 채워 넣는다.
-
-문제는 `@Modifying` 쿼리가 JDBC로 **직접** 나간다는 것이다 — Hibernate의
-영속성 컨텍스트(dirty-checking 기반 flush 큐)를 거치지 않는다. `createPost`가
-만든 `TablePost`의 실제 `INSERT` 문은 (1)의 `save()` 호출 시점이 아니라 다음
-flush 시점까지 지연돼 있었는데, (2)의 `attachPost`가 그 flush보다 먼저 DB에
-도달해 존재하지 않는 `post_id`를 참조하는 `UPDATE`를 실행한 것이다.
-
-### 4.3 수정
-
-```kotlin
-@Modifying(flushAutomatically = true)
-@Query("UPDATE TableFeedItem f SET f.postId = :postId WHERE f.id = :id")
-fun attachPost(@Param("id") id: UUID, @Param("postId") postId: UUID)
-```
-
-`flushAutomatically = true`가 이 `UPDATE`를 실행하기 직전에 영속성 컨텍스트를
-강제로 flush시켜, 대기 중이던 `Post` INSERT가 먼저 DB에 반영되게 한다.
-
-### 4.4 검증
-
-수정 후 재실행 — 14건 전부 성공. 곧바로 같은 잡을 한 번 더 실행해 멱등성도
-확인했다: 기존 URL은 정상적으로 skip되고, 그사이 GeekNews에 새로 올라온 글
-1건만 추가로 처리됐다(`totalElements` 14 → 15).
-
-이 버그는 로컬에서만 재현된 게 아니다. 만약 발견 못 하고 그대로 배포했다면,
-실제 Lambda 환경에서도 동일한 순서로 같은 예외가 나 **봇 글이 하나도 등록되지
-않았을 것**이다 — Lambda self-invoke의 트랜잭션 경계와 `@Modifying` 쿼리의
-flush 미보장이 겹치는, 로컬/운영 환경 차이가 아니라 순수하게 코드 로직의 문제였다.
-
-## 5. 검증 (실제 프로덕션)
+## 6. 검증 (실제 프로덕션)
 
 배포 후 EventBridge 룰을 만들기 전, prod Lambda에 Stage A를 직접 트리거했다:
 
@@ -135,7 +144,55 @@ REPORT Duration: 4136.29 ms  Billed Duration: 4137 ms  Memory Size: 2048 MB
 - 로컬 검증 때 만든 15건이 실제 운영 환경에서도 전부 정상적으로 중복 제외됨
   (`feed_items`/봇 게시글 카운트 그대로 15/15 유지)
 
-## 6. 남은 것
+## 7. 시행착오 — `attachPost`가 flush 없이 실행되던 문제
+
+### 7.1 증상
+
+로컬 E2E 검증(`FeedCrawlRunner --commit`) 첫 실행에서 후보 14건이 **전부** 실패했다:
+
+```
+ERROR: insert or update on table "feed_items" violates foreign key constraint "fk_feed_items_post"
+  Detail: Key (post_id)=(6b4dd5f2-...) is not present in table "posts".
+```
+
+`feed_items`/`posts` 카운트를 다시 확인해보니 둘 다 0 — claim한 원장 행까지
+포함해 트랜잭션 전체가 롤백돼 있었다.
+
+### 7.2 원인
+
+`FeedItemProcessor.processFeedItem`은 한 트랜잭션 안에서 (1) `PostService.createPost`로
+새 `TablePost`를 만들고, (2) `FeedItemRepository.attachPost`(`@Modifying` JPQL
+`UPDATE`)로 방금 만든 postId를 `feed_items`에 채워 넣는다.
+
+문제는 `@Modifying` 쿼리가 JDBC로 **직접** 나간다는 것이다 — Hibernate의
+영속성 컨텍스트(dirty-checking 기반 flush 큐)를 거치지 않는다. `createPost`가
+만든 `TablePost`의 실제 `INSERT` 문은 (1)의 `save()` 호출 시점이 아니라 다음
+flush 시점까지 지연돼 있었는데, (2)의 `attachPost`가 그 flush보다 먼저 DB에
+도달해 존재하지 않는 `post_id`를 참조하는 `UPDATE`를 실행한 것이다.
+
+### 7.3 수정
+
+```kotlin
+@Modifying(flushAutomatically = true)
+@Query("UPDATE TableFeedItem f SET f.postId = :postId WHERE f.id = :id")
+fun attachPost(@Param("id") id: UUID, @Param("postId") postId: UUID)
+```
+
+`flushAutomatically = true`가 이 `UPDATE`를 실행하기 직전에 영속성 컨텍스트를
+강제로 flush시켜, 대기 중이던 `Post` INSERT가 먼저 DB에 반영되게 한다.
+
+### 7.4 재검증
+
+수정 후 재실행 — 14건 전부 성공. 곧바로 같은 잡을 한 번 더 실행해 멱등성도
+확인했다: 기존 URL은 정상적으로 skip되고, 그사이 GeekNews에 새로 올라온 글
+1건만 추가로 처리됐다(`totalElements` 14 → 15).
+
+이 버그는 로컬에서만 재현된 게 아니다. 만약 발견 못 하고 그대로 배포했다면,
+실제 Lambda 환경에서도 동일한 순서로 같은 예외가 나 **봇 글이 하나도 등록되지
+않았을 것**이다 — Lambda self-invoke의 트랜잭션 경계와 `@Modifying` 쿼리의
+flush 미보장이 겹치는, 로컬/운영 환경 차이가 아니라 순수하게 코드 로직의 문제였다.
+
+## 8. 남은 것
 
 - 네이버 D2 피드(`enabled=false`로 시딩)의 실제 접근 가능 여부 미확인
 - GeekNews 항목 링크가 원문이 아니라 토론 페이지(`news.hada.io/topic?id=...`)인
