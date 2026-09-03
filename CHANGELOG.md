@@ -82,9 +82,10 @@
   실패로 `enabled=false`로 시딩). **반드시 BE 코드 배포 전에 실행해야 한다** —
   `TableMember.isBot`이 매핑된 상태로 컬럼이 없으면 모든 member 조회(로그인 포함)가
   즉시 실패한다.
-- EventBridge 스케줄 룰(`link-sphere-feed-crawl`)은 아직 생성하지 않았다 — 배포 후
-  Stage A(`{"linksphereJob":"feed-crawl"}`)를 수동으로 한 번 트리거해 검증한 다음
-  만든다(`docs/DEPLOY.md` 8장).
+- EventBridge 스케줄 룰(`link-sphere-feed-crawl`) 생성 완료 — 배포 직후 Stage A
+  (`{"linksphereJob":"feed-crawl"}`)를 prod에 수동으로 한 번 트리거해 정상 동작·
+  멱등성(중복 미생성)을 확인한 다음 만들었다(`docs/DEPLOY.md` 8장). 매일 UTC 22:00
+  (KST 07:00) 실행.
 - FE 의존: `GET /post`의 `filter` 파라미터에 `excludeBots` 값 지원 필요. 배포 순서
   무관 — 구버전 BE는 모르는 filter 값을 조용히 무시하고, 구버전 FE는 이 값을
   아예 보내지 않는다.

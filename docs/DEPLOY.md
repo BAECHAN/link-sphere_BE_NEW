@@ -284,10 +284,10 @@ aws s3api put-bucket-lifecycle-configuration \
 - 최근 한 달치가 남아 롤백 능력은 유지된다
 - 버킷 버전 관리가 켜져 있으면 `NoncurrentVersionExpiration`도 함께 걸어야 실제로 줄어든다
 
-### 8. RSS 피드 자동 수집 (EventBridge 스케줄 룰)
+### 8. RSS 피드 자동 수집 (EventBridge 스케줄 룰) — 적용 완료 (2026-09-03)
 
 `domain/feed/`가 매일 1회 RSS/Atom 피드를 수집해 봇 계정 명의로 게시글을 등록한다.
-6장 워밍 핑과 동일한 형식의 규칙을 하나 더 만든다. **아래 순서를 반드시 지킬 것**
+6장 워밍 핑과 동일한 형식의 규칙을 하나 더 만들었다. 적용 순서
 (`CHANGELOG.md` `[Unreleased] > Migration` 참고):
 
 1. `sql/create_feed_sources.sql`을 코드 배포 **전에** 먼저 실행 (`members.is_bot` 컬럼 +
