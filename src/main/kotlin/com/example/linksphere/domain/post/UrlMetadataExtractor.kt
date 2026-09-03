@@ -72,8 +72,10 @@ class UrlMetadataExtractor(
     /**
      * Jsoup의 자동 리다이렉트를 끄고 직접 따라가면서, 매 홉마다 SafeUrlValidator로 재검증한다.
      * 공개 URL이 응답에서 사설 IP로 리다이렉트하는 SSRF 우회를 막기 위함이다.
+     *
+     * FeedParser가 RSS/Atom 피드를 가져올 때도 이 검증된 로직을 그대로 재사용한다.
      */
-    private fun safeConnect(url: String): org.jsoup.Connection.Response {
+    fun safeConnect(url: String): org.jsoup.Connection.Response {
         var currentUrl = url
         var hop = 0
         while (true) {

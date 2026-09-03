@@ -11,6 +11,36 @@
 
 ### Added
 
+- `post` RSS 피드를 매일 자동 수집해 봇 계정 명의로 게시글 등록
+  <details><summary>배경·구현</summary>
+
+  서비스 초기라 사용자가 링크를 등록해야만 피드가 채워지는데, 콘텐츠가 없으면 신규
+  방문자에게 보여줄 게 없다. 봇 계정(`members.is_bot`)이 큐레이션된 RSS/Atom 피드
+  9개를 1일 1회 수집해 공개 게시글로 등록하도록 했다. 등록 경로는
+  `PostService.createPost`를 그대로 재사용해(별도 저장 로직 없음) SSRF 검증·크롤링·
+  AI 요약/분류가 사람이 올린 글과 완전히 동일하게 적용된다.
+
+  피드 fetch와 항목별 크롤링을 한 Lambda 호출에서 다 하면 타임아웃(120초)을
+  넘기므로, 기존 AI 비동기 처리와 같은 self-invoke shape로 쪼갰다 — EventBridge
+  cron이 호출하는 Stage A(`FeedCrawlService.collectAndDispatch`)가 후보 URL만
+  모아 5건씩 self-invoke로 넘기고, Stage B(`processFeedItemJob`)가 실제 게시글을
+  만든다. 항목마다 별도 빈(`FeedItemProcessor`)을 통해 호출해 `@Transactional`이
+  실제로 적용되게 했다 — 같은 클래스 안에서 직접 호출하면 Spring 프록시를
+  우회해 트랜잭션 경계가 무시된다.
+
+  중복 등록 방지는 `posts.url`에 unique를 걸지 않고(사람 사용자가 같은 링크를
+  각자 등록하는 정상 동작을 깨고, 실DB에 이미 중복 URL이 있어 마이그레이션 자체가
+  실패했을 것) 봇 전용 원장 테이블 `feed_items`(정규화 URL + unique)로 분리했다.
+
+  게시글 목록 `GET /post`에 `filter=excludeBots` 값을 추가해 봇 글을 뺄 수 있다
+  (FE 스위치 UI 동반, 기본 OFF).
+
+  (`domain/feed/`(신규), `domain/member/TableMember.isBot`,
+  `domain/post/PostRepositoryImpl`의 `excludeBots` 필터, `LambdaHandler`의
+  `feed-crawl`/`feed-item` 분기, `infra/aws/FeedJobDispatcher`)
+
+  </details>
+
 - `bookmark` 게시글 목록에 "최근 열람순"(`sort=viewed`) 정렬 추가
   <details><summary>배경·구현</summary>
 
@@ -43,6 +73,21 @@
   확인: 미열람 25건, 생성 시각 고유값도 25건). (`BookmarkRepositoryImpl.kt`)
 
   </details>
+
+### Migration
+
+- `sql/create_feed_sources.sql` 실행 완료 — `members.is_bot` 컬럼 추가 + 봇 계정
+  1행(`bot@link-sphere.local`, BCrypt 형식이 아닌 비밀번호로 로그인 자체를 봉쇄) +
+  `feed_sources`/`feed_items` 테이블 + 피드 소스 9개 시딩(네이버 D2는 접근 확인
+  실패로 `enabled=false`로 시딩). **반드시 BE 코드 배포 전에 실행해야 한다** —
+  `TableMember.isBot`이 매핑된 상태로 컬럼이 없으면 모든 member 조회(로그인 포함)가
+  즉시 실패한다.
+- EventBridge 스케줄 룰(`link-sphere-feed-crawl`)은 아직 생성하지 않았다 — 배포 후
+  Stage A(`{"linksphereJob":"feed-crawl"}`)를 수동으로 한 번 트리거해 검증한 다음
+  만든다(`docs/DEPLOY.md` 8장).
+- FE 의존: `GET /post`의 `filter` 파라미터에 `excludeBots` 값 지원 필요. 배포 순서
+  무관 — 구버전 BE는 모르는 filter 값을 조용히 무시하고, 구버전 FE는 이 값을
+  아예 보내지 않는다.
 
 ## [0.8.0] - 2026-08-13
 

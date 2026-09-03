@@ -284,6 +284,64 @@ aws s3api put-bucket-lifecycle-configuration \
 - 최근 한 달치가 남아 롤백 능력은 유지된다
 - 버킷 버전 관리가 켜져 있으면 `NoncurrentVersionExpiration`도 함께 걸어야 실제로 줄어든다
 
+### 8. RSS 피드 자동 수집 (EventBridge 스케줄 룰)
+
+`domain/feed/`가 매일 1회 RSS/Atom 피드를 수집해 봇 계정 명의로 게시글을 등록한다.
+6장 워밍 핑과 동일한 형식의 규칙을 하나 더 만든다. **아래 순서를 반드시 지킬 것**
+(`CHANGELOG.md` `[Unreleased] > Migration` 참고):
+
+1. `sql/create_feed_sources.sql`을 코드 배포 **전에** 먼저 실행 (`members.is_bot` 컬럼 +
+   봇 계정 + `feed_sources`/`feed_items` 테이블 + 피드 시딩)
+2. 코드가 `prod`로 배포되고 5회 연속 invoke 게이트를 통과한 뒤,
+3. 아래 EventBridge 룰을 만들기 **전에** Stage A를 수동으로 한 번 트리거해 검증한다:
+   ```bash
+   echo '{"linksphereJob":"feed-crawl"}' > /tmp/feed-event.json
+   aws lambda invoke --function-name link-sphere-api:prod --log-type Tail \
+     --payload fileb:///tmp/feed-event.json /tmp/out.json \
+     --query 'LogResult' --output text | base64 -d
+   ```
+   `feed_items`/`posts` 카운트가 늘었는지, 같은 명령을 한 번 더 실행해도 늘지 않는지
+   (멱등성)까지 확인한 뒤에만 다음 단계로 진행한다.
+
+> **타겟은 반드시 `prod` alias여야 한다** — 이유는 6장 워밍 핑과 동일(`$LATEST`엔
+> SnapStart 스냅샷이 적용되지 않음).
+
+```bash
+# 매일 UTC 22:00(KST 07:00) 실행되는 규칙 생성
+aws events put-rule \
+  --name link-sphere-feed-crawl \
+  --schedule-expression "cron(0 22 * * ? *)" \
+  --region ap-northeast-1
+
+# Lambda가 EventBridge 호출을 허용하도록 권한 부여
+aws lambda add-permission \
+  --function-name link-sphere-api \
+  --qualifier prod \
+  --statement-id EventBridgeFeedCrawl \
+  --action lambda:InvokeFunction \
+  --principal events.amazonaws.com \
+  --source-arn arn:aws:events:ap-northeast-1:ACCOUNT_ID:rule/link-sphere-feed-crawl \
+  --region ap-northeast-1
+
+# 대상 지정 — LambdaHandler가 linksphereJob 필드로 일반 HTTP 이벤트와 구분한다
+aws events put-targets \
+  --rule link-sphere-feed-crawl \
+  --region ap-northeast-1 \
+  --targets '[{
+    "Id": "feed-crawl",
+    "Arn": "arn:aws:lambda:ap-northeast-1:ACCOUNT_ID:function:link-sphere-api:prod",
+    "Input": "{\"linksphereJob\":\"feed-crawl\"}"
+  }]'
+```
+
+- 피드 소스 추가/제거는 재배포 없이 `feed_sources` 테이블에 직접 SQL로 한다
+  (관리자 API 없음 — `tools/OrphanImageCleanupRunner.kt`와 같은 이유, 이 코드베이스에
+  admin/role 개념이 없어 REST로 노출하면 SSRF 게이트가 된다)
+- 결과 확인: `SELECT p.title, p.ai_status FROM posts p JOIN members m ON m.id = p.user_id
+  WHERE m.is_bot ORDER BY p.created_at DESC LIMIT 20;`
+- `ai_status = FAILED`가 절반 이상이면 Gemini RPM 초과 — `FeedCrawlService`의 chunk 크기(5)를
+  줄인다
+
 ---
 
 ## GitHub 설정

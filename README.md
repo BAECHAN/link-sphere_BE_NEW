@@ -78,12 +78,19 @@ src/main/kotlin/com/example/linksphere/
 │   │   ├── TableBookmarkFolderItem.kt
 │   │   ├── TablePostReaction.kt
 │   │   └── TableCommentReaction.kt
-│   └── category/                        # 카테고리 도메인
-│       ├── CategoryController.kt
-│       ├── CategoryDTO.kt
-│       ├── CategoryRepository.kt
-│       ├── CategoryService.kt
-│       └── TableCategory.kt
+│   ├── category/                        # 카테고리 도메인
+│   │   ├── CategoryController.kt
+│   │   ├── CategoryDTO.kt
+│   │   ├── CategoryRepository.kt
+│   │   ├── CategoryService.kt
+│   │   └── TableCategory.kt
+│   └── feed/                            # RSS 피드 자동 수집 (봇 계정, 컨트롤러 없음)
+│       ├── FeedCrawlService.kt          # Stage A: 피드 fetch → 후보 URL 5건씩 self-invoke
+│       ├── FeedItemProcessor.kt         # Stage B: claim → createPost (항목당 독립 트랜잭션)
+│       ├── FeedParser.kt                # Jsoup xmlParser로 RSS 2.0 / Atom 파싱
+│       ├── FeedUrlNormalizer.kt         # 중복 판정용 URL 정규화 (dedupe 키 전용)
+│       ├── FeedSourceRepository.kt / FeedItemRepository.kt
+│       └── TableFeedSource.kt / TableFeedItem.kt
 ├── global/
 │   ├── common/
 │   │   ├── ApiResponse.kt               # 공통 응답 래퍼
@@ -270,7 +277,8 @@ FCM을 사용하려면 `src/main/resources/firebase-service-account.json` 파일
 - **GitHub Actions**: CI/CD 자동화 워크플로우
 - **AWS Lambda (SnapStart)**: Shadow JAR 기반 서버리스 실행 (도쿄 리전, arm64 / 2048MB)
 - **AWS S3**: Lambda 배포 JAR 저장소 (`deployments/` 30일 만료 수명 주기)
-- **Amazon EventBridge**: 5분 간격 워밍 핑 — 콜드스타트 발생 빈도를 낮춤
+- **Amazon EventBridge**: 5분 간격 워밍 핑(콜드스타트 완화) + 1일 1회 RSS 피드 자동
+  수집 트리거(`domain/feed/`, 배포 후 수동 생성 — `docs/DEPLOY.md` 8장)
 - **Amazon CloudFront**: `/api/*` → Lambda, 그 외 → S3(FE). FE와 같은 오리진
   - SPA 클라이언트 라우팅 폴백은 CloudFront Function(FE 저장소 `infra/cloudfront-functions/`)이
     담당하며 S3 비헤이비어에만 연결되어 있다. **배포 레벨 `CustomErrorResponses`에 403/404를
