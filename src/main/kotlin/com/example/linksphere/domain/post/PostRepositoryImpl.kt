@@ -222,6 +222,19 @@ class PostRepositoryImpl : PostRepositoryCustom {
                             predicates.add(cb.disjunction())
                         }
                     }
+                    "excludeBots" -> {
+                        // nickname 필터와 동일한 형태의 서브쿼리 — 봇 계정(members.is_bot)이 쓴 글을 제외한다.
+                        val subquery = query.subquery(UUID::class.java)
+                        val memberRoot =
+                            subquery.from(
+                                com.example.linksphere.domain.member.TableMember::class.java,
+                            )
+                        subquery.select(memberRoot.get("id"))
+                        subquery.where(
+                            cb.equal(memberRoot.get<Boolean>("isBot"), true),
+                        )
+                        predicates.add(cb.not(root.get<UUID>("userId").`in`(subquery)))
+                    }
                 }
             }
         }

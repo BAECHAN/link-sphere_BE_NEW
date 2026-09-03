@@ -4,6 +4,8 @@ import com.amazonaws.services.lambda.runtime.Context
 import com.amazonaws.services.lambda.runtime.RequestStreamHandler
 import com.example.linksphere.domain.comment.CommentPostProcessEvent
 import com.example.linksphere.domain.comment.CommentPostProcessService
+import com.example.linksphere.domain.feed.FeedCrawlService
+import com.example.linksphere.domain.feed.FeedItemJobEvent
 import com.example.linksphere.domain.post.PostAIService
 import com.example.linksphere.domain.post.PostCreatedEvent
 import com.fasterxml.jackson.databind.JsonNode
@@ -131,6 +133,14 @@ class LambdaHandler : RequestStreamHandler {
                 handleCommentJob(event, output)
                 return
             }
+            "feed-crawl" -> {
+                handleFeedCrawlJob(output)
+                return
+            }
+            "feed-item" -> {
+                handleFeedItemJob(event, output)
+                return
+            }
         }
 
         // rawPath에는 CloudFront가 forward한 전체 경로(/api/auth/login)가 담겨있다.
@@ -251,6 +261,23 @@ class LambdaHandler : RequestStreamHandler {
         val payload = mapper.treeToValue(event.get("event"), CommentPostProcessEvent::class.java)
         val commentPostProcessService = applicationContext.getBean(CommentPostProcessService::class.java)
         commentPostProcessService.processCommentJob(payload)
+        mapper.writeValue(output, mapOf("statusCode" to 200, "body" to "ok"))
+    }
+
+    // EventBridge cron이 직접 호출하는 Stage A 진입점(self-invoke가 아니라 외부 트리거).
+    // 피드 소스를 순회해 후보 URL만 모으고, 실제 게시글 생성은 Stage B(feed-item)로 넘긴다.
+    private fun handleFeedCrawlJob(output: OutputStream) {
+        val feedCrawlService = applicationContext.getBean(FeedCrawlService::class.java)
+        feedCrawlService.collectAndDispatch()
+        mapper.writeValue(output, mapOf("statusCode" to 200, "body" to "ok"))
+    }
+
+    // FeedJobDispatcher가 위임한 Stage B 처리부. 항목 하나가 실패해도 나머지는 계속 처리하므로
+    // (FeedCrawlService.processFeedItemJob 내부의 runCatching) 여기서 별도 예외 처리는 필요 없다.
+    private fun handleFeedItemJob(event: JsonNode, output: OutputStream) {
+        val payload = mapper.treeToValue(event.get("event"), FeedItemJobEvent::class.java)
+        val feedCrawlService = applicationContext.getBean(FeedCrawlService::class.java)
+        feedCrawlService.processFeedItemJob(payload)
         mapper.writeValue(output, mapOf("statusCode" to 200, "body" to "ok"))
     }
 }
