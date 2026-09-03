@@ -1,0 +1,38 @@
+name: CI
+
+# PR에 대해 ktlint·컴파일·테스트를 검증한다. 지금까지는 deploy.yml(push:main)만 있어서
+# PR 단계에서 검사가 전혀 안 됐고, deploy.yml도 ktlintCheck+shadowJar만 돌려 테스트 22개가
+# CI에서 한 번도 실행된 적이 없었다.
+on:
+  pull_request:
+    branches: ['main']
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'corretto'
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: ${{ runner.os }}-gradle-
+
+      - name: Ktlint check & test
+        run: chmod +x gradlew && ./gradlew ktlintCheck test --no-daemon

@@ -60,6 +60,19 @@
 
   </details>
 
+### Changed
+
+- `infra` PR·배포 파이프라인에 ktlint·테스트 게이트 추가
+  <details><summary>배경·구현</summary>
+
+  지금까지 `deploy.yml`(push:main 전용)이 `ktlintCheck shadowJar`만 실행해 `src/test`의
+  테스트 22개가 CI에서 한 번도 돌지 않았고, PR 단계에는 검사 워크플로우 자체가 없었다.
+  `ci.yml`(신규, `pull_request` 트리거)을 추가해 `ktlintCheck test`를 돌리고,
+  `deploy.yml`도 `shadowJar` 전에 `test`를 함께 실행하도록 바꿨다.
+  (`.github/workflows/ci.yml`(신규), `.github/workflows/deploy.yml`)
+
+  </details>
+
 ### Fixed
 
 - `bookmark` "최근 열람순" 정렬에서 미열람 글끼리 순서가 매번 흔들리던 문제
