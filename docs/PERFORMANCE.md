@@ -1,5 +1,7 @@
 # Link-Sphere BE — 성능 (Lambda 콜드스타트)
 
+> 마지막 검토: 2026-09-03
+
 이 문서는 **"왜 느렸고, 무엇을 근거로 무엇을 바꿨는지"** 를 남긴다.
 배포 절차는 [DEPLOY.md](./DEPLOY.md), 무엇이 바뀌었는지는 [CHANGELOG.md](../CHANGELOG.md)를 참고.
 

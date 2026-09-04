@@ -1,5 +1,8 @@
 # 🚀 배포 가이드 (Deployment Guide)
 
+> **보관 문서** — 더 이상 갱신하지 않음. 현재 배포 인프라는 AWS Lambda다
+> ([`DEPLOY.md`](./DEPLOY.md) 참고).
+
 이 프로젝트는 **GitHub Actions**, **AWS ECR**, **AWS App Runner**를 사용하여 CI/CD 파이프라인을 구축했습니다.
 
 ## 🏗️ 배포 아키텍처
