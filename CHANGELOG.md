@@ -75,6 +75,47 @@
 
 ### Fixed
 
+- `post` 크롤링이 차단된 RSS 봇 글에 피드 본문으로 AI 요약 생성
+  <details><summary>배경·구현</summary>
+
+  RSS 봇으로 등록된 게시글 17건 전부 `aiSummary`가 비어 있었다. 원인은 코드가
+  아니라 대상 URL이었다 — `PostService.createPost`는 크롤링(`UrlMetadataExtractor`)이
+  성공해야만 AI 이벤트를 발행하는데, `news.hada.io`(GeekNews)·`medium.com`이
+  봇 UA를 403으로 차단해 크롤링이 실패하고 AI 파이프라인 자체가 조용히 스킵됐다
+  (7건). 나머지 10건은 로컬 `FeedCrawlRunner --commit`으로 등록돼 self-invoke가
+  스킵되면서 `aiStatus=PENDING`에 고착됐다(별개 원인, 알려진 로컬 제약).
+
+  실제 RSS 피드에는 크롤링이 막힌 두 소스 모두 본문이 들어 있었다(Medium
+  `content:encoded`, GeekNews Atom `content`) — `FeedParser`가 이를 파싱만 하고
+  버리고 있어서 `FeedEntry`에 `content` 필드를 추가하고 HTML을 평문으로 정규화해
+  `FeedCrawlItem` → `PostService.createPost`까지 흘려보냈다. `PostCreateRequest`에
+  필드를 추가하지 않고 `createPost(userId, request, fallbackContent = ...)`처럼
+  별도 파라미터로 뺐다 — `PostCreateRequest`는 `PostController`의 `@RequestBody`로
+  바인딩되므로, 여기에 본문 필드를 넣으면 로그인한 누구나 Gemini 프롬프트에 임의
+  텍스트를 주입할 수 있게 된다. `fallbackContent`는 크롤링이 실패했을 때만,
+  그것도 봇 경로에서만 채워지고 사람이 등록하는 기존 경로는 항상 null이라
+  동작이 그대로다.
+
+  기존 17건은 `tools/BotPostAiBackfillRunner`(신규, 로컬 1회성 도구)로 백필했다 —
+  재크롤링 또는 RSS 폴백으로 본문을 구해 `PostAIService.processAiJob`을 직접
+  동기 호출한다(로컬은 self-invoke가 스킵되므로 이벤트 발행 경로를 쓰면 안 된다).
+
+  피드 소스 가용성도 재확인했다: 우아한형제들 기술블로그는 피드 fetch 자체가
+  Lambda(AWS IP 대역)에서 403이라 비활성화했고, 반대로 네이버 D2는 시딩 당시
+  "접근 미확인"으로 꺼져 있었는데 재확인 결과 정상이라 활성화했다
+  (`sql/update_feed_sources_availability.sql`). 소스별 가능/불가능 전체 표는
+  `docs/RSS-FEED-BOT.md` 참고.
+
+  (`domain/feed/FeedParser.kt`, `domain/feed/FeedDTO.kt`,
+  `domain/feed/FeedCrawlService.kt`, `domain/feed/FeedItemProcessor.kt`,
+  `domain/post/PostService.kt`, `domain/post/PostRepository.kt`,
+  `tools/BotPostAiBackfillRunner.kt`(신규), `tools/FeedCrawlRunner.kt`)
+
+  DB 변경 필요: `sql/update_feed_sources_availability.sql` 실행 (마이그레이션
+  아님, `feed_sources.enabled` 갱신 2건).
+
+  </details>
+
 - `bookmark` "최근 열람순" 정렬에서 미열람 글끼리 순서가 매번 흔들리던 문제
   <details><summary>배경·구현</summary>
 

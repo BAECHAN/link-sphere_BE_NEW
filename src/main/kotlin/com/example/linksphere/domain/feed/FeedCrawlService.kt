@@ -55,7 +55,7 @@ class FeedCrawlService(
             runCatching {
                 feedParser.fetch(source.url)
                     .take(MAX_ITEMS_PER_SOURCE)
-                    .forEach { entry -> candidates.add(FeedCrawlItem(source.id, entry.title, entry.link)) }
+                    .forEach { entry -> candidates.add(FeedCrawlItem(source.id, entry.title, entry.link, entry.content)) }
                 source.lastFetchedAt = LocalDateTime.now()
                 source.lastError = null
             }.onFailure { e ->

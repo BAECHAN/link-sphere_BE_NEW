@@ -109,9 +109,16 @@ EventBridge cron(0 22 * * ? *)   # UTC 22:00 = KST 07:00
 AI 잡도 시간축에 자연스럽게 퍼진다. 부수 효과: chunk가 타임아웃돼 Lambda가 자동
 재시도해도, 이미 claim된 항목은 즉시 skip되어 남은 항목만 이어서 처리된다.
 
-5라는 값 자체에 특별한 공식은 없다 — "감당 가능한 동시성" 수준으로 잡은 값이고,
-배포 후 `ai_status = FAILED` 비율이 높으면(Gemini RPM 초과 신호) 3으로 낮추도록
-`docs/DEPLOY.md` 8장에 적어뒀다.
+5라는 값 자체에 특별한 공식은 없다 — "감당 가능한 동시성" 수준으로 잡은 값이다.
+
+> **정정(2026-09-04)**: 당시엔 "FAILED 비율이 높으면 `CHUNK_SIZE`를 3으로
+> 낮춰라"고 `docs/DEPLOY.md` 8장에 적어뒀는데, 이건 방향이 반대다. `CHUNK_SIZE`를
+> 줄이면 병렬 chunk 수(`전체 건수 / CHUNK_SIZE`)가 오히려 늘어난다 — 15건
+> 기준으로 5→3이면 동시 chunk가 3개→5개가 되고, 각 chunk도 항목이 적어 더 빨리
+> 끝나므로 같은 15건이 **더 짧은 시간에** 몰려 RPM 초과 위험이 커진다. 실제로
+> 조정해야 할 knob은 `MAX_ITEMS_PER_SOURCE`(총량 자체를 줄임)다. `docs/DEPLOY.md`
+> 8장도 함께 정정했다. 이 문제 자체는 RSS 봇 글이 지금까지 AI 파이프라인을 한 번도
+> 타지 못했던 것과 맞물려(§9 "남은 것" → 아래 시행착오 참고) 실측이 아직 없었다.
 
 ## 5. 중복 방지 — `posts.url`을 건드리지 않은 이유
 
@@ -129,7 +136,36 @@ unique 제약을 걸지 않았다:
 바뀌지 않는다. `post_id`는 nullable + `ON DELETE SET NULL`로 둬서, 봇 글을
 관리자가 지워도 원장은 남아 재수집되지 않는다.
 
-## 6. 운영 파라미터
+## 6. 피드 소스별 수집 가능 여부
+
+일부 소스는 피드 자체 또는 개별 항목 크롤링이 막힌다. 아래는 소스 9개를 전수
+재확인한 결과다(측정 환경·측정일은 각 열에 명시 — **로컬 IP와 Lambda(AWS IP
+대역)의 결과가 다를 수 있다**, 실제로 우아한형제들이 그런 사례다).
+
+| 소스 | 피드 fetch | 형식 | RSS 본문 필드 | 항목 크롤링 | `enabled` | 비고 |
+| --- | --- | --- | --- | --- | --- | --- |
+| GeekNews | 200 (로컬) | Atom | `content` 155~219자 | **403**(로컬·Lambda 모두) | TRUE | 크롤링 실패 → RSS 본문 폴백으로 AI 요약 생성(§8 시행착오 2) |
+| 우아한형제들 기술블로그 | **403**(로컬·Lambda 모두) | — | — | — | **FALSE로 변경** | 피드 fetch 자체가 막혀 항목을 하나도 못 가져옴. AWS IP 대역 차단으로 보임 |
+| 토스 테크 | 200 (로컬) | RSS | `content:encoded` 6,456자 | 200 (로컬) | TRUE | 정상 |
+| 카카오 기술블로그 | 200 (로컬) | RSS | 없음 | 200 (로컬) | TRUE | 정상 (본문 폴백 불필요) |
+| LY Corporation Tech | 200 (로컬) | RSS | 없음 | 200 (로컬) | TRUE | 정상 (본문 폴백 불필요) |
+| 당근 기술블로그(Medium) | 200 (로컬) | RSS | `content:encoded` 6,070~29,396자 | **403**(로컬·Lambda 모두) | TRUE | 크롤링 실패 → RSS 본문 폴백으로 AI 요약 생성(§8 시행착오 2) |
+| 하이퍼커넥트 기술블로그 | 200 (로컬) | Atom | `content` 9,423자 | 200 (로컬) | TRUE | 정상 |
+| 요즘IT | 200 (로컬) | RSS | `content:encoded` 15,812자 | 200 (로컬, 308 리다이렉트 경유) | TRUE | 정상 |
+| 네이버 D2 | 200 (로컬) | Atom | `content` 19,893자 | 200 (로컬) | **TRUE로 변경** | 시딩 당시 "접근 미확인"으로 꺼져 있었으나 재확인 결과 정상 |
+
+측정: 2026-09-04, `curl`로 각 소스의 실제 피드·항목 URL을 직접 요청(로컬),
+CloudWatch 실행 로그로 Lambda 측 결과 교차 확인(GeekNews·우아한형제들 두 건은
+Lambda 로그에 직접 찍혀 있다 — `[FeedCrawl] 피드 fetch 실패 - 우아한형제들
+기술블로그: HTTP error fetching URL. Status=403`, `[Crawling] 크롤링 실패:
+https://news.hada.io/... Status=403`). 나머지 항목은 Lambda에서 재확인되지
+않은 로컬 측정값이므로, 실제 결과와 다르면 `sql/update_feed_sources_availability.sql`
+같은 형태로 `enabled`만 갱신하면 된다(재배포 불필요).
+
+DB 변경: `sql/update_feed_sources_availability.sql` — 우아한형제들 비활성화,
+네이버 D2 활성화.
+
+## 7. 운영 파라미터
 
 "몇 시에, 몇 번, 몇 개씩 도는지" 한눈에 보는 표. 코드 값은 파일 위치까지 명시한다.
 
@@ -151,7 +187,7 @@ unique 제약을 걸지 않았다:
 커맨드를 `--schedule-expression`만 바꿔 재실행하면 된다(같은 이름의 룰에
 다시 `put-rule`을 호출하면 덮어써진다 — 별도 삭제 불필요).
 
-## 7. 검증 (실제 프로덕션)
+## 8. 검증 (실제 프로덕션)
 
 배포 후 EventBridge 룰을 만들기 전, prod Lambda에 Stage A를 직접 트리거했다:
 
@@ -172,11 +208,30 @@ REPORT Duration: 4136.29 ms  Billed Duration: 4137 ms  Memory Size: 2048 MB
 - 로컬 검증 때 만든 15건이 실제 운영 환경에서도 전부 정상적으로 중복 제외됨
   (`feed_items`/봇 게시글 카운트 그대로 15/15 유지)
 
-## 8. 시행착오 — `attachPost`가 flush 없이 실행되던 문제
+### 8.1 AI 요약 백필 dry-run (2026-09-04)
 
-### 8.1 증상
+§9.2 수정 이후, `aiSummary`가 비어 있던 기존 봇 글 17건에 대해
+`BotPostAiBackfillRunner`를 dry-run(쓰기 없음)으로 실행:
 
-로컬 E2E 검증(`FeedCrawlRunner --commit`) 첫 실행에서 후보 14건이 **전부** 실패했다:
+```
+대상 17건
+  [RSS 폴백] Any Human Ever - ... | https://news.hada.io/topic?id=33200 | ...
+  [재크롤링] 1부: 데이터도 정답도 없다: ... | https://hyperconnect.github.io/... | ...
+  ...
+해결 가능 17건, 미해결 0건
+```
+
+17건 전부 본문을 구하는 데 성공했다 — 크롤링이 여전히 막히는 GeekNews·당근
+글은 RSS 폴백으로, 나머지는 재크롤링으로. `FeedParser`의 `content:encoded`/
+Atom `content` 셀렉터가 실제 운영 데이터에서 정상 동작함을 확인했다. `--commit`
+실행(실제 AI 분석)은 배포 후 진행.
+
+## 9. 시행착오
+
+### 9.1 `attachPost`가 flush 없이 실행되던 문제
+
+**증상**: 로컬 E2E 검증(`FeedCrawlRunner --commit`) 첫 실행에서 후보 14건이
+**전부** 실패했다:
 
 ```
 ERROR: insert or update on table "feed_items" violates foreign key constraint "fk_feed_items_post"
@@ -186,9 +241,7 @@ ERROR: insert or update on table "feed_items" violates foreign key constraint "f
 `feed_items`/`posts` 카운트를 다시 확인해보니 둘 다 0 — claim한 원장 행까지
 포함해 트랜잭션 전체가 롤백돼 있었다.
 
-### 8.2 원인
-
-`FeedItemProcessor.processFeedItem`은 한 트랜잭션 안에서 (1) `PostService.createPost`로
+**원인**: `FeedItemProcessor.processFeedItem`은 한 트랜잭션 안에서 (1) `PostService.createPost`로
 새 `TablePost`를 만들고, (2) `FeedItemRepository.attachPost`(`@Modifying` JPQL
 `UPDATE`)로 방금 만든 postId를 `feed_items`에 채워 넣는다.
 
@@ -198,7 +251,7 @@ ERROR: insert or update on table "feed_items" violates foreign key constraint "f
 flush 시점까지 지연돼 있었는데, (2)의 `attachPost`가 그 flush보다 먼저 DB에
 도달해 존재하지 않는 `post_id`를 참조하는 `UPDATE`를 실행한 것이다.
 
-### 8.3 수정
+**수정**:
 
 ```kotlin
 @Modifying(flushAutomatically = true)
@@ -209,26 +262,69 @@ fun attachPost(@Param("id") id: UUID, @Param("postId") postId: UUID)
 `flushAutomatically = true`가 이 `UPDATE`를 실행하기 직전에 영속성 컨텍스트를
 강제로 flush시켜, 대기 중이던 `Post` INSERT가 먼저 DB에 반영되게 한다.
 
-### 8.4 재검증
-
-수정 후 재실행 — 14건 전부 성공. 곧바로 같은 잡을 한 번 더 실행해 멱등성도
-확인했다: 기존 URL은 정상적으로 skip되고, 그사이 GeekNews에 새로 올라온 글
-1건만 추가로 처리됐다(`totalElements` 14 → 15).
+**재검증**: 수정 후 재실행 — 14건 전부 성공. 곧바로 같은 잡을 한 번 더 실행해
+멱등성도 확인했다: 기존 URL은 정상적으로 skip되고, 그사이 GeekNews에 새로
+올라온 글 1건만 추가로 처리됐다(`totalElements` 14 → 15).
 
 이 버그는 로컬에서만 재현된 게 아니다. 만약 발견 못 하고 그대로 배포했다면,
 실제 Lambda 환경에서도 동일한 순서로 같은 예외가 나 **봇 글이 하나도 등록되지
 않았을 것**이다 — Lambda self-invoke의 트랜잭션 경계와 `@Modifying` 쿼리의
 flush 미보장이 겹치는, 로컬/운영 환경 차이가 아니라 순수하게 코드 로직의 문제였다.
 
-## 9. 남은 것
+### 9.2 크롤링 실패 시 AI 이벤트가 아예 발행되지 않던 문제
 
-- 네이버 D2 피드(`enabled=false`로 시딩)의 실제 접근 가능 여부 미확인
+**증상**: 위 8.x의 버그를 고쳐 봇 글이 정상적으로 쌓이기 시작한 뒤에도, 등록된
+봇 글 17건 전부 `aiSummary`가 `null`이었다. "AI 요약이 안 된다"는 보고로
+접수됐지만, 사람이 등록한 글은 정상적으로 요약이 붙고 있었다.
+
+**원인**: 두 가지가 겹쳐 있었다.
+
+1. `PostService.createPost`는 `UrlMetadataExtractor.extract`의 크롤링이 성공해
+   `pageContent`가 있을 때만 `PostCreatedEvent`를 발행한다. `news.hada.io`
+   (GeekNews)와 `medium.com`(당근 기술블로그)이 봇 UA를 403으로 차단해 크롤링이
+   실패했고, `extract`는 예외를 삼키고 `pageContent = null`을 반환하므로
+   게시글은 정상 등록되지만 AI 파이프라인이 통째로 스킵됐다(§6 표의 두 소스,
+   7건). CloudWatch에 크롤링 403 스택트레이스가 그대로 찍혀 있었다.
+2. 나머지 10건은 로컬 `FeedCrawlRunner --commit`으로 등록된 것이었다 —
+   `LambdaSelfInvoker`가 로컬(`AWS_LAMBDA_FUNCTION_NAME` 없음)에서 self-invoke를
+   스킵하므로(`docs/AI-ASYNC-PROCESSING.md` 2.2절과 동일한 함정), 크롤링에는
+   성공했지만 AI 잡 자체가 발행되지 않아 `aiStatus=PENDING`에 고착됐다.
+
+프로덕션 EventBridge cron이 실제로 돈 건 딱 한 번(2026-09-04 07:00 KST)이고
+그때 등록된 2건이 하필 둘 다 GeekNews라 전부 403이었다 — 그래서 "코드는
+정상인데 아직 성공 사례가 한 건도 없다"는 상태로 계속 관찰됐다.
+
+**수정**: 크롤링이 막힌 두 소스 모두 RSS 피드 안에 이미 본문이 들어 있었다
+(Medium `content:encoded`, GeekNews Atom `content`) — `FeedParser`가 이를
+파싱만 하고 버리고 있었다. `FeedEntry`에 `content` 필드를 추가해 크롤링 실패
+시 `PostService.createPost(userId, request, fallbackContent = ...)`로 대체
+투입하도록 배선했다. `PostCreateRequest`(컨트롤러 `@RequestBody`)에는 필드를
+추가하지 않았다 — 그러면 로그인한 누구나 Gemini 프롬프트에 임의 텍스트를
+주입할 수 있게 된다. 자세한 구현은 CHANGELOG.md `[Unreleased] > Fixed` 참고.
+
+### 9.3 로컬 검증용 `--commit`을 프로덕션 검증으로 착각하면 안 되는 이유
+
+9.2의 원인 2가 그 자체로 교훈이다 — `FeedCrawlRunner --commit`은 self-invoke가
+구조적으로 스킵되므로, "AI 파이프라인이 실제로 도는지" 확인하는 용도로는 쓸 수
+없다. 로컬에서 확인할 수 있는 건 크롤링·파싱·dedupe 로직까지고, self-invoke 뒤
+Stage B와 AI Lambda 경로는 프로덕션에서 수동 트리거(`docs/DEPLOY.md` 8장)로만
+검증 가능하다. `FeedCrawlRunner` 클래스 주석에도 이 함정을 명시해뒀다.
+
+## 10. 남은 것
+
+- ~~네이버 D2 피드의 실제 접근 가능 여부 미확인~~ → §6에서 해소, 활성화함
+- ~~우아한형제들 기술블로그 403~~ → §6에서 해소, 피드 fetch 자체가 막혀 User-Agent
+  조정으로도 해결 안 됨을 확인, 비활성화함
 - GeekNews 항목 링크가 원문이 아니라 토론 페이지(`news.hada.io/topic?id=...`)인
   점 — 그대로 둘지는 실제 등록 결과를 더 보고 판단
-- 우아한형제들 기술블로그 403 — 필요하면 User-Agent 조정 검토 (지금은 실패해도
-  다른 소스에 영향 없어 낮은 우선순위)
-- 다음 EventBridge 자동 실행: 2026-09-04 07:00 KST — 신규 게시글이 실제로
-  올라오는지 재확인 필요
+- 크롤링이 막힌 글(GeekNews·당근)은 `ogImage`가 계속 비어 있어 카드 썸네일이
+  빈다 — `<media:thumbnail>`이나 RSS 본문 첫 `<img>`로 채우는 건 이번 범위 밖
+- GeekNews RSS `<content>`는 GeekNews가 이미 작성한 155~219자짜리 bullet
+  요약이라, 여기서 AI 요약을 만들면 "요약의 요약"이 된다 — 실제 배포 후 결과물
+  품질을 보고 판단하기로 함(§9.2)
+- 2026-09-04 07:00 KST EventBridge 자동 실행에서 등록된 2건이 둘 다 GeekNews였고
+  당시엔 크롤링 실패 → AI 이벤트 미발행으로 `aiSummary`가 비어 있었다(§9.2) —
+  이번 수정 이후 다음 자동 실행부터 재확인 필요
 
 ## 관련 문서
 

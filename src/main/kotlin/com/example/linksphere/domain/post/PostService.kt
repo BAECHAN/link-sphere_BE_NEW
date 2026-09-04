@@ -40,10 +40,14 @@ class PostService(
     private val logger = LoggerFactory.getLogger(PostService::class.java)
 
     @Transactional
-    fun createPost(userId: UUID, request: PostCreateRequest): PostResponse {
+    fun createPost(userId: UUID, request: PostCreateRequest, fallbackContent: String? = null): PostResponse {
         val url = request.url.trim()
         validateUrl(url)
         val metadata = urlMetadataExtractor.extract(url)
+        // 크롤링이 실패하면 pageContent가 null이라 AI 분석이 통째로 스킵된다(아래 aiStatus=NONE).
+        // fallbackContent는 어떤 @RequestBody DTO에도 없는 파라미터라 외부 사용자가 채울 수 없고,
+        // 봇 경로(FeedItemProcessor)가 RSS 본문을 미리 크롤링해 넘겨줄 때만 대체된다.
+        val pageContent = metadata.pageContent ?: fallbackContent?.takeIf { it.isNotBlank() }
 
         val title = if (!request.title.isNullOrBlank()) request.title else metadata.title
         val categories =
@@ -62,7 +66,7 @@ class PostService(
                 tags = metadata.tags.toMutableList(),
                 categories = categories,
                 ogImage = metadata.ogImage,
-                aiStatus = if (metadata.pageContent != null) AiStatus.PENDING else AiStatus.NONE,
+                aiStatus = if (pageContent != null) AiStatus.PENDING else AiStatus.NONE,
                 isPrivate = request.isPrivate,
             )
         val savedPost = postRepository.save(newPost)
@@ -72,7 +76,7 @@ class PostService(
             saveBookmarkWithFolders(userId, savedPost.id!!, request.folderIds.orEmpty().distinct())
         }
 
-        if (metadata.pageContent != null) {
+        if (pageContent != null) {
             logger.info("[AI Async] PostCreatedEvent 발행 - postId: ${savedPost.id}")
             eventPublisher.publishEvent(
                 PostCreatedEvent(
@@ -80,7 +84,7 @@ class PostService(
                     userId = userId,
                     title = title,
                     description = metadata.description,
-                    content = metadata.pageContent,
+                    content = pageContent,
                     existingTags = metadata.tags,
                 ),
             )

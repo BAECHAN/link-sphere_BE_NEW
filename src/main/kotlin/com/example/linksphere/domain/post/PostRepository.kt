@@ -18,6 +18,8 @@ interface PostRepository :
 
     fun findByCategoriesSlugOrderByCreatedAtDesc(slug: String, pageable: Pageable): Page<TablePost>
 
+    fun findAllByUserIdAndAiSummaryIsNull(userId: UUID): List<TablePost>
+
     @Modifying
     @Query("UPDATE TablePost p SET p.viewCount = COALESCE(p.viewCount, 0) + 1 WHERE p.id = :id")
     fun incrementViewCount(@Param("id") id: UUID)
