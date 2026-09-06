@@ -74,10 +74,13 @@
   (`Request blocked.`)을 반환했다. 실측으로 8,189바이트는 Lambda까지 도달(401), 8,219바이트는
   WAF 차단(403) — 앱 에러 처리를 전혀 타지 못해 사용자에게 이유를 알릴 수단이 없었다. 이
   8KB는 우리가 정한 값이 아니라 ALB/AppSync 기준 AWS 기본값이고, CloudFront는 원래 16KB까지
-  검사가 가능하다. WAF 쪽은 `SizeRestrictions_BODY`를 Count로 오버라이드하고 "바디
-  16,384바이트 초과 시 차단"하는 커스텀 룰을 그 앞 우선순위에 추가해 과차단 구간을
-  없앴다(레포 밖 수동 설정 — FE `docs/DEPLOY.md`의 CloudFront WAF 절 참고). 그와 별개로
-  앱이 먼저 400으로 되돌려 이유를 말할 수 있도록 상한을 명시했다.
+  검사가 가능하다. WAF 쪽은 `SizeRestrictions_BODY`를 Count로 오버라이드해 이 차단을
+  없앴다(레포 밖 수동 설정 — FE `docs/DEPLOY.md`의 CloudFront WAF 절 참고). 대신 16KB
+  초과를 다시 막는 커스텀 룰은 만들지 못했다 — 이 기능(`SizeConstraintStatement`)이
+  CloudFront Pro 플랜(월 $15 정액제) 전용이라 Free 플랜인 이 계정에서는 거부됐고,
+  월 비용이 걸린 결정이라 업그레이드 없이 진행했다. 결과적으로 WAF 레이어의 바디 크기
+  방어선은 없어졌고(Lambda 자체 한도 6MB까지 통과), 그 대신 앱이 먼저 400으로 이유를
+  말할 수 있도록 이번 상한을 명시했다.
 
   검증 대상은 `buildFinalContent` 이전의 사용자 입력 `content`다 - 이미지 URL을 이어붙인
   최종 본문을 재면 FE가 같은 값을 계산할 수 없고(수정 폼은 `splitContentImages`로 URL을
