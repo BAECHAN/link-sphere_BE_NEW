@@ -277,7 +277,7 @@ FCM을 사용하려면 `src/main/resources/firebase-service-account.json` 파일
 - **GitHub Actions**: CI/CD 자동화 워크플로우
 - **AWS Lambda (SnapStart)**: Shadow JAR 기반 서버리스 실행 (도쿄 리전, arm64 / 2048MB)
 - **AWS S3**: Lambda 배포 JAR 저장소 (`deployments/` 30일 만료 수명 주기)
-- **Amazon EventBridge**: 5분 간격 워밍 핑(콜드스타트 완화) + 1일 1회 RSS 피드 자동
+- **Amazon EventBridge**: 5분 간격 워밍 핑(콜드스타트 완화) + 4일 1회 RSS 피드 자동
   수집 트리거(`domain/feed/`, `docs/DEPLOY.md` 8장). 설계·시행착오·프로덕션 검증
   기록은 [**docs/RSS-FEED-BOT.md**](./docs/RSS-FEED-BOT.md) 참고
 - **Amazon CloudFront**: `/api/*` → Lambda, 그 외 → S3(FE). FE와 같은 오리진

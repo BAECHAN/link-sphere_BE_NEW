@@ -7,9 +7,9 @@ import org.springframework.stereotype.Service
 import java.time.LocalDateTime
 
 /**
- * EventBridge cron(1일 1회) → LambdaHandler("feed-crawl")가 호출하는 Stage A + Stage B 진입점.
+ * EventBridge cron(4일 1회) → LambdaHandler("feed-crawl")가 호출하는 Stage A + Stage B 진입점.
  *
- * 피드 fetch(최악 8건 × 10s)와 항목별 크롤링(최악 15건 × 수십 초)을 한 Lambda 호출 안에서 다 하면
+ * 피드 fetch(최악 8건 × 10s)와 항목별 크롤링(최악 5건 × 수십 초)을 한 Lambda 호출 안에서 다 하면
  * 120초 타임아웃을 넘긴다. 그래서 AI 분석과 같은 shape로 쪼갠다 — Stage A는 후보 URL만 모아
  * 5건씩 self-invoke로 넘기고, Stage B가 실제 게시글 생성을 처리한다.
  */
@@ -26,8 +26,8 @@ class FeedCrawlService(
     private val logger = LoggerFactory.getLogger(FeedCrawlService::class.java)
 
     companion object {
-        private const val MAX_ITEMS_PER_SOURCE = 2
-        private const val MAX_ITEMS_TOTAL = 15
+        private const val MAX_ITEMS_PER_SOURCE = 1
+        private const val MAX_ITEMS_TOTAL = 5
         private const val CHUNK_SIZE = 5
         private const val DEADLINE_MILLIS = 90_000L
     }
@@ -45,12 +45,14 @@ class FeedCrawlService(
         val deadline = System.currentTimeMillis() + DEADLINE_MILLIS
         val candidates = mutableListOf<FeedCrawlItem>()
 
-        for (source in feedSourceRepository.findAllByEnabledTrue()) {
+        // 소스 순회 순서를 매번 섞는다 - findAllByEnabledTrue()는 정렬이 없어 반환 순서가 사실상
+        // 고정되는데, 아래 fresh 계산의 take(MAX_ITEMS_TOTAL)이 이 순서대로 자르기 때문에 셔플이
+        // 없으면 뒤쪽 소스가 매번 잘려나간다.
+        for (source in feedSourceRepository.findAllByEnabledTrue().shuffled()) {
             if (System.currentTimeMillis() > deadline) {
                 logger.warn("[FeedCrawl] 90초 마감 초과 - 남은 소스는 다음 실행으로 미룸")
                 break
             }
-            if (candidates.size >= MAX_ITEMS_TOTAL) break
 
             runCatching {
                 feedParser.fetch(source.url)

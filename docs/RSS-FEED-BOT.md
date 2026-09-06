@@ -8,7 +8,7 @@
 > **읽고 나면**: 이 문서만 보고 피드 소스를 추가/제거하거나, 수집 주기·건수를 조정하거나,
 > 버그를 재현·수정할 수 있다 (§9 참고).
 >
-> **마지막 검토**: 2026-09-06
+> **마지막 검토**: 2026-09-06 (발행 주기 4일 1회·배치당 5건으로 축소)
 
 ## 1. RSS가 뭔가요?
 
@@ -36,7 +36,7 @@ RSS는 새로운 기술이 아니라, 블로그나 뉴스 사이트가 오래전
 
 이 봇이 하는 일은 단순하다:
 
-1. 매일 정해진 시각에 스케줄러가 9개 블로그의 RSS 주소에 요청을 보낸다
+1. 4일에 한 번 정해진 시각에 스케줄러가 9개 블로그의 RSS 주소에 요청을 보낸다
 2. 응답으로 온 XML을 파싱해 "제목 + 링크"만 뽑는다
 3. 아직 등록 안 된 링크라면, **사람이 "링크 등록" 버튼을 눌렀을 때 호출되는 것과
    완전히 동일한 함수**(`PostService.createPost`)를 봇이 대신 호출한다 — 이 함수
@@ -51,11 +51,11 @@ RSS(1~2단계)와 크롤링(3단계)을 그림으로 보면 이렇다:
 
 ```mermaid
 flowchart TD
-  EB["EventBridge cron · 매일 07:00 KST"] --> A1
+  EB["EventBridge cron · 4일마다 07:00 KST"] --> A1
 
   subgraph SA["Stage A · 발견 = RSS"]
-    A1["feed_sources 9개 순회"] --> A2["피드 XML GET · Jsoup 5s"]
-    A2 --> A3["제목 + 링크만 추출<br/>소스당 2건 / 전체 15건"]
+    A1["feed_sources 9개 순회<br/>(매번 순서 셔플)"] --> A2["피드 XML GET · Jsoup 5s"]
+    A2 --> A3["제목 + 링크만 추출<br/>소스당 1건 / 전체 5건"]
     A3 --> A4{"feed_items에<br/>이미 있는 URL?"}
   end
 
@@ -101,7 +101,7 @@ flowchart TD
   RSS 전용 라이브러리는 새로 추가하지 않았다(4장 참고)
 - **AWS Lambda** — 백엔드 코드가 실제로 실행되는 곳(서버를 직접 띄워두지
   않는 서버리스 환경)
-- **AWS EventBridge** — 매일 정해진 시간에 Lambda를 깨우는 스케줄러
+- **AWS EventBridge** — 4일마다 정해진 시간에 Lambda를 깨우는 스케줄러
 - **PostgreSQL (Supabase)** — 데이터 저장. 이번에 `feed_sources`/`feed_items`
   테이블 신설
 - **React + TypeScript + Radix UI**(`@radix-ui/react-switch`) — FE "봇 글
@@ -127,9 +127,13 @@ Link-Sphere는 사용자가 링크를 직접 등록해야만 피드가 채워진
 콘텐츠가 비어 있으면 신규 방문자에게 보여줄 게 없고, 기존 사용자도 다시 들어올
 이유가 없다.
 
-봇 계정 `링크봇`이 큐레이션된 RSS/Atom 피드를 매일 자동 수집해 공개 게시글로
+봇 계정 `링크봇`이 큐레이션된 RSS/Atom 피드를 자동 수집해 공개 게시글로
 등록하도록 했다. 등록된 글은 사람이 올린 글과 완전히 동일한 경로 — SSRF 검증,
 크롤링, AI 요약·태그·카테고리 자동 분류 — 를 그대로 거친다.
+
+> 2026-09-06 정정: 초기엔 매일 수집했으나, 정렬이 `created_at DESC` 단독인
+> 메인 피드에서 봇 배치가 사용자 글을 첫 페이지 밖으로 밀어내는 문제가 확인돼
+> 4일 1회·배치당 5건으로 낮췄다(§8, §12).
 
 **수집 대상을 고르는 방식**을 임의 사이트 스크래핑이 아니라 RSS/Atom으로 한정했다.
 RSS는 발행자가 배포를 명시적으로 허용한 채널이라, 같은 목적을 저작권 문제 없이
@@ -143,13 +147,13 @@ RSS는 발행자가 배포를 명시적으로 허용한 채널이라, 같은 목
 무엇을 가져오는지는 1장 순서도, 아래는 Lambda 경계·페이로드 관점).
 
 ```
-EventBridge cron(0 22 * * ? *)   # UTC 22:00 = KST 07:00
+EventBridge cron(0 22 */4 * ? *)   # UTC 22:00 = KST 07:00, 4일마다
         │  {"linksphereJob":"feed-crawl"}
 [Stage A] FeedCrawlService.collectAndDispatch()
-  · feed_sources(enabled=true) 순회, 소스당 최대 2건 / 전체 최대 15건 fetch
+  · feed_sources(enabled=true) 순회(매번 순서 셔플), 소스당 최대 1건 / 전체 최대 5건 fetch
   · FeedUrlNormalizer로 정규화 → feed_items에 이미 있는 URL 제외
-  · 남은 항목을 5건씩 chunk → chunk마다 self-invoke
-        │  {"linksphereJob":"feed-item","event":{"items":[…5건…]}}
+  · 남은 항목(최대 5건)을 self-invoke 1회로 전달
+        │  {"linksphereJob":"feed-item","event":{"items":[…최대 5건…]}}
 [Stage B] FeedCrawlService.processFeedItemJob(event)
   · 항목마다 독립 트랜잭션 — feed_items claim → PostService.createPost(botId, ...)
         │
@@ -175,6 +179,12 @@ AI 잡도 시간축에 자연스럽게 퍼진다. 부수 효과: chunk가 타임
 적어뒀다. **`CHUNK_SIZE`는 낮추지 않는다** — chunk를 줄이면 병렬 chunk 수(전체
 건수 / `CHUNK_SIZE`)가 오히려 늘어 같은 건수가 더 짧은 시간에 몰리므로 RPM 초과를
 악화시킨다(2026-09-06 정정).
+
+> 2026-09-06 추가 정정: 이제 `MAX_ITEMS_TOTAL`(5)이 `CHUNK_SIZE`(5)와 같아져,
+> 현재 설정에서는 `chunked(5)`가 항상 chunk 1개만 만든다 — 위 동시성 문제가
+> 사실상 발생하지 않는다. 그래도 `CHUNK_SIZE`를 지우지 않은 이유는, 나중에
+> `MAX_ITEMS_TOTAL`을 다시 늘리면(예: 소스가 늘어나 전체 상한을 올릴 때)
+> 이 로직이 곧바로 다시 의미를 가지기 때문이다.
 
 ## 6. 데이터 모델 — `feed_sources` / `feed_items`
 
@@ -210,7 +220,7 @@ AI 잡도 시간축에 자연스럽게 퍼진다. 부수 효과: chunk가 타임
 
 ## 7. 중복 방지 — `posts.url`을 건드리지 않은 이유
 
-봇이 같은 글을 매일 다시 수집하면 안 되지만, 기존 게시글 URL 컬럼(`posts.url`)에는
+봇이 같은 글을 실행마다 다시 수집하면 안 되지만, 기존 게시글 URL 컬럼(`posts.url`)에는
 unique 제약을 걸지 않았다:
 
 1. **실 DB에 이미 중복이 있었다.** 확인 쿼리(`SELECT url, COUNT(*) ... HAVING COUNT(*) > 1`)
@@ -230,9 +240,9 @@ nullable + `ON DELETE SET NULL`로 둬서, 봇 글을 관리자가 지워도 원
 
 | 파라미터 | 값 | 실제 위치 |
 | --- | --- | --- |
-| 실행 주기 | 매일 UTC 22:00 (KST 오전 7시) | **AWS EventBridge 룰 자체** (`link-sphere-feed-crawl`, `cron(0 22 * * ? *)`) — 이 프로젝트는 IaC가 없어서 레포 안 어떤 파일에도 이 cron 표현식을 담은 "설정 파일"은 없다. `docs/DEPLOY.md` 8장의 `aws events put-rule` 커맨드가 유일한 기록이자 값을 바꾸는 방법 |
-| 소스당 최대 건수 | 2 | `FeedCrawlService.kt:29` `MAX_ITEMS_PER_SOURCE` |
-| 전체 최대 건수 | 15 | `FeedCrawlService.kt:30` `MAX_ITEMS_TOTAL` |
+| 실행 주기 | 4일마다 UTC 22:00 (KST 오전 7시) | **AWS EventBridge 룰 자체** (`link-sphere-feed-crawl`, `cron(0 22 */4 * ? *)`) — 이 프로젝트는 IaC가 없어서 레포 안 어떤 파일에도 이 cron 표현식을 담은 "설정 파일"은 없다. `docs/DEPLOY.md` 8장의 `aws events put-rule` 커맨드가 유일한 기록이자 값을 바꾸는 방법 |
+| 소스당 최대 건수 | 1 | `FeedCrawlService.kt:29` `MAX_ITEMS_PER_SOURCE` |
+| 전체 최대 건수 | 5 | `FeedCrawlService.kt:30` `MAX_ITEMS_TOTAL` |
 | self-invoke chunk 크기 | 5 | `FeedCrawlService.kt:31` `CHUNK_SIZE` |
 | Stage A 마감 가드 | 90,000ms | `FeedCrawlService.kt:32` `DEADLINE_MILLIS` |
 | 피드 소스 목록(9개, 1개 비활성) | `feed_sources` 테이블 | DB (SQL 시딩, `sql/create_feed_sources.sql`이 최초 시딩 기록 — 소스 추가/제거는 이 테이블에 직접 SQL로 한다, 재배포 불필요) |
@@ -245,6 +255,21 @@ nullable + `ON DELETE SET NULL`로 둬서, 봇 글을 관리자가 지워도 원
 **EventBridge 값을 바꾸려면**: `docs/DEPLOY.md` 8장의 `aws events put-rule`
 커맨드를 `--schedule-expression`만 바꿔 재실행하면 된다(같은 이름의 룰에
 다시 `put-rule`을 호출하면 덮어써진다 — 별도 삭제 불필요).
+
+**`cron(0 22 */4 * ? *)`의 트레이드오프**: day-of-month에 `*/4`를 쓰면 매월
+1·5·9·13·17·21·25·29일에 실행되므로 월 경계(예: 1/29 → 2/1)에서 실제 간격이
+3~4일로 흔들린다. 대안인 `rate(4 days)`는 정확히 4일 간격이지만 실행 시각이
+룰을 만든 시점에 고정돼 KST 07:00을 유지할 수 없다 — 시각 고정을 우선해 cron을
+택했다.
+
+**2026-09-06 발행 주기 축소 결정 배경**: 메인 피드 정렬이 `created_at DESC`
+단독(`PostRepositoryImpl.kt`)이고 페이지 크기가 10(`POST_PAGE_SIZE`)이라, 하루치
+배치가 한꺼번에 올라오면 사용자가 올린 글이 첫 페이지 밖으로 밀려났다. 이 변경의
+목적은 **DB 용량 절감이 아니다** — 봇 글은 `og:image`를 외부 URL 문자열로만
+저장해 Supabase Storage를 쓰지 않고, 실측 결과 전체 게시글 데이터가 400KB
+미만이라 Free 플랜 500MB 한도에 비하면 무시할 수준이다. 순전히 "봇 배치가 사람
+글을 밀어내는 빈도와 크기"를 줄이는 게 목적이라, 주기만 늘리고 상한(`MAX_ITEMS_TOTAL`)을
+그대로 두면 배치 크기가 오히려 커져 역효과가 난다는 점에 유의한다.
 
 ## 9. 코드 지도와 자주 하는 수정
 
@@ -361,6 +386,11 @@ flush 미보장이 겹치는, 로컬/운영 환경 차이가 아니라 순수하
   발사됐는데 그 뒤가 유실되면 `ai_status=PENDING`이 영구히 남고 지금은 백필
   도구(`tools/PostAiBackfillRunner`, [AI-ASYNC-PROCESSING.md](./AI-ASYNC-PROCESSING.md)
   5.4절)로만 복구된다. 재발 방지(스위퍼 또는 DLQ+알림)는 후속 과제
+- 2026-09-06 발행 주기 축소(4일 1회·소스당 1건)의 부작용: GeekNews처럼 하루
+  10건 넘게 발행하는 소스는 4일치 중 1건만 가져온다. RSS는 최신 글만 노출하므로
+  그 창을 벗어난 글은 다시 후보가 되지 않고 영영 누락된다 — 발행량을 줄이기로 한
+  결정의 의도된 결과이지만, 특정 소스의 커버리지가 특히 낮다는 문제 제기가 오면
+  그 소스만 `MAX_ITEMS_PER_SOURCE`와 별개로 우선순위를 주는 방안을 검토한다
 
 ## 13. 용어 사전
 

@@ -286,9 +286,9 @@ aws s3api put-bucket-lifecycle-configuration \
 - 최근 한 달치가 남아 롤백 능력은 유지된다
 - 버킷 버전 관리가 켜져 있으면 `NoncurrentVersionExpiration`도 함께 걸어야 실제로 줄어든다
 
-### 8. RSS 피드 자동 수집 (EventBridge 스케줄 룰) — 적용 완료 (2026-09-03)
+### 8. RSS 피드 자동 수집 (EventBridge 스케줄 룰) — 적용 완료 (2026-09-03, 2026-09-06 주기 축소)
 
-`domain/feed/`가 매일 1회 RSS/Atom 피드를 수집해 봇 계정 명의로 게시글을 등록한다.
+`domain/feed/`가 4일에 1회 RSS/Atom 피드를 수집해 봇 계정 명의로 게시글을 등록한다.
 6장 워밍 핑과 동일한 형식의 규칙을 하나 더 만들었다. 적용 순서
 (`CHANGELOG.md` `[Unreleased] > Migration` 참고):
 
@@ -309,10 +309,13 @@ aws s3api put-bucket-lifecycle-configuration \
 > SnapStart 스냅샷이 적용되지 않음).
 
 ```bash
-# 매일 UTC 22:00(KST 07:00) 실행되는 규칙 생성
+# 4일마다 UTC 22:00(KST 07:00) 실행되는 규칙 생성
+# day-of-month에 */4를 써서 월 경계(예: 1/29 → 2/1)에서 실제 간격이 3~4일로
+# 흔들릴 수 있다 - rate(4 days)는 정확히 4일 간격이지만 실행 시각을 07:00으로
+# 고정할 수 없어 이쪽을 택했다 (docs/RSS-FEED-BOT.md §8)
 aws events put-rule \
   --name link-sphere-feed-crawl \
-  --schedule-expression "cron(0 22 * * ? *)" \
+  --schedule-expression "cron(0 22 */4 * ? *)" \
   --region ap-northeast-1
 
 # Lambda가 EventBridge 호출을 허용하도록 권한 부여
@@ -342,10 +345,14 @@ aws events put-targets \
 - 결과 확인: `SELECT p.title, p.ai_status FROM posts p JOIN members m ON m.id = p.user_id
   WHERE m.is_bot ORDER BY p.created_at DESC LIMIT 20;`
 - `ai_status = FAILED`가 절반 이상이면 Gemini RPM 초과 — `FeedCrawlService`의
-  `MAX_ITEMS_PER_SOURCE`(소스당 최대 건수, 기본 2)를 줄여 전체 발행량 자체를
+  `MAX_ITEMS_PER_SOURCE`(소스당 최대 건수, 기본 1)를 줄여 전체 발행량 자체를
   낮춘다. **chunk 크기(`CHUNK_SIZE`, 기본 5)는 줄이지 말 것** — chunk를 줄이면
   병렬 chunk 수(전체 건수 / `CHUNK_SIZE`)가 오히려 늘어 같은 건수가 더 짧은
   시간에 몰리므로 RPM 초과를 악화시킨다(2026-09-06 정정)
+- 발행 주기·상한을 더 낮추려면 `FeedCrawlService`의 `MAX_ITEMS_TOTAL`도 함께
+  확인한다 — `MAX_ITEMS_TOTAL`을 소스 수 미만으로 낮추면 소스 순회 순서 셔플과
+  맞물려 실행마다 다른 소스가 잘리므로 특정 소스가 영구히 배제되지는 않는다
+  (`docs/RSS-FEED-BOT.md` §8 2026-09-06 항목)
 
 ---
 
