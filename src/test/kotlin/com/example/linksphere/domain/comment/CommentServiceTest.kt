@@ -285,6 +285,9 @@ class CommentServiceTest {
         "https://xyz.supabase.co/storage/v1/object/public/comments/img$it.png"
     }
 
+    // "가"는 UTF-8 3바이트 - 상한(12,000)이 3의 배수라 경계를 정확히 만들 수 있다.
+    private fun contentOfBytes(bytes: Int): String = "가".repeat(bytes / 3)
+
     // Kotlin에서 captor.capture()를 non-null 파라미터(Collection<String>) 자리에 그대로 쓰면
     // 반환값이 실제로는 null이라 호출부에서 NullPointerException이 나고, Mockito의 매처 스택까지
     // 어긋나 이 클래스의 다른 테스트까지 연쇄로 깨진다. T를 제네릭으로 남겨야 `null as T`가
@@ -320,6 +323,30 @@ class CommentServiceTest {
     }
 
     @Test
+    fun `createComment throws InvalidInputException when content exceeds the byte limit`() {
+        assertThrows(InvalidInputException::class.java) {
+            commentService.createComment(UUID.randomUUID(), UUID.randomUUID(), contentOfBytes(12_003), null)
+        }
+        verifyNoInteractions(postRepository)
+    }
+
+    @Test
+    fun `createReply throws InvalidInputException when content exceeds the byte limit`() {
+        assertThrows(InvalidInputException::class.java) {
+            commentService.createReply(UUID.randomUUID(), UUID.randomUUID(), contentOfBytes(12_003), null)
+        }
+        verifyNoInteractions(commentRepository)
+    }
+
+    @Test
+    fun `updateComment throws InvalidInputException when content exceeds the byte limit`() {
+        assertThrows(InvalidInputException::class.java) {
+            commentService.updateComment(UUID.randomUUID(), UUID.randomUUID(), contentOfBytes(12_003), null)
+        }
+        verifyNoInteractions(commentRepository)
+    }
+
+    @Test
     fun `createComment accepts exactly the maximum allowed images`() {
         val userId = UUID.randomUUID()
         val postId = UUID.randomUUID()
@@ -333,6 +360,22 @@ class CommentServiceTest {
 
         // 예외 없이 끝까지 진행되면 5장은 통과한다는 뜻이다.
         commentService.createComment(postId, userId, "내용", imageUrls(5))
+    }
+
+    @Test
+    fun `createComment accepts content at exactly the maximum byte size`() {
+        val userId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val post = TablePost(id = postId, userId = userId, url = "https://example.com", title = "제목", isPrivate = false)
+        val member = TableMember(id = userId, email = "a@a.com", password = "pw", nickname = "tester")
+
+        `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
+        `when`(memberRepository.findById(userId)).thenReturn(Optional.of(member))
+        `when`(commentRepository.save(any(TableComment::class.java)))
+            .thenAnswer { it.arguments[0] }
+
+        // 예외 없이 끝까지 진행되면 경계값(12,000바이트)은 통과한다는 뜻이다.
+        commentService.createComment(postId, userId, contentOfBytes(12_000), null)
     }
 
     @Test

@@ -31,6 +31,12 @@ class CommentService(
 
     companion object {
         private const val MAX_COMMENT_IMAGES = 5
+
+        // UTF-8 바이트 기준. CloudFront WAF가 요청 바디 크기(16KB)로 403(HTML)을 차단하므로
+        // 앱이 먼저 400으로 되돌려 사용자가 이유를 알 수 있게 한다 - WAF 차단은 앱 에러 처리를
+        // 전혀 타지 못한다. FE `entities/comment/config/const.ts`의 MAX_COMMENT_CONTENT_BYTES와
+        // 반드시 같은 값이어야 한다.
+        private const val MAX_COMMENT_CONTENT_BYTES = 12_000
     }
 
     @Transactional(readOnly = true)
@@ -145,6 +151,9 @@ class CommentService(
         if ((images?.size ?: 0) > MAX_COMMENT_IMAGES) {
             throw InvalidInputException("Comment images cannot exceed $MAX_COMMENT_IMAGES")
         }
+        if ((content?.toByteArray(Charsets.UTF_8)?.size ?: 0) > MAX_COMMENT_CONTENT_BYTES) {
+            throw InvalidInputException("Comment content cannot exceed $MAX_COMMENT_CONTENT_BYTES bytes")
+        }
 
         // Depth Check (fail fast, before image upload)
         if (parentId != null) {
@@ -207,6 +216,9 @@ class CommentService(
         }
         if ((images?.size ?: 0) > MAX_COMMENT_IMAGES) {
             throw InvalidInputException("Comment images cannot exceed $MAX_COMMENT_IMAGES")
+        }
+        if ((content?.toByteArray(Charsets.UTF_8)?.size ?: 0) > MAX_COMMENT_CONTENT_BYTES) {
+            throw InvalidInputException("Comment content cannot exceed $MAX_COMMENT_CONTENT_BYTES bytes")
         }
 
         val parent =
@@ -329,6 +341,9 @@ class CommentService(
         }
         if ((images?.size ?: 0) > MAX_COMMENT_IMAGES) {
             throw InvalidInputException("Comment images cannot exceed $MAX_COMMENT_IMAGES")
+        }
+        if ((content?.toByteArray(Charsets.UTF_8)?.size ?: 0) > MAX_COMMENT_CONTENT_BYTES) {
+            throw InvalidInputException("Comment content cannot exceed $MAX_COMMENT_CONTENT_BYTES bytes")
         }
 
         val comment =

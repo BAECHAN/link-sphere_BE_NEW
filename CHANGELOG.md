@@ -66,6 +66,30 @@
 
 ### Changed
 
+- `comment` 댓글·답글 본문 길이를 UTF-8 12,000바이트로 제한
+  <details><summary>배경·구현</summary>
+
+  긴 댓글을 등록하면 CloudFront WAF(`AWSManagedRulesCommonRuleSet`의 `SizeRestrictions_BODY`,
+  요청 바디 8,192바이트 초과 차단)가 요청을 Lambda에 닿기 전에 잘라 403 HTML
+  (`Request blocked.`)을 반환했다. 실측으로 8,189바이트는 Lambda까지 도달(401), 8,219바이트는
+  WAF 차단(403) — 앱 에러 처리를 전혀 타지 못해 사용자에게 이유를 알릴 수단이 없었다. 이
+  8KB는 우리가 정한 값이 아니라 ALB/AppSync 기준 AWS 기본값이고, CloudFront는 원래 16KB까지
+  검사가 가능하다. WAF 쪽은 `SizeRestrictions_BODY`를 Count로 오버라이드하고 "바디
+  16,384바이트 초과 시 차단"하는 커스텀 룰을 그 앞 우선순위에 추가해 과차단 구간을
+  없앴다(레포 밖 수동 설정 — FE `docs/DEPLOY.md`의 CloudFront WAF 절 참고). 그와 별개로
+  앱이 먼저 400으로 되돌려 이유를 말할 수 있도록 상한을 명시했다.
+
+  검증 대상은 `buildFinalContent` 이전의 사용자 입력 `content`다 - 이미지 URL을 이어붙인
+  최종 본문을 재면 FE가 같은 값을 계산할 수 없고(수정 폼은 `splitContentImages`로 URL을
+  떼어낸 텍스트만 갖는다), 이미지를 붙일 때마다 텍스트 예산이 몰래 줄어든다. URL 기여분은
+  `MAX_COMMENT_IMAGES`(5장)가 이미 결정적으로 봉인한다. 12,000바이트로 잡은 이유는 WAF가
+  재는 JSON 직렬화 후 전체 바디(개행 이스케이프 + 이미지 URL 5개 + JSON 봉투) 최악치가
+  16,384바이트 아래에 여유 있게 들어가도록 하기 위해서다.
+  (`CommentService.createComment`/`createReply`/`updateComment`,
+  `CommentService.MAX_COMMENT_CONTENT_BYTES`)
+
+  </details>
+
 - `infra` PR·배포 파이프라인에 ktlint·테스트 게이트 추가
   <details><summary>배경·구현</summary>
 

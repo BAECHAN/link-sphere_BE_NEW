@@ -465,6 +465,10 @@ curl -sD - -o /dev/null https://<cloudfront-domain>/api/post/00000000-0000-0000-
 # 기대: HTTP/2 404, body에 POST_NOT_FOUND, server: AmazonS3 헤더 없음
 ```
 
+403 응답 body가 JSON(`{"code":"..."}`)이 아니라 HTML(`Request blocked.` 등)이면 CloudFront WAF가
+Lambda에 닿기도 전에 차단한 것이다 — 앱 예외 처리와 무관하다. 원인·현재 룰 구성·재적용 절차는
+FE `docs/DEPLOY.md`의 "CloudFront WAF (수동 관리)" 절 참고.
+
 ---
 
 ## 로컬 개발 환경
