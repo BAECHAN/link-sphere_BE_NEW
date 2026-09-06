@@ -341,8 +341,11 @@ aws events put-targets \
   admin/role 개념이 없어 REST로 노출하면 SSRF 게이트가 된다)
 - 결과 확인: `SELECT p.title, p.ai_status FROM posts p JOIN members m ON m.id = p.user_id
   WHERE m.is_bot ORDER BY p.created_at DESC LIMIT 20;`
-- `ai_status = FAILED`가 절반 이상이면 Gemini RPM 초과 — `FeedCrawlService`의 chunk 크기(5)를
-  줄인다
+- `ai_status = FAILED`가 절반 이상이면 Gemini RPM 초과 — `FeedCrawlService`의
+  `MAX_ITEMS_PER_SOURCE`(소스당 최대 건수, 기본 2)를 줄여 전체 발행량 자체를
+  낮춘다. **chunk 크기(`CHUNK_SIZE`, 기본 5)는 줄이지 말 것** — chunk를 줄이면
+  병렬 chunk 수(전체 건수 / `CHUNK_SIZE`)가 오히려 늘어 같은 건수가 더 짧은
+  시간에 몰리므로 RPM 초과를 악화시킨다(2026-09-06 정정)
 
 ---
 

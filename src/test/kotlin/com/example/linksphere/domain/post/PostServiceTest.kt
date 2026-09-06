@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
+import org.mockito.ArgumentCaptor
 import org.mockito.ArgumentMatchers
 import org.mockito.ArgumentMatchers.any
 import org.mockito.InjectMocks
@@ -261,6 +262,47 @@ class PostServiceTest {
         lenient().`when`(postReactionRepository.existsByUserIdAndPostId(userId, postId)).thenReturn(false)
         lenient().`when`(bookmarkRepository.countByPostId(postId)).thenReturn(bookmarkCount)
         lenient().`when`(commentRepository.countByPostId(postId)).thenReturn(0L)
+    }
+
+    @Test
+    fun `크롤링에 실패해도 fallbackContent가 있으면 PENDING으로 저장하고 AI 이벤트를 발행한다`() {
+        val userId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val url = "https://example.com/fallback"
+        val savedPost = TablePost(id = postId, userId = userId, url = url, title = "제목", isPrivate = false)
+
+        // stubMetadataExtraction이 이미 pageContent = null(크롤링 실패 상황)을 반환한다 - 이 테스트의
+        // 관심사가 바로 그 상황에서 fallbackContent가 대신 쓰이는지이므로 그대로 재사용한다.
+        stubMetadataExtraction(url)
+        val savedPostCaptor = ArgumentCaptor.forClass(TablePost::class.java)
+        `when`(postRepository.save(savedPostCaptor.capture())).thenReturn(savedPost)
+        stubResponseBuild(userId, postId, isBookmarked = false, bookmarkCount = 0L)
+
+        postService.createPost(userId, PostCreateRequest(url = url), fallbackContent = "RSS 본문")
+
+        assertEquals(AiStatus.PENDING, savedPostCaptor.value.aiStatus)
+        val eventCaptor = ArgumentCaptor.forClass(PostCreatedEvent::class.java)
+        verify(eventPublisher).publishEvent(eventCaptor.capture())
+        assertEquals("RSS 본문", eventCaptor.value.content)
+        assertEquals(postId, eventCaptor.value.postId)
+    }
+
+    @Test
+    fun `fallbackContent 없이 등록하는 사람 경로는 크롤링 실패 시 NONE 그대로다`() {
+        val userId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val url = "https://example.com/human-crawl-fail"
+        val savedPost = TablePost(id = postId, userId = userId, url = url, title = "제목", isPrivate = false)
+
+        stubMetadataExtraction(url)
+        val savedPostCaptor = ArgumentCaptor.forClass(TablePost::class.java)
+        `when`(postRepository.save(savedPostCaptor.capture())).thenReturn(savedPost)
+        stubResponseBuild(userId, postId, isBookmarked = false, bookmarkCount = 0L)
+
+        postService.createPost(userId, PostCreateRequest(url = url))
+
+        assertEquals(AiStatus.NONE, savedPostCaptor.value.aiStatus)
+        verify(eventPublisher, never()).publishEvent(any())
     }
 
     @Test

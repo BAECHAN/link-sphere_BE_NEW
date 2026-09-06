@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
+import java.time.LocalDateTime
 import java.util.UUID
 
 interface PostRepository :
@@ -17,6 +18,10 @@ interface PostRepository :
     fun findAllByOrderByCreatedAtDesc(pageable: Pageable): Page<TablePost>
 
     fun findByCategoriesSlugOrderByCreatedAtDesc(slug: String, pageable: Pageable): Page<TablePost>
+
+    fun findAllByUserIdAndAiSummaryIsNull(userId: UUID): List<TablePost>
+
+    fun findAllByAiStatusAndCreatedAtBefore(aiStatus: AiStatus, before: LocalDateTime): List<TablePost>
 
     @Modifying
     @Query("UPDATE TablePost p SET p.viewCount = COALESCE(p.viewCount, 0) + 1 WHERE p.id = :id")

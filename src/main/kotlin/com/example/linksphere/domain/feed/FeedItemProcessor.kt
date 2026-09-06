@@ -42,6 +42,7 @@ class FeedItemProcessor(
             postService.createPost(
                 botId,
                 PostCreateRequest(url = item.url, title = item.title, isPrivate = false),
+                fallbackContent = item.content,
             )
         feedItemRepository.attachPost(itemId, post.id)
         logger.info("[FeedCrawl] 봇 게시글 등록 완료 - postId: ${post.id}, url: ${item.url}")

@@ -99,6 +99,22 @@ class FeedCrawlServiceTest {
     }
 
     @Test
+    fun `피드 본문을 FeedCrawlItem에 그대로 실어 dispatch한다`() {
+        val source =
+            TableFeedSource(id = UUID.randomUUID(), name = "당근 기술블로그", url = "https://medium.com/feed/daangn")
+        `when`(memberRepository.findFirstByIsBotTrue()).thenReturn(bot())
+        `when`(feedSourceRepository.findAllByEnabledTrue()).thenReturn(listOf(source))
+        `when`(feedParser.fetch(source.url))
+            .thenReturn(listOf(FeedEntry("본문 있는 글", "https://example.com/1", "본문 내용")))
+        `when`(feedItemRepository.findAllByNormalizedUrlIn(anyCollection())).thenReturn(emptyList())
+
+        feedCrawlService.collectAndDispatch()
+
+        val expectedItems = listOf(FeedCrawlItem(source.id, "본문 있는 글", "https://example.com/1", "본문 내용"))
+        verify(feedJobDispatcher).dispatch(FeedItemJobEvent(botId, expectedItems))
+    }
+
+    @Test
     fun `Stage B에서 한 항목이 실패해도 나머지 항목은 계속 처리한다`() {
         val ok1 = FeedCrawlItem(UUID.randomUUID(), "성공1", "https://example.com/1")
         val fail = FeedCrawlItem(UUID.randomUUID(), "실패", "https://example.com/2")

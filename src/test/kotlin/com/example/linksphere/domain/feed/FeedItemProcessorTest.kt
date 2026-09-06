@@ -68,7 +68,11 @@ class FeedItemProcessorTest {
 
         feedItemProcessor.processFeedItem(botId, item)
 
-        verify(postService, never()).createPost(anyNonNull(), anyNonNull())
+        // createPost가 fallbackContent 파라미터를 얻으면서 2-인자에서 3-인자 호출로 바뀌었다 -
+        // Kotlin 기본값 파라미터는 컴파일 시 별도의 $default 합성 브리지를 통해 호출되므로,
+        // 여기서 인자 수를 실제 프로덕션 호출부(3-인자)와 맞추지 않으면 서로 다른 메서드를
+        // 검증하게 되어 이 verify가 실제로는 아무것도 검증하지 못한다.
+        verify(postService, never()).createPost(anyNonNull(), anyNonNull(), ArgumentMatchers.any())
         verify(feedItemRepository, never()).attachPost(anyNonNull(), anyNonNull())
     }
 
@@ -80,16 +84,30 @@ class FeedItemProcessorTest {
         // eq()/ArgumentCaptor.capture()는 Kotlin의 non-null 파라미터 호출부 null 체크에 걸려
         // NPE가 나는 경우가 있다(위 anyNonNull()이 필요한 이유와 동일 계열의 함정).
         val expectedRequest = PostCreateRequest(url = item.url, title = item.title, isPrivate = false)
-        `when`(postService.createPost(botId, expectedRequest)).thenReturn(dummyPostResponse(postId))
+        // item.content가 null이므로 fallbackContent도 null로 넘어간다 - 3-인자로 명시한다(위 주석 참고).
+        `when`(postService.createPost(botId, expectedRequest, null)).thenReturn(dummyPostResponse(postId))
 
         feedItemProcessor.processFeedItem(botId, item)
 
-        verify(postService).createPost(botId, expectedRequest)
+        verify(postService).createPost(botId, expectedRequest, null)
 
         // itemId(첫 인자)는 프로덕션 코드 안에서 무작위로 생성되어 미리 알 수 없다 - Mockito의
         // 매처 체계를 아예 거치지 않는 mockingDetails로 실제 호출 인자를 순수 리플렉션으로 읽는다.
         val attachInvocation =
             mockingDetails(feedItemRepository).invocations.single { it.method.name == "attachPost" }
         assertEquals(postId, attachInvocation.arguments[1])
+    }
+
+    @Test
+    fun `RSS 본문이 있으면 fallbackContent로 넘긴다`() {
+        val itemWithContent = FeedCrawlItem(sourceId, "제목", "https://example.com/a", "RSS 본문")
+        `when`(feedItemRepository.claim(anyNonNull(), eq(sourceId), isNull(), anyString())).thenReturn(1)
+        val postId = UUID.randomUUID()
+        val expectedRequest = PostCreateRequest(url = itemWithContent.url, title = itemWithContent.title, isPrivate = false)
+        `when`(postService.createPost(botId, expectedRequest, "RSS 본문")).thenReturn(dummyPostResponse(postId))
+
+        feedItemProcessor.processFeedItem(botId, itemWithContent)
+
+        verify(postService).createPost(botId, expectedRequest, "RSS 본문")
     }
 }
