@@ -165,7 +165,7 @@ get to weigh in on? If not, you decided for them.
   aws lambda invoke --function-name link-sphere-api:<버전> --log-type Tail \
     --payload fileb://event.json /tmp/out.json --query 'LogResult' --output text | base64 -d
   ```
-- **Never** 인프라·배포·아키텍처 변경 후 문서 갱신 누락 → BE `README.md`·`docs/DEPLOY.md`와 함께 **FE `docs/SYSTEM-ARCHITECTURE.md`** 도 확인한다 (BE 인프라를 서술하고 있어 가장 놓치기 쉽다)
+- **Never** 인프라·배포·아키텍처 변경 후 문서 갱신 누락 → BE `README.md`·`docs/DEPLOY.md`와 함께 **FE `docs/SYSTEM-ARCHITECTURE.md`** 도 확인한다 (BE 인프라를 서술하고 있어 가장 놓치기 쉽다). 이 규칙은 인프라급이 아닌 **기능 변경**에도 그대로 적용한다 — 반대편 레포의 서사형 문서(`docs/*-BOT.md` 등)가 이번에 바뀐 동작을 서술하고 있으면 같은 턴에 찾아 고친다(2026-09-06, FE 봇 글 숨기기 토글의 저장 방식을 URL→localStorage로 바꿨을 때 BE `docs/RSS-FEED-BOT.md` §3의 Playwright 검증 서술이 어긋난 사례). 문서를 고쳤으면 **최종 보고에 "문서 X를 Y로 갱신함"을 별도 항목으로 명시**한다 — 조용히 고쳐두기만 하면 사용자 입장에서는 확인이 안 된 것과 같다
 - **Never** 워크트리 없이 코드 수정 → 이 레포는 여러 Claude 세션이 동시에 돈다. 코드를 **수정하는**
   작업(읽기 전용 조사·질문 답변은 예외)을 시작할 때는 항상 `EnterWorktree`로 워크트리를 만들고
   그 안에서 작업한다. 워킹트리 파일과 `.git/index`(스테이징 영역)를 세션끼리 공유하면 서로
