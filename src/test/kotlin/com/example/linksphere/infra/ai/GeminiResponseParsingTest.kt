@@ -84,4 +84,22 @@ class GeminiResponseParsingTest {
         assertNull(result.title)
         assertEquals("요약입니다.", result.summary)
     }
+
+    @Test
+    fun `parseResponse keeps TAGS when SUMMARY is left blank`() {
+        // 2026-09-06 04:30 프로덕션 실제 응답 원문 - 본문이 사실상 없는 YouTube 링크에
+        // 대해 모델이 SUMMARY만 비우고 TAGS는 채워서 돌려준 케이스.
+        val text =
+            """
+            TITLE:
+            DESCRIPTION:
+            SUMMARY:
+            TAGS: AI, 학습, 미래 교육, 자기계발
+            """.trimIndent()
+
+        val result = geminiService.parseResponse(geminiResponse(text))
+
+        assertNull(result.summary)
+        assertEquals(listOf("AI", "학습", "미래 교육", "자기계발"), result.tags)
+    }
 }

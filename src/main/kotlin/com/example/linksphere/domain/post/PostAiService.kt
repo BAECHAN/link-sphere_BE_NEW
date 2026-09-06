@@ -62,9 +62,6 @@ class PostAIService(
                 }
 
             val analysisResult = summaryFuture.join()
-            if (analysisResult.summary.isNullOrBlank()) {
-                throw RuntimeException("AI Analysis returned empty summary")
-            }
 
             val mergedTags = existingTags.toMutableList()
             if (analysisResult.tags.isNotEmpty()) {
@@ -72,7 +69,29 @@ class PostAIService(
                 mergedTags.addAll(newTags)
             }
 
-            post.aiSummary = analysisResult.summary
+            // JS로 렌더되는 페이지(YouTube·d2.naver.com 등)는 크롤링 본문이 사실상 비어 있어
+            // 모델이 SUMMARY를 빈 값으로 돌려준다. 없는 내용을 지어내게 강요하는 대신 요약만
+            // 비워 두고, 같은 응답에서 얻은 태그·제목·설명·카테고리는 그대로 저장한다. 단 넷
+            // 다 비었다면 그건 "본문이 없다"가 아니라 응답 자체가 실패한 것이므로(API 키 누락
+            // 시 parseResponse가 전부 null을 돌려준다) FAILED로 남긴다.
+            val newSummary = analysisResult.summary?.takeIf { it.isNotBlank() }
+            val hasAnySignal =
+                newSummary != null ||
+                    mergedTags.size > existingTags.size ||
+                    !analysisResult.title.isNullOrBlank() ||
+                    !analysisResult.description.isNullOrBlank()
+            if (!hasAnySignal) {
+                throw RuntimeException("AI Analysis returned nothing usable")
+            }
+            if (newSummary == null) {
+                logger.warn(
+                    "[AI] 요약 없이 부분 저장 - postId: $postId, contentLength: ${content.length}, tags: $mergedTags",
+                )
+            }
+
+            // 요약은 순수 폴백으로 둔다 — 이미 요약이 있는 글을 백필로 재분석해도 빈 요약이
+            // 기존 값을 지우지 않는다(아래 제목·설명 폴백과 동일한 원칙).
+            if (newSummary != null) post.aiSummary = newSummary
             post.tags = mergedTags
 
             // 크롤링이 건진 값이 있으면 절대 덮지 않는다 — 순수 폴백.
@@ -94,7 +113,7 @@ class PostAIService(
             // 잡지 못하고 조용히 삼켜지거나(과거) 호출자에게 새는(현재 구조) 문제가 있었다.
             // saveAndFlush로 즉시 flush시켜 예외가 여기 catch 블록 범위 안에서 나게 만든다.
             postRepository.saveAndFlush(post)
-            logger.info("[AI] 분석 완료 - postId: $postId, summary: ${analysisResult.summary.take(100)}, tags: $mergedTags")
+            logger.info("[AI] 분석 완료 - postId: $postId, summary: ${newSummary?.take(100)}, tags: $mergedTags")
         } catch (e: ObjectOptimisticLockingFailureException) {
             // saveAndFlush가 실패하면 Hibernate 세션이 이미 오염돼(rollback-only) 이 트랜잭션은
             // 커밋할 수 없다. 여기서 삼키고 정상 리턴하면 트랜잭션 매니저가 커밋을 시도하다가

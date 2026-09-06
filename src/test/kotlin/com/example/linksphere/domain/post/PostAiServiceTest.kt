@@ -102,4 +102,60 @@ class PostAiServiceTest {
 
         assertEquals("크롤링된 설명", target.description)
     }
+
+    @Test
+    fun `processAiJob은 요약이 비어도 태그를 저장하고 COMPLETED로 남긴다`() {
+        val postId = UUID.randomUUID()
+        val target = post(title = "이미 좋은 제목입니다")
+        `when`(postRepository.findById(postId)).thenReturn(Optional.of(target))
+        `when`(geminiService.analyzeContentAsync("이미 좋은 제목입니다", null, "본문 내용"))
+            .thenReturn(CompletableFuture.completedFuture(AiAnalysisResult(summary = null, tags = listOf("AI", "학습"))))
+
+        postAIService.processAiJob(event(postId))
+
+        assertEquals(listOf("AI", "학습"), target.tags)
+        assertEquals(AiStatus.COMPLETED, target.aiStatus)
+        assertEquals(null, target.aiSummary)
+    }
+
+    @Test
+    fun `processAiJob은 요약이 비어도 빈약한 제목은 AI 제목으로 교체한다`() {
+        val postId = UUID.randomUUID()
+        val target = post(title = "https://example.com/article")
+        `when`(postRepository.findById(postId)).thenReturn(Optional.of(target))
+        `when`(geminiService.analyzeContentAsync("", null, "본문 내용"))
+            .thenReturn(CompletableFuture.completedFuture(AiAnalysisResult(summary = null, tags = emptyList(), title = "AI가 지은 제목")))
+
+        postAIService.processAiJob(event(postId))
+
+        assertEquals("AI가 지은 제목", target.title)
+        assertEquals(AiStatus.COMPLETED, target.aiStatus)
+    }
+
+    @Test
+    fun `processAiJob은 아무것도 못 건지면 FAILED로 남긴다`() {
+        val postId = UUID.randomUUID()
+        val target = post(title = "이미 좋은 제목입니다")
+        `when`(postRepository.findById(postId)).thenReturn(Optional.of(target))
+        `when`(geminiService.analyzeContentAsync("이미 좋은 제목입니다", null, "본문 내용"))
+            .thenReturn(CompletableFuture.completedFuture(AiAnalysisResult(summary = null, tags = emptyList())))
+        `when`(postRepository.saveAndFlush(target)).thenReturn(target)
+
+        postAIService.processAiJob(event(postId))
+
+        assertEquals(AiStatus.FAILED, target.aiStatus)
+    }
+
+    @Test
+    fun `processAiJob은 빈 요약으로 기존 aiSummary를 덮지 않는다`() {
+        val postId = UUID.randomUUID()
+        val target = post(title = "이미 좋은 제목입니다").apply { aiSummary = "기존 요약" }
+        `when`(postRepository.findById(postId)).thenReturn(Optional.of(target))
+        `when`(geminiService.analyzeContentAsync("이미 좋은 제목입니다", null, "본문 내용"))
+            .thenReturn(CompletableFuture.completedFuture(AiAnalysisResult(summary = null, tags = listOf("새태그"))))
+
+        postAIService.processAiJob(event(postId))
+
+        assertEquals("기존 요약", target.aiSummary)
+    }
 }

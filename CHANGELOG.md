@@ -75,6 +75,26 @@
 
 ### Fixed
 
+- `post` AI 요약이 비어도 태그·제목·카테고리는 저장하도록 수정
+  <details><summary>배경·구현</summary>
+
+  YouTube·d2.naver.com처럼 JS로 렌더돼 크롤링 본문이 사실상 비는 페이지는 Gemini가
+  정상 응답(200)하면서도 SUMMARY만 비워 보내는데, 그동안은 `PostAiService`가 이를
+  예외로 던져 같은 응답에서 얻은 태그·제목·설명·카테고리까지 통째로 버리고
+  `aiStatus=FAILED`로 남겼다. 판정 기준을 "요약이 있는가"에서 "뭐라도 건졌는가"로
+  바꿔, 요약 외 항목 중 하나라도 새로 얻었으면 `aiStatus=COMPLETED` + `aiSummary=null`
+  로 부분 저장한다. API 키 만료 등으로 응답 자체가 실패해 아무것도 못 건진 경우만
+  `FAILED`로 남긴다 — `FAILED` 비율은 운영상 Gemini 쿼터 초과 신호로 쓰이므로 이
+  구분을 지켜야 지표가 오염되지 않는다. 빈 요약은 순수 폴백이라 기존 `aiSummary`를
+  덮지 않는다.
+
+  Gemini 프롬프트에도 "요약 규칙"을 추가해 본문이 부족하면 SUMMARY를 비우고 제목만
+  보고 지어내지 말라는 지침을 명문화했다(관측된 기존 동작을 계약으로 승격).
+
+  (`domain/post/PostAiService.kt`, `infra/ai/GeminiService.kt`)
+
+  </details>
+
 - `bookmark` "최근 열람순" 정렬에서 미열람 글끼리 순서가 매번 흔들리던 문제
   <details><summary>배경·구현</summary>
 
