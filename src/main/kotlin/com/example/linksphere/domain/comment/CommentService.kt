@@ -32,11 +32,13 @@ class CommentService(
     companion object {
         private const val MAX_COMMENT_IMAGES = 5
 
-        // UTF-8 바이트 기준. CloudFront WAF가 요청 바디 크기(16KB)로 403(HTML)을 차단하므로
-        // 앱이 먼저 400으로 되돌려 사용자가 이유를 알 수 있게 한다 - WAF 차단은 앱 에러 처리를
-        // 전혀 타지 못한다. FE `entities/comment/config/const.ts`의 MAX_COMMENT_CONTENT_BYTES와
-        // 반드시 같은 값이어야 한다.
-        private const val MAX_COMMENT_CONTENT_BYTES = 12_000
+        // UTF-8 바이트 기준. CloudFront WAF(AWSManagedRulesCommonRuleSet의 SizeRestrictions_BODY,
+        // 기본값 그대로 유지 - 커스텀 크기 룰은 CloudFront Pro 플랜 전용이라 이 계정에서 못 만든다)가
+        // 요청 바디 8,192바이트 초과를 403(HTML)으로 차단하므로, 앱이 먼저 400으로 되돌려 사용자가
+        // 이유를 알 수 있게 한다 - WAF 차단은 앱 에러 처리를 전혀 타지 못한다. 6,000바이트는 이미지
+        // URL 5개(~650B)·JSON 봉투를 더해도 8,192B 벽에 여유 있게 들어가도록 잡은 값이다.
+        // FE `entities/comment/config/const.ts`의 MAX_COMMENT_CONTENT_BYTES와 반드시 같은 값이어야 한다.
+        private const val MAX_COMMENT_CONTENT_BYTES = 6_000
     }
 
     @Transactional(readOnly = true)

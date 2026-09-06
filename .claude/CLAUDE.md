@@ -166,6 +166,7 @@ get to weigh in on? If not, you decided for them.
     --payload fileb://event.json /tmp/out.json --query 'LogResult' --output text | base64 -d
   ```
 - **Never** 인프라·배포·아키텍처 변경 후 문서 갱신 누락 → BE `README.md`·`docs/DEPLOY.md`와 함께 **FE `docs/SYSTEM-ARCHITECTURE.md`** 도 확인한다 (BE 인프라를 서술하고 있어 가장 놓치기 쉽다). 이 규칙은 인프라급이 아닌 **기능 변경**에도 그대로 적용한다 — 반대편 레포의 서사형 문서(`docs/*-BOT.md` 등)가 이번에 바뀐 동작을 서술하고 있으면 같은 턴에 찾아 고친다(2026-09-06, FE 봇 글 숨기기 토글의 저장 방식을 URL→localStorage로 바꿨을 때 BE `docs/RSS-FEED-BOT.md` §3의 Playwright 검증 서술이 어긋난 사례). 문서를 고쳤으면 **최종 보고에 "문서 X를 Y로 갱신함"을 별도 항목으로 명시**한다 — 조용히 고쳐두기만 하면 사용자 입장에서는 확인이 안 된 것과 같다
+- **Never** `CommentService.MAX_COMMENT_CONTENT_BYTES`(현재 6,000)를 CloudFront WAF 상태 확인 없이 올리지 않는다 → CloudFront에 붙은 WAF의 `SizeRestrictions_BODY`가 요청 바디 8,192바이트 초과를 차단한다(AWS 기본값, 코드로 추적 안 됨). 2026-09-06 이 값을 완화하려 했으나 대체 크기 제한 룰이 **CloudFront Pro 플랜(월 $15) 전용**이라 Free 플랜인 이 계정에서 못 만들어 원복했다 — 지금도 8KB 벽이 살아있다. 이 상수를 올리려면 먼저 WAF 상태를 확인할 것(자세한 내용·재적용 절차는 FE `docs/DEPLOY.md`의 "CloudFront WAF (수동 관리)" 절, FE `docs/DECISIONS.md` 2026-09-06 항목 참고)
 - **Never** 워크트리 없이 코드 수정 → 이 레포는 여러 Claude 세션이 동시에 돈다. 코드를 **수정하는**
   작업(읽기 전용 조사·질문 답변은 예외)을 시작할 때는 항상 `EnterWorktree`로 워크트리를 만들고
   그 안에서 작업한다. 워킹트리 파일과 `.git/index`(스테이징 영역)를 세션끼리 공유하면 서로

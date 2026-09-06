@@ -285,7 +285,7 @@ class CommentServiceTest {
         "https://xyz.supabase.co/storage/v1/object/public/comments/img$it.png"
     }
 
-    // "가"는 UTF-8 3바이트 - 상한(12,000)이 3의 배수라 경계를 정확히 만들 수 있다.
+    // "가"는 UTF-8 3바이트 - 상한(6,000)이 3의 배수라 경계를 정확히 만들 수 있다.
     private fun contentOfBytes(bytes: Int): String = "가".repeat(bytes / 3)
 
     // Kotlin에서 captor.capture()를 non-null 파라미터(Collection<String>) 자리에 그대로 쓰면
@@ -325,7 +325,7 @@ class CommentServiceTest {
     @Test
     fun `createComment throws InvalidInputException when content exceeds the byte limit`() {
         assertThrows(InvalidInputException::class.java) {
-            commentService.createComment(UUID.randomUUID(), UUID.randomUUID(), contentOfBytes(12_003), null)
+            commentService.createComment(UUID.randomUUID(), UUID.randomUUID(), contentOfBytes(6_003), null)
         }
         verifyNoInteractions(postRepository)
     }
@@ -333,7 +333,7 @@ class CommentServiceTest {
     @Test
     fun `createReply throws InvalidInputException when content exceeds the byte limit`() {
         assertThrows(InvalidInputException::class.java) {
-            commentService.createReply(UUID.randomUUID(), UUID.randomUUID(), contentOfBytes(12_003), null)
+            commentService.createReply(UUID.randomUUID(), UUID.randomUUID(), contentOfBytes(6_003), null)
         }
         verifyNoInteractions(commentRepository)
     }
@@ -341,7 +341,7 @@ class CommentServiceTest {
     @Test
     fun `updateComment throws InvalidInputException when content exceeds the byte limit`() {
         assertThrows(InvalidInputException::class.java) {
-            commentService.updateComment(UUID.randomUUID(), UUID.randomUUID(), contentOfBytes(12_003), null)
+            commentService.updateComment(UUID.randomUUID(), UUID.randomUUID(), contentOfBytes(6_003), null)
         }
         verifyNoInteractions(commentRepository)
     }
@@ -374,8 +374,8 @@ class CommentServiceTest {
         `when`(commentRepository.save(any(TableComment::class.java)))
             .thenAnswer { it.arguments[0] }
 
-        // 예외 없이 끝까지 진행되면 경계값(12,000바이트)은 통과한다는 뜻이다.
-        commentService.createComment(postId, userId, contentOfBytes(12_000), null)
+        // 예외 없이 끝까지 진행되면 경계값(6,000바이트)은 통과한다는 뜻이다.
+        commentService.createComment(postId, userId, contentOfBytes(6_000), null)
     }
 
     @Test
