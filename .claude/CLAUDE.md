@@ -554,7 +554,8 @@ data class FolderResponse(
 새 문서를 쓰기 전에 어느 종류인지 먼저 정하고, 한 문서에 여러 목적을 섞지 않는다
 (*Software Engineering at Google* 10장: "문서는 하나의 목적만 갖고 거기 충실해야 한다 —
 API가 한 가지를 잘하듯, 한 문서에 여러 개를 담지 마라"). 전체 목록과 안내는
-`docs/README.md`가 랜딩 페이지로 관리한다 — 새 문서를 추가하면 거기에도 등록한다.
+`docs/README.md`가 랜딩 페이지로 관리한다 — 새 문서를 추가하면 거기와 루트
+`README.md`의 `## 문서` 섹션 두 곳 모두에 등록한다.
 
 ## 서사형 작업 문서 형식 (`docs/AI-ASYNC-PROCESSING.md`, `docs/RSS-FEED-BOT.md` 등)
 

@@ -336,9 +336,32 @@ SnapStart 체크포인트 **이전**(`companion object init`)에 읽기 전용 �
 
 ## 문서
 
-- [변경 이력](CHANGELOG.md) — 버전별 변경 사항 (Keep a Changelog)
-- [BE·FE 버전 호환 매트릭스](docs/VERSION-COMPATIBILITY.md) — 어느 FE 버전이 어느 BE 버전을 요구하는지
-- [`docs/` 문서 안내](docs/README.md) — 배포·아키텍처·성능·장애 기록 등 나머지 문서 전체 목록
+**프로젝트 전반**
+
+- [`CHANGELOG.md`](CHANGELOG.md) — 버전별 변경 사항 (Keep a Changelog)
+
+**서사형** — "왜 만들었고 어떻게 동작하는지"
+
+- [`docs/RSS-FEED-BOT.md`](docs/RSS-FEED-BOT.md) — RSS 피드 자동 수집 봇: 발견(RSS)·등록(크롤링)·분석(AI) 3단계 구조
+- [`docs/AI-ASYNC-PROCESSING.md`](docs/AI-ASYNC-PROCESSING.md) — 게시글 AI 분석을 비동기(Lambda self-invoke)로 뺀 이유와 구조
+- [`docs/CI-CHECK-GATE.md`](docs/CI-CHECK-GATE.md) — ktlint·테스트를 PR·배포 파이프라인의 실제 게이트로 정비한 과정
+- [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) — Lambda 콜드스타트 원인 분석과 최적화 근거
+
+**절차** — "이럴 땐 이렇게 한다"
+
+- [`docs/DEPLOY.md`](docs/DEPLOY.md) — 배포 인프라 설정·변경, EventBridge 룰 조작, GitHub Actions 배포 흐름
+- [`docs/LAMBDA-CONFIG-ROLLBACK.md`](docs/LAMBDA-CONFIG-ROLLBACK.md) — `prod` alias를 안전 버전으로 롤백해야 할 때
+
+**레퍼런스** — "지금 값이 뭔가"
+
+- [`docs/VERSION-COMPATIBILITY.md`](docs/VERSION-COMPATIBILITY.md) — BE·FE 버전 호환 매트릭스: 어느 FE 버전이 어느 BE 버전을 요구하는지
+
+**보관** — 더 이상 갱신하지 않음
+
+- [`docs/HISTORY.md`](docs/HISTORY.md) — 2026-08-01부터 갱신 중단. 이후 이력은 FE 레포에서 통합 관리
+- [`docs/DEPLOY-WHEN-APP-RUNNER.md`](docs/DEPLOY-WHEN-APP-RUNNER.md) — App Runner로 운영하던 이전 배포 방식
+
+> 분류 기준과 문서 작성 규칙은 [`docs/README.md`](docs/README.md) 참고.
 
 ---
 
