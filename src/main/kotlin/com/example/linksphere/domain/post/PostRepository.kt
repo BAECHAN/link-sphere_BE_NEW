@@ -21,7 +21,7 @@ interface PostRepository :
 
     fun findAllByUserIdAndAiSummaryIsNull(userId: UUID): List<TablePost>
 
-    fun findAllByAiStatusAndCreatedAtBefore(aiStatus: AiStatus, before: LocalDateTime): List<TablePost>
+    fun findAllByAiStatusInAndCreatedAtBefore(aiStatuses: List<AiStatus>, before: LocalDateTime): List<TablePost>
 
     @Modifying
     @Query("UPDATE TablePost p SET p.viewCount = COALESCE(p.viewCount, 0) + 1 WHERE p.id = :id")

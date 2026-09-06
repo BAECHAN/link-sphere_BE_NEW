@@ -75,6 +75,24 @@
 
 ### Fixed
 
+- `post` AI 요약 백필 도구가 FAILED로 확정된 글도 재분석하도록 확장
+  <details><summary>배경·구현</summary>
+
+  배포 직후 백필(`tools/PostAiBackfillRunner`)을 프로덕션에 돌려 확인한 결과,
+  원인 ① 수정(위 항목) 이전에 이미 `aiStatus=FAILED`로 확정된 게시글은 대상
+  조건(`aiSummary`가 빈 봇 글 / `PENDING`에 고착된 글)에 걸리지 않아 재분석되지
+  않았다. `PostRepository.findAllByAiStatusAndCreatedAtBefore(AiStatus, ...)`를
+  `findAllByAiStatusInAndCreatedAtBefore(List<AiStatus>, ...)`로 바꿔
+  `PENDING`과 `FAILED`를 함께 대상으로 삼는다.
+
+  같은 백필 실행 중 Gemini 무료 티어 일일 쿼터가 소진돼(`429`) 일부 게시글이
+  새로 `FAILED`로 남았다 — 코드 버그가 아니라 쿼터 문제이므로, 쿼터가 복구된
+  뒤 `--commit`을 다시 실행하면 이 확장으로 함께 복구된다.
+
+  (`domain/post/PostRepository.kt`, `tools/PostAiBackfillRunner.kt`)
+
+  </details>
+
 - `post` AI 요약이 비어도 태그·제목·카테고리는 저장하도록 수정
   <details><summary>배경·구현</summary>
 

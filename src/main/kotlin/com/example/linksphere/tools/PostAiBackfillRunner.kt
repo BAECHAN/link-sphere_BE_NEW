@@ -15,16 +15,19 @@ import org.springframework.stereotype.Component
 import java.time.LocalDateTime
 
 /**
- * aiSummary가 비어 있거나 aiStatus가 PENDING에 고착된 게시글에 뒤늦게 AI 요약을 채우는
- * 1회성 복구 도구.
+ * aiSummary가 비어 있거나 aiStatus가 PENDING/FAILED에 고착된 게시글에 뒤늦게 AI 요약을
+ * 채우는 1회성 복구 도구.
  *
- * 세 가지 원인으로 게시글에 aiSummary가 비어 있을 수 있다: (1) 크롤링이 막혀 애초에 AI
+ * 네 가지 원인으로 게시글에 aiSummary가 비어 있을 수 있다: (1) 크롤링이 막혀 애초에 AI
  * 이벤트가 발행되지 않은 경우(aiStatus=NONE, 봇 글) - PostService.createPost의
  * fallbackContent 배선(2026-09) 이후로는 신규 등록 건에서 재발하지 않는다. (2)
  * FeedCrawlRunner를 로컬(--commit)로 돌려 self-invoke가 스킵된 경우(aiStatus=PENDING
  * 고착, 봇 글) - FeedCrawlRunner 클래스 주석 참고. (3) self-invoke 전환(2026-07~08) 이전
- * 컨테이너 freeze 결함으로 사람이 등록한 글이 PENDING에 고착된 경우. 셋 다 "content를 다시
- * 만들어 AI 잡을 돌린다"는 같은 처리라 분기 없이 한 루프에서 처리한다.
+ * 컨테이너 freeze 결함으로 사람이 등록한 글이 PENDING에 고착된 경우. (4) Gemini 응답이
+ * 실패해(쿼터 초과 등) aiStatus=FAILED로 확정된 경우 - PostAiService의 판정 기준이
+ * "뭐라도 건졌는가"로 바뀐 뒤에도(2026-09) 이미 FAILED로 저장된 과거 게시글은 저절로
+ * 재분석되지 않으므로 이 러너가 재시도해야 한다. 넷 다 "content를 다시 만들어 AI 잡을
+ * 돌린다"는 같은 처리라 분기 없이 한 루프에서 처리한다.
  *
  * 로컬에서는 LambdaSelfInvoker가 self-invoke를 스킵하므로(AWS_LAMBDA_FUNCTION_NAME 없음)
  * eventPublisher.publishEvent로 위임하면 지금 이 복구 대상을 만든 바로 그 문제에 다시 빠진다.
@@ -61,14 +64,15 @@ class PostAiBackfillRunner(
 
         // (1) 봇 글 중 aiSummary가 빈 것: 크롤링 403으로 aiStatus=NONE인 건까지 잡으려면
         //     상태가 아니라 요약 유무로 봐야 한다.
-        // (2) 소유자 무관하게 PENDING에 고착된 것: 사람이 등록한 잔존 건이 여기 해당한다.
-        //     방금 등록돼 정상 처리 중인 글을 덮치지 않도록 1시간 지난 것만 본다 - self-invoke가
-        //     진행 중인 글을 여기서 동시에 분석하면 같은 post에 두 트랜잭션이 붙는다.
+        // (2) 소유자 무관하게 PENDING/FAILED에 고착된 것: 사람이 등록한 PENDING 잔존 건과,
+        //     Gemini 쿼터 초과 등으로 FAILED 확정된 건이 여기 해당한다. 방금 등록돼 정상
+        //     처리 중인 글을 덮치지 않도록 1시간 지난 것만 본다 - self-invoke가 진행 중인
+        //     글을 여기서 동시에 분석하면 같은 post에 두 트랜잭션이 붙는다.
         val targets =
             (
                 postRepository.findAllByUserIdAndAiSummaryIsNull(bot.id!!) +
-                    postRepository.findAllByAiStatusAndCreatedAtBefore(
-                        AiStatus.PENDING,
+                    postRepository.findAllByAiStatusInAndCreatedAtBefore(
+                        listOf(AiStatus.PENDING, AiStatus.FAILED),
                         LocalDateTime.now().minusHours(1),
                     )
                 ).distinctBy { it.id }

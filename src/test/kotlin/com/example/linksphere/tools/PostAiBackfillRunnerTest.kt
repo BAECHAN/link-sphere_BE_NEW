@@ -92,9 +92,9 @@ class PostAiBackfillRunnerTest {
         pageContent = pageContent,
     )
 
-    // 대부분의 테스트는 "PENDING 고착" 경로를 비워 둬 봇 글 경로만 격리해서 본다.
-    private fun stubNoPendingBacklog() {
-        `when`(postRepository.findAllByAiStatusAndCreatedAtBefore(eqValue(AiStatus.PENDING), anyValue()))
+    // 대부분의 테스트는 "PENDING/FAILED 고착" 경로를 비워 둬 봇 글 경로만 격리해서 본다.
+    private fun stubNoStuckBacklog() {
+        `when`(postRepository.findAllByAiStatusInAndCreatedAtBefore(eqValue(listOf(AiStatus.PENDING, AiStatus.FAILED)), anyValue()))
             .thenReturn(emptyList())
     }
 
@@ -102,7 +102,7 @@ class PostAiBackfillRunnerTest {
     fun `dry-run이 기본이라 processAiJob을 호출하지 않는다`() {
         `when`(memberRepository.findFirstByIsBotTrue()).thenReturn(bot)
         `when`(postRepository.findAllByUserIdAndAiSummaryIsNull(botId)).thenReturn(listOf(post()))
-        stubNoPendingBacklog()
+        stubNoStuckBacklog()
         `when`(feedSourceRepository.findAllByEnabledTrue()).thenReturn(emptyList())
         `when`(urlMetadataExtractor.extract("https://example.com/article")).thenReturn(metadata("재크롤링 본문"))
 
@@ -115,7 +115,7 @@ class PostAiBackfillRunnerTest {
     fun `--commit이면 재크롤링 본문으로 processAiJob을 호출한다`() {
         `when`(memberRepository.findFirstByIsBotTrue()).thenReturn(bot)
         `when`(postRepository.findAllByUserIdAndAiSummaryIsNull(botId)).thenReturn(listOf(post()))
-        stubNoPendingBacklog()
+        stubNoStuckBacklog()
         `when`(feedSourceRepository.findAllByEnabledTrue()).thenReturn(emptyList())
         `when`(urlMetadataExtractor.extract("https://example.com/article")).thenReturn(metadata("재크롤링 본문"))
 
@@ -131,7 +131,7 @@ class PostAiBackfillRunnerTest {
         val url = "https://example.com/article"
         `when`(memberRepository.findFirstByIsBotTrue()).thenReturn(bot)
         `when`(postRepository.findAllByUserIdAndAiSummaryIsNull(botId)).thenReturn(listOf(post(url)))
-        stubNoPendingBacklog()
+        stubNoStuckBacklog()
         `when`(urlMetadataExtractor.extract(url)).thenReturn(metadata(null))
         val source = TableFeedSource(id = UUID.randomUUID(), name = "테스트 소스", url = "https://feed.example.com/rss")
         `when`(feedSourceRepository.findAllByEnabledTrue()).thenReturn(listOf(source))
@@ -145,10 +145,10 @@ class PostAiBackfillRunnerTest {
     }
 
     @Test
-    fun `1시간 이내에 생성된 PENDING 글은 대상에서 제외한다`() {
+    fun `1시간 이내에 생성된 PENDING·FAILED 글은 대상에서 제외한다`() {
         `when`(memberRepository.findFirstByIsBotTrue()).thenReturn(bot)
         `when`(postRepository.findAllByUserIdAndAiSummaryIsNull(botId)).thenReturn(emptyList())
-        // findAllByAiStatusAndCreatedAtBefore는 넘어간 커트라인 시각 자체가 검증 대상이므로
+        // findAllByAiStatusInAndCreatedAtBefore는 넘어간 커트라인 시각 자체가 검증 대상이므로
         // 일부러 스텁하지 않는다(Mockito는 List 반환 타입에 기본으로 빈 리스트를 돌려준다).
         // targets가 비어 러너가 조기 리턴하므로 feedSourceRepository는 호출되지 않는다 - 그래서
         // 스텁하지 않는다(스텁해도 UnnecessaryStubbingException이 난다).
@@ -160,10 +160,34 @@ class PostAiBackfillRunnerTest {
         // 동일 이유로 명시적 캐스팅 필요).
         @Suppress("UNCHECKED_CAST")
         val before = ArgumentCaptor.forClass(LocalDateTime::class.java) as ArgumentCaptor<LocalDateTime>
-        verify(postRepository).findAllByAiStatusAndCreatedAtBefore(eqValue(AiStatus.PENDING), captureValue(before))
+        verify(postRepository).findAllByAiStatusInAndCreatedAtBefore(
+            eqValue(listOf(AiStatus.PENDING, AiStatus.FAILED)),
+            captureValue(before),
+        )
         // 방금 등록돼 self-invoke가 진행 중인 글과 겹치지 않도록 정확히 "1시간 지난 것만" 커트라인으로
         // 잡는지 확인한다 - 너무 taut하게 잡으면(예: now) 진행 중인 잡을 덮칠 수 있다.
         val minutesFromNow = java.time.Duration.between(before.value, LocalDateTime.now()).toMinutes()
         assertTrue(minutesFromNow in 59..61, "커트라인이 1시간 전 근처가 아님: ${minutesFromNow}분 전")
+    }
+
+    @Test
+    fun `FAILED로 확정된 글도 재분석 대상에 포함한다`() {
+        val url = "https://example.com/article"
+        `when`(memberRepository.findFirstByIsBotTrue()).thenReturn(bot)
+        `when`(postRepository.findAllByUserIdAndAiSummaryIsNull(botId)).thenReturn(emptyList())
+        `when`(
+            postRepository.findAllByAiStatusInAndCreatedAtBefore(
+                eqValue(listOf(AiStatus.PENDING, AiStatus.FAILED)),
+                anyValue(),
+            ),
+        ).thenReturn(listOf(post(url)))
+        `when`(feedSourceRepository.findAllByEnabledTrue()).thenReturn(emptyList())
+        `when`(urlMetadataExtractor.extract(url)).thenReturn(metadata("재크롤링 본문"))
+
+        runner.run(arrayOf("--commit"))
+
+        verify(postAIService).processAiJob(
+            argThatValue<PostCreatedEvent> { event -> event.postId == postId },
+        )
     }
 }
