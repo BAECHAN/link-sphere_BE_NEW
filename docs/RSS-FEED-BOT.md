@@ -285,7 +285,7 @@ nullable + `ON DELETE SET NULL`로 둬서, 봇 글을 관리자가 지워도 원
 | Stage B 본체(claim → createPost) | `domain/feed/FeedItemProcessor.kt` |
 | 원장 테이블 엔티티·쿼리 | `domain/feed/TableFeedSource.kt`/`TableFeedItem.kt`, `FeedSourceRepository.kt`/`FeedItemRepository.kt` |
 | 로컬 E2E 실행 도구 | `tools/FeedCrawlRunner.kt` |
-| AI 요약 백필(로컬 1회성) | `tools/PostAiBackfillRunner.kt` — 크롤링 차단·self-invoke 미발사로 `aiSummary`가 비었거나 `ai_status=PENDING`에 고착된 기존 글을 재크롤링/RSS 폴백으로 복구 ([AI-ASYNC-PROCESSING.md](./AI-ASYNC-PROCESSING.md) 5.4절) |
+| AI 요약 백필(로컬 1회성) | `tools/PostAiBackfillRunner.kt` — 대상 조건·원인은 [AI-ASYNC-PROCESSING.md](./AI-ASYNC-PROCESSING.md) 5.4절 참고 |
 | 테스트 | `src/test/kotlin/.../domain/feed/` — `FeedCrawlServiceTest`·`FeedItemProcessorTest`·`FeedParserTest`·`FeedUrlNormalizerTest` |
 | 최초 스키마·시딩 | `src/main/resources/sql/create_feed_sources.sql` |
 
@@ -382,10 +382,10 @@ flush 미보장이 겹치는, 로컬/운영 환경 차이가 아니라 순수하
   보임, 재시도할 필요 없음)
 - GeekNews 항목 링크가 원문이 아니라 토론 페이지(`news.hada.io/topic?id=...`)인
   점 — 그대로 둘지는 실제 등록 결과를 더 보고 판단
-- Lambda 비동기(Event) 호출은 실패 시 DLQ 없이 조용히 유실된다 — self-invoke가
-  발사됐는데 그 뒤가 유실되면 `ai_status=PENDING`이 영구히 남고 지금은 백필
-  도구(`tools/PostAiBackfillRunner`, [AI-ASYNC-PROCESSING.md](./AI-ASYNC-PROCESSING.md)
-  5.4절)로만 복구된다. 재발 방지(스위퍼 또는 DLQ+알림)는 후속 과제
+- Lambda 비동기(Event) 호출이 DLQ 없이 실패해 `ai_status=PENDING`이 영구히
+  남는 문제는 RSS 봇에 국한되지 않는 AI 파이프라인 공통 이슈다 — 원인·백필
+  절차·재발 방지 과제는 [AI-ASYNC-PROCESSING.md](./AI-ASYNC-PROCESSING.md)
+  5.5절 참고
 - 2026-09-06 발행 주기 축소(4일 1회·소스당 1건)의 부작용: GeekNews처럼 하루
   10건 넘게 발행하는 소스는 4일치 중 1건만 가져온다. RSS는 최신 글만 노출하므로
   그 창을 벗어난 글은 다시 후보가 되지 않고 영영 누락된다 — 발행량을 줄이기로 한

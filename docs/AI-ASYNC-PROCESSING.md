@@ -365,9 +365,9 @@ TAGS: AI, 학습, 미래 교육, 자기계발
 
 세 원인 모두 코드 수정 이후에는 재발하지 않지만, 이미 쌓인 게시글은 자동으로
 복구되지 않는다. `tools/PostAiBackfillRunner`(로컬 1회성 도구, `OrphanImageCleanupRunner`
-와 동일한 dry-run 우선 shape)가 `aiSummary`가 비어 있는 글과 `aiStatus=PENDING`에
-고착된 글(소유자 무관, 생성된 지 1시간 지난 것만 — 진행 중인 self-invoke 잡과
-겹치지 않기 위함)을 재크롤링/RSS 폴백으로 백필한다.
+와 동일한 dry-run 우선 shape)가 `aiSummary`가 비어 있는 글과 `aiStatus`가
+`PENDING`/`FAILED`에 고착된 글(소유자 무관, 생성된 지 1시간 지난 것만 — 진행 중인
+self-invoke 잡과 겹치지 않기 위함)을 재크롤링/RSS 폴백으로 백필한다.
 
 ```
 ./gradlew bootRun --args='--spring.profiles.active=secret,ai-backfill'            (dry-run)
@@ -379,13 +379,54 @@ TAGS: AI, 학습, 미래 교육, 자기계발
 전에 돌리면 YouTube류 대상이 다시 빈 요약 throw에 걸려 태그까지 버리고
 `FAILED`로 확정되는 헛수고가 된다.
 
+**FAILED도 대상에 포함하는 이유(원인 ④, 2026-09-06 추가)**: 첫 배포 직후
+백필을 프로덕션에 돌려보니, 원인 ① 수정 이전에 이미 `aiStatus=FAILED`로
+확정된 게시글(YouTube 등)은 대상 조건에 걸리지 않아 재분석되지 않았다 —
+"`aiSummary`가 빈 글"과 "`PENDING`에 고착된 글"만 보고 있었기 때문이다.
+`PostRepository.findAllByAiStatusAndCreatedAtBefore(AiStatus, ...)`를
+`findAllByAiStatusInAndCreatedAtBefore(List<AiStatus>, ...)`로 바꿔
+`PENDING`과 `FAILED`를 함께 대상으로 삼도록 별도 커밋으로 확장했다.
+
+**실행 중 겪은 시행착오 — Gemini 무료 티어 일일 쿼터 소진**: 확장 전 첫
+`--commit` 실행에서 27건을 순차 처리하던 중 후반부에서
+`429 Too Many Requests`(`generativelanguage.googleapis.com/generate_content_free_tier_...`)
+가 연달아 발생했다. `GeminiService.generateContent`의 모델 폴백(429 시
+`gemini-3.1-flash-lite`로 전환)도 같은 계정의 무료 티어를 공유해 함께
+소진됐다. 이는 코드 버그가 아니라 실제 쿼터 문제였다 — 판정 로직이 의도대로
+"응답 자체가 실패한 경우"를 `FAILED`로 남긴 것이 확인됐다. 쿼터 리셋
+시점(Gemini 무료 티어는 태평양 표준시 자정 기준)까지 기다렸다가 재실행해
+대부분 복구했다.
+
+**검증 결과 (2026-09-06, 프로덕션 실측)**:
+
+| `ai_status` | 백필 전 | 백필 후 |
+| --- | --- | --- |
+| `PENDING` | 14 | **0** |
+| `COMPLETED` (`ai_summary` 있음) | 136 | 151 |
+| `COMPLETED` (`ai_summary` 없음 — 원인 ① 부분 성공) | 0 | **8** |
+| `FAILED` | 9 | 6 |
+| `NONE` | 26 | 20 |
+
+`PENDING`은 완전히 해소됐고, 원인 ① 수정이 실전에서 부분 성공(태그만 저장)을
+만들어내는 것을 8건에서 직접 확인했다. 남은 `FAILED` 6건(YouTube 4·`naver.me`
+1·`tech.kakao.com` 1)은 재크롤링·RSS 폴백 모두 시도한 뒤에도 본문을 구하지
+못해 `AI Analysis returned nothing usable`로 남은 것으로, 실제로 분석할
+내용이 없는 정상적인 실패다.
+
 ### 5.5 남은 것
 
-Lambda 비동기(Event) 호출은 실패 시 최대 2회 재시도 후 DLQ 없이 조용히
-유실된다(이 레포에 DLQ/`event-invoke-config` 설정 없음) — 원인 ②처럼 self-invoke
-자체가 발사됐지만 그 뒤가 유실되는 경우, 지금은 아무 로그도 없이 `PENDING`이
-영구히 남고 백필 도구로만 복구된다. 이번엔 복구만 하고 재발 방지(1시간 이상
-`PENDING`인 글을 재발행하는 스위퍼, 또는 DLQ + 알림)는 후속 과제로 남겼다.
+- Lambda 비동기(Event) 호출은 실패 시 최대 2회 재시도 후 DLQ 없이 조용히
+  유실된다(이 레포에 DLQ/`event-invoke-config` 설정 없음) — 원인 ②처럼
+  self-invoke 자체가 발사됐지만 그 뒤가 유실되는 경우, 지금은 아무 로그도
+  없이 `PENDING`이 영구히 남고 백필 도구로만 복구된다. 이번엔 복구만 하고
+  재발 방지(1시간 이상 `PENDING`인 글을 재발행하는 스위퍼, 또는 DLQ + 알림)는
+  후속 과제로 남겼다.
+- 남은 `NONE` 20건 중 일부(GeekNews의 오래된 글)는 RSS 피드가 최신 항목만
+  노출해 폴백할 본문 자체가 더 이상 없다 — 백필로 복구 불가능한 구조적
+  한계다.
+- Gemini 무료 티어 쿼터는 하루 처리량에 실질적 상한을 건다. RSS 봇의 일일
+  발행량(§8, `MAX_ITEMS_TOTAL`)이 늘거나 백필을 자주 돌리면 이 상한에 다시
+  걸릴 수 있다 — 유료 플랜 전환 여부는 이번 범위 밖의 판단.
 
 ## 6. 교훈
 
