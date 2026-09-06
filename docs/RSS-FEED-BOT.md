@@ -72,7 +72,7 @@ flowchart TD
   B5 --> C1
 
   subgraph SC["Stage C · 분석 = AI"]
-    C1["Gemini 요약·태그·카테고리"] --> C2["posts UPDATE · ai_status=DONE"]
+    C1["Gemini 요약·태그·카테고리"] --> C2["posts UPDATE · ai_status=COMPLETED"]
   end
 ```
 
@@ -170,8 +170,11 @@ AI 잡도 시간축에 자연스럽게 퍼진다. 부수 효과: chunk가 타임
 재시도해도, 이미 claim된 항목은 즉시 skip되어 남은 항목만 이어서 처리된다.
 
 5라는 값 자체에 특별한 공식은 없다 — "감당 가능한 동시성" 수준으로 잡은 값이고,
-배포 후 `ai_status = FAILED` 비율이 높으면(Gemini RPM 초과 신호) 3으로 낮추도록
-`docs/DEPLOY.md` 8장에 적어뒀다.
+배포 후 `ai_status = FAILED` 비율이 높으면(Gemini RPM 초과 신호) `MAX_ITEMS_PER_SOURCE`
+(소스당 최대 건수)를 낮춰 전체 발행량 자체를 줄이도록 `docs/DEPLOY.md` 8장에
+적어뒀다. **`CHUNK_SIZE`는 낮추지 않는다** — chunk를 줄이면 병렬 chunk 수(전체
+건수 / `CHUNK_SIZE`)가 오히려 늘어 같은 건수가 더 짧은 시간에 몰리므로 RPM 초과를
+악화시킨다(2026-09-06 정정).
 
 ## 6. 데이터 모델 — `feed_sources` / `feed_items`
 
@@ -257,6 +260,7 @@ nullable + `ON DELETE SET NULL`로 둬서, 봇 글을 관리자가 지워도 원
 | Stage B 본체(claim → createPost) | `domain/feed/FeedItemProcessor.kt` |
 | 원장 테이블 엔티티·쿼리 | `domain/feed/TableFeedSource.kt`/`TableFeedItem.kt`, `FeedSourceRepository.kt`/`FeedItemRepository.kt` |
 | 로컬 E2E 실행 도구 | `tools/FeedCrawlRunner.kt` |
+| AI 요약 백필(로컬 1회성) | `tools/PostAiBackfillRunner.kt` — 크롤링 차단·self-invoke 미발사로 `aiSummary`가 비었거나 `ai_status=PENDING`에 고착된 기존 글을 재크롤링/RSS 폴백으로 복구 ([AI-ASYNC-PROCESSING.md](./AI-ASYNC-PROCESSING.md) 5.4절) |
 | 테스트 | `src/test/kotlin/.../domain/feed/` — `FeedCrawlServiceTest`·`FeedItemProcessorTest`·`FeedParserTest`·`FeedUrlNormalizerTest` |
 | 최초 스키마·시딩 | `src/main/resources/sql/create_feed_sources.sql` |
 
@@ -346,13 +350,17 @@ flush 미보장이 겹치는, 로컬/운영 환경 차이가 아니라 순수하
 
 ## 12. 남은 것
 
-- 네이버 D2 피드(`enabled=false`로 시딩)의 실제 접근 가능 여부 미확인
+- ~~네이버 D2 피드의 실제 접근 가능 여부 미확인~~ → 2026-09-06 재확인 결과 정상,
+  `sql/update_feed_sources_availability.sql`로 활성화함
+- ~~우아한형제들 기술블로그 403~~ → 2026-09-06 확인 결과 Lambda(AWS IP 대역)에서
+  피드 fetch 자체가 403이라 비활성화함(User-Agent 문제가 아니라 IP 차단으로
+  보임, 재시도할 필요 없음)
 - GeekNews 항목 링크가 원문이 아니라 토론 페이지(`news.hada.io/topic?id=...`)인
   점 — 그대로 둘지는 실제 등록 결과를 더 보고 판단
-- 우아한형제들 기술블로그 403 — 필요하면 User-Agent 조정 검토 (지금은 실패해도
-  다른 소스에 영향 없어 낮은 우선순위)
-- 다음 EventBridge 자동 실행: 2026-09-04 07:00 KST — 신규 게시글이 실제로
-  올라오는지 재확인 필요
+- Lambda 비동기(Event) 호출은 실패 시 DLQ 없이 조용히 유실된다 — self-invoke가
+  발사됐는데 그 뒤가 유실되면 `ai_status=PENDING`이 영구히 남고 지금은 백필
+  도구(`tools/PostAiBackfillRunner`, [AI-ASYNC-PROCESSING.md](./AI-ASYNC-PROCESSING.md)
+  5.4절)로만 복구된다. 재발 방지(스위퍼 또는 DLQ+알림)는 후속 과제
 
 ## 13. 용어 사전
 
@@ -370,8 +378,9 @@ flush 미보장이 겹치는, 로컬/운영 환경 차이가 아니라 순수하
   이 값(`feed-crawl`/`feed-item`/`ai-analysis`)으로 어느 Stage를 실행할지 분기한다
 - **Stage A / B / C** — 이 문서에서 편의상 붙인 이름. 코드에는 "Stage"라는 이름의
   클래스나 상수가 없다 — 발견(RSS)/등록(크롤링)/분석(AI)의 3단계를 가리킨다
-- **`ai_status`** — `posts` 테이블의 AI 분석 진행 상태(`PENDING`/`DONE`/`FAILED`).
-  봇 글도 사람 글과 동일한 값을 쓴다
+- **`ai_status`** — `posts` 테이블의 AI 분석 진행 상태(`NONE`/`PENDING`/`COMPLETED`/`FAILED`).
+  봇 글도 사람 글과 동일한 값을 쓴다. `COMPLETED`라고 해서 `ai_summary`가 항상
+  채워져 있는 건 아니다([AI-ASYNC-PROCESSING.md](./AI-ASYNC-PROCESSING.md) 5.1절)
 - **deadline guard** — Stage A가 90초(§8)를 넘기지 않도록 미리 멈추는 안전장치.
   Lambda의 120초 타임아웃보다 여유 있게 짧게 잡아둔 값
 - **`prod` alias** — 배포된 Lambda 함수의 프로덕션 버전을 가리키는 별칭. §10의

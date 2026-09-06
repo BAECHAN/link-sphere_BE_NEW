@@ -1,6 +1,6 @@
 # Link-Sphere BE — 게시글 AI 분석 비동기화 (2026-08-01)
 
-> 마지막 검토: 2026-08-11
+> 마지막 검토: 2026-09-06
 
 ## 1. 문제
 
@@ -63,7 +63,7 @@ POST /post
   → LambdaHandler.handleAiJob()
     → PostAIService.processAiJob()
       → Gemini 요약(+제목·설명 폴백) + 카테고리 분류 (병렬)
-      → DB 저장 (aiStatus: PENDING → COMPLETED/FAILED)
+      → DB 저장 (aiStatus: PENDING → COMPLETED(요약 없이 부분 저장 가능)/FAILED)
 ```
 
 요약과 카테고리 분류도 순차 대신 병렬로 실행한다(`GeminiService.analyzeContentAsync`,
@@ -98,6 +98,12 @@ Lambda 환경에서 애초에 성립하지 않았기 때문이다(1절). self-in
 `PENDING`이고, AI 처리가 끝났는지는 그 이후의 재조회로만 확인 가능하다. 크롤링
 제목·설명이 빈약해 AI 폴백이 적용된 경우도 마찬가지라, 등록 응답에는 여전히
 크롤링 시점 값(URL 문자열 등)이 실리고 재조회해야 AI가 채운 값을 본다.
+
+**`COMPLETED`가 항상 `aiSummary`가 채워져 있음을 보장하지는 않는다** (2026-09-06,
+5절 참고) — YouTube 등 크롤링 본문이 사실상 비는 페이지는 Gemini가 정상 응답하되
+요약만 비워 보내는데, 이 경우도 태그·제목·카테고리는 정상 저장되므로
+`aiStatus=COMPLETED`다. `aiSummary`가 필요한 화면은 상태값과 별개로 그 필드
+자체의 null 여부를 확인해야 한다.
 
 현재 FE는 이 필드를 읽어 UI를 분기하지 않는다(`aiSummary`가 채워져 있으면
 그냥 보여줄 뿐) — PENDING 상태를 사용자에게 "AI 분석 중" 등으로 노출하려면
@@ -303,7 +309,85 @@ private fun handleAiJob(event: JsonNode, output: OutputStream) {
 `ERROR`, `UnexpectedRollbackException`, 재시도 없이 INFO 로그 두 줄로 종료됨을
 확인했다.
 
-## 5. 교훈
+## 5. 시행착오 3 — 프로덕션 AI 요약 미생성 3종 원인 (2026-09-06)
+
+"AI 요약이 왜 안 되냐"는 문의로 CloudWatch 로그와 프로덕션 API를 직접 조회해
+확인한 결과, 원인은 하나가 아니라 서로 다른 세 갈래였다(최근 100건 기준:
+COMPLETED 61, FAILED 8, PENDING 14, NONE 17).
+
+### 5.1 원인 ① — 빈 요약이 태그·제목·카테고리까지 통째로 버림
+
+YouTube·d2.naver.com처럼 JS로 렌더돼 크롤링 본문이 사실상 비는 페이지는
+Gemini가 정상 응답(200)하면서도 `SUMMARY`만 비워 보낸다. 실제 프로덕션 응답
+원문(2026-09-06 04:30):
+
+```
+TITLE:
+DESCRIPTION:
+SUMMARY:
+TAGS: AI, 학습, 미래 교육, 자기계발
+```
+
+`PostAiService.kt`가 `analysisResult.summary.isNullOrBlank()`이면 곧바로
+`throw`했는데, 태그·제목·설명·카테고리 저장 로직이 전부 그 아래에 있어 같은
+응답에서 얻은 값까지 통째로 버리고 `aiStatus=FAILED`로 남았다.
+
+판정 기준을 "요약이 있는가"에서 "뭐라도 건졌는가"로 바꿨다 — 요약 외 항목
+(태그·제목·설명) 중 하나라도 새로 얻었으면 `aiStatus=COMPLETED` +
+`aiSummary=null`로 부분 저장하고, 넷 다 비어 응답 자체가 실패한 경우(API 키
+만료 등)만 `FAILED`로 남긴다. `FAILED` 비율이 운영상 Gemini 쿼터 초과 신호로
+쓰이므로(§8 참고, [RSS-FEED-BOT.md](./RSS-FEED-BOT.md)) 이 구분을 지켜야
+지표가 오염되지 않는다. 빈 요약은 순수 폴백이라 기존 `aiSummary`를 덮지
+않는다. Gemini 프롬프트에도 "요약 규칙"을 추가해 본문이 부족하면 `SUMMARY`를
+비우고 제목만 보고 지어내지 말라는 지침을 명문화했다 — "반드시 채워라"는
+넣지 않았다, 본문 없는 링크에 요약을 지어내는 게 빈 요약보다 나쁘다고
+판단했기 때문이다.
+
+### 5.2 원인 ② — self-invoke가 발사되지 않아 PENDING 고착
+
+프로덕션 PENDING 14건 중 10건은 2026-09-03 16:31에 로컬 `FeedCrawlRunner
+--commit`으로 등록된 것이었다 — §2.2에서 설명한 로컬 스킵과 같은 원인이다.
+나머지 4건(2026-07~08 등록)은 해당 시각 로그 자체가 남아있지 않아 원인
+확정은 못 했지만, self-invoke 전환(2026-07-31~08-01, 1절)을 전후한
+컨테이너 freeze 결함의 잔존물로 추정된다 — 9월 이후 등록건에서는 이 패턴이
+재발하지 않았다.
+
+### 5.3 원인 ③ — 크롤링 403 차단으로 AI 이벤트 자체가 미발행
+
+`PostService.createPost`는 `metadata.pageContent == null`이면 `aiStatus=NONE`
+으로 두고 이벤트를 발행하지 않는다(§2.2 코드와 같은 게이트). RSS 봇이 수집한
+`news.hada.io`(GeekNews)·`medium.com`이 봇 UA를 403으로 차단해 이 경로를
+탔다. RSS 피드 자체에는 본문이 들어 있었으므로, `FeedParser`가 `content:encoded`
+/ Atom `content`를 파싱해 크롤링 실패 시 폴백으로 쓰도록 배선했다(자세한
+경위는 [RSS-FEED-BOT.md](./RSS-FEED-BOT.md) 참고).
+
+### 5.4 기존 게시글 백필
+
+세 원인 모두 코드 수정 이후에는 재발하지 않지만, 이미 쌓인 게시글은 자동으로
+복구되지 않는다. `tools/PostAiBackfillRunner`(로컬 1회성 도구, `OrphanImageCleanupRunner`
+와 동일한 dry-run 우선 shape)가 `aiSummary`가 비어 있는 글과 `aiStatus=PENDING`에
+고착된 글(소유자 무관, 생성된 지 1시간 지난 것만 — 진행 중인 self-invoke 잡과
+겹치지 않기 위함)을 재크롤링/RSS 폴백으로 백필한다.
+
+```
+./gradlew bootRun --args='--spring.profiles.active=secret,ai-backfill'            (dry-run)
+./gradlew bootRun --args='--spring.profiles.active=secret,ai-backfill --commit'   (실제 실행)
+```
+
+로컬은 self-invoke가 스킵되므로(§2.2) 이벤트 발행 대신 `PostAIService.processAiJob`
+을 직접 동기 호출한다. **원인 ① 수정이 배포된 뒤에 실행해야 한다** — 그
+전에 돌리면 YouTube류 대상이 다시 빈 요약 throw에 걸려 태그까지 버리고
+`FAILED`로 확정되는 헛수고가 된다.
+
+### 5.5 남은 것
+
+Lambda 비동기(Event) 호출은 실패 시 최대 2회 재시도 후 DLQ 없이 조용히
+유실된다(이 레포에 DLQ/`event-invoke-config` 설정 없음) — 원인 ②처럼 self-invoke
+자체가 발사됐지만 그 뒤가 유실되는 경우, 지금은 아무 로그도 없이 `PENDING`이
+영구히 남고 백필 도구로만 복구된다. 이번엔 복구만 하고 재발 방지(1시간 이상
+`PENDING`인 글을 재발행하는 스위퍼, 또는 DLQ + 알림)는 후속 과제로 남겼다.
+
+## 6. 교훈
 
 1. **Lambda에서 "응답 후에도 계속 처리"가 필요하면 스레드가 아니라 별도
    invocation으로 위임해야 한다.** `@Async`/SSE 등 같은 실행 환경 안에서
@@ -319,3 +403,8 @@ private fun handleAiJob(event: JsonNode, output: OutputStream) {
    위치(자신이 작성한 try/catch)에서 발생하지 않을 수 있다는 점도 함께
    기억할 것 — 즉시 flush가 필요하면 `saveAndFlush()`를 명시적으로 써야
    한다.
+4. **부분 성공을 "실패"로 뭉뚱그리면 정상 데이터까지 버려진다.** 외부 API가
+   여러 필드를 한 번에 채워주는 응답을 줄 때, 그중 하나(요약)가 비었다고
+   전체를 실패 처리하면 나머지 필드(태그·제목)가 멀쩡해도 함께 버려진다.
+   "무엇을 얻었는가"로 성공 여부를 판정하고, 실패는 "아무것도 못 얻었을 때"로
+   좁혀야 한다.
