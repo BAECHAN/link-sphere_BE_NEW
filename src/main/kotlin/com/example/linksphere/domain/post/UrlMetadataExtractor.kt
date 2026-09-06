@@ -35,7 +35,12 @@ class UrlMetadataExtractor(
                 .ifEmpty { doc.title() }
                 .ifEmpty { url }
         val description = doc.select("meta[property=og:description]").attr("content").ifEmpty { null }
-        var ogImage = doc.select("meta[property=og:image]").attr("content").ifEmpty { null }
+        // abs:는 og:image가 상대경로("/img/thumb.png")인 사이트를 baseUri(safeConnect가 리다이렉트를
+        // 다 따라간 최종 URL) 기준으로 절대 URL화한다. 절대화에 실패하면(속성 자체가 없는 등) 빈
+        // 문자열이라 원래 값으로 폴백한다.
+        var ogImage = doc.select("meta[property=og:image]")
+            .let { it.attr("abs:content").ifEmpty { it.attr("content") } }
+            .ifEmpty { null }
 
         val tags = mutableListOf<String>()
         val host = java.net.URI(url).host.replace("www.", "")

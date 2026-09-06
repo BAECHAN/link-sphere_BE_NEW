@@ -198,8 +198,27 @@
 
   </details>
 
+- `post` og:image가 루트 상대경로인 사이트를 크롤링하면 잘못된 도메인으로 이미지 요청
+  <details><summary>배경·구현</summary>
+
+  `UrlMetadataExtractor`가 `og:image`를 Jsoup `attr("content")`로 raw 값 그대로 읽어,
+  `/img/thumb.png`처럼 루트 상대경로를 내려주는 사이트(나무위키 등)의 값을 그대로
+  저장했다. FE가 이를 `<img src>`에 그대로 넣으면 자기(link-sphere) 도메인 기준으로
+  해석돼 CloudFront/S3에 `/img/apple_icon.png` 같은 존재하지 않는 경로를 요청,
+  403(`AccessDenied`)이 콘솔에 남았다. `attr("abs:content")`로 바꿔 크롤링 시점의
+  최종 URL(리다이렉트를 다 따라간 뒤의 URL) 기준으로 절대 URL화한다 - 실패 시(속성
+  자체가 없는 등) 빈 문자열이라 기존 `attr("content")`로 폴백해 동작을 보존한다.
+  (`UrlMetadataExtractor.kt`)
+
+  </details>
+
 ### Migration
 
+- `sql/backfill_relative_og_image.sql` 실행 완료 - 위 버그로 이미 저장된 상대경로
+  `og_image`/`link_og_image`를 NULL로 백필(posts 6건, comments 0건). 이런 값은
+  지금도 렌더에 실패해 화면에는 이미 안 보이므로 사용자가 보는 결과는 그대로이고
+  잘못된 요청만 사라진다. 프로토콜-상대경로(`//host/...`)는 브라우저가 올바르게
+  해석하므로 대상에서 제외했다.
 - `sql/create_feed_sources.sql` 실행 완료 — `members.is_bot` 컬럼 추가 + 봇 계정
   1행(`bot@link-sphere.local`, BCrypt 형식이 아닌 비밀번호로 로그인 자체를 봉쇄) +
   `feed_sources`/`feed_items` 테이블 + 피드 소스 9개 시딩(네이버 D2는 접근 확인
