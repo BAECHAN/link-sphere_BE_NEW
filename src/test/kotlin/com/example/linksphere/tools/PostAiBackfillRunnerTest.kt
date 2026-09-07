@@ -21,6 +21,7 @@ import org.mockito.ArgumentMatchers
 import org.mockito.InjectMocks
 import org.mockito.Mock
 import org.mockito.Mockito.never
+import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 import org.mockito.junit.jupiter.MockitoExtension
@@ -168,6 +169,52 @@ class PostAiBackfillRunnerTest {
         // 잡는지 확인한다 - 너무 taut하게 잡으면(예: now) 진행 중인 잡을 덮칠 수 있다.
         val minutesFromNow = java.time.Duration.between(before.value, LocalDateTime.now()).toMinutes()
         assertTrue(minutesFromNow in 59..61, "커트라인이 1시간 전 근처가 아님: ${minutesFromNow}분 전")
+    }
+
+    @Test
+    fun `url-like가 주어지면 도메인이 일치하는 글도 대상에 합친다`() {
+        val url = "https://youtu.be/abc123"
+        `when`(memberRepository.findFirstByIsBotTrue()).thenReturn(bot)
+        `when`(postRepository.findAllByUserIdAndAiSummaryIsNull(botId)).thenReturn(emptyList())
+        stubNoStuckBacklog()
+        `when`(postRepository.findAllByUrlContainingIgnoreCase("youtu")).thenReturn(listOf(post(url)))
+        `when`(feedSourceRepository.findAllByEnabledTrue()).thenReturn(emptyList())
+        `when`(urlMetadataExtractor.extract(url)).thenReturn(metadata("재크롤링 본문"))
+
+        runner.run(arrayOf("--url-like=youtu", "--commit"))
+
+        verify(postAIService).processAiJob(
+            argThatValue<PostCreatedEvent> { event -> event.postId == postId },
+        )
+    }
+
+    @Test
+    fun `url-like가 없으면 도메인 조회를 하지 않는다`() {
+        `when`(memberRepository.findFirstByIsBotTrue()).thenReturn(bot)
+        `when`(postRepository.findAllByUserIdAndAiSummaryIsNull(botId)).thenReturn(emptyList())
+        // findAllByAiStatusInAndCreatedAtBefore도 targets가 비어 조기 리턴하므로 스텁하지 않는다
+        // (스텁해도 UnnecessaryStubbingException이 난다).
+
+        runner.run(emptyArray())
+
+        verify(postRepository, never()).findAllByUrlContainingIgnoreCase(ArgumentMatchers.anyString())
+    }
+
+    @Test
+    fun `limit이 주어지면 대상 수를 자른다`() {
+        val urls = (1..3).map { "https://example.com/article$it" }
+        val posts = urls.map { url -> TablePost(id = UUID.randomUUID(), userId = botId, url = url, title = "제목") }
+        `when`(memberRepository.findFirstByIsBotTrue()).thenReturn(bot)
+        `when`(postRepository.findAllByUserIdAndAiSummaryIsNull(botId)).thenReturn(posts)
+        stubNoStuckBacklog()
+        `when`(feedSourceRepository.findAllByEnabledTrue()).thenReturn(emptyList())
+        // limit=1이면 targets가 첫 건으로 잘리므로 나머지 두 건은 애초에 extract가 호출되지
+        // 않는다 - 첫 건만 스텁해야 UnnecessaryStubbingException을 피한다.
+        `when`(urlMetadataExtractor.extract(urls[0])).thenReturn(metadata("재크롤링 본문"))
+
+        runner.run(arrayOf("--limit=1", "--commit"))
+
+        verify(postAIService, times(1)).processAiJob(anyValue())
     }
 
     @Test

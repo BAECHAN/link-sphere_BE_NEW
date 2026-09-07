@@ -30,6 +30,20 @@
 
 ### Fixed
 
+- `post` AI 요약 백필 도구가 도메인 지정 재분석과 건수 분할 실행을 지원하도록 확장
+  <details><summary>배경·구현</summary>
+
+  크롤링이 200을 받았지만 본문이 껍데기라 그것을 요약한 가짜 요약이 이미 `aiStatus=COMPLETED`로
+  확정된 글(YouTube 57건)은 기존 백필 대상 조건(요약 null, 또는 PENDING/FAILED 1시간 경과)
+  어디에도 걸리지 않는다 - 요약도 있고 상태도 COMPLETED이기 때문이다. `--url-like=<문자열>`
+  인자로 도메인 부분 일치 글을 강제로 재분석 대상에 합칠 수 있게 했다. Gemini 무료 티어
+  일일 쿼터 때문에 한 번에 다 돌리면 후반부가 통째로 429 → FAILED가 되므로(과거 27건 실행 중
+  실제로 겪은 사고), `--limit=<n>`으로 나눠 돌릴 수 있게 했다. dry-run 출력에도 `aiStatus`를
+  덧붙여 재분석 전에 어떤 상태의 글을 덮어쓰려는 것인지 미리 확인할 수 있다.
+  (`PostAiBackfillRunner.kt`, `PostRepository.kt`)
+
+  </details>
+
 - `post` 크롤링 본문이 껍데기(네비게이션·푸터·봇 차단 안내)뿐이면 빈 문자열이 아니라 null로 떨궈 RSS 폴백이 다시 동작하도록 수정
   <details><summary>배경·구현</summary>
 
