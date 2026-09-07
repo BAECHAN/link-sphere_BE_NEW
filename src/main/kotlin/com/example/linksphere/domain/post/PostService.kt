@@ -247,8 +247,10 @@ class PostService(
             }
         if (newUrl != null && metadata != null) {
             post.url = newUrl
-            // 크롤링 실패 시 metadata.title은 URL 문자열이므로, 그때는 위에서 정한 제목을 그대로 둔다.
-            if (metadata.pageContent != null) post.title = metadata.title
+            // 제목이 URL·사이트명 수준으로 빈약할 때만 기존 제목을 유지한다. 본문 하한 도입 이후
+            // pageContent는 "크롤링 성공 여부"의 대리 지표가 될 수 없다 - 제목은 잘 긁혔는데 본문만
+            // 껍데기인 페이지가 정상 케이스가 됐다. PostAiService가 쓰는 것과 같은 판정을 쓴다.
+            if (!WeakTitleDetector.isWeak(metadata.title, newUrl)) post.title = metadata.title
             post.description = metadata.description
             post.tags = metadata.tags.toMutableList()
             post.ogImage = metadata.ogImage

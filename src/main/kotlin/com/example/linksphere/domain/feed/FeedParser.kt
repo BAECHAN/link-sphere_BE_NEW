@@ -15,9 +15,10 @@ class FeedParser(
 ) {
 
     companion object {
-        // UrlMetadataExtractor.kt:44가 크롤링 본문(pageContent)에 적용하는 상한과 동일하게 맞춘다 -
-        // 이 값이 그 pageContent 대신 쓰이는 폴백이라 성격을 같게 둔다. self-invoke JSON payload에
-        // 그대로 실리므로(Lambda 비동기 호출 상한 256KB) 큰 값으로 올릴 때는 CHUNK_SIZE와 함께 검토할 것.
+        // UrlMetadataExtractor.MAX_CONTENT_LENGTH가 크롤링 본문(pageContent)에 적용하는 상한과
+        // 동일하게 맞춘다 - 이 값이 그 pageContent 대신 쓰이는 폴백이라 성격을 같게 둔다. self-invoke
+        // JSON payload에 그대로 실리므로(Lambda 비동기 호출 상한 256KB) 큰 값으로 올릴 때는
+        // CHUNK_SIZE와 함께 검토할 것.
         private const val MAX_CONTENT_LENGTH = 5000
     }
 
@@ -68,7 +69,7 @@ class FeedParser(
 
     // content:encoded / Atom <content>는 CDATA 또는 이스케이프된 HTML 문자열이다. xmlParser는 이를
     // 텍스트로만 보므로, HTML 파서로 한 번 더 파싱해야 태그가 벗겨진 평문이 나온다. 정규화 방식은
-    // UrlMetadataExtractor.kt:44(크롤링 본문에 적용)와 동일하게 맞춘다.
+    // UrlMetadataExtractor.normalizeContent(크롤링 본문에 적용)와 동일하게 맞춘다.
     private fun toPlainText(rawHtml: String): String? = Jsoup.parse(rawHtml).body().text()
         .replace("\\s+".toRegex(), " ")
         .trim()

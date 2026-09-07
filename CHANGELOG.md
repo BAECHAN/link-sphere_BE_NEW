@@ -9,6 +9,25 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `post` 크롤링 본문이 껍데기(네비게이션·푸터·봇 차단 안내)뿐이면 빈 문자열이 아니라 null로 떨궈 RSS 폴백이 다시 동작하도록 수정
+  <details><summary>배경·구현</summary>
+
+  운영 AI 요약이 절반 가까이 비는 문제를 조사한 결과, `UrlMetadataExtractor`가 긁어온 본문에
+  최소 길이 검사가 없어 YouTube 푸터(358자)·네이버 D2 네비게이션(150자) 같은 껍데기 텍스트를
+  정상 본문으로 취급하고 있었다. 더 심각한 건 `doc.body().text()`가 빈 문자열을 돌려줘도
+  `.ifEmpty { null }`이 없어 `""`(non-null)로 흘러가, `PostService.createPost`와
+  `PostAiBackfillRunner`의 RSS 폴백 엘비스(`metadata.pageContent ?: fallbackContent`)가 영구히
+  발동하지 않는 결함이 있었다. 본문 하한(1,000자)을 두고 미달이면 JSON-LD `articleBody` →
+  JSON-LD `description` → `og:description`(각 40자 이상) 순으로 폴백하며, 그마저 없으면 null을
+  돌려 AI 잡 자체를 스킵(`aiStatus=NONE`)한다. 403(Cloudflare·AWS IP 차단) 응답도
+  `ignoreHttpErrors`로 받아 최소한 `og:title`은 건지되, 에러 페이지의 `<title>`(예: "Just a
+  moment...")이 제목으로 승격되지 않도록 2xx가 아닐 때는 `og:title`만 인정한다.
+  (`UrlMetadataExtractor.kt`, `PostService.kt`)
+
+  </details>
+
 ## [0.9.0] - 2026-09-06
 
 ### Added
