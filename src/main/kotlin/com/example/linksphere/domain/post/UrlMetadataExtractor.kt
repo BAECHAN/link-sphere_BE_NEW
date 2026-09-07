@@ -7,6 +7,8 @@ import org.jsoup.nodes.Document
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 import java.net.URI
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 
 private const val USER_AGENT =
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -23,9 +25,14 @@ private const val MAX_CONTENT_LENGTH = 5000
 // 본문(수천 자)보다 한참 아래인 값으로 1,000을 잡는다.
 private const val MIN_PAGE_CONTENT_LENGTH = 1000
 
-// og:description·JSON-LD description처럼 "사람이 직접 쓴" 값에 적용하는 하한.
+// og:description·JSON-LD description·YouTube 영상 설명처럼 "사람이 직접 쓴" 값에 적용하는 하한.
 // 본문 하한보다 훨씬 낮다 - 네비·푸터가 섞일 구조적 여지가 없어 짧아도 신호가 진짜이기 때문이다.
 private const val MIN_META_DESCRIPTION_LENGTH = 40
+
+// YouTube watch 페이지가 인라인 <script>에 심는 플레이어 상태 JSON의 시작 지점.
+// videoDetails.shortDescription에 영상 설명 원문이 들어 있다(2026-09 실측 2,375자) -
+// 이 페이지의 HTML 본문 텍스트는 푸터 358자뿐이라 이게 유일한 진짜 본문 소스다.
+private val YT_PLAYER_RESPONSE = Regex("""ytInitialPlayerResponse\s*=\s*\{""")
 
 data class UrlMetadata(
     val title: String,
@@ -45,24 +52,25 @@ class UrlMetadataExtractor(
 
     fun extract(url: String): UrlMetadata = try {
         val response = safeConnect(url)
-        var metadata = parseMetadata(response.parse(), url, response.statusCode())
+        val metadata = parseMetadata(response.parse(), url, response.statusCode())
 
-        if (isYoutubeUrl(url)) {
+        // oEmbed는 이제 폴백이다 - 제목·본문은 대부분 og:*/videoDetails에서 이미 얻어지므로,
+        // 등록 요청 경로에서 매번 왕복을 하나 더 태울 이유가 없다. 둘 중 하나라도 비었을 때만 부른다.
+        var title = metadata.title
+        var ogImage = metadata.ogImage
+        if (isYoutubeUrl(url) && (title == url.take(100) || ogImage == null)) {
             val youtubeMeta = fetchYoutubeMetadata(url)
             if (youtubeMeta != null) {
-                var title = metadata.title
-                var ogImage = metadata.ogImage
-                if (!youtubeMeta["title"].isNullOrBlank()) title = youtubeMeta["title"]!!
+                if (title == url.take(100) && !youtubeMeta["title"].isNullOrBlank()) title = youtubeMeta["title"]!!
                 if (ogImage == null && !youtubeMeta["thumbnail_url"].isNullOrBlank()) {
                     ogImage = youtubeMeta["thumbnail_url"]
                 }
-                metadata = metadata.copy(title = title, ogImage = ogImage)
             }
         }
 
         // 크롤링 대상 사이트가 og:image를 http로 내리는 경우가 있다 - FE가 https로
         // 서빙되는 이상 그대로 저장하면 Mixed Content 경고가 뜨므로 저장 전에 정규화한다.
-        metadata.copy(ogImage = metadata.ogImage?.replace(Regex("^http://"), "https://"))
+        metadata.copy(title = title, ogImage = ogImage?.replace(Regex("^http://"), "https://"))
     } catch (e: Exception) {
         logger.error("[Crawling] 크롤링 실패: $url", e)
         UrlMetadata(title = url.take(100), description = null, ogImage = null, tags = emptyList(), pageContent = null)
@@ -75,9 +83,13 @@ class UrlMetadataExtractor(
      */
     fun parseMetadata(doc: Document, url: String, statusCode: Int = 200): UrlMetadata {
         val ok = statusCode in 200..299
+        // YouTube watch 페이지는 제목·본문이 전부 이 인라인 JSON에 있다. 아래 제목·본문 양쪽에서
+        // 쓰므로 70KB짜리 JSON을 두 번 파싱하지 않도록 여기서 한 번만 읽는다.
+        val videoDetails = if (isYoutubeUrl(url)) youtubeVideoDetails(doc) else null
 
         val title = doc.select("meta[property=og:title]")
             .attr("content")
+            .ifEmpty { videoDetails?.path("title")?.textValue().orEmpty() }
             // 403 에러 페이지의 <title>(Cloudflare는 "Just a moment..." - 실측)까지 제목으로
             // 승격하면 WeakTitleDetector가 "쓸 만한 제목"으로 오인해 AI 제목 대체를 막아버려
             // 지금보다 나빠진다. 2xx가 아니면 사이트가 명시적으로 심은 og:title만 인정한다.
@@ -104,7 +116,7 @@ class UrlMetadataExtractor(
             ogImage = ogImage,
             tags = tags,
             // 에러 페이지 본문은 무슨 내용이든 이 페이지의 내용이 아니다.
-            pageContent = if (ok) resolvePageContent(doc, description, url) else null,
+            pageContent = if (ok) resolvePageContent(doc, videoDetails, description, url) else null,
         )
     }
 
@@ -114,13 +126,19 @@ class UrlMetadataExtractor(
      * PostAiBackfillRunner의 RSS 폴백이 발동한다 - 빈 문자열("")을 돌려주면 non-null이라
      * 그 폴백이 영영 안 걸린다(2026-09 이전의 결함).
      */
-    private fun resolvePageContent(doc: Document, ogDescription: String?, url: String): String? {
-        // (1) 일반 페이지 본문.
+    private fun resolvePageContent(doc: Document, videoDetails: JsonNode?, ogDescription: String?, url: String): String? {
+        // (1) YouTube: HTML 본문 텍스트가 푸터뿐이라 인라인 JSON의 영상 설명이 유일한 본문이다.
+        videoDetails?.path("shortDescription")?.textValue()
+            ?.let(::normalizeContent)
+            ?.takeIf { it.length >= MIN_META_DESCRIPTION_LENGTH }
+            ?.let { return it }
+
+        // (2) 일반 페이지 본문.
         normalizeContent(doc.body().text())
             ?.takeIf { it.length >= MIN_PAGE_CONTENT_LENGTH }
             ?.let { return it }
 
-        // (2) 본문이 껍데기(네비·푸터·봇 차단 안내)뿐일 때의 폴백. JSON-LD articleBody는 기사
+        // (3) 본문이 껍데기(네비·푸터·봇 차단 안내)뿐일 때의 폴백. JSON-LD articleBody는 기사
         //     전문을 담는 사이트가 있어 진짜 정보 이득이고, description류는 이미 Gemini 프롬프트의
         //     '설명' 필드로 따로 들어가므로(GeminiService.analyzeContent) 정보 이득은 없다 -
         //     그럼에도 넣는 이유는 PostService의 `aiStatus = if (pageContent != null) PENDING`
@@ -145,6 +163,40 @@ class UrlMetadataExtractor(
     // 정규화·상한 방식은 FeedParser.toPlainText와 동일하게 맞춘다 - 서로의 폴백이라 성격을 같게 둔다.
     private fun normalizeContent(raw: String): String? = raw.replace("\\s+".toRegex(), " ").trim()
         .take(MAX_CONTENT_LENGTH).ifEmpty { null }
+
+    /**
+     * YouTube watch 페이지의 인라인 스크립트에서 `var ytInitialPlayerResponse = {...};` 의
+     * JSON 객체만 떼어낸다.
+     *
+     * `};`까지 정규식으로 잘라내는 방식은 쓰지 않는다 - 이 JSON은 실측 70KB가 넘고 중첩 객체와
+     * 문자열 리터럴 안에도 `}`·`;`가 섞여 있어 어디서 끊길지 보장할 수 없다. 대신 여는 `{`의
+     * 위치만 정규식으로 찾고, 그 지점부터 Jackson 파서에게 "JSON 값 하나만 읽으라"고 시킨다 -
+     * readTree(JsonParser)는 트레일링 토큰을 검사하지 않으므로 뒤에 붙은 `;var meta = ...`는
+     * 그대로 무시된다.
+     *
+     * 페이지에 `ytInitialPlayerResponse` 문자열은 3번 나오지만 `= {` 형태로 이어지는 건 첫
+     * 번째뿐이다(나머지는 `window['ytInitialPlayerResponse']`, `a.ytInitialPlayerResponse`).
+     */
+    private fun youtubeVideoDetails(doc: Document): JsonNode? {
+        for (element in doc.select("script")) {
+            val data = element.data()
+            // match.range.last는 정규식의 마지막 문자, 즉 여는 '{'의 인덱스다.
+            val match = YT_PLAYER_RESPONSE.find(data) ?: continue
+            val root: JsonNode? =
+                runCatching {
+                    objectMapper.factory.createParser(data.substring(match.range.last)).use { parser ->
+                        objectMapper.readTree<JsonNode>(parser)
+                    }
+                }.getOrElse { e ->
+                    // maxBodySize 상한에 걸려 HTML이 잘리면 JSON도 중간에서 끊긴다.
+                    // 본문 없이 아래 폴백으로 내려가면 되므로 경고만 남긴다.
+                    logger.warn("[Crawling] ytInitialPlayerResponse 파싱 실패", e)
+                    null
+                }
+            return root?.get("videoDetails")
+        }
+        return null
+    }
 
     /**
      * <script type="application/ld+json"> 블록들. 사이트에 따라 최상위가 배열이거나 @graph로
@@ -200,8 +252,12 @@ class UrlMetadataExtractor(
     private fun isYoutubeUrl(url: String) = url.contains("youtube.com") || url.contains("youtu.be")
 
     private fun fetchYoutubeMetadata(url: String): Map<String, String>? = try {
-        val oembedUrl = "https://www.youtube.com/oembed?url=$url&format=json"
-        val json = Jsoup.connect(oembedUrl).ignoreContentType(true).execute().body()
+        // url을 그대로 문자열 보간하면 `?si=` 같은 추적 파라미터의 `&`가 oEmbed 쿼리 자체를 쪼갠다.
+        val encodedUrl = URLEncoder.encode(url, StandardCharsets.UTF_8)
+        val oembedUrl = "https://www.youtube.com/oembed?url=$encodedUrl&format=json"
+        // 타임아웃을 안 주면 Jsoup 기본값 30초다 - 등록 요청 경로에서 그만큼 매달릴 수 있어
+        // safeConnect와 같은 5초로 맞춘다.
+        val json = Jsoup.connect(oembedUrl).ignoreContentType(true).timeout(5000).execute().body()
         val node = objectMapper.readTree(json)
         mapOf(
             "title" to (node.get("title")?.asText() ?: ""),

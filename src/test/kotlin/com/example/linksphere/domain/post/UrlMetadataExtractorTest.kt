@@ -53,14 +53,66 @@ class UrlMetadataExtractorTest {
     }
 
     @Test
+    fun `YouTube 인라인 JSON에서 영상 설명을 본문으로 뽑는다`() {
+        val description = "다".repeat(300)
+        val html =
+            """
+            <html><body>
+            <script>var ytInitialPlayerResponse = {"videoDetails":{"title":"영상 제목","shortDescription":"$description"}};var meta=1;</script>
+            <footer>${"라".repeat(358)}</footer>
+            </body></html>
+            """.trimIndent()
+
+        val metadata = parse(html, url = "https://youtu.be/abc123")
+
+        assertEquals(description, metadata.pageContent)
+        assertEquals("영상 제목", metadata.title)
+    }
+
+    @Test
+    fun `JSON 뒤에 붙은 스크립트 코드는 파싱에 영향을 주지 않는다`() {
+        // 설명 본문 안에 닫는 중괄호·세미콜론과 비슷한 문자열이 섞여 있어도, 여는 '{' 위치부터
+        // Jackson이 값 하나만 읽으므로 전체 설명이 온전히 나와야 한다(단순 정규식 절단이면 깨진다).
+        // "</script"는 JS 문자열 안에 있어도 HTML 파서가 그 자리에서 스크립트 블록을 끊어버리므로
+        // (실제 브라우저도 동일하게 동작 - YouTube 원본은 "<\/script"로 이스케이프해 이를 피한다)
+        // 이 테스트에서는 넣지 않는다. 여기서 검증하는 건 어디까지나 중첩 중괄호/세미콜론 처리다.
+        val description = "설명 중간에 }; 와 중첩된 {객체} 문자열이 섞여 있어도 " + "마".repeat(300)
+        val html =
+            """
+            <html><body>
+            <script>var ytInitialPlayerResponse = {"videoDetails":{"title":"제목","shortDescription":"$description"}};var meta=document.createElement('meta');</script>
+            </body></html>
+            """.trimIndent()
+
+        val metadata = parse(html, url = "https://www.youtube.com/watch?v=abc123")
+
+        assertEquals(description, metadata.pageContent)
+    }
+
+    @Test
     fun `videoDetails가 없는 YouTube 페이지는 본문 폴백으로 내려간다`() {
-        // YouTube 본문 추출(ytInitialPlayerResponse)은 아직 없다 - 일반 페이지와 동일하게
-        // 본문 하한만으로 판정한다. 푸터 실측(358자)이 하한 미달이라 null이 된다.
         val html = "<html><body><footer>${"바".repeat(358)}</footer></body></html>"
 
         val metadata = parse(html, url = "https://youtu.be/abc123")
 
         assertNull(metadata.pageContent)
+    }
+
+    @Test
+    fun `ytInitialPlayerResponse는 대입 형태인 첫 번째만 읽는다`() {
+        val description = "사".repeat(300)
+        val html =
+            """
+            <html><body>
+            <script>console.log(window['ytInitialPlayerResponse']);</script>
+            <script>var ytInitialPlayerResponse = {"videoDetails":{"title":"실제 제목","shortDescription":"$description"}};</script>
+            </body></html>
+            """.trimIndent()
+
+        val metadata = parse(html, url = "https://youtu.be/abc123")
+
+        assertEquals(description, metadata.pageContent)
+        assertEquals("실제 제목", metadata.title)
     }
 
     @Test

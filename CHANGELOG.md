@@ -9,6 +9,25 @@
 
 ## [Unreleased]
 
+### Added
+
+- `post` YouTube 영상 설명을 인라인 JSON에서 추출해 AI 요약 본문으로 사용
+  <details><summary>배경·구현</summary>
+
+  YouTube watch 페이지의 HTML 본문 텍스트는 실측 358자(전부 푸터)뿐이라, 위 본문 하한 도입
+  전에는 이 358자를 그대로 요약해 "실제 내용은 구글 관련 하단 링크입니다"라고 Gemini가
+  실토하는 가짜 요약이 COMPLETED로 쌓였다(운영 174건 중 YouTube가 57건, 33%). 페이지가
+  인라인 `<script>`에 심는 `ytInitialPlayerResponse` JSON의 `videoDetails.shortDescription`에
+  실제 영상 설명(실측 2,375자)이 있어 이를 본문으로 쓴다. 이 JSON은 70KB가 넘고 중첩
+  객체·문자열 리터럴 안에도 `}`·`;`가 섞여 있어 정규식으로 끝을 잘라내는 방식은 쓰지 않았다
+  - 여는 `{`의 위치만 찾고 그 지점부터 Jackson 스트리밍 파서에 "JSON 값 하나만 읽으라"고
+    시켜, 뒤에 붙는 트레일링 스크립트 코드를 무시하게 했다. 제목 체인에도 `videoDetails.title`을
+    추가하고, oEmbed 호출은 제목·썸네일이 이미 채워졌으면 왕복을 건너뛰는 폴백으로
+    격하했다(부수적으로 oEmbed URL 인코딩 누락과 무제한 타임아웃도 함께 고쳤다).
+  (`UrlMetadataExtractor.kt`)
+
+  </details>
+
 ### Fixed
 
 - `post` 크롤링 본문이 껍데기(네비게이션·푸터·봇 차단 안내)뿐이면 빈 문자열이 아니라 null로 떨궈 RSS 폴백이 다시 동작하도록 수정
