@@ -9,6 +9,58 @@
 
 ## [Unreleased]
 
+### Added
+
+- `post` YouTube 영상 설명을 인라인 JSON에서 추출해 AI 요약 본문으로 사용
+  <details><summary>배경·구현</summary>
+
+  YouTube watch 페이지의 HTML 본문 텍스트는 실측 358자(전부 푸터)뿐이라, 위 본문 하한 도입
+  전에는 이 358자를 그대로 요약해 "실제 내용은 구글 관련 하단 링크입니다"라고 Gemini가
+  실토하는 가짜 요약이 COMPLETED로 쌓였다(운영 174건 중 YouTube가 57건, 33%). 페이지가
+  인라인 `<script>`에 심는 `ytInitialPlayerResponse` JSON의 `videoDetails.shortDescription`에
+  실제 영상 설명(실측 2,375자)이 있어 이를 본문으로 쓴다. 이 JSON은 70KB가 넘고 중첩
+  객체·문자열 리터럴 안에도 `}`·`;`가 섞여 있어 정규식으로 끝을 잘라내는 방식은 쓰지 않았다
+  - 여는 `{`의 위치만 찾고 그 지점부터 Jackson 스트리밍 파서에 "JSON 값 하나만 읽으라"고
+    시켜, 뒤에 붙는 트레일링 스크립트 코드를 무시하게 했다. 제목 체인에도 `videoDetails.title`을
+    추가하고, oEmbed 호출은 제목·썸네일이 이미 채워졌으면 왕복을 건너뛰는 폴백으로
+    격하했다(부수적으로 oEmbed URL 인코딩 누락과 무제한 타임아웃도 함께 고쳤다).
+  (`UrlMetadataExtractor.kt`, [PR #5](https://github.com/BAECHAN/link-sphere_BE_NEW/pull/5))
+
+  </details>
+
+### Fixed
+
+- `post` AI 요약 백필 도구가 도메인 지정 재분석과 건수 분할 실행을 지원하도록 확장
+  <details><summary>배경·구현</summary>
+
+  크롤링이 200을 받았지만 본문이 껍데기라 그것을 요약한 가짜 요약이 이미 `aiStatus=COMPLETED`로
+  확정된 글(YouTube 57건)은 기존 백필 대상 조건(요약 null, 또는 PENDING/FAILED 1시간 경과)
+  어디에도 걸리지 않는다 - 요약도 있고 상태도 COMPLETED이기 때문이다. `--url-like=<문자열>`
+  인자로 도메인 부분 일치 글을 강제로 재분석 대상에 합칠 수 있게 했다. Gemini 무료 티어
+  일일 쿼터 때문에 한 번에 다 돌리면 후반부가 통째로 429 → FAILED가 되므로(과거 27건 실행 중
+  실제로 겪은 사고), `--limit=<n>`으로 나눠 돌릴 수 있게 했다. dry-run 출력에도 `aiStatus`를
+  덧붙여 재분석 전에 어떤 상태의 글을 덮어쓰려는 것인지 미리 확인할 수 있다.
+  (`PostAiBackfillRunner.kt`, `PostRepository.kt`, [PR #5](https://github.com/BAECHAN/link-sphere_BE_NEW/pull/5))
+
+  </details>
+
+- `post` 크롤링 본문이 껍데기(네비게이션·푸터·봇 차단 안내)뿐이면 빈 문자열이 아니라 null로 떨궈 RSS 폴백이 다시 동작하도록 수정
+  <details><summary>배경·구현</summary>
+
+  운영 AI 요약이 절반 가까이 비는 문제를 조사한 결과, `UrlMetadataExtractor`가 긁어온 본문에
+  최소 길이 검사가 없어 YouTube 푸터(358자)·네이버 D2 네비게이션(150자) 같은 껍데기 텍스트를
+  정상 본문으로 취급하고 있었다. 더 심각한 건 `doc.body().text()`가 빈 문자열을 돌려줘도
+  `.ifEmpty { null }`이 없어 `""`(non-null)로 흘러가, `PostService.createPost`와
+  `PostAiBackfillRunner`의 RSS 폴백 엘비스(`metadata.pageContent ?: fallbackContent`)가 영구히
+  발동하지 않는 결함이 있었다. 본문 하한(1,000자)을 두고 미달이면 JSON-LD `articleBody` →
+  JSON-LD `description` → `og:description`(각 40자 이상) 순으로 폴백하며, 그마저 없으면 null을
+  돌려 AI 잡 자체를 스킵(`aiStatus=NONE`)한다. 403(Cloudflare·AWS IP 차단) 응답도
+  `ignoreHttpErrors`로 받아 최소한 `og:title`은 건지되, 에러 페이지의 `<title>`(예: "Just a
+  moment...")이 제목으로 승격되지 않도록 2xx가 아닐 때는 `og:title`만 인정한다.
+  (`UrlMetadataExtractor.kt`, `PostService.kt`, [PR #5](https://github.com/BAECHAN/link-sphere_BE_NEW/pull/5))
+
+  </details>
+
 ## [0.9.0] - 2026-09-06
 
 ### Added

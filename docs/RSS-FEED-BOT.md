@@ -8,7 +8,7 @@
 > **읽고 나면**: 이 문서만 보고 피드 소스를 추가/제거하거나, 수집 주기·건수를 조정하거나,
 > 버그를 재현·수정할 수 있다 (§9 참고).
 >
-> **마지막 검토**: 2026-09-06 (발행 주기 4일 1회·배치당 5건으로 축소)
+> **마지막 검토**: 2026-09-07 (크롤링 본문 최소 길이 등 운영 파라미터 3개 추가)
 
 ## 1. RSS가 뭔가요?
 
@@ -246,6 +246,9 @@ nullable + `ON DELETE SET NULL`로 둬서, 봇 글을 관리자가 지워도 원
 | self-invoke chunk 크기 | 5 | `FeedCrawlService.kt:31` `CHUNK_SIZE` |
 | Stage A 마감 가드 | 90,000ms | `FeedCrawlService.kt:32` `DEADLINE_MILLIS` |
 | 피드 소스 목록(9개, 1개 비활성) | `feed_sources` 테이블 | DB (SQL 시딩, `sql/create_feed_sources.sql`이 최초 시딩 기록 — 소스 추가/제거는 이 테이블에 직접 SQL로 한다, 재배포 불필요) |
+| 크롤링 본문 최소 길이 | 1,000자 | `UrlMetadataExtractor.kt` `MIN_PAGE_CONTENT_LENGTH` — 이 밑이면 네비·푸터 같은 껍데기로 보고 `null` 처리해 RSS 본문 폴백으로 넘긴다(`docs/AI-ASYNC-PROCESSING.md` §5.5) |
+| 메타 설명(og:description 등) 최소 길이 | 40자 | `UrlMetadataExtractor.kt` `MIN_META_DESCRIPTION_LENGTH` |
+| 크롤링 응답 최대 바이트 | 4MB | `UrlMetadataExtractor.kt` `safeConnect`의 `.maxBodySize(...)` — gzip 해제 후 바이트 기준 |
 
 코드 값들은 `private const val` 컴패니언 오브젝트 상수로, 이미 있는
 `LambdaHandler.kt`의 `WARMUP_PATHS`/`WARMUP_ITERATIONS`와 같은 스타일이다 — 이

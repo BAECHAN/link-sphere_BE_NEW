@@ -53,7 +53,7 @@ src/main/kotlin/com/example/linksphere/
 │   │   ├── PostService.kt
 │   │   ├── PostAiService.kt             # AI 분석 비동기 처리
 │   │   ├── TablePost.kt
-│   │   └── UrlMetadataExtractor.kt      # URL 크롤링 / YouTube oEmbed
+│   │   └── UrlMetadataExtractor.kt      # URL 크롤링 / YouTube 인라인 JSON·oEmbed
 │   ├── comment/                         # 댓글 도메인
 │   │   ├── CommentController.kt         # 댓글·답글 CRUD (이미지 포함)
 │   │   ├── CommentDTO.kt

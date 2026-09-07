@@ -18,7 +18,7 @@ import java.time.LocalDateTime
  * aiSummary가 비어 있거나 aiStatus가 PENDING/FAILED에 고착된 게시글에 뒤늦게 AI 요약을
  * 채우는 1회성 복구 도구.
  *
- * 네 가지 원인으로 게시글에 aiSummary가 비어 있을 수 있다: (1) 크롤링이 막혀 애초에 AI
+ * 다섯 가지 원인으로 게시글에 aiSummary가 비어 있을 수 있다: (1) 크롤링이 막혀 애초에 AI
  * 이벤트가 발행되지 않은 경우(aiStatus=NONE, 봇 글) - PostService.createPost의
  * fallbackContent 배선(2026-09) 이후로는 신규 등록 건에서 재발하지 않는다. (2)
  * FeedCrawlRunner를 로컬(--commit)로 돌려 self-invoke가 스킵된 경우(aiStatus=PENDING
@@ -26,8 +26,11 @@ import java.time.LocalDateTime
  * 컨테이너 freeze 결함으로 사람이 등록한 글이 PENDING에 고착된 경우. (4) Gemini 응답이
  * 실패해(쿼터 초과 등) aiStatus=FAILED로 확정된 경우 - PostAiService의 판정 기준이
  * "뭐라도 건졌는가"로 바뀐 뒤에도(2026-09) 이미 FAILED로 저장된 과거 게시글은 저절로
- * 재분석되지 않으므로 이 러너가 재시도해야 한다. 넷 다 "content를 다시 만들어 AI 잡을
- * 돌린다"는 같은 처리라 분기 없이 한 루프에서 처리한다.
+ * 재분석되지 않으므로 이 러너가 재시도해야 한다. (5) 크롤링이 200을 받았지만 본문이 사실상
+ * 껍데기(YouTube 푸터 358자 등)라 그것을 요약한 가짜 요약이 aiStatus=COMPLETED로 확정된
+ * 경우 - 상태로도 요약 유무로도 걸러지지 않아 위 네 조건 어디에도 안 걸린다. --url-like로
+ * 도메인을 지정해 강제 재분석한다. 다섯 다 "content를 다시 만들어 AI 잡을 돌린다"는 같은
+ * 처리라 분기 없이 한 루프에서 처리한다.
  *
  * 로컬에서는 LambdaSelfInvoker가 self-invoke를 스킵하므로(AWS_LAMBDA_FUNCTION_NAME 없음)
  * eventPublisher.publishEvent로 위임하면 지금 이 복구 대상을 만든 바로 그 문제에 다시 빠진다.
@@ -39,8 +42,10 @@ import java.time.LocalDateTime
  * OrphanImageCleanupRunner와 동일하게 dry-run이 기본이며, 관리자 API가 없는 이 코드베이스에서
  * admin 성격의 작업은 로컬 실행 도구로만 노출한다.
  *
- * 실행: ./gradlew bootRun --args='--spring.profiles.active=secret,ai-backfill'            (dry-run, 보고만)
- *      ./gradlew bootRun --args='--spring.profiles.active=secret,ai-backfill --commit'    (실제 AI 분석 실행)
+ * 실행: ./gradlew bootRun --args='--spring.profiles.active=secret,ai-backfill'                          (dry-run, 보고만)
+ *      ./gradlew bootRun --args='--spring.profiles.active=secret,ai-backfill --commit'                  (실제 AI 분석 실행)
+ *      ./gradlew bootRun --args='--spring.profiles.active=secret,ai-backfill --url-like=youtu'           (원인 (5) 도메인 지정 재분석, dry-run)
+ *      ./gradlew bootRun --args='--spring.profiles.active=secret,ai-backfill --url-like=youtu --limit=20 --commit'  (건수 분할 실행)
  */
 @Component
 @Profile("ai-backfill")
@@ -55,6 +60,13 @@ class PostAiBackfillRunner(
 
     override fun run(args: Array<String>) {
         val commit = "--commit" in args
+        // 원인 (5) - 가짜 요약이 든 COMPLETED 글은 상태·요약 유무 어느 쪽으로도 못 고르므로
+        // 도메인 문자열로 고른다. 예: --url-like=youtu (youtu.be와 youtube.com을 한 번에 잡는다)
+        val urlLike = args.firstOrNull { it.startsWith("--url-like=") }?.substringAfter("=")
+        // Gemini 무료 티어 일일 쿼터가 있어 한 번에 다 돌리면 후반부가 통째로 429 → FAILED가
+        // 된다(docs/AI-ASYNC-PROCESSING.md §5.4에 27건 실행 중 겪은 사고 기록). 나눠 돌릴 수
+        // 있게 상한을 받는다.
+        val limit = args.firstOrNull { it.startsWith("--limit=") }?.substringAfter("=")?.toIntOrNull()
 
         val bot = memberRepository.findFirstByIsBotTrue()
         if (bot == null) {
@@ -68,14 +80,17 @@ class PostAiBackfillRunner(
         //     Gemini 쿼터 초과 등으로 FAILED 확정된 건이 여기 해당한다. 방금 등록돼 정상
         //     처리 중인 글을 덮치지 않도록 1시간 지난 것만 본다 - self-invoke가 진행 중인
         //     글을 여기서 동시에 분석하면 같은 post에 두 트랜잭션이 붙는다.
+        // (5) urlLike가 주어졌을 때만 도메인 문자열로 강제 재분석 대상을 추가한다.
         val targets =
             (
                 postRepository.findAllByUserIdAndAiSummaryIsNull(bot.id!!) +
                     postRepository.findAllByAiStatusInAndCreatedAtBefore(
                         listOf(AiStatus.PENDING, AiStatus.FAILED),
                         LocalDateTime.now().minusHours(1),
-                    )
+                    ) +
+                    urlLike?.let { postRepository.findAllByUrlContainingIgnoreCase(it) }.orEmpty()
                 ).distinctBy { it.id }
+                .let { if (limit != null) it.take(limit) else it }
         if (targets.isEmpty()) {
             println("복구 대상 게시글이 없습니다.")
             return
@@ -106,8 +121,10 @@ class PostAiBackfillRunner(
             resolved++
             val source = if (recrawled != null) "재크롤링" else "RSS 폴백"
             // 본문 원문은 찍지 않는다 - 대상이 봇 글 한정이 아니라 전 사용자로 넓어져 isPrivate
-            // 글의 내용이 로그에 남을 수 있다. 길이만으로도 디버깅에 충분하다.
-            println("  [$source] ${post.title} | ${post.url} | contentLength=${content.length}")
+            // 글의 내용이 로그에 남을 수 있다. 길이만으로도 디버깅에 충분하다. aiStatus는
+            // --url-like 대상(원인 5)이 이미 COMPLETED + 가짜 aiSummary인 경우를 구분해서
+            // 보여준다 - --commit 전에 contentLength가 정말 늘었는지(1,000자 이상) 확인하는 용도.
+            println("  [$source] ${post.title} | ${post.url} | ${post.aiStatus} | contentLength=${content.length}")
 
             if (commit) {
                 runCatching {

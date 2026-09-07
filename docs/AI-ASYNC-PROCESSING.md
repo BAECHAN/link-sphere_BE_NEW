@@ -1,6 +1,6 @@
 # Link-Sphere BE — 게시글 AI 분석 비동기화 (2026-08-01)
 
-> 마지막 검토: 2026-09-06
+> 마지막 검토: 2026-09-07
 
 ## 1. 문제
 
@@ -413,7 +413,132 @@ self-invoke 잡과 겹치지 않기 위함)을 재크롤링/RSS 폴백으로 백
 못해 `AI Analysis returned nothing usable`로 남은 것으로, 실제로 분석할
 내용이 없는 정상적인 실패다.
 
-### 5.5 남은 것
+### 5.5 원인 ⑤ — 크롤링이 200을 받고도 본문이 사실상 비어 있었다 (2026-09-07)
+
+원인 ①(2026-09-06)로 "요약이 비어도 태그·제목·카테고리는 저장한다"는 방어가 들어간
+뒤, Gemini 프롬프트에도 "본문이 부족하면 SUMMARY를 비우고 제목만 보고 지어내지
+말 것"이라는 규칙이 함께 추가됐다(§5.1). 그런데 이 규칙이 배포된 뒤 최근 30건 중
+14건(47%)이 요약 없이 등록되는 걸 보고 "갑자기 고장났다"고 느낄 수 있는데,
+실제로는 **그동안 채워지던 요약이 가짜였다는 사실이 드러난 것**이었다.
+
+`UrlMetadataExtractor`가 긁어온 본문(`doc.body().text()`)에 최소 길이 검사가
+없어, JS로 렌더되는 페이지의 껍데기 텍스트를 정상 본문으로 취급하고 있었다.
+실측(2026-09, 프로덕션 URL 직접 크롤링):
+
+| 도메인 | HTTP | 추출된 "본문" | 정체 |
+| --- | --- | --- | --- |
+| `youtu.be` / `www.youtube.com` | 200 | 358자 | 전부 푸터("정보 보도자료 저작권…") |
+| `d2.naver.com` | 200 | 150자 | 네비게이션만 |
+| `tech.kakao.com` | 200 | 742자 | 네비 + 제목만 |
+| `smartstore.naver.com` | 200 | 817자 | 봇 차단 안내문 |
+| `news.hada.io` / `stackoverflow.com` | 403 | 0자 | Cloudflare·AWS IP 차단 |
+
+가장 임팩트가 큰 건 YouTube였다 — 운영 174건 중 57건(33%)이 YouTube였고, 이
+358자 푸터를 요약한 가짜 요약이 `aiStatus=COMPLETED`로 몇 달간 쌓여 있었다.
+Gemini가 "실제 내용은 구글 관련 하단 링크입니다"라고 대놓고 실토한 응답만
+16건이었고(§5.1의 예시가 그중 하나다), 나머지는 제목만 보고 그럴듯하게 지어낸
+것이라 겉보기엔 정상 요약과 구분되지 않았다.
+
+**더 심각한 결함**: `doc.body().text()`가 빈 문자열을 돌려줘도
+`.ifEmpty { null }`이 없어 `""`(non-null)로 흘러갔다. `PostService.createPost`의
+`metadata.pageContent ?: fallbackContent`와 `PostAiBackfillRunner`의 RSS 폴백
+엘비스가 "본문이 있다"고 오판해 **영구히 발동하지 않는** 상태였다 — §5.3의 RSS
+폴백 배선 자체는 옳았지만, 이 결함 때문에 애초에 걸릴 일이 없었다.
+
+**수정**:
+
+- `UrlMetadataExtractor.parseMetadata`를 네트워크 없이 테스트 가능한 순수
+  함수로 분리하고, 본문 하한(`MIN_PAGE_CONTENT_LENGTH = 1000`)을 도입해 미달이면
+  `null`을 돌려준다. 위 표의 가장 긴 껍데기(817자)보다 위, 실제 기사 본문(수천
+  자)보다 한참 아래인 값이다.
+- 하한 미달이면 JSON-LD `articleBody` → JSON-LD `description` → `og:description`
+  (각 `MIN_META_DESCRIPTION_LENGTH = 40`자 이상) 순으로 폴백해, 본문 전체는
+  없어도 `aiStatus=PENDING` 게이트를 통과시켜 태그·카테고리·AI 제목만이라도
+  건진다.
+- YouTube watch 페이지가 인라인 `<script>`에 심는 `ytInitialPlayerResponse`
+  JSON의 `videoDetails.shortDescription`에서 실제 영상 설명(실측 2,375자)을
+  추출해 본문으로 쓴다. 이 JSON은 70KB가 넘고 중첩 객체·문자열 리터럴 안에도
+  `}`·`;`가 섞여 있어 정규식으로 끝을 잘라내는 방식은 쓰지 않았다 — 여는 `{`의
+  위치만 찾고 그 지점부터 Jackson 스트리밍 파서에 "JSON 값 하나만 읽으라"고
+  시켜, 뒤에 붙는 트레일링 스크립트 코드를 무시하게 했다.
+- `safeConnect`에 `ignoreHttpErrors`를 추가해 403(Cloudflare·AWS IP 차단)이어도
+  최소한 `og:title`은 건진다. 단 부작용으로 에러 페이지의 `<title>`(Cloudflare는
+  "Just a moment..." — 실측)이 제목으로 승격될 뻔했다 — 2xx가 아니면 `og:title`
+  만 인정하도록 막아 회귀를 피했다.
+- Jsoup `maxBodySize`를 2MB→4MB로 올렸다. YouTube watch 페이지 HTML이 실측
+  1.3~1.4MB라 기본 2MB 상한은 여유가 1.5배뿐이었고, 넘으면 예외 없이 조용히
+  잘려 본문 JSON이 중간에서 끊길 수 있었다.
+
+**백필**: 크롤링이 200을 받아 `aiStatus=COMPLETED` + 가짜 `aiSummary`로 이미
+확정된 글은 상태로도 요약 유무로도 걸러지지 않아 §5.4의 백필 대상 조건 어디에도
+안 걸린다. `PostAiBackfillRunner`에 `--url-like=<문자열>` 인자를 추가해 도메인
+부분 일치로 강제 재분석 대상을 지정할 수 있게 했다. `--limit=<n>`도 함께
+추가했다 — §5.4에서 겪은 Gemini 무료 티어 쿼터 소진이 재발하지 않도록 나눠
+돌리기 위함이다.
+
+**검증 결과 (2026-09-07, 프로덕션 실측)**:
+
+| 지표 | 백필 전 | 백필 후 |
+| --- | --- | --- |
+| 전체 요약 보유 | 137건(79%, 가짜 포함) | 145건(83%, 전부 진짜) |
+| `FAILED` | 8 | **1**(`naver.me` 단축 링크 1건) |
+| `COMPLETED` | 147 | 154 |
+| `NONE` | 19 | 19(구조적 한계, §5.5 참고) |
+| YouTube 요약 보유(57건 중) | 47건(전량 의심 — 최소 16건 확인된 가짜) | **52건(91%, 전부 진짜)** |
+
+`--url-like=youtu --limit=20 --commit` 단 1회 실행으로 YouTube 57건 중 52건이
+실제 영상 설명을 요약한 진짜 요약을 얻었다(예: "하네스/루프/그래프 엔지니어링"
+글은 "제공된 실제 내용은 구글 관련 하단 링크입니다"라던 가짜 요약이 "지난 3년간
+프롬프트 엔지니어링에서 Context, Harness, Loop, Graph 엔지니어링으로 이어지는
+기술적 흐름을 정리했다"는 실제 내용 요약으로 교체됐다). 나머지 5건은 영상
+설명이 `MIN_META_DESCRIPTION_LENGTH`는 넘지만 Gemini가 판단하기에 요약할
+정보가 부족해 태그만 저장된 정상적인 부분 성공이다 — 실패가 아니다.
+
+숫자만으로는 가짜 요약과 진짜 요약이 구분되지 않는다는 게 이 사건 전체의
+교훈이다 — `aiStatus=COMPLETED` + `aiSummary` 존재만으로는 안전하지 않고,
+요약 **내용**을 실제로 읽어봐야 확인된다.
+
+**손대지 않은 것**: `stackoverflow.com`(7건, Cloudflare 챌린지),
+`smartstore.naver.com`(3건, 봇 차단), `news.hada.io`(10건 중 다수, AWS IP 403) —
+외부 프록시 없이는 본문 확보가 불가능해 범위 밖으로 남겼다. `ignoreHttpErrors`
+덕에 이들도 제목만은 개선됐다(URL 그대로 폴백 — 에러 페이지 `<title>`로
+오염되지 않는다).
+
+### 5.6 검토했지만 채택하지 않음 — YouTube 자막(스크립트) 크롤링 (2026-09-07)
+
+§5.5의 `videoDetails.shortDescription`(영상 설명란)을 본문으로 쓰고 나서, "영상
+자막까지 긁으면 요약 품질이 더 좋아지지 않을까"를 검토했다. 결론은 **이 인프라
+(Lambda, AWS IP, Jsoup 단독)로는 구조적으로 불가능**이라 채택하지 않았다.
+
+**실측**: watch 페이지의 `ytInitialPlayerResponse.captions
+.playerCaptionsTracklistRenderer.captionTracks`에는 자막 URL이 정상적으로
+들어 있다(한국어 수동/자동생성 자막 둘 다 확인). 하지만 그 URL
+(`youtube.com/api/timedtext`)을 실제로 호출하면 `server: video-timedtext`
+헤더가 붙은 **HTTP 200 + 바디 0바이트**만 돌아온다 — 네트워크 차단이 아니라
+애플리케이션 레벨에서 내용을 비워 응답한다.
+
+**원인(웹 검색 확인)**: YouTube가 2025~2026년 봇 탐지 체계에 자막 API까지
+포함해 **PoToken(Proof-of-Origin Token)**을 요구하기 시작했고, 특히
+AWS·GCP·Azure 같은 클라우드 IP 대역은 더 적극적으로 차단한다(`IpBlocked`,
+`RequestBlocked`, "Sign in to confirm you're not a bot" 등 — [The Datacenter
+IP Block: YouTube Downloads for AI
+Agents](https://ansaribilal.com/blog/ytagent-datacenter-ip-block-youtube-ai-agents-2026/),
+[jdepoix/youtube-transcript-api#511](https://github.com/jdepoix/youtube-transcript-api/issues/511)).
+이 크롤러가 도는 Lambda가 정확히 그 케이스다.
+
+**공식 API도 대안이 아니다**: YouTube Data API v3의 `captions.download`는
+영상 소유자 계정의 OAuth 인증이 있어야만 동작한다 — 사용자가 등록한 제3자
+영상의 자막을 받는 용도로는 애초에 설계되지 않았다([공식
+문서](https://developers.google.com/youtube/v3/docs/captions/download)).
+
+**우회 수단의 비용**: `youtube-transcript-api` 같은 비공식 라이브러리도
+로테이팅 레지덴셜 프록시(Webshare 등 유료 서비스) 없이는 결국 같은 차단에
+걸린다. 이건 코드 수정이 아니라 외부 유료 서비스 도입이라는 별도의
+비용·아키텍처 결정이라, 이번 범위에서는 채택하지 않고 §5.5의 영상
+설명란(무료·인증 불필요·이미 프로덕션에서 동작 확인됨) 수준에서 마무리했다.
+필요해지면 이 절이 검토 시작점이다.
+
+### 5.7 남은 것
 
 - Lambda 비동기(Event) 호출은 실패 시 최대 2회 재시도 후 DLQ 없이 조용히
   유실된다(이 레포에 DLQ/`event-invoke-config` 설정 없음) — 원인 ②처럼
