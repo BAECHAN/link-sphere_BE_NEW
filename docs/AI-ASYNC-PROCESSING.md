@@ -504,7 +504,41 @@ Gemini가 "실제 내용은 구글 관련 하단 링크입니다"라고 대놓�
 덕에 이들도 제목만은 개선됐다(URL 그대로 폴백 — 에러 페이지 `<title>`로
 오염되지 않는다).
 
-### 5.6 남은 것
+### 5.6 검토했지만 채택하지 않음 — YouTube 자막(스크립트) 크롤링 (2026-09-07)
+
+§5.5의 `videoDetails.shortDescription`(영상 설명란)을 본문으로 쓰고 나서, "영상
+자막까지 긁으면 요약 품질이 더 좋아지지 않을까"를 검토했다. 결론은 **이 인프라
+(Lambda, AWS IP, Jsoup 단독)로는 구조적으로 불가능**이라 채택하지 않았다.
+
+**실측**: watch 페이지의 `ytInitialPlayerResponse.captions
+.playerCaptionsTracklistRenderer.captionTracks`에는 자막 URL이 정상적으로
+들어 있다(한국어 수동/자동생성 자막 둘 다 확인). 하지만 그 URL
+(`youtube.com/api/timedtext`)을 실제로 호출하면 `server: video-timedtext`
+헤더가 붙은 **HTTP 200 + 바디 0바이트**만 돌아온다 — 네트워크 차단이 아니라
+애플리케이션 레벨에서 내용을 비워 응답한다.
+
+**원인(웹 검색 확인)**: YouTube가 2025~2026년 봇 탐지 체계에 자막 API까지
+포함해 **PoToken(Proof-of-Origin Token)**을 요구하기 시작했고, 특히
+AWS·GCP·Azure 같은 클라우드 IP 대역은 더 적극적으로 차단한다(`IpBlocked`,
+`RequestBlocked`, "Sign in to confirm you're not a bot" 등 — [The Datacenter
+IP Block: YouTube Downloads for AI
+Agents](https://ansaribilal.com/blog/ytagent-datacenter-ip-block-youtube-ai-agents-2026/),
+[jdepoix/youtube-transcript-api#511](https://github.com/jdepoix/youtube-transcript-api/issues/511)).
+이 크롤러가 도는 Lambda가 정확히 그 케이스다.
+
+**공식 API도 대안이 아니다**: YouTube Data API v3의 `captions.download`는
+영상 소유자 계정의 OAuth 인증이 있어야만 동작한다 — 사용자가 등록한 제3자
+영상의 자막을 받는 용도로는 애초에 설계되지 않았다([공식
+문서](https://developers.google.com/youtube/v3/docs/captions/download)).
+
+**우회 수단의 비용**: `youtube-transcript-api` 같은 비공식 라이브러리도
+로테이팅 레지덴셜 프록시(Webshare 등 유료 서비스) 없이는 결국 같은 차단에
+걸린다. 이건 코드 수정이 아니라 외부 유료 서비스 도입이라는 별도의
+비용·아키텍처 결정이라, 이번 범위에서는 채택하지 않고 §5.5의 영상
+설명란(무료·인증 불필요·이미 프로덕션에서 동작 확인됨) 수준에서 마무리했다.
+필요해지면 이 절이 검토 시작점이다.
+
+### 5.7 남은 것
 
 - Lambda 비동기(Event) 호출은 실패 시 최대 2회 재시도 후 DLQ 없이 조용히
   유실된다(이 레포에 DLQ/`event-invoke-config` 설정 없음) — 원인 ②처럼
