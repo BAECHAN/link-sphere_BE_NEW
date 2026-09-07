@@ -24,7 +24,7 @@
     시켜, 뒤에 붙는 트레일링 스크립트 코드를 무시하게 했다. 제목 체인에도 `videoDetails.title`을
     추가하고, oEmbed 호출은 제목·썸네일이 이미 채워졌으면 왕복을 건너뛰는 폴백으로
     격하했다(부수적으로 oEmbed URL 인코딩 누락과 무제한 타임아웃도 함께 고쳤다).
-  (`UrlMetadataExtractor.kt`)
+  (`UrlMetadataExtractor.kt`, [PR #5](https://github.com/BAECHAN/link-sphere_BE_NEW/pull/5))
 
   </details>
 
@@ -40,7 +40,7 @@
   일일 쿼터 때문에 한 번에 다 돌리면 후반부가 통째로 429 → FAILED가 되므로(과거 27건 실행 중
   실제로 겪은 사고), `--limit=<n>`으로 나눠 돌릴 수 있게 했다. dry-run 출력에도 `aiStatus`를
   덧붙여 재분석 전에 어떤 상태의 글을 덮어쓰려는 것인지 미리 확인할 수 있다.
-  (`PostAiBackfillRunner.kt`, `PostRepository.kt`)
+  (`PostAiBackfillRunner.kt`, `PostRepository.kt`, [PR #5](https://github.com/BAECHAN/link-sphere_BE_NEW/pull/5))
 
   </details>
 
@@ -57,7 +57,7 @@
   돌려 AI 잡 자체를 스킵(`aiStatus=NONE`)한다. 403(Cloudflare·AWS IP 차단) 응답도
   `ignoreHttpErrors`로 받아 최소한 `og:title`은 건지되, 에러 페이지의 `<title>`(예: "Just a
   moment...")이 제목으로 승격되지 않도록 2xx가 아닐 때는 `og:title`만 인정한다.
-  (`UrlMetadataExtractor.kt`, `PostService.kt`)
+  (`UrlMetadataExtractor.kt`, `PostService.kt`, [PR #5](https://github.com/BAECHAN/link-sphere_BE_NEW/pull/5))
 
   </details>
 
