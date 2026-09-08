@@ -30,6 +30,29 @@
 
 ### Fixed
 
+- `post` 글 수정 화면에서 제목을 비워도 재수집되지 않고, YouTube 껍데기 페이지의 제목이 "- YouTube"로 저장되는 문제 수정
+  <details><summary>배경·구현</summary>
+
+  두 버그가 맞물려 있었다. 하나, 수정 폼 placeholder는 "제목 (비워두면 자동으로 가져와요)"라고
+  약속하지만 `PostService.updatePost`는 URL이 바뀔 때만 재크롤링했다 - 제목만 비운 수정은
+  `request.title?.takeIf { it.isNotBlank() } ?: post.title`에서 조용히 무시되고 기존 제목이
+  그대로 남았다. 둘, YouTube 글 등록 시 데이터센터 IP(Lambda)가 og:title 없는 껍데기 페이지를
+  받으면 `<title>`인 "- YouTube"가 제목으로 채택됐는데(실측: 프로덕션에서 본문 94자짜리 껍데기
+  응답), `WeakTitleDetector.isWeak`는 앞의 "- "까지 포함한 문자열을 hostname과 비교해 이걸
+  약한 제목으로 판정하지 못했고, oEmbed 폴백도 `title == url.take(100)`(크롤링 완전 실패)만
+  잡아 발동하지 않았다.
+
+  `updatePost`의 재수집 트리거를 "URL 변경 OR 제목 비움" 둘로 넓히되, 제목만 비운 경우는
+  설명·태그·AI 요약을 덮지 않는 순수 폴백으로 남긴다 - 제목이 빈약한 페이지는 본문·썸네일도
+  못 긁히는 같은 껍데기 페이지라, 전면 덮어쓰기를 하면 제목 하나 고치려다 나머지를 잃는다.
+  `WeakTitleDetector`는 제목 양 끝의 구분자(`-–—|·:`)만 떼어내고 남은 문자열을 hostname과
+  영숫자 정규화로 비교해 "- YouTube"·"| GitHub" 같은 사이트명 접미사만 남은 제목을 잡는다
+  (가운데 구분자는 쪼개지 않아 "리액트 19 릴리즈 - React Blog" 같은 정상 제목은 그대로 둔다).
+  `UrlMetadataExtractor`의 oEmbed 폴백 발동·채택 조건도 이 `isWeak` 판정으로 통일했다.
+  (`PostService.kt`, `WeakTitleDetector.kt`, `UrlMetadataExtractor.kt`)
+
+  </details>
+
 - `post` AI 요약 백필 도구가 도메인 지정 재분석과 건수 분할 실행을 지원하도록 확장
   <details><summary>배경·구현</summary>
 

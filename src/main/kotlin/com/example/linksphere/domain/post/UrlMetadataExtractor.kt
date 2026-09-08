@@ -54,14 +54,17 @@ class UrlMetadataExtractor(
         val response = safeConnect(url)
         val metadata = parseMetadata(response.parse(), url, response.statusCode())
 
-        // oEmbed는 이제 폴백이다 - 제목·본문은 대부분 og:*/videoDetails에서 이미 얻어지므로,
-        // 등록 요청 경로에서 매번 왕복을 하나 더 태울 이유가 없다. 둘 중 하나라도 비었을 때만 부른다.
         var title = metadata.title
         var ogImage = metadata.ogImage
-        if (isYoutubeUrl(url) && (title == url.take(100) || ogImage == null)) {
+        // oEmbed는 폴백이다 - 제목·썸네일이 이미 og:*에서 나오면 왕복을 하나 더 태울 이유가 없다.
+        // "빈약함" 판정은 PostService·PostAIService와 같은 WeakTitleDetector로 통일한다. 예전의
+        // `title == url.take(100)`은 크롤링 실패 폴백만 잡아, 데이터센터 IP가 받는 껍데기 페이지의
+        // <title> "- YouTube"를 정상 제목으로 오인했다(2026-09-08 실측, bodyTextLength=94).
+        val titleIsWeak = WeakTitleDetector.isWeak(title, url)
+        if (isYoutubeUrl(url) && (titleIsWeak || ogImage == null)) {
             val youtubeMeta = fetchYoutubeMetadata(url)
             if (youtubeMeta != null) {
-                if (title == url.take(100) && !youtubeMeta["title"].isNullOrBlank()) title = youtubeMeta["title"]!!
+                if (titleIsWeak && !youtubeMeta["title"].isNullOrBlank()) title = youtubeMeta["title"]!!
                 if (ogImage == null && !youtubeMeta["thumbnail_url"].isNullOrBlank()) {
                     ogImage = youtubeMeta["thumbnail_url"]
                 }

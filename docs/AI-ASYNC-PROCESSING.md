@@ -79,7 +79,8 @@ POST /post
 그럴 때만 AI 제목으로 교체하고, `description`은 크롤링 결과가 `null`/빈
 문자열일 때만 AI 설명으로 채운다 — 크롤링이 건진 값은 절대 덮지 않는 순수
 폴백이다. 크롤링 자체가 실패해 `pageContent`가 없는 경우는 애초에 이 AI
-잡이 발행되지 않으므로(`PostService.createPost`) 이 폴백의 대상이 아니다.
+잡이 발행되지 않으므로(`PostService.createPost`, 그리고 URL 변경·제목 비움으로
+재크롤링하는 `PostService.updatePost`) 이 폴백의 대상이 아니다.
 
 ### 2.1 결과 확인 방식 — 실시간 알림 없음
 
