@@ -49,7 +49,7 @@
   영숫자 정규화로 비교해 "- YouTube"·"| GitHub" 같은 사이트명 접미사만 남은 제목을 잡는다
   (가운데 구분자는 쪼개지 않아 "리액트 19 릴리즈 - React Blog" 같은 정상 제목은 그대로 둔다).
   `UrlMetadataExtractor`의 oEmbed 폴백 발동·채택 조건도 이 `isWeak` 판정으로 통일했다.
-  (`PostService.kt`, `WeakTitleDetector.kt`, `UrlMetadataExtractor.kt`)
+  (`PostService.kt`, `WeakTitleDetector.kt`, `UrlMetadataExtractor.kt`, [PR #7](https://github.com/BAECHAN/link-sphere_BE_NEW/pull/7))
 
   </details>
 
