@@ -361,6 +361,10 @@ SnapStart 체크포인트 **이전**(`companion object init`)에 읽기 전용 �
 - [`docs/HISTORY.md`](docs/HISTORY.md) — 2026-08-01부터 갱신 중단. 이후 이력은 FE 레포에서 통합 관리
 - [`docs/DEPLOY-WHEN-APP-RUNNER.md`](docs/DEPLOY-WHEN-APP-RUNNER.md) — App Runner로 운영하던 이전 배포 방식
 
+**작업 계획** — "무엇을 하기로 했는지"
+
+- [`docs/plans/`](docs/plans/) — plan mode로 세운 계획의 스냅샷 (append-only, 파일마다 여기 개별 등록하지 않음)
+
 > 문서 분류 기준과 작성 규칙은 [`.claude/CLAUDE.md`](.claude/CLAUDE.md)의 "문서 파일 위치"·"서사형 작업 문서 형식" 절 참고.
 
 ---
