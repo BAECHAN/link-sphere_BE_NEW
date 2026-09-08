@@ -434,4 +434,194 @@ class PostServiceTest {
         verify(bookmarkFolderRepository).findAllById(listOf(folderId))
         verify(bookmarkFolderItemRepository, times(1)).insertIgnoreConflict(userId, postId, folderId)
     }
+
+    @Test
+    fun `updatePost 는 제목을 비우면 URL이 그대로여도 재크롤링해 제목을 다시 채운다`() {
+        val userId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val url = "https://youtu.be/abc"
+        val post = TablePost(id = postId, userId = userId, url = url, title = "- YouTube", isPrivate = false)
+        val savedPost = TablePost(id = postId, userId = userId, url = url, title = "실제 영상 제목", isPrivate = false)
+
+        `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
+        `when`(urlMetadataExtractor.extract(url)).thenReturn(
+            UrlMetadata(title = "실제 영상 제목", description = null, ogImage = null, tags = emptyList(), pageContent = null),
+        )
+        val savedPostCaptor = ArgumentCaptor.forClass(TablePost::class.java)
+        `when`(postRepository.save(savedPostCaptor.capture())).thenReturn(savedPost)
+        stubResponseBuild(userId, postId, isBookmarked = false, bookmarkCount = 0L)
+
+        postService.updatePost(postId, userId, PostUpdateRequest(title = ""))
+
+        assertEquals("실제 영상 제목", savedPostCaptor.value.title)
+        verify(urlMetadataExtractor).extract(url)
+        // URL은 그대로이므로 등록 시점에 이미 통과한 값을 다시 검증하지 않는다.
+        verifyNoInteractions(safeUrlValidator)
+    }
+
+    @Test
+    fun `updatePost 는 재수집 제목이 빈약하면 기존 제목을 그대로 둔다`() {
+        val userId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val url = "https://youtu.be/abc"
+        val post = TablePost(id = postId, userId = userId, url = url, title = "기존 좋은 제목", isPrivate = false)
+        val savedPost = TablePost(id = postId, userId = userId, url = url, title = "기존 좋은 제목", isPrivate = false)
+
+        `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
+        `when`(urlMetadataExtractor.extract(url)).thenReturn(
+            UrlMetadata(title = "- YouTube", description = null, ogImage = null, tags = emptyList(), pageContent = null),
+        )
+        val savedPostCaptor = ArgumentCaptor.forClass(TablePost::class.java)
+        `when`(postRepository.save(savedPostCaptor.capture())).thenReturn(savedPost)
+        stubResponseBuild(userId, postId, isBookmarked = false, bookmarkCount = 0L)
+
+        postService.updatePost(postId, userId, PostUpdateRequest(title = ""))
+
+        assertEquals("기존 좋은 제목", savedPostCaptor.value.title)
+    }
+
+    @Test
+    fun `updatePost 는 제목만 비운 재수집에서 기존 설명·태그·AI 요약을 덮지 않는다`() {
+        val userId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val url = "https://example.com/a"
+        val post = TablePost(
+            id = postId,
+            userId = userId,
+            url = url,
+            title = "기존 제목",
+            description = "기존 설명",
+            tags = listOf("기존태그"),
+            ogImage = "기존 이미지",
+            aiSummary = "기존 요약",
+            aiStatus = AiStatus.COMPLETED,
+            isPrivate = false,
+        )
+        val savedPost = post
+
+        `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
+        `when`(urlMetadataExtractor.extract(url)).thenReturn(
+            UrlMetadata(
+                title = "새 제목",
+                description = "새 설명",
+                ogImage = "새 이미지",
+                tags = listOf("새태그"),
+                pageContent = null,
+            ),
+        )
+        val savedPostCaptor = ArgumentCaptor.forClass(TablePost::class.java)
+        `when`(postRepository.save(savedPostCaptor.capture())).thenReturn(savedPost)
+        stubResponseBuild(userId, postId, isBookmarked = false, bookmarkCount = 0L)
+
+        postService.updatePost(postId, userId, PostUpdateRequest(title = ""))
+
+        assertEquals("새 제목", savedPostCaptor.value.title)
+        assertEquals("기존 설명", savedPostCaptor.value.description)
+        assertEquals(listOf("기존태그"), savedPostCaptor.value.tags)
+        assertEquals("기존 이미지", savedPostCaptor.value.ogImage)
+        assertEquals("기존 요약", savedPostCaptor.value.aiSummary)
+        assertEquals(AiStatus.COMPLETED, savedPostCaptor.value.aiStatus)
+    }
+
+    @Test
+    fun `updatePost 는 제목만 비운 재수집의 AI 이벤트에 기존 태그를 그대로 넘긴다`() {
+        val userId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val url = "https://example.com/a"
+        val post = TablePost(
+            id = postId,
+            userId = userId,
+            url = url,
+            title = "기존 제목",
+            tags = listOf("기존태그1", "기존태그2"),
+            isPrivate = false,
+        )
+        val savedPost = post
+
+        `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
+        `when`(urlMetadataExtractor.extract(url)).thenReturn(
+            UrlMetadata(
+                title = "새 제목",
+                description = null,
+                ogImage = null,
+                // 크롤링 태그는 호스트 하나뿐이다 - 그대로 넘기면 기존 AI 태그가 사라진다(회귀 방지).
+                tags = listOf("example.com"),
+                pageContent = "본문",
+            ),
+        )
+        `when`(postRepository.save(any())).thenReturn(savedPost)
+        stubResponseBuild(userId, postId, isBookmarked = false, bookmarkCount = 0L)
+
+        postService.updatePost(postId, userId, PostUpdateRequest(title = ""))
+
+        val eventCaptor = ArgumentCaptor.forClass(PostCreatedEvent::class.java)
+        verify(eventPublisher).publishEvent(eventCaptor.capture())
+        assertEquals(listOf("기존태그1", "기존태그2"), eventCaptor.value.existingTags)
+        assertEquals("새 제목", eventCaptor.value.title)
+    }
+
+    @Test
+    fun `updatePost 는 URL을 바꾸면 메타데이터를 통째로 덮고 aiSummary 를 리셋한다`() {
+        val userId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val oldUrl = "https://old.example.com"
+        val newUrl = "https://new.example.com"
+        val post = TablePost(
+            id = postId,
+            userId = userId,
+            url = oldUrl,
+            title = "기존 제목",
+            description = "기존 설명",
+            tags = listOf("기존태그"),
+            ogImage = "기존 이미지",
+            aiSummary = "기존 요약",
+            aiStatus = AiStatus.COMPLETED,
+            isPrivate = false,
+        )
+        val savedPost = post
+
+        `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
+        `when`(urlMetadataExtractor.extract(newUrl)).thenReturn(
+            UrlMetadata(
+                title = "새 링크 제목",
+                description = "새 링크 설명",
+                ogImage = "새 링크 이미지",
+                tags = listOf("new.example.com"),
+                pageContent = null,
+            ),
+        )
+        val savedPostCaptor = ArgumentCaptor.forClass(TablePost::class.java)
+        `when`(postRepository.save(savedPostCaptor.capture())).thenReturn(savedPost)
+        stubResponseBuild(userId, postId, isBookmarked = false, bookmarkCount = 0L)
+
+        postService.updatePost(postId, userId, PostUpdateRequest(url = newUrl))
+
+        verify(safeUrlValidator).validate(newUrl)
+        assertEquals(newUrl, savedPostCaptor.value.url)
+        assertEquals("새 링크 제목", savedPostCaptor.value.title)
+        assertEquals("새 링크 설명", savedPostCaptor.value.description)
+        assertEquals(listOf("new.example.com"), savedPostCaptor.value.tags)
+        assertEquals("새 링크 이미지", savedPostCaptor.value.ogImage)
+        assertEquals(null, savedPostCaptor.value.aiSummary)
+        assertEquals(AiStatus.NONE, savedPostCaptor.value.aiStatus)
+    }
+
+    @Test
+    fun `updatePost 는 제목을 직접 입력하면 재크롤링하지 않는다`() {
+        val userId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val url = "https://example.com/a"
+        val post = TablePost(id = postId, userId = userId, url = url, title = "기존 제목", isPrivate = false)
+        val savedPost = post
+
+        `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
+        val savedPostCaptor = ArgumentCaptor.forClass(TablePost::class.java)
+        `when`(postRepository.save(savedPostCaptor.capture())).thenReturn(savedPost)
+        stubResponseBuild(userId, postId, isBookmarked = false, bookmarkCount = 0L)
+
+        postService.updatePost(postId, userId, PostUpdateRequest(title = "사용자가 직접 쓴 제목"))
+
+        assertEquals("사용자가 직접 쓴 제목", savedPostCaptor.value.title)
+        verify(urlMetadataExtractor, never()).extract(ArgumentMatchers.anyString())
+    }
 }

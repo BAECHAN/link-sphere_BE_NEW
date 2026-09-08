@@ -21,7 +21,8 @@ data class PostVisibilityUpdateRequest(val isPrivate: Boolean)
 data class PostUpdateRequest(
     // null이면 URL 변경 없음으로 취급한다 (url 필드를 보내지 않는 구버전 클라이언트 호환).
     val url: String? = null,
-    // 비워두면 새 링크에서 가져온 제목을 쓴다 (URL 변경 없으면 기존 제목 유지).
+    // 비워두면 URL 변경 여부와 무관하게 링크를 다시 크롤링해 제목을 채운다.
+    // 재수집 제목이 빈약하면(WeakTitleDetector) 기존 제목을 유지한다.
     val title: String? = null,
     val categoryIds: List<Long>? = emptyList(),
     val isPrivate: Boolean = false,

@@ -229,53 +229,88 @@ class PostService(
         val post = postRepository.findById(id).orElseThrow { PostNotFoundException(id) }
         if (post.userId != userId) throw ForbiddenException("You are not the owner of this post")
 
-        // 제목을 비워 보내면 새 링크에서 가져오겠다는 뜻이므로 기존 제목을 유지한다(빈 제목 저장 방지).
-        post.title = request.title?.takeIf { it.isNotBlank() } ?: post.title
         post.isPrivate = request.isPrivate
         post.categories.clear()
         if (!request.categoryIds.isNullOrEmpty()) {
             post.categories.addAll(categoryRepository.findAllByIdIn(request.categoryIds))
         }
 
-        // URL이 바뀌면 기존 메타데이터·AI 요약이 옛 링크 기준으로 남으므로 생성 때와 동일하게 재수집한다.
-        // 이때 제목은 사용자가 입력한 값 대신 새 링크에서 크롤링한 제목으로 덮어쓴다.
+        // 재수집 트리거는 둘이다.
+        //  (1) URL 변경 - 기존 메타데이터·AI 요약이 옛 링크 기준이라 통째로 무의미해진다.
+        //  (2) 제목 비움 - 수정 폼 placeholder("비워두면 자동으로 가져와요")가 사용자에게 한
+        //      약속이다. URL이 그대로여도 크롤링을 다시 돌려야 그 약속을 지킬 수 있다.
+        //      (예전에는 URL 변경만 트리거라, 제목만 비우면 조용히 무시됐다.)
         val newUrl = request.url?.trim()?.takeIf { it != post.url }
-        val metadata =
-            newUrl?.let {
-                validateUrl(it)
-                urlMetadataExtractor.extract(it)
-            }
+        val titleCleared = request.title.isNullOrBlank()
+
+        // 검증은 URL이 바뀔 때만 한다. 기존 URL은 등록 시점에 이미 통과한 값이고, 그 사이
+        // 사설 IP로 바뀌었더라도 safeConnect가 홉마다 재검증해 extract 안에서 걸러진다 -
+        // 여기서 던지면 "제목만 비운 수정"이 400으로 실패해 사용자가 손쓸 방법이 없어진다.
+        if (newUrl != null) validateUrl(newUrl)
+
+        val recrawlUrl = newUrl ?: post.url.takeIf { titleCleared }
+        val metadata = recrawlUrl?.let { urlMetadataExtractor.extract(it) }
+
+        // 제목 우선순위: 사용자가 직접 쓴 제목 > 재수집 제목 > 기존 제목.
+        // 재수집 제목이 빈약하면 채택하지 않는다 - "- YouTube" 같은 껍데기 제목이 멀쩡한 기존
+        // 제목을 덮는 것을 막는다. 사슬의 마지막이 항상 non-blank인 기존 제목이므로 빈 제목이
+        // DB에 저장될 경로는 없다(posts.title은 NOT NULL, FE postSchema는 min(1)).
+        val recrawledTitle = usableTitle(metadata, recrawlUrl)
+        if (recrawlUrl != null && recrawledTitle == null) {
+            logger.info("[Crawling] 재수집 제목이 빈약해 기존 제목 유지 - postId: $id, title: ${metadata?.title}")
+        }
+        post.title = request.title?.trim()?.takeIf { it.isNotEmpty() } ?: recrawledTitle ?: post.title
+
         if (newUrl != null && metadata != null) {
+            // URL이 바뀌면 기존 메타데이터·AI 요약은 옛 링크 기준이라 통째로 무의미하다 - 전부 덮는다.
             post.url = newUrl
-            // 제목이 URL·사이트명 수준으로 빈약할 때만 기존 제목을 유지한다. 본문 하한 도입 이후
-            // pageContent는 "크롤링 성공 여부"의 대리 지표가 될 수 없다 - 제목은 잘 긁혔는데 본문만
-            // 껍데기인 페이지가 정상 케이스가 됐다. PostAiService가 쓰는 것과 같은 판정을 쓴다.
-            if (!WeakTitleDetector.isWeak(metadata.title, newUrl)) post.title = metadata.title
             post.description = metadata.description
             post.tags = metadata.tags.toMutableList()
             post.ogImage = metadata.ogImage
             post.aiSummary = null
-            post.aiStatus = if (metadata.pageContent != null) AiStatus.PENDING else AiStatus.NONE
+        } else if (metadata != null) {
+            // 제목만 비운 재수집은 "제목을 다시 가져와 달라"지 "이 글을 초기화해 달라"가 아니다.
+            // 제목이 빈약한 페이지는 본문·썸네일도 못 긁히는 같은 껍데기 페이지라, 여기서 전면
+            // 덮어쓰기를 하면 제목 하나 고치려다 설명·태그·AI 요약을 함께 잃는다. 비어 있는
+            // 칸만 채우는 순수 폴백으로 둔다(PostAIService의 폴백 원칙과 동일).
+            if (post.description.isNullOrBlank()) post.description = metadata.description
+            if (post.ogImage.isNullOrBlank()) post.ogImage = metadata.ogImage
+        }
+
+        // 재수집한 김에 AI도 다시 돌린다. aiSummary를 미리 지우지 않는 이유는 PostAIService가
+        // 요약을 순수 폴백으로 쓰기 때문이다(PostAiService.kt) - 재분석이 실패해도 기존
+        // 요약이 남는다. URL 변경 경로는 위에서 이미 aiSummary를 리셋했다.
+        val pageContent = metadata?.pageContent
+        when {
+            pageContent != null -> post.aiStatus = AiStatus.PENDING
+            // 본문을 못 건진 새 링크는 NONE으로 되돌린다. 제목만 비운 경우엔 기존 상태를
+            // 그대로 둔다 - COMPLETED를 NONE으로 강등시키면 백필 러너의 대상 판정이 흔들린다.
+            newUrl != null -> post.aiStatus = AiStatus.NONE
         }
 
         val savedPost = postRepository.save(post)
 
-        val pageContent = metadata?.pageContent
-        if (metadata != null && pageContent != null) {
-            logger.info("[AI Async] URL 변경으로 PostCreatedEvent 발행 - postId: ${savedPost.id}")
+        if (pageContent != null) {
+            logger.info("[AI Async] 재수집으로 PostCreatedEvent 발행 - postId: ${savedPost.id}")
             eventPublisher.publishEvent(
                 PostCreatedEvent(
                     postId = savedPost.id!!,
                     userId = userId,
-                    title = metadata.title,
-                    description = metadata.description,
+                    title = post.title, // metadata.title이 아니라 실제 저장된 제목
+                    description = post.description, // 제목 비움 경로에선 기존 설명이 맞다
                     content = pageContent,
-                    existingTags = metadata.tags,
+                    existingTags = post.tags.orEmpty(), // metadata.tags(=호스트 하나)를 넘기면 태그 손실
                 ),
             )
         }
 
         return convertToResponse(savedPost, userId)
+    }
+
+    /** 재수집한 제목은 빈약하지 않을 때만 채택한다 - PostAIService와 같은 판정을 쓴다. */
+    private fun usableTitle(metadata: UrlMetadata?, url: String?): String? {
+        if (metadata == null || url == null || WeakTitleDetector.isWeak(metadata.title, url)) return null
+        return metadata.title
     }
 
     @Transactional
