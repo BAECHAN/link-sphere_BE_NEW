@@ -241,6 +241,10 @@ gemini:
   api:
     key: <YOUR_GEMINI_API_KEY>
 
+youtube:
+  api:
+    key: <YOUR_YOUTUBE_DATA_API_V3_KEY>
+
 jwt:
   secret: <YOUR_JWT_SECRET_KEY>
 

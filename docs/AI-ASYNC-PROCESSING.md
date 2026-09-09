@@ -1,6 +1,6 @@
 # Link-Sphere BE — 게시글 AI 분석 비동기화 (2026-08-01)
 
-> 마지막 검토: 2026-09-07
+> 마지막 검토: 2026-09-09
 
 ## 1. 문제
 
@@ -539,7 +539,96 @@ Agents](https://ansaribilal.com/blog/ytagent-datacenter-ip-block-youtube-ai-agen
 설명란(무료·인증 불필요·이미 프로덕션에서 동작 확인됨) 수준에서 마무리했다.
 필요해지면 이 절이 검토 시작점이다.
 
-### 5.7 남은 것
+### 5.7 원인 ⑥ — YouTube가 Lambda IP에 껍데기 페이지를 내리기 시작했다 (2026-09-09)
+
+§5.5에서 `videoDetails.shortDescription`으로 YouTube 본문 확보를 고쳤지만, 2026-09-08부터
+YouTube가 이 크롤러가 도는 Lambda(AWS ap-northeast-1) IP에 대해 watch 페이지 자체를
+**200 OK + 본문 텍스트 94자짜리 빈 셸**로 내려주기 시작했다 — §5.6에서 확인한 "AWS IP가
+더 적극적으로 차단당한다"는 현상이 자막 API를 넘어 watch 페이지 본문에도 번진 것이다.
+
+```mermaid
+flowchart TD
+    A["사용자가 YouTube 링크 등록"] --> B["UrlMetadataExtractor.extract()"]
+    B --> C{"YouTube watch 페이지 요청<br/>어느 IP에서?"}
+
+    C -->|"로컬 PC · 9/7 이전 Lambda"| D["HTML 1.4MB<br/>ytInitialPlayerResponse 있음"]
+    C -->|"9/8 이후 Lambda"| E["200 OK · 본문 94자 빈 셸<br/>og:* 조차 없음"]
+
+    D --> F["shortDescription 확보<br/>수천 자"]
+    E --> G["youtubeVideoDetails 실패<br/>UrlMetadataExtractor.kt:180"]
+
+    F --> H["pageContent 채워짐"]
+    G --> I["pageContent = null<br/>resolvePageContent 1번 분기 실패"]
+
+    H --> J["aiStatus = PENDING<br/>PostService.kt:69"]
+    I --> K["aiStatus = NONE<br/>PostService.kt:69"]
+
+    J --> L["PostCreatedEvent 발행"]
+    K --> M["이벤트 발행 안 함<br/>= Gemini 호출 자체가 없음<br/>그래서 에러 로그도 없었다"]
+```
+
+**증거**:
+
+| 항목 | 실측 |
+| --- | --- |
+| CloudWatch Logs Insights (10일) | `[Crawling] 본문 하한 미달 ... bodyTextLength=94` — 09-08 04:18 / 08:09 / 16:59 / 17:29 UTC, 4건 모두 정확히 94자. 09-07 이전엔 YouTube 관련 이 로그가 0건 |
+| 운영 API 최근 60건 | `COMPLETED` 48 / `NONE` 11 / `FAILED` 1. 비-YouTube는 정상(09-08 15:31 등에 요약 존재). `NONE`인 YouTube 3건이 전부 09-08 이후 |
+| 로컬 재현 | 크롤러와 동일 User-Agent·Referer로 같은 영상을 요청 → 1.4MB 정상 HTML, `ytInitialPlayerResponse` 3회 등장, `shortDescription` 존재 → **IP 기반 차단**이 원인이지 코드 결함이 아니다 |
+| oEmbed 대안 검토 | 여전히 200이지만 응답에 `description` 필드 자체가 없다(`title`·`author_name`·`thumbnail_url`·`html`뿐) → 본문 소스가 못 됨 |
+
+**수정 — YouTube Data API v3를 1순위로**:
+
+`infra/youtube/YoutubeVideoClient.fetchSnippet(url)`이 `videos.list?part=snippet`으로
+영상 설명을 가져온다. `UrlMetadataExtractor.extract()`가 YouTube URL이면 이걸 가장 먼저
+시도하고, 실패하면(아래 표) `null`을 돌려받아 기존 스크래핑 → oEmbed 경로로 그대로
+떨어진다 — 두 경로 다 한 줄도 고치지 않았다. 차단되지 않은 IP(로컬·백필 실행 환경)에서는
+Data API 없이도 스크래핑이 그대로 성공하므로 왕복도 쿼터도 늘지 않는다.
+
+| 실패 케이스 | 실제 응답 | 처리 |
+| --- | --- | --- |
+| 키 미설정 | — | `apiKey.isBlank()` 가드로 즉시 null |
+| 키 무효 | 400 `API_KEY_INVALID` | catch → warn → null |
+| API 미활성 | 403 `SERVICE_DISABLED` | 〃 |
+| 쿼터 초과 | 403 `quotaExceeded` | 〃 |
+| 비공개·삭제·오타 ID | **200 + `items: []`**(404가 아니다) | `firstOrNull() == null` → null |
+| videoId 없는 URL(playlist, `@handle`) | 호출 안 함 | `extractVideoId` → null |
+
+videoId는 `YoutubeVideoClient.extractVideoId`가 `watch?v=`·`youtu.be/`·`shorts|embed|live/`·
+`m.`/`music.` 서브도메인을 지원하고 `?si=`·`&list=`·`&t=` 같은 추적/부가 파라미터는 무시한다.
+`description`은 항상 `null`로 둔다 — 정상 시절 YouTube 글(운영 API 실측 6건)도 `description`이
+전부 `null`이었고, 여기서 채우면 카드 UI가 달라지는 시각적 변경이 되기 때문이다.
+
+**운영 파라미터**:
+
+| 항목 | 값 | 위치 |
+| --- | --- | --- |
+| 타임아웃 | connect 3s / read 3s | `YoutubeVideoClient.kt`의 `requestFactory` |
+| 응답 필터 | `fields=items(snippet(title,description,thumbnails))` | `YoutubeVideoClient.fetchSnippet` |
+| 키 | `youtube.api.key`(로컬) / `YOUTUBE_API_KEY`(Lambda) — 기본값 빈 문자열 | `docs/DEPLOY.md` §4 |
+| 쿼터 | `videos.list` 1 unit / 일일 10,000 units(레포 밖 — Google Cloud 콘솔) | — |
+
+**등록 요청 경로의 왕복 수는 늘지 않는다**:
+
+| 상황 | 이전 | 이후 |
+| --- | --- | --- |
+| Lambda, 차단됨 | HTML(5s) + oEmbed(5s) 최대 10s | HTML(5s) + Data API(3s) 최대 8s(설명 확보 성공 시 oEmbed는 스킵) |
+| 로컬 / 차단 안 됨 | HTML(5s) | 변화 없음 — HTML 스크래핑이 그대로 성공해 Data API 자체를 안 부른다 |
+
+**백필 — 밀린 글의 함정**: `PostAiBackfillRunner`의 `--url-like=youtu` 레시피(§5.4·§5.5)는
+`(봇 글 중 aiSummary=null) + (PENDING/FAILED & 1시간 경과) + (url LIKE %urlLike%)`를 합쳐
+`.take(limit)`으로 자른다. 이번에 밀린 글은 **사람이 등록한 `aiStatus=NONE`**이라 앞의 두
+쿼리엔 안 걸리고 `--url-like`로만 잡히는데, `youtu`로 걸면 이미 정상 요약이 있는 글까지
+끌어와 좋은 요약을 덮어쓰고 Gemini 쿼터를 태운다. **videoId(11자)를 `--url-like`에 넣어
+글마다 개별 실행**해야 한다.
+
+**검증 결과**: 배포·백필 후 이 절에 실측 표로 갱신한다(코드·문서만 먼저 병합되고 실제
+배포·백필은 뒤따르는 경우를 대비한 잠정 표기 — 병합 시점에 이미 실측이 끝났다면 이
+문단 대신 §5.5·§5.4와 같은 형식의 표가 채워져 있어야 한다).
+
+§5.6의 "공식 API도 대안이 아니다"는 `captions.download`(자막) 한정이다. 영상 **설명**을
+가져오는 `videos.list`는 API 키만으로 되고 OAuth가 필요 없어, 이번 §5.7에서 채택했다.
+
+### 5.8 남은 것
 
 - Lambda 비동기(Event) 호출은 실패 시 최대 2회 재시도 후 DLQ 없이 조용히
   유실된다(이 레포에 DLQ/`event-invoke-config` 설정 없음) — 원인 ②처럼
