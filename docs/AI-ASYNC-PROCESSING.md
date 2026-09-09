@@ -614,16 +614,33 @@ videoId는 `YoutubeVideoClient.extractVideoId`가 `watch?v=`·`youtu.be/`·`shor
 | Lambda, 차단됨 | HTML(5s) + oEmbed(5s) 최대 10s | HTML(5s) + Data API(3s) 최대 8s(설명 확보 성공 시 oEmbed는 스킵) |
 | 로컬 / 차단 안 됨 | HTML(5s) | 변화 없음 — HTML 스크래핑이 그대로 성공해 Data API 자체를 안 부른다 |
 
-**백필 — 밀린 글의 함정**: `PostAiBackfillRunner`의 `--url-like=youtu` 레시피(§5.4·§5.5)는
-`(봇 글 중 aiSummary=null) + (PENDING/FAILED & 1시간 경과) + (url LIKE %urlLike%)`를 합쳐
-`.take(limit)`으로 자른다. 이번에 밀린 글은 **사람이 등록한 `aiStatus=NONE`**이라 앞의 두
-쿼리엔 안 걸리고 `--url-like`로만 잡히는데, `youtu`로 걸면 이미 정상 요약이 있는 글까지
-끌어와 좋은 요약을 덮어쓰고 Gemini 쿼터를 태운다. **videoId(11자)를 `--url-like`에 넣어
-글마다 개별 실행**해야 한다.
+**백필 — 밀린 글의 함정**: `PostAiBackfillRunner`의 대상 산출(`PostAiBackfillRunner.kt:84-93`)은
+`(봇 글 중 aiSummary=null) + (PENDING/FAILED & 1시간 경과) + (url LIKE %urlLike%)`를 **OR로
+합쳐** `.take(limit)`으로 자른다. 이번에 밀린 글은 **사람이 등록한 `aiStatus=NONE`**이라
+앞의 두 쿼리엔 안 걸리고 `--url-like`로만 잡히므로, `--url-like=youtu`처럼 넓게 걸면
+이미 정상 요약이 있는 글까지 끌어와 좋은 요약을 덮어쓰고 Gemini 쿼터를 태운다.
 
-**검증 결과**: 배포·백필 후 이 절에 실측 표로 갱신한다(코드·문서만 먼저 병합되고 실제
-배포·백필은 뒤따르는 경우를 대비한 잠정 표기 — 병합 시점에 이미 실측이 끝났다면 이
-문단 대신 §5.5·§5.4와 같은 형식의 표가 채워져 있어야 한다).
+**videoId(11자)를 `--url-like`에 넣어 글마다 개별 실행**해도 앞의 두 쿼리(봇 글
+aiSummary=null, PENDING/FAILED 1시간 경과)는 `--url-like` 값과 무관하게 **항상 함께
+딸려온다** — 이건 막을 수 없고 막을 필요도 없다: 그 두 조건에 걸리는 글은 애초에
+"고쳐야 할 정체된 백로그"라 같이 재분석해도 손해가 없다(COMPLETED + 진짜 요약이 있는
+글은 이 두 조건 어디에도 안 걸린다). videoId를 쓰는 이유는 오직 세 번째 조건의 무차별
+매치(`youtu`가 이미 좋은 요약이 있는 글 수십 건을 잡는 것)를 막기 위해서다.
+
+**검증 결과 (2026-09-09, 프로덕션 실측)**: `--url-like=<videoId> --commit`을 4번 개별
+실행. 매번 함께 딸려온 기존 백로그(`tech.kakao.com` 2건, 이미 `COMPLETED`+태그뿐인
+부분 성공 상태)는 재분석해도 `summary: null`로 동일하게 유지돼 손해가 없었다.
+
+| URL | 백필 전 | 백필 후 |
+| --- | --- | --- |
+| `youtube.com/watch?v=hniTPGEpDl8` | `NONE`, 요약 없음 | `COMPLETED`, 요약 있음 |
+| `youtu.be/nzOMsGpckoY` | `NONE`, 요약 없음 | `COMPLETED`, 요약 없음(부분 성공 — 태그만) |
+| `youtu.be/Sed9O2Mn3uE` | `NONE`, 요약 없음 | `COMPLETED`, 요약 있음 |
+| `youtube.com/live/xDVbTlFfu30` | `NONE`, 요약 없음 | `COMPLETED`, 요약 있음 |
+
+4건 모두 로컬 IP(차단되지 않음)에서 실행돼 기존 스크래핑 경로(`videoDetails.shortDescription`)로
+본문을 확보했다 — Data API 경로 자체의 검증은 별개로, YouTube가 차단한 Lambda 환경에
+`YOUTUBE_API_KEY`를 등록하고 배포한 뒤 신규 YouTube 글 등록으로 확인해야 한다.
 
 §5.6의 "공식 API도 대안이 아니다"는 `captions.download`(자막) 한정이다. 영상 **설명**을
 가져오는 `videos.list`는 API 키만으로 되고 OAuth가 필요 없어, 이번 §5.7에서 채택했다.
