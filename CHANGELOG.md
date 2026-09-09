@@ -40,9 +40,11 @@
   `aiStatus = NONE`으로 두고 `PostCreatedEvent`를 아예 발행하지 않아 YouTube 글의
   요약·태그·카테고리가 전부 비었다(9/8~9/9 사이 3건). oEmbed는 여전히 200이지만 응답에
   description 필드가 없어 본문 소스가 못 된다. YouTube Data API v3 `videos.list?part=snippet`으로
-  영상 설명을 가져오도록 폴백을 추가했다. 순서는 기존 스크래핑 → Data API → oEmbed다 - 차단되지
-  않은 IP(로컬·백필 실행 환경)에서는 스크래핑이 그대로 성공해 왕복도 쿼터도 늘지 않고, 차단
-  상태에서는 Data API가 그 자리를 대신하므로 등록 요청 경로의 왕복 수는 종전과 같다. 키는
+  영상 설명을 가져오도록 폴백을 추가했다. YouTube URL이면 Data API를 1순위로 시도하고,
+  실패하면(키 없음·쿼터 초과·삭제된 영상 등) 기존 스크래핑 → oEmbed 경로로 그대로 떨어진다 -
+  차단되지 않은 IP(로컬·백필 실행 환경)에서는 Data API 실패 후 스크래핑이 그대로 성공해
+  왕복도 쿼터도 늘지 않고, 차단 상태에서는 Data API가 스크래핑 자리를 대신하므로 등록
+  요청 경로의 왕복 수는 종전과 같다. 키는
   `YOUTUBE_API_KEY`(Lambda 환경변수 / `application-secret.yml`의 `youtube.api.key`)로 주입하며,
   비어 있으면 종전 동작으로 조용히 폴백한다.
   (`UrlMetadataExtractor.kt`, `infra/youtube/YoutubeVideoClient.kt`, `docs/AI-ASYNC-PROCESSING.md`)
