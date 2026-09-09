@@ -193,6 +193,7 @@ Lambda 콘솔 → Configuration → Environment variables:
 | `SPRING_DATASOURCE_USERNAME` | Supabase DB 사용자명 |
 | `SPRING_DATASOURCE_PASSWORD` | Supabase DB 비밀번호 |
 | `GEMINI_API_KEY` | Gemini API 키 |
+| `YOUTUBE_API_KEY` | YouTube Data API v3 키 (영상 설명 추출용, `docs/AI-ASYNC-PROCESSING.md` §5.7 참고) |
 | `SUPABASE_BUCKET` | Supabase 스토리지 버킷명 |
 | `SUPABASE_KEY` | Supabase service role key |
 | `SUPABASE_URL` | `https://<project>.supabase.co` |
