@@ -12,8 +12,6 @@ data class FolderResponse(
     val name: String,
     val sortOrder: Int,
     val bookmarkCount: Int,
-    val createdAt: LocalDateTime,
-    val updatedAt: LocalDateTime,
     val lastUsedAt: LocalDateTime? = null, // 이 폴더에 마지막으로 저장한 시각 — 한 번도 저장 안 됐으면 null
 )
 

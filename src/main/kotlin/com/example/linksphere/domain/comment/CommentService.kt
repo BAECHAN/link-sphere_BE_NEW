@@ -84,8 +84,6 @@ class CommentService(
 
                 CommentResponse(
                     id = comment.id,
-                    postId = comment.postId,
-                    userId = comment.userId,
                     content =
                     if (comment.isDeleted) {
                         DELETED_COMMENT_CONTENT
@@ -94,7 +92,6 @@ class CommentService(
                     },
                     isDeleted = comment.isDeleted,
                     createdAt = comment.createdAt,
-                    updatedAt = comment.updatedAt,
                     author = author,
                     // 삭제된(톰스톤) 댓글은 좋아요도 함께 지워지지만, 삭제와 좋아요가 동시에 일어나는
                     // 경쟁 상황의 잔여값이 표현 계층까지 새지 않도록 여기서도 명시적으로 0/false로 고정한다.
@@ -419,12 +416,9 @@ class CommentService(
 
     private fun toCommentResponse(comment: TableComment, member: TableMember) = CommentResponse(
         id = comment.id,
-        postId = comment.postId,
-        userId = comment.userId,
         content = comment.content,
         isDeleted = comment.isDeleted,
         createdAt = comment.createdAt,
-        updatedAt = comment.updatedAt,
         author = CommentAuthor(member.id!!, member.nickname ?: "Unknown", member.image),
         linkMetadata = comment.linkUrl?.let {
             LinkMetadata(

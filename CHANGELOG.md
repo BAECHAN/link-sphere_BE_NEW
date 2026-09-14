@@ -43,6 +43,30 @@
 
   </details>
 
+- `category`/`comment`/`auth`/`bookmark` 응답에서 FE가 안 쓰는 필드 제거
+  <details><summary>배경·구현</summary>
+
+  `post.userId`와 같은 방식(FE 전수 조사로 실제 소비처가 0곳인지 확인)으로 다른
+  엔티티 응답도 재검토했다. BE 내부에서도 아래 필드를 읽는 코드는 없었다(전부 값을
+  채우는 지점만 있었음).
+
+  - `CategoryResponse`: `slug`/`sortOrder`/`createdAt` 제거 (`CategoryDTO.kt`).
+    `/common/category-option/{slug}` 엔드포인트는 경로 파라미터로 slug를 받아
+    엔티티를 조회하므로 응답 필드 제거와 무관 - FE도 이 엔드포인트를 호출하지 않음
+  - `CommentResponse`: `userId`(`author.id`와 중복)/`postId`/`updatedAt` 제거
+    (`CommentDTO.kt`, `CommentService.kt`)
+  - `AccountResponse`: `email`/`created_at`/`updated_at` 제거 (`AuthDTO.kt`,
+    `AuthService.kt`). `role`은 유지 - 어드민 기능 계획 여지가 있어 이번 범위에서
+    제외
+  - `FolderResponse`: `createdAt`/`updatedAt` 제거 (`BookmarkFolderDTO.kt`,
+    `BookmarkFolderService.kt`). `lastUsedAt`(정렬·필터에 실제로 쓰임)과
+    `sortOrder`는 유지
+
+  범위 밖(이번엔 손 안 댐): `BookmarkFoldersResponse`의 `postId`/`isBookmarked`/
+  `folderIds`(FE가 응답 자체를 안 읽음 - 필드 제거보다 큰 결정이라 별도 논의 필요).
+
+  </details>
+
 ### Fixed
 
 - `post` YouTube 글의 AI 요약이 생성되지 않던 문제 수정 - 영상 설명을 Data API로 가져온다
