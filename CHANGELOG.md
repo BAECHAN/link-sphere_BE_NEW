@@ -9,6 +9,8 @@
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-09-14
+
 ### Added
 
 - `comment` 내 댓글 목록 조회 API(`GET /comment/my`) 추가
@@ -1009,7 +1011,8 @@
   - `bookmark_folders` 테이블 생성 (`user_id` + `name` UNIQUE)
   - `bookmarks` 테이블에 `folder_id` 컬럼 및 FK(`ON DELETE SET NULL`) 추가
 
-[Unreleased]: https://github.com/BAECHAN/link-sphere_BE_NEW/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/BAECHAN/link-sphere_BE_NEW/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/BAECHAN/link-sphere_BE_NEW/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/BAECHAN/link-sphere_BE_NEW/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/BAECHAN/link-sphere_BE_NEW/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/BAECHAN/link-sphere_BE_NEW/compare/v0.6.0...v0.7.0
