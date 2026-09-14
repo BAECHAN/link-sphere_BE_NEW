@@ -69,6 +69,18 @@
 
 ### Fixed
 
+- `infra` permitAll 경로의 존재하지 않는 정적 리소스가 500을 반환하던 문제
+  <details><summary>배경·구현</summary>
+
+  `/swagger-ui/**`·`/v3/api-docs/**`는 permitAll이라 인증 필터는 통과하는데, 그 아래
+  실제로 없는 리소스를 요청하면 Spring이 던지는 `NoResourceFoundException`을 잡아줄
+  전용 핸들러가 없어 catch-all(`Exception::class`)로 떨어져 500으로 응답했다(완전히
+  무관한 경로는 `anyRequest().authenticated()`가 먼저 401로 막아 이 문제가 permitAll
+  경로에서만 재현됐다). `NoResourceFoundException` 전용 핸들러를 추가해 404로 응답한다.
+  (`GlobalExceptionHandler.kt`)
+
+  </details>
+
 - `post` YouTube 글의 AI 요약이 생성되지 않던 문제 수정 - 영상 설명을 Data API로 가져온다
   <details><summary>배경·구현</summary>
 
