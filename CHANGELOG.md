@@ -11,6 +11,25 @@
 
 ### Added
 
+- `comment` 내 댓글 목록 조회 API(`GET /comment/my`) 추가
+  <details><summary>배경·구현</summary>
+
+  자기가 단 댓글을 다시 찾을 방법이 앱에 없어 FE에 "내 댓글" 화면을 추가하기로 했는데,
+  BE에는 댓글을 글 단위(`GET /post/{postId}/comment`)로만 조회할 수 있었고
+  `CommentRepository`에 `userId` 기반 조회 메서드 자체가 없었다. `findMyComments`를
+  `join fetch c.post`로 추가해 원글 제목까지 N+1 없이 한 번에 가져오고, 응답은 기존
+  `CommentResponse`를 확장하지 않고 별도 `MyCommentResponse`/`MyCommentPageResponse`로
+  분리했다(기존 응답에 필드를 더하면 `GET /post/{postId}/comment` 계약까지 바뀌므로).
+  가시성 게이트(`p.isPrivate = false OR p.userId = :userId`)는 `PostRepositoryImpl`의
+  목록 조회 게이트와 동일한 기준을 그대로 적용했다 - 댓글을 단 뒤 원글이 비공개로
+  전환되면 목록에서도 제외된다. 톰스톤(`isDeleted`) 댓글은 내용이 이미
+  `"삭제된 댓글입니다."`로 덮여 있어 제외했다. 페이지네이션은 기존 `PostPageResponse`와
+  동일한 offset 방식(`page`/`size`/`totalElements`/`totalPages`/`last`)을 따른다.
+  (`CommentRepository.kt`, `CommentDTO.kt`, `CommentService.kt`, `CommentController.kt`,
+  [PR #15](https://github.com/BAECHAN/link-sphere_BE_NEW/pull/15))
+
+  </details>
+
 - `post` YouTube 영상 설명을 인라인 JSON에서 추출해 AI 요약 본문으로 사용
   <details><summary>배경·구현</summary>
 

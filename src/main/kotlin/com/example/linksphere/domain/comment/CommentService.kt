@@ -8,6 +8,7 @@ import com.example.linksphere.global.common.SupabaseStorageService
 import com.example.linksphere.global.exception.InvalidInputException
 import com.example.linksphere.global.exception.PostNotFoundException
 import org.springframework.context.ApplicationEventPublisher
+import org.springframework.data.domain.PageRequest
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -134,6 +135,12 @@ class CommentService(
         rootComments.forEach { root -> root.replies = repliesMap[root.id] ?: emptyList() }
 
         return rootComments
+    }
+
+    @Transactional(readOnly = true)
+    fun getMyComments(userId: UUID, page: Int, size: Int): MyCommentPageResponse {
+        val pageable = PageRequest.of(page, size)
+        return MyCommentPageResponse.from(commentRepository.findMyComments(userId, pageable))
     }
 
     @Transactional
