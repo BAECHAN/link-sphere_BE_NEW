@@ -594,7 +594,10 @@ data class FolderResponse(
 
 **릴리즈 시점** (버전 확정)
 1. `[Unreleased]` 항목들을 새 버전 섹션 `## [X.Y.Z] - YYYY-MM-DD` 으로 승격 (빈 `[Unreleased]` 유지), 하단 compare 링크 갱신 (`https://github.com/BAECHAN/link-sphere_BE_NEW`)
-2. API 계약(요청/응답 스펙, 필드 추가·제거, permitAll 등)이 바뀌었다면 `docs/VERSION-COMPATIBILITY.md`에도 상대 레포 최소 버전 행 추가
+2. API 계약(요청/응답 스펙, 필드 추가·제거, permitAll 등)이 바뀌었다면 FE 레포 정본
+   [`docs/VERSION-COMPATIBILITY.md`](https://github.com/BAECHAN/link-sphere_FE_NEW/blob/main/docs/VERSION-COMPATIBILITY.md)에도
+   상대 레포 최소 버전 행 추가 — BE 자체 사본은 2026-09-14부로 폐지하고 안내
+   문서로만 남겼다(경위: FE `docs/DECISIONS.md` 2026-09-14 항목)
 3. `chore(release): vX.Y.Z` 커밋 → `git push origin main`
 4. **태그·GitHub Release는 수동으로 만들지 않는다** — `.github/workflows/release.yml`이 `CHANGELOG.md` push를 감지해 최신 버전 섹션을 파싱, 동명 태그가 없으면 자동으로 태그 생성 + `gh release create`까지 수행한다(이미 있으면 스킵하는 멱등 동작). `git tag`/`gh release create`를 직접 실행할 필요 없음.
 - 현재 버전 기준점: `0.1.0` (정식 릴리즈 전 개발 단계 = `0.x`)
@@ -607,8 +610,9 @@ data class FolderResponse(
 버전 호환 매트릭스 등)는 전부 `docs/`에 둔다.
 
 `docs/` 안의 문서는 다섯 중 하나다 — **서사형**(설명, 아래 절 참고) / **절차**(how-to·런북,
-예: `DEPLOY.md`·`LAMBDA-CONFIG-ROLLBACK.md`) / **레퍼런스**(예: `VERSION-COMPATIBILITY.md`) /
-**보관**(archive, 더 이상 갱신하지 않는 과거 기록 — 예: `HISTORY.md`·`DEPLOY-WHEN-APP-RUNNER.md`) /
+예: `DEPLOY.md`·`LAMBDA-CONFIG-ROLLBACK.md`) / **레퍼런스**(현재 해당 문서 없음 — 버전
+호환 매트릭스는 2026-09-14부로 FE 레포에 통합, 아래 보관 참고) /
+**보관**(archive, 더 이상 갱신하지 않는 과거 기록 — 예: `HISTORY.md`·`VERSION-COMPATIBILITY.md`·`DEPLOY-WHEN-APP-RUNNER.md`) /
 **작업 계획**(`docs/plans/<YYYY-MM-DD>-<slug>.md` — plan mode로 세운 계획의 스냅샷.
 구현 코드와 같은 PR에서 커밋하고, 커밋된 뒤에는 고치지 않는다(append-only — FE
 `docs/DECISIONS.md`와 같은 성격의 "무엇을 의도했는지" 기록을 이 레포에 처음 들여온
