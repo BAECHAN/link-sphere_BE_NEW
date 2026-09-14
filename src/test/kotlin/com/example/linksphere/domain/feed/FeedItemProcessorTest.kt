@@ -46,7 +46,6 @@ class FeedItemProcessorTest {
 
     private fun dummyPostResponse(postId: UUID) = PostResponse(
         id = postId,
-        userId = botId,
         url = item.url,
         title = item.title,
         description = null,

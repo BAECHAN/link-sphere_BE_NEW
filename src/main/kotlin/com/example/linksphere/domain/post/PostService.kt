@@ -385,7 +385,6 @@ class PostService(
         commentCount: Int,
     ): PostResponse = PostResponse(
         id = postId,
-        userId = post.userId,
         url = post.url,
         title = post.title,
         description = post.description,

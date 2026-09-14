@@ -28,6 +28,21 @@
 
   </details>
 
+### Removed
+
+- `post` `PostResponse.userId` 필드 제거 - 같은 응답의 `author.id`와 값이 중복이었다
+  <details><summary>배경·구현</summary>
+
+  게시글 생성/목록/상세/수정/가시성변경 응답이 공유하는 `PostResponse`에 `userId`와
+  `author.id`가 동시에 존재했고 값은 항상 같았다(둘 다 `TablePost.userId` 기반). FE
+  전수 조사 결과 `userId`를 읽는 코드가 없고 작성자 판별은 전부 `author.id`를 쓰고
+  있어(`link-sphere_FE_NEW` `usePostCard.ts`의 `isOwner` 판정 등) FE에서 먼저 타입을
+  제거한 뒤, 같은 중복을 BE 응답에서도 제거했다. BE 내부에서도 `PostResponse.userId`를
+  읽는 코드는 없었다(생성 지점 1곳, 테스트 스텁 1곳뿐).
+  (`PostDTO.kt`, `PostService.kt`, `FeedItemProcessorTest.kt`)
+
+  </details>
+
 ### Fixed
 
 - `post` YouTube 글의 AI 요약이 생성되지 않던 문제 수정 - 영상 설명을 Data API로 가져온다

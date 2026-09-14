@@ -45,7 +45,6 @@ data class PostUserInteractions(
 
 data class PostResponse(
     val id: UUID,
-    val userId: UUID,
     val url: String,
     val title: String,
     val description: String?,
