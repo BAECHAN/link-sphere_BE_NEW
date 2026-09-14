@@ -22,6 +22,13 @@ tasks.withType<com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar> {
         attributes["Main-Class"] = "com.example.linksphere.LinkSphereBeApplicationKt"
     }
 
+    // 패키징 대상은 runtimeClasspath(기본값)가 아니라 productionRuntimeClasspath 다.
+    // Spring Boot 플러그인이 runtimeClasspath.extendsFrom(developmentOnly) 를 걸어두기 때문에
+    // 기본값을 쓰면 developmentOnly 의존성(Swagger UI)이 Lambda fat JAR 에 그대로 딸려 들어간다.
+    configurations = listOf<org.gradle.api.file.FileCollection>(
+        project.configurations.getByName("productionRuntimeClasspath"),
+    )
+
     // META-INF/services/** 병합 (SPI 서비스 로더용)
     mergeServiceFiles()
 
@@ -97,6 +104,11 @@ dependencies {
 
     // SpringDoc OpenAPI (Swagger) 라이브러리 추가 — UI 에셋 제외한 API 스펙만 포함
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-api:2.7.0")
+
+    // Swagger UI 는 로컬 bootRun 전용이다. developmentOnly 는 shadowJar 가 쓰는
+    // productionRuntimeClasspath 에 들어가지 않으므로 Lambda 아티팩트는 그대로다.
+    // 로컬: http://localhost:8080/api/swagger-ui/index.html
+    developmentOnly("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.7.0")
 
     // Jsoup
     implementation("org.jsoup:jsoup:1.17.2")
