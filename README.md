@@ -360,13 +360,10 @@ SnapStart 체크포인트 **이전**(`companion object init`)에 읽기 전용 �
 - [`docs/DEPLOY.md`](docs/DEPLOY.md) — 배포 인프라 설정·변경, EventBridge 룰 조작, GitHub Actions 배포 흐름
 - [`docs/LAMBDA-CONFIG-ROLLBACK.md`](docs/LAMBDA-CONFIG-ROLLBACK.md) — `prod` alias를 안전 버전으로 롤백해야 할 때
 
-**레퍼런스** — "지금 값이 뭔가"
-
-- [`docs/VERSION-COMPATIBILITY.md`](docs/VERSION-COMPATIBILITY.md) — BE·FE 버전 호환 매트릭스: 어느 FE 버전이 어느 BE 버전을 요구하는지
-
 **보관** — 더 이상 갱신하지 않음
 
 - [`docs/HISTORY.md`](docs/HISTORY.md) — 2026-08-01부터 갱신 중단. 이후 이력은 FE 레포에서 통합 관리
+- [`docs/VERSION-COMPATIBILITY.md`](docs/VERSION-COMPATIBILITY.md) — 2026-09-14부터 갱신 중단. BE·FE 버전 호환 매트릭스는 FE 레포에서 통합 관리
 - [`docs/DEPLOY-WHEN-APP-RUNNER.md`](docs/DEPLOY-WHEN-APP-RUNNER.md) — App Runner로 운영하던 이전 배포 방식
 
 **작업 계획** — "무엇을 하기로 했는지"

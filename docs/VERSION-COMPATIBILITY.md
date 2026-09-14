@@ -1,48 +1,20 @@
 # Link-Sphere — BE·FE 버전 호환 매트릭스
 
-> 마지막 검토: 2026-08-13
+> **정본은 FE 레포에 있습니다** — 아래 안내 참고
 
 BE·FE는 레포가 분리돼 있고 SemVer도 각자 독립적으로 올라가지만, 하나의 앱을 1인이
 같이 개발·배포한다. API 계약(요청/응답 스펙, 필드 추가·제거, 공개 범위 변경 등)이
-걸린 릴리즈는 상대 레포의 특정 버전 이상을 요구하는데, 그 사실이 지금까지는 각
-레포 CHANGELOG의 `Notes`/`Migration` 섹션에 흩어져 있었다. 이 문서는 그걸 한 곳에
-모아 "지금 이 조합으로 배포해도 되는지"를 바로 확인할 수 있게 한다.
+걸린 릴리즈는 상대 레포의 특정 버전 이상을 요구하는데, 그 사실을 한 곳에 모아 "지금
+이 조합으로 배포해도 되는지"를 바로 확인할 수 있게 하는 문서다.
 
-- 전체 변경 이력: [`CHANGELOG.md`](../CHANGELOG.md)
-- 날짜별 통합 히스토리(BE+FE, Gemini 자동 생성): FE 레포
-  [`docs/HISTORY.md`](https://github.com/BAECHAN/link-sphere_FE_NEW/blob/main/docs/HISTORY.md)
-  (BE 자체 `docs/HISTORY.md`는 2026-08-01부로 관리 중단, 아카이브만 유지)
-- FE 레포 CHANGELOG: [`link-sphere_FE_NEW/CHANGELOG.md`](https://github.com/BAECHAN/link-sphere_FE_NEW/blob/main/CHANGELOG.md)
-
----
-
-## 현재 배포 버전
-
-| 레포 | 버전 |
-| --- | --- |
-| BE | [v0.7.0](https://github.com/BAECHAN/link-sphere_BE_NEW/releases/tag/v0.7.0) |
-| FE | [v0.10.0](https://github.com/BAECHAN/link-sphere_FE_NEW/releases/tag/v0.10.0) |
-
-현재 두 버전 사이에 계약 변경 대기(gap)는 없음.
-
-## 알려진 상호 의존 지점
-
-| FE 버전 | BE 요구 버전 | 계약 내용 | 비고 |
-| --- | --- | --- | --- |
-| v0.1.0 (2026-06-28) | v0.1.0 (2026-06-28) | 북마크 폴더 API(`/bookmark/folders` 등), `PostResponse.userInteractions.bookmarkFolderId` | 동시 도입 |
-| v0.2.0 (2026-07-11) | v0.2.0 (2026-07-11) | `GET /bookmark/folders/{folderKey}/posts`의 `search` 파라미터 | 동시 |
-| v0.4.0 (2026-07-18) | v0.3.0 (2026-07-25) | 비로그인 GET 엔드포인트 공개(`permitAll`: `/post`, `/post/{id}` 등) | FE가 7일 먼저 머지됨 — BE 배포 전까지는 비로그인 열람이 실제로는 동작하지 않음(기존처럼 인증 필요) |
-| v0.6.0 (2026-07-28) | v0.4.0 (2026-07-28) | 한/영 자판 오타 보정 검색 폴백, 응답 `correctedSearch` 필드 (이슈 #8) | 동시 |
-| v0.7.0 (2026-07-31) | v0.5.0 (2026-07-31) | 북마크 다중 폴더 소속 API(`POST/DELETE /bookmark/{postId}/folders/{folderId}` 등), `bookmarkFolderIds` 배열, 단건 이동 API 제거 | **동시 배포 필수** — FE만 먼저 배포하면 폴더 추가/제거가 이미 제거된 구 API(`PATCH /bookmark/{postId}/folder`)를 호출해 전부 실패 |
-| v0.8.0 (2026-08-02) | v0.5.1 (2026-08-02) | 계약 변경 없음 (BE 내부 AI 비동기 처리 리팩터, 응답 스펙 동일) | 배포 순서 무관 |
-| v0.9.0 (2026-08-03) | v0.6.0 (2026-08-03) | 댓글 생성/답글/수정 API가 `multipart/form-data`→JSON, `images`가 업로드 파일이 아닌 URL 배열. 신규 `POST /upload/signed-url`(서명된 업로드 URL 발급). `POST /auth/account/avatar` 엔드포인트 제거 | **BE 먼저 배포 필수** — FE만 먼저 배포하면 댓글 생성이 존재하지 않는 신규 엔드포인트를 호출하고, 구 BE는 JSON body를 멀티파트로 파싱 못 해 전부 실패 |
-| v0.10.0 (2026-08-04) | v0.7.0 (2026-08-04) | 신규 `GET /auth/account/nickname-availability`(마이페이지 닉네임 중복 사전 조회, 인증 필요) | 배포 순서 무관 — FE는 조회 실패(오프라인·구 BE 등) 시 fail-open으로 처리한다(저장은 막지 않되 확인 메시지는 띄우지 않음, 실제 중복은 최종적으로 서버 409가 막음). BE 없이 FE만 배포돼도 이 조회만 조용히 무력화될 뿐 저장 자체는 기존처럼 동작 |
-| v0.12.0 (2026-08-13) | v0.8.0 (2026-08-13) | 신규 `GET /auth/email-availability`(이메일 중복 사전 조회, 비로그인 공개), `GET /auth/account/nickname-availability` 비로그인 허용으로 확장(가입 화면 실시간 중복확인), `POST /post`에 `bookmark`/`folderIds` 필드 추가(등록과 동시에 북마크 생성), `GET /bookmark/folders` 응답에 `lastUsedAt` 필드 추가, 이메일·닉네임 중복 409를 `DUPLICATE_MEMBER`/`DUPLICATE_NICKNAME`으로 분리 | BE 먼저 배포 권장 — 북마크 동시 생성만 BE 먼저 필요(구 BE는 `bookmark`/`folderIds`를 조용히 무시해 등록은 되지만 북마크가 안 생김). 나머지(중복확인 엔드포인트·`lastUsedAt`·`DUPLICATE_NICKNAME`)는 구 BE에서도 fail-open/기존 동작으로 조용히 저하될 뿐 순서 무관 |
-
-## 앞으로 지켜야 할 규칙
-
-- API 계약을 바꾸는 변경은 FE는 `### Notes`, BE는 `### Migration`(또는 `Changed`) 섹션에
-  상대 레포 최소 버전을 명시한다 (기존 컨벤션 유지, 예: `BE API 의존: ... (BE v0.3.0)`).
-- 그 항목이 버전 승격되면 이 표에도 한 줄 추가한다 (BE·FE 양쪽 문서 동일하게 갱신).
-- 단순 "동시 배포"로 부족하고 배포 순서 자체가 중요하면(예: 구 API를 먼저 내려야 하는 경우)
-  비고 칸에 어느 쪽이 먼저/나중이어야 하는지 명시한다.
+> **📌 2026-09-14부터 이 문서는 BE 자체 사본을 두지 않습니다.**
+> 도입 시점부터 BE·FE 양쪽에 동일한 표를 유지하기로 했었지만, 2026-08-13 이후 BE
+> 사본만 갱신이 끊겨 FE 정본과 3개 버전만큼 벌어진 채 방치돼 있었습니다(과거 릴리즈
+> 커밋을 확인한 결과 BE 사본이 실제로 함께 갱신된 적이 한 번도 없었습니다). BE
+> `docs/HISTORY.md`를 2026-08-01에 같은 방식으로 정리한 선례를 따라, 정본을 FE
+> 레포로 통합했습니다. 호환 매트릭스는 FE 레포
+> [`docs/VERSION-COMPATIBILITY.md`](https://github.com/BAECHAN/link-sphere_FE_NEW/blob/main/docs/VERSION-COMPATIBILITY.md)에서
+> 확인하세요. 결정 경위는 FE 레포
+> [`docs/DECISIONS.md`](https://github.com/BAECHAN/link-sphere_FE_NEW/blob/main/docs/DECISIONS.md)
+> 2026-09-14 "BE·FE 버전 호환 매트릭스 중복 제거" 항목을 참고하세요. BE 자체의 상세
+> 변경 이력은 [`CHANGELOG.md`](../CHANGELOG.md)를 참고하세요.
