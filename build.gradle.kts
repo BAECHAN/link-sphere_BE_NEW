@@ -105,6 +105,11 @@ dependencies {
     // SpringDoc OpenAPI (Swagger) 라이브러리 추가 — UI 에셋 제외한 API 스펙만 포함
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-api:2.7.0")
 
+    // Swagger UI 는 로컬 bootRun 전용이다. developmentOnly 는 shadowJar 가 쓰는
+    // productionRuntimeClasspath 에 들어가지 않으므로 Lambda 아티팩트는 그대로다.
+    // 로컬: http://localhost:8080/api/swagger-ui/index.html
+    developmentOnly("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.7.0")
+
     // Jsoup
     implementation("org.jsoup:jsoup:1.17.2")
 
