@@ -22,6 +22,13 @@ tasks.withType<com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar> {
         attributes["Main-Class"] = "com.example.linksphere.LinkSphereBeApplicationKt"
     }
 
+    // 패키징 대상은 runtimeClasspath(기본값)가 아니라 productionRuntimeClasspath 다.
+    // Spring Boot 플러그인이 runtimeClasspath.extendsFrom(developmentOnly) 를 걸어두기 때문에
+    // 기본값을 쓰면 developmentOnly 의존성(Swagger UI)이 Lambda fat JAR 에 그대로 딸려 들어간다.
+    configurations = listOf<org.gradle.api.file.FileCollection>(
+        project.configurations.getByName("productionRuntimeClasspath"),
+    )
+
     // META-INF/services/** 병합 (SPI 서비스 로더용)
     mergeServiceFiles()
 
