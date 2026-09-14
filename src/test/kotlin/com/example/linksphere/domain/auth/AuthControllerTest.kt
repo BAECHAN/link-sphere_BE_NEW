@@ -159,11 +159,8 @@ class AuthControllerTest {
         val request = UpdateAccountRequest(nickname = "newNick", image = null)
         val response = AccountResponse(
             id = "some-uuid",
-            email = "test@example.com",
             nickname = "newNick",
             image = null,
-            createdAt = "2024-01-01T00:00:00",
-            updatedAt = "2024-01-02T00:00:00",
         )
         `when`(authService.updateAccount("user", request)).thenReturn(response)
 

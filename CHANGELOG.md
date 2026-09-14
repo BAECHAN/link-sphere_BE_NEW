@@ -28,7 +28,79 @@
 
   </details>
 
+### Removed
+
+- `post` `PostResponse.userId` 필드 제거 - 같은 응답의 `author.id`와 값이 중복이었다
+  <details><summary>배경·구현</summary>
+
+  게시글 생성/목록/상세/수정/가시성변경 응답이 공유하는 `PostResponse`에 `userId`와
+  `author.id`가 동시에 존재했고 값은 항상 같았다(둘 다 `TablePost.userId` 기반). FE
+  전수 조사 결과 `userId`를 읽는 코드가 없고 작성자 판별은 전부 `author.id`를 쓰고
+  있어(`link-sphere_FE_NEW` `usePostCard.ts`의 `isOwner` 판정 등) FE에서 먼저 타입을
+  제거한 뒤, 같은 중복을 BE 응답에서도 제거했다. BE 내부에서도 `PostResponse.userId`를
+  읽는 코드는 없었다(생성 지점 1곳, 테스트 스텁 1곳뿐).
+  (`PostDTO.kt`, `PostService.kt`, `FeedItemProcessorTest.kt`)
+
+  </details>
+
+- `category`/`comment`/`auth`/`bookmark` 응답에서 FE가 안 쓰는 필드 제거
+  <details><summary>배경·구현</summary>
+
+  `post.userId`와 같은 방식(FE 전수 조사로 실제 소비처가 0곳인지 확인)으로 다른
+  엔티티 응답도 재검토했다. BE 내부에서도 아래 필드를 읽는 코드는 없었다(전부 값을
+  채우는 지점만 있었음).
+
+  - `CategoryResponse`: `slug`/`sortOrder`/`createdAt` 제거 (`CategoryDTO.kt`).
+    `/common/category-option/{slug}` 엔드포인트는 경로 파라미터로 slug를 받아
+    엔티티를 조회하므로 응답 필드 제거와 무관 - FE도 이 엔드포인트를 호출하지 않음
+  - `CommentResponse`: `userId`(`author.id`와 중복)/`postId`/`updatedAt` 제거
+    (`CommentDTO.kt`, `CommentService.kt`)
+  - `AccountResponse`: `email`/`created_at`/`updated_at` 제거 (`AuthDTO.kt`,
+    `AuthService.kt`). `role`은 유지 - 어드민 기능 계획 여지가 있어 이번 범위에서
+    제외
+  - `FolderResponse`: `createdAt`/`updatedAt` 제거 (`BookmarkFolderDTO.kt`,
+    `BookmarkFolderService.kt`). `lastUsedAt`(정렬·필터에 실제로 쓰임)과
+    `sortOrder`는 유지
+
+  범위 밖(이번엔 손 안 댐): `BookmarkFoldersResponse`의 `postId`/`isBookmarked`/
+  `folderIds`(FE가 응답 자체를 안 읽음 - 필드 제거보다 큰 결정이라 별도 논의 필요).
+
+  </details>
+
 ### Fixed
+
+- `infra` permitAll 경로의 존재하지 않는 정적 리소스가 500을 반환하던 문제
+  <details><summary>배경·구현</summary>
+
+  `/swagger-ui/**`·`/v3/api-docs/**`는 permitAll이라 인증 필터는 통과하는데, 그 아래
+  실제로 없는 리소스를 요청하면 Spring이 던지는 `NoResourceFoundException`을 잡아줄
+  전용 핸들러가 없어 catch-all(`Exception::class`)로 떨어져 500으로 응답했다(완전히
+  무관한 경로는 `anyRequest().authenticated()`가 먼저 401로 막아 이 문제가 permitAll
+  경로에서만 재현됐다). `NoResourceFoundException` 전용 핸들러를 추가해 404로 응답한다.
+  (`GlobalExceptionHandler.kt`)
+
+  </details>
+
+- `post` YouTube 글의 AI 요약이 생성되지 않던 문제 수정 - 영상 설명을 Data API로 가져온다
+  <details><summary>배경·구현</summary>
+
+  2026-09-08 04:18 UTC부터 YouTube가 Lambda(AWS ap-northeast-1) IP에 watch 페이지를 200 OK +
+  본문 94자짜리 빈 셸로 내려주기 시작했다(아래 항목의 "- YouTube" 제목 문제와 같은 원인).
+  같은 User-Agent로 가정용 IP에서 요청하면 정상 HTML(1.4MB)이 오므로 IP 기반 차단이다. 그
+  결과 `ytInitialPlayerResponse`를 못 찾아 `pageContent = null`이 되고, `PostService.createPost`가
+  `aiStatus = NONE`으로 두고 `PostCreatedEvent`를 아예 발행하지 않아 YouTube 글의
+  요약·태그·카테고리가 전부 비었다(9/8~9/9 사이 3건). oEmbed는 여전히 200이지만 응답에
+  description 필드가 없어 본문 소스가 못 된다. YouTube Data API v3 `videos.list?part=snippet`으로
+  영상 설명을 가져오도록 폴백을 추가했다. YouTube URL이면 Data API를 1순위로 시도하고,
+  실패하면(키 없음·쿼터 초과·삭제된 영상 등) 기존 스크래핑 → oEmbed 경로로 그대로 떨어진다 -
+  차단되지 않은 IP(로컬·백필 실행 환경)에서는 Data API 실패 후 스크래핑이 그대로 성공해
+  왕복도 쿼터도 늘지 않고, 차단 상태에서는 Data API가 스크래핑 자리를 대신하므로 등록
+  요청 경로의 왕복 수는 종전과 같다. 키는
+  `YOUTUBE_API_KEY`(Lambda 환경변수 / `application-secret.yml`의 `youtube.api.key`)로 주입하며,
+  비어 있으면 종전 동작으로 조용히 폴백한다.
+  (`UrlMetadataExtractor.kt`, `infra/youtube/YoutubeVideoClient.kt`, `docs/AI-ASYNC-PROCESSING.md`)
+
+  </details>
 
 - `post` 글 수정 화면에서 제목을 비워도 재수집되지 않고, YouTube 껍데기 페이지의 제목이 "- YouTube"로 저장되는 문제 수정
   <details><summary>배경·구현</summary>

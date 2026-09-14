@@ -7,7 +7,6 @@ import com.example.linksphere.domain.member.TableMember
 import com.example.linksphere.global.exception.InvalidCredentialsException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
-import java.time.format.DateTimeFormatter
 import java.util.UUID
 
 @Service
@@ -68,15 +67,9 @@ class AuthService(
 
     fun isEmailAvailable(email: String): EmailAvailabilityResponse = EmailAvailabilityResponse(memberService.isEmailAvailable(email))
 
-    private fun toAccountResponse(member: TableMember): AccountResponse {
-        val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
-        return AccountResponse(
-            id = member.id.toString(),
-            email = member.email,
-            nickname = member.nickname,
-            image = member.image,
-            createdAt = member.createdAt?.format(formatter) ?: "",
-            updatedAt = member.updatedAt?.format(formatter) ?: "",
-        )
-    }
+    private fun toAccountResponse(member: TableMember): AccountResponse = AccountResponse(
+        id = member.id.toString(),
+        nickname = member.nickname,
+        image = member.image,
+    )
 }

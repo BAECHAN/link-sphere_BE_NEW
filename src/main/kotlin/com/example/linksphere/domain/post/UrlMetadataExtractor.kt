@@ -1,5 +1,7 @@
 package com.example.linksphere.domain.post
 
+import com.example.linksphere.infra.youtube.YoutubeVideoClient
+import com.example.linksphere.infra.youtube.dto.YoutubeSnippet
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.jsoup.Jsoup
@@ -46,11 +48,20 @@ data class UrlMetadata(
 class UrlMetadataExtractor(
     private val objectMapper: ObjectMapper,
     private val safeUrlValidator: SafeUrlValidator,
+    private val youtubeVideoClient: YoutubeVideoClient,
 ) {
 
     private val logger = LoggerFactory.getLogger(UrlMetadataExtractor::class.java)
 
     fun extract(url: String): UrlMetadata = try {
+        // YouTube면 Data API를 1순위로 시도한다 - 성공하면 아래 스크래핑을 통째로
+        // 건너뛴다. 실패(키 없음·videoId 파싱 불가·쿼터 초과·설명 하한 미달)하면
+        // null이라 그대로 기존 스크래핑 경로로 떨어진다. 자세한 경위는
+        // docs/AI-ASYNC-PROCESSING.md §5.7 참고.
+        if (isYoutubeUrl(url)) {
+            youtubeVideoClient.fetchSnippet(url)?.let { snippet -> toMetadata(url, snippet) }?.let { return it }
+        }
+
         val response = safeConnect(url)
         val metadata = parseMetadata(response.parse(), url, response.statusCode())
 
@@ -120,6 +131,29 @@ class UrlMetadataExtractor(
             tags = tags,
             // 에러 페이지 본문은 무슨 내용이든 이 페이지의 내용이 아니다.
             pageContent = if (ok) resolvePageContent(doc, videoDetails, description, url) else null,
+        )
+    }
+
+    /**
+     * YoutubeVideoClient의 snippet을 UrlMetadata로 변환한다. 설명이 MIN_META_DESCRIPTION_LENGTH
+     * 하한에 못 미치면 null을 돌려줘 호출부(extract)가 기존 스크래핑 경로로 떨어지게 한다.
+     * description은 항상 null로 둔다 - 정상 시절 YouTube 글(운영 API 실측)도 description은
+     * 늘 null이었고, 여기서 채우면 카드 UI가 달라지는 시각적 변경이 된다.
+     */
+    internal fun toMetadata(url: String, snippet: YoutubeSnippet): UrlMetadata? {
+        val pageContent = snippet.description
+            ?.let(::normalizeContent)
+            ?.takeIf { it.length >= MIN_META_DESCRIPTION_LENGTH }
+            ?: return null
+
+        val host = URI(url).host.replace("www.", "")
+
+        return UrlMetadata(
+            title = snippet.title?.takeIf { it.isNotBlank() } ?: url.take(100),
+            description = null,
+            ogImage = snippet.thumbnailUrl?.replace(Regex("^http://"), "https://"),
+            tags = listOfNotNull(host.takeIf { it.isNotEmpty() }),
+            pageContent = pageContent,
         )
     }
 

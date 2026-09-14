@@ -1,5 +1,7 @@
 package com.example.linksphere.domain.post
 
+import com.example.linksphere.infra.youtube.YoutubeVideoClient
+import com.example.linksphere.infra.youtube.dto.YoutubeSnippet
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.jsoup.Jsoup
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -9,9 +11,11 @@ import org.mockito.Mockito.mock
 
 class UrlMetadataExtractorTest {
 
-    // parseMetadata는 네트워크를 타지 않는 순수 함수라 SafeUrlValidator는 목으로만 채워둔다
-    // (FeedParserTest가 UrlMetadataExtractor를 목으로 채우는 것과 같은 이유).
-    private val extractor = UrlMetadataExtractor(ObjectMapper(), mock(SafeUrlValidator::class.java))
+    // parseMetadata·toMetadata는 네트워크를 타지 않는 순수 함수라 SafeUrlValidator·
+    // YoutubeVideoClient는 목으로만 채워둔다(FeedParserTest가 UrlMetadataExtractor를
+    // 목으로 채우는 것과 같은 이유).
+    private val extractor =
+        UrlMetadataExtractor(ObjectMapper(), mock(SafeUrlValidator::class.java), mock(YoutubeVideoClient::class.java))
 
     // baseUri를 넘겨야 og:image 상대경로의 abs: 절대화가 실제 코드와 같은 조건에서 검증된다.
     private fun parse(
@@ -216,5 +220,47 @@ class UrlMetadataExtractorTest {
         val metadata = parse("<html><body></body></html>", url = "https://www.example.com/a")
 
         assertEquals(listOf("example.com"), metadata.tags)
+    }
+
+    @Test
+    fun `toMetadata는 snippet 설명이 하한을 넘으면 pageContent로 쓴다`() {
+        val description = "다".repeat(300)
+        val snippet = YoutubeSnippet(title = "영상 제목", description = description, thumbnailUrl = "https://i.ytimg.com/vi/abc/hqdefault.jpg")
+
+        val metadata = extractor.toMetadata("https://youtu.be/abc123", snippet)
+
+        assertEquals(description, metadata!!.pageContent)
+        assertEquals("영상 제목", metadata.title)
+        assertEquals("https://i.ytimg.com/vi/abc/hqdefault.jpg", metadata.ogImage)
+        assertNull(metadata.description)
+        assertEquals(listOf("youtu.be"), metadata.tags)
+    }
+
+    @Test
+    fun `toMetadata는 snippet 설명이 메타 하한 미만이면 null이다`() {
+        val snippet = YoutubeSnippet(title = "영상 제목", description = "짧은 설명", thumbnailUrl = null)
+
+        val metadata = extractor.toMetadata("https://youtu.be/abc123", snippet)
+
+        assertNull(metadata)
+    }
+
+    @Test
+    fun `toMetadata는 snippet 설명이 없으면 null이다`() {
+        val snippet = YoutubeSnippet(title = "영상 제목", description = null, thumbnailUrl = null)
+
+        val metadata = extractor.toMetadata("https://youtu.be/abc123", snippet)
+
+        assertNull(metadata)
+    }
+
+    @Test
+    fun `toMetadata는 snippet 설명도 5000자로 자른다`() {
+        val description = "나".repeat(6000)
+        val snippet = YoutubeSnippet(title = "영상 제목", description = description, thumbnailUrl = null)
+
+        val metadata = extractor.toMetadata("https://youtu.be/abc123", snippet)
+
+        assertEquals(5000, metadata!!.pageContent!!.length)
     }
 }

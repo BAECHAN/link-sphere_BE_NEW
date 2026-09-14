@@ -39,8 +39,6 @@ class BookmarkFolderService(
                 name = folder.name,
                 sortOrder = folder.sortOrder,
                 bookmarkCount = countByFolderId[folder.id] ?: 0,
-                createdAt = folder.createdAt,
-                updatedAt = folder.updatedAt,
                 lastUsedAt = lastUsedByFolderId[folder.id],
             )
         }
@@ -71,8 +69,6 @@ class BookmarkFolderService(
             name = saved.name,
             sortOrder = saved.sortOrder,
             bookmarkCount = 0,
-            createdAt = saved.createdAt,
-            updatedAt = saved.updatedAt,
         )
     }
 
@@ -98,8 +94,6 @@ class BookmarkFolderService(
             name = folder.name,
             sortOrder = folder.sortOrder,
             bookmarkCount = bookmarkCount,
-            createdAt = folder.createdAt,
-            updatedAt = folder.updatedAt,
         )
     }
 

@@ -20,7 +20,7 @@
 | **AI**         | Google Gemini API (gemini-2.5-flash)              |
 | **Push**       | Firebase Cloud Messaging (firebase-admin 9.4.2)  |
 | **Storage**    | Supabase Storage (이미지 업로드)                  |
-| **API Docs**   | SpringDoc OpenAPI (Swagger UI)                    |
+| **API Docs**   | SpringDoc OpenAPI 2.7.0 (Swagger UI는 로컬 전용)       |
 | **Infra**      | AWS Lambda (SnapStart) + CRaC                     |
 | **기타**       | Jsoup (HTML 파싱), Jackson, Spring Boot Actuator  |
 
@@ -211,11 +211,15 @@ Bookmark Folder 섹션 참고.
 
 ### 📚 Swagger UI
 
-서버 실행 후 아래 주소에서 API 문서를 확인할 수 있습니다:
+Swagger UI는 `developmentOnly` 의존성이라 **로컬 `bootRun`에서만** 뜹니다 — 운영
+Lambda 아티팩트(shadowJar)에는 포함되지 않습니다. 로컬 서버 실행 후 아래 주소에서
+확인할 수 있습니다(context-path `/api` 포함):
 
 ```
-http://localhost:8080/swagger-ui/index.html
+http://localhost:8080/api/swagger-ui/index.html
 ```
+
+운영 환경에서도 스펙 JSON(`/api/v3/api-docs`)은 계속 제공됩니다.
 
 ---
 
@@ -240,6 +244,10 @@ spring:
 gemini:
   api:
     key: <YOUR_GEMINI_API_KEY>
+
+youtube:
+  api:
+    key: <YOUR_YOUTUBE_DATA_API_V3_KEY>
 
 jwt:
   secret: <YOUR_JWT_SECRET_KEY>

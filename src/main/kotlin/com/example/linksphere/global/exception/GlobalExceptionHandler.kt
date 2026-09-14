@@ -214,6 +214,21 @@ class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(response)
     }
 
+    // 정적 리소스가 클래스패스에 없을 때(예: 운영에 번들되지 않는 Swagger UI 경로) - 이 핸들러가
+    // 없으면 permitAll이라 401은 피해가고 handleException(500)으로 떨어져 "서버 에러"처럼 보인다.
+    @ExceptionHandler(org.springframework.web.servlet.resource.NoResourceFoundException::class)
+    fun handleNoResourceFoundException(
+        e: org.springframework.web.servlet.resource.NoResourceFoundException,
+    ): ResponseEntity<ErrorResponse> {
+        val response =
+            ErrorResponse(
+                status = HttpStatus.NOT_FOUND.value(),
+                code = "NOT_FOUND",
+                message = "Resource not found: ${e.resourcePath}",
+            )
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response)
+    }
+
     @ExceptionHandler(Exception::class)
     fun handleException(e: Exception): ResponseEntity<ErrorResponse> {
         logger.error("Unhandled exception", e)

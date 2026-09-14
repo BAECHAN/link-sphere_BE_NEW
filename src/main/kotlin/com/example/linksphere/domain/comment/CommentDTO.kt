@@ -12,8 +12,6 @@ data class LinkMetadata(
 
 data class CommentResponse(
     val id: UUID,
-    val postId: UUID,
-    val userId: UUID,
     val content: String,
     val isDeleted: Boolean,
     val author: CommentAuthor,
@@ -22,7 +20,6 @@ data class CommentResponse(
     val likeCount: Int = 0,
     val isLiked: Boolean = false,
     val createdAt: LocalDateTime,
-    val updatedAt: LocalDateTime,
     val linkMetadata: LinkMetadata? = null,
 )
 
