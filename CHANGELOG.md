@@ -58,7 +58,7 @@
   있어(`link-sphere_FE_NEW` `usePostCard.ts`의 `isOwner` 판정 등) FE에서 먼저 타입을
   제거한 뒤, 같은 중복을 BE 응답에서도 제거했다. BE 내부에서도 `PostResponse.userId`를
   읽는 코드는 없었다(생성 지점 1곳, 테스트 스텁 1곳뿐).
-  (`PostDTO.kt`, `PostService.kt`, `FeedItemProcessorTest.kt`)
+  (`PostDTO.kt`, `PostService.kt`, `FeedItemProcessorTest.kt`, [커밋 00ae086](https://github.com/BAECHAN/link-sphere_BE_NEW/commit/00ae0865d824c78dca10ee552ba1d3d43a4b0283))
 
   </details>
 
@@ -83,6 +83,7 @@
 
   범위 밖(이번엔 손 안 댐): `BookmarkFoldersResponse`의 `postId`/`isBookmarked`/
   `folderIds`(FE가 응답 자체를 안 읽음 - 필드 제거보다 큰 결정이라 별도 논의 필요).
+  ([커밋 83ff44b](https://github.com/BAECHAN/link-sphere_BE_NEW/commit/83ff44b358a554fdf45f0885fe8e548796dcf1d6))
 
   </details>
 
@@ -96,7 +97,7 @@
   전용 핸들러가 없어 catch-all(`Exception::class`)로 떨어져 500으로 응답했다(완전히
   무관한 경로는 `anyRequest().authenticated()`가 먼저 401로 막아 이 문제가 permitAll
   경로에서만 재현됐다). `NoResourceFoundException` 전용 핸들러를 추가해 404로 응답한다.
-  (`GlobalExceptionHandler.kt`)
+  (`GlobalExceptionHandler.kt`, [PR #14](https://github.com/BAECHAN/link-sphere_BE_NEW/pull/14))
 
   </details>
 
@@ -117,7 +118,7 @@
   요청 경로의 왕복 수는 종전과 같다. 키는
   `YOUTUBE_API_KEY`(Lambda 환경변수 / `application-secret.yml`의 `youtube.api.key`)로 주입하며,
   비어 있으면 종전 동작으로 조용히 폴백한다.
-  (`UrlMetadataExtractor.kt`, `infra/youtube/YoutubeVideoClient.kt`, `docs/AI-ASYNC-PROCESSING.md`)
+  (`UrlMetadataExtractor.kt`, `infra/youtube/YoutubeVideoClient.kt`, `docs/AI-ASYNC-PROCESSING.md`, [PR #11](https://github.com/BAECHAN/link-sphere_BE_NEW/pull/11))
 
   </details>
 
