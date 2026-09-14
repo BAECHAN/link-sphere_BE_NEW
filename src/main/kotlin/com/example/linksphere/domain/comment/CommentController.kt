@@ -30,6 +30,18 @@ class CommentController(private val commentService: CommentService) {
     ): ApiResponse<List<CommentResponse>> = ApiResponse(200, "댓글 조회 성공", commentService.getComments(postId, principal.toOptionalUserId()))
 
     @Operation(
+        summary = "내 댓글 목록 조회",
+        description = "로그인한 사용자가 작성한 댓글을 최신순으로 페이지네이션 조회한다. 삭제된(톰스톤) " +
+            "댓글은 제외한다. 댓글을 단 뒤 원글이 비공개로 전환되면 본인 소유가 아닌 한 목록에서도 제외된다.",
+    )
+    @GetMapping("/comment/my")
+    fun getMyComments(
+        @RequestParam(defaultValue = "0") page: Int,
+        @RequestParam(defaultValue = "10") size: Int,
+        @AuthenticationPrincipal principal: String?,
+    ): ApiResponse<MyCommentPageResponse> = ApiResponse(200, "내 댓글 목록 조회 성공", commentService.getMyComments(principal.toRequiredUserId(), page, size))
+
+    @Operation(
         summary = "댓글 작성",
         description = "HTTP 상태는 200 이고 본문 status 필드만 201 이다. content·images 가 둘 다 " +
             "비어 있으면 400 이 아니라 404 NOT_FOUND 로 응답한다(IllegalArgumentException 공통 매핑). " +
