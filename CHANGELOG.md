@@ -25,7 +25,8 @@
   전환되면 목록에서도 제외된다. 톰스톤(`isDeleted`) 댓글은 내용이 이미
   `"삭제된 댓글입니다."`로 덮여 있어 제외했다. 페이지네이션은 기존 `PostPageResponse`와
   동일한 offset 방식(`page`/`size`/`totalElements`/`totalPages`/`last`)을 따른다.
-  (`CommentRepository.kt`, `CommentDTO.kt`, `CommentService.kt`, `CommentController.kt`)
+  (`CommentRepository.kt`, `CommentDTO.kt`, `CommentService.kt`, `CommentController.kt`,
+  [PR #15](https://github.com/BAECHAN/link-sphere_BE_NEW/pull/15))
 
   </details>
 
