@@ -3,11 +3,9 @@ package com.example.linksphere
 import jakarta.annotation.PostConstruct
 import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.runApplication
-import org.springframework.scheduling.annotation.EnableScheduling
 import java.util.TimeZone
 
 // 애플리케이션 진입점
-@EnableScheduling
 @SpringBootApplication
 class LinkSphereBeApplication {
 

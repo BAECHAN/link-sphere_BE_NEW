@@ -14,7 +14,6 @@ import java.util.UUID
 @RestController
 @RequestMapping("/post")
 class PostController(private val postService: PostService) {
-    private val logger = org.slf4j.LoggerFactory.getLogger(PostController::class.java)
 
     @Operation(
         summary = "게시글 등록",
