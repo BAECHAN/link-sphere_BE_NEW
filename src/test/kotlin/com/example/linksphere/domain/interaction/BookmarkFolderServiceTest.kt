@@ -1,6 +1,6 @@
 package com.example.linksphere.domain.interaction
 
-import com.example.linksphere.domain.post.PostService
+import com.example.linksphere.domain.post.PostResponseAssembler
 import com.example.linksphere.domain.post.TablePost
 import com.example.linksphere.global.exception.BookmarkFolderNotFoundException
 import com.example.linksphere.global.exception.ForbiddenException
@@ -36,7 +36,7 @@ class BookmarkFolderServiceTest {
 
     @Mock private lateinit var bookmarkFolderItemRepository: BookmarkFolderItemRepository
 
-    @Mock private lateinit var postService: PostService
+    @Mock private lateinit var postResponseAssembler: PostResponseAssembler
 
     @InjectMocks private lateinit var bookmarkFolderService: BookmarkFolderService
 
@@ -185,7 +185,7 @@ class BookmarkFolderServiceTest {
 
         `when`(bookmarkRepository.findBookmarkedPosts(userId, null, false, "latest", null, pageable))
             .thenReturn(page)
-        `when`(postService.buildResponsesFromPosts(emptyList(), userId)).thenReturn(emptyList())
+        `when`(postResponseAssembler.buildResponsesFromPosts(emptyList(), userId)).thenReturn(emptyList())
 
         bookmarkFolderService.getBookmarkedPosts(userId, "all", null, null, 0, 10)
 
@@ -200,7 +200,7 @@ class BookmarkFolderServiceTest {
 
         `when`(bookmarkRepository.findBookmarkedPosts(userId, null, false, "viewed", null, pageable))
             .thenReturn(page)
-        `when`(postService.buildResponsesFromPosts(emptyList(), userId)).thenReturn(emptyList())
+        `when`(postResponseAssembler.buildResponsesFromPosts(emptyList(), userId)).thenReturn(emptyList())
 
         bookmarkFolderService.getBookmarkedPosts(userId, "all", "viewed", null, 0, 10)
 
@@ -215,7 +215,7 @@ class BookmarkFolderServiceTest {
 
         `when`(bookmarkRepository.findBookmarkedPosts(userId, null, true, "latest", null, pageable))
             .thenReturn(page)
-        `when`(postService.buildResponsesFromPosts(emptyList(), userId)).thenReturn(emptyList())
+        `when`(postResponseAssembler.buildResponsesFromPosts(emptyList(), userId)).thenReturn(emptyList())
 
         bookmarkFolderService.getBookmarkedPosts(userId, "uncategorized", null, null, 0, 10)
 
@@ -233,7 +233,7 @@ class BookmarkFolderServiceTest {
         `when`(bookmarkFolderRepository.findById(folderId)).thenReturn(Optional.of(folder))
         `when`(bookmarkRepository.findBookmarkedPosts(userId, folderId, false, "latest", null, pageable))
             .thenReturn(page)
-        `when`(postService.buildResponsesFromPosts(emptyList(), userId)).thenReturn(emptyList())
+        `when`(postResponseAssembler.buildResponsesFromPosts(emptyList(), userId)).thenReturn(emptyList())
 
         bookmarkFolderService.getBookmarkedPosts(userId, folderId.toString(), null, null, 0, 10)
 
@@ -289,7 +289,7 @@ class BookmarkFolderServiceTest {
             .thenReturn(emptyPage)
         `when`(bookmarkRepository.findBookmarkedPosts(userId, null, false, "latest", "네이버", pageable))
             .thenReturn(correctedPage)
-        `when`(postService.buildResponsesFromPosts(listOf(post), userId)).thenReturn(emptyList())
+        `when`(postResponseAssembler.buildResponsesFromPosts(listOf(post), userId)).thenReturn(emptyList())
 
         val result = bookmarkFolderService.getBookmarkedPosts(userId, "all", null, "spdlqj", 0, 10)
 

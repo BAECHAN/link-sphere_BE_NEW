@@ -1,14 +1,10 @@
 package com.example.linksphere.domain.post
 
-import com.example.linksphere.domain.category.CategoryRepository
-import com.example.linksphere.domain.category.CategoryResponse
-import com.example.linksphere.domain.comment.CommentRepository
+import com.example.linksphere.domain.category.CategoryService
 import com.example.linksphere.domain.comment.CommentService
 import com.example.linksphere.domain.interaction.BookmarkFolderItemRepository
 import com.example.linksphere.domain.interaction.BookmarkFolderRepository
 import com.example.linksphere.domain.interaction.BookmarkRepository
-import com.example.linksphere.domain.interaction.PostReactionRepository
-import com.example.linksphere.domain.member.MemberRepository
 import com.example.linksphere.global.exception.BookmarkFolderNotFoundException
 import com.example.linksphere.global.exception.ForbiddenException
 import com.example.linksphere.global.exception.PostNotFoundException
@@ -23,15 +19,13 @@ import java.util.UUID
 @Transactional(readOnly = true)
 class PostService(
     private val postRepository: PostRepository,
-    private val categoryRepository: CategoryRepository,
-    private val memberRepository: MemberRepository,
+    private val categoryService: CategoryService,
     private val bookmarkRepository: BookmarkRepository,
     private val bookmarkFolderItemRepository: BookmarkFolderItemRepository,
     private val bookmarkFolderRepository: BookmarkFolderRepository,
     private val postViewRepository: PostViewRepository,
-    private val postReactionRepository: PostReactionRepository,
-    private val commentRepository: CommentRepository,
     private val commentService: CommentService,
+    private val postResponseAssembler: PostResponseAssembler,
     private val eventPublisher: ApplicationEventPublisher,
     private val urlMetadataExtractor: UrlMetadataExtractor,
     private val safeUrlValidator: SafeUrlValidator,
@@ -52,7 +46,7 @@ class PostService(
         val title = if (!request.title.isNullOrBlank()) request.title else metadata.title
         val categories =
             if (!request.categoryIds.isNullOrEmpty()) {
-                categoryRepository.findAllByIdIn(request.categoryIds).toMutableSet()
+                categoryService.getCategoriesByIds(request.categoryIds).toMutableSet()
             } else {
                 mutableSetOf()
             }
@@ -90,7 +84,7 @@ class PostService(
             )
         }
 
-        return convertToResponse(savedPost, userId)
+        return postResponseAssembler.convertToResponse(savedPost, userId)
     }
 
     /**
@@ -135,82 +129,17 @@ class PostService(
                 if (correctedPage.totalElements > 0L) {
                     return PostPageResponse.from(
                         correctedPage,
-                        buildResponsesFromPosts(correctedPage.content, currentUserId),
+                        postResponseAssembler.buildResponsesFromPosts(correctedPage.content, currentUserId),
                         correctedSearch,
                     )
                 }
             }
         }
 
-        return PostPageResponse.from(postPage, buildResponsesFromPosts(postPage.content, currentUserId))
-    }
-
-    /**
-     * Post 리스트를 PostResponse 리스트로 변환하면서 author/likes/bookmarks/comments를 batch fetch.
-     * 다른 도메인(예: BookmarkFolderService)에서 페이지 변환 시 재사용한다.
-     */
-    fun buildResponsesFromPosts(posts: List<TablePost>, currentUserId: UUID?): List<PostResponse> {
-        if (posts.isEmpty()) return emptyList()
-
-        val postIds = posts.mapNotNull { it.id }
-
-        val authorMap =
-            memberRepository.findAllById(posts.map { it.userId }.distinct())
-                .associate { m ->
-                    val id = m.id!!
-                    id to UserSummary(id, m.nickname, m.image)
-                }
-
-        val allBookmarks = bookmarkRepository.findAllByPostIdIn(postIds)
-        val bookmarkCountMap = allBookmarks.groupingBy { it.postId }.eachCount()
-        val myBookmarks =
-            if (currentUserId != null) {
-                bookmarkRepository.findAllByUserIdAndPostIdIn(currentUserId, postIds)
-            } else {
-                emptyList()
-            }
-        val bookmarkedPostIds = myBookmarks.map { it.postId }.toSet()
-        val folderIdsByPost: Map<UUID, List<UUID>> =
-            if (currentUserId != null) {
-                bookmarkFolderItemRepository.findAllByUserIdAndPostIdIn(currentUserId, postIds)
-                    .groupBy({ it.postId }, { it.folderId })
-            } else {
-                emptyMap()
-            }
-
-        val allReactions = postReactionRepository.findAllByPostIdIn(postIds)
-        val reactionCountMap = allReactions.groupingBy { it.postId }.eachCount()
-        val reactedPostIds =
-            if (currentUserId != null) {
-                postReactionRepository
-                    .findAllByUserIdAndPostIdIn(currentUserId, postIds)
-                    .map { it.postId }
-                    .toSet()
-            } else {
-                emptySet()
-            }
-
-        val commentCountMap =
-            commentRepository.countByPostIdIn(postIds)
-                .associate { it.postId to it.count.toInt() }
-
-        return posts.map { post ->
-            val postId = post.id ?: throw IllegalStateException("Post ID cannot be null")
-            val author =
-                authorMap[post.userId]
-                    ?: throw IllegalArgumentException("Member not found: ${post.userId}")
-            buildPostResponse(
-                post = post,
-                postId = postId,
-                author = author,
-                likeCount = reactionCountMap[postId] ?: 0,
-                isLiked = postId in reactedPostIds,
-                bookmarkCount = bookmarkCountMap[postId] ?: 0,
-                isBookmarked = postId in bookmarkedPostIds,
-                bookmarkFolderIds = folderIdsByPost[postId] ?: emptyList(),
-                commentCount = commentCountMap[postId] ?: 0,
-            )
-        }
+        return PostPageResponse.from(
+            postPage,
+            postResponseAssembler.buildResponsesFromPosts(postPage.content, currentUserId),
+        )
     }
 
     @Transactional
@@ -221,7 +150,7 @@ class PostService(
         if (post.isPrivate && post.userId != currentUserId) throw PostNotFoundException(id)
         postRepository.incrementViewCount(id)
         currentUserId?.let { postViewRepository.upsertView(it, id) }
-        return convertToResponse(post, currentUserId)
+        return postResponseAssembler.convertToResponse(post, currentUserId)
     }
 
     @Transactional
@@ -232,7 +161,7 @@ class PostService(
         post.isPrivate = request.isPrivate
         post.categories.clear()
         if (!request.categoryIds.isNullOrEmpty()) {
-            post.categories.addAll(categoryRepository.findAllByIdIn(request.categoryIds))
+            post.categories.addAll(categoryService.getCategoriesByIds(request.categoryIds))
         }
 
         // 재수집 트리거는 둘이다.
@@ -304,7 +233,7 @@ class PostService(
             )
         }
 
-        return convertToResponse(savedPost, userId)
+        return postResponseAssembler.convertToResponse(savedPost, userId)
     }
 
     /** 재수집한 제목은 빈약하지 않을 때만 채택한다 - PostAIService와 같은 판정을 쓴다. */
@@ -319,7 +248,7 @@ class PostService(
         if (post.userId != userId) throw ForbiddenException("You are not the owner of this post")
 
         post.isPrivate = request.isPrivate
-        return convertToResponse(postRepository.save(post), userId)
+        return postResponseAssembler.convertToResponse(postRepository.save(post), userId)
     }
 
     @Transactional
@@ -333,80 +262,4 @@ class PostService(
     }
 
     private fun validateUrl(url: String) = safeUrlValidator.validate(url)
-
-    private fun convertToResponse(post: TablePost, currentUserId: UUID?): PostResponse {
-        val postId = post.id ?: throw IllegalStateException("Post ID cannot be null")
-
-        val dbAuthor =
-            memberRepository.findById(post.userId).orElseThrow {
-                IllegalArgumentException("Member not found with id: ${post.userId}")
-            }
-        val author =
-            UserSummary(
-                id = dbAuthor.id ?: throw IllegalStateException("User ID cannot be null"),
-                nickname = dbAuthor.nickname,
-                image = dbAuthor.image,
-            )
-
-        val isBookmarked = currentUserId?.let { bookmarkRepository.existsByUserIdAndPostId(it, postId) } ?: false
-        // isBookmarked 가 true 인 경우는 currentUserId != null 인 경로(위 let)를 통해서만 나올 수 있으므로
-        // 컴파일러가 이 분기 안에서 currentUserId 를 non-null 로 스마트캐스트한다.
-        val bookmarkFolderIds =
-            if (isBookmarked) {
-                bookmarkFolderItemRepository.findFolderIdsByUserIdAndPostId(currentUserId, postId)
-            } else {
-                emptyList()
-            }
-        return buildPostResponse(
-            post = post,
-            postId = postId,
-            author = author,
-            likeCount = postReactionRepository.countByPostId(postId).toInt(),
-            isLiked =
-            currentUserId?.let {
-                postReactionRepository.existsByUserIdAndPostId(it, postId)
-            } ?: false,
-            bookmarkCount = bookmarkRepository.countByPostId(postId).toInt(),
-            isBookmarked = isBookmarked,
-            bookmarkFolderIds = bookmarkFolderIds,
-            commentCount = commentRepository.countByPostId(postId).toInt(),
-        )
-    }
-
-    private fun buildPostResponse(
-        post: TablePost,
-        postId: UUID,
-        author: UserSummary,
-        likeCount: Int,
-        isLiked: Boolean,
-        bookmarkCount: Int,
-        isBookmarked: Boolean,
-        bookmarkFolderIds: List<UUID> = emptyList(),
-        commentCount: Int,
-    ): PostResponse = PostResponse(
-        id = postId,
-        url = post.url,
-        title = post.title,
-        description = post.description,
-        tags = post.tags,
-        categories = post.categories.map { CategoryResponse.from(it) }.sortedBy { it.id },
-        ogImage = post.ogImage,
-        aiSummary = post.aiSummary,
-        createdAt = post.createdAt,
-        aiStatus = post.aiStatus,
-        isPrivate = post.isPrivate,
-        stats =
-        PostStats(
-            viewCount = post.viewCount ?: 0,
-            likeCount = likeCount,
-            commentCount = commentCount,
-            bookmarkCount = bookmarkCount,
-        ),
-        userInteractions = PostUserInteractions(
-            isLiked = isLiked,
-            isBookmarked = isBookmarked,
-            bookmarkFolderIds = bookmarkFolderIds,
-        ),
-        author = author,
-    )
 }
