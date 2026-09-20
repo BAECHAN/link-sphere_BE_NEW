@@ -22,9 +22,6 @@ data class FolderListResponse(
     val uncategorizedCount: Int,
 )
 
-// 본인 폴더 ID 전체를 정렬된 순서대로 전송 — index가 sort_order가 됨
-data class ReorderFoldersRequest(val folderIds: List<UUID>)
-
 // 소속 변경 API(추가/제거/전체해제) 공통 응답 — 변경 후 권위 상태를 돌려줘 FE 가 재조회 없이 정합을 맞춘다
 data class BookmarkFoldersResponse(
     val postId: UUID,

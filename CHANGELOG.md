@@ -69,6 +69,16 @@
 
   </details>
 
+### Removed
+
+- `bookmark` FE에서 호출하는 곳이 없는 폴더 순서 재정렬(reorder) 엔드포인트 제거
+  <details><summary>배경·구현</summary>
+
+  `PATCH /bookmark/folders/reorder`가 완전히 구현돼 있었지만(id 중복·누락·타인 소유 검증 포함), FE에는 이걸 호출하는 mutation 훅이나 드래그 정렬 UI가 없었다(link-sphere_FE_NEW PR #155에서 FE 쪽 죽은 코드로 확인). 테스트도 이 메서드용으로 작성된 적이 없었다. 앞으로도 쓸 계획이 없어 FE·BE 양쪽에서 함께 제거했다. 폴더 생성 시 `sort_order = max+1`을 매기고 목록 조회를 `sortOrder ASC`로 정렬하는 기존 로직(`findByUserIdOrderBySortOrderAsc`)은 이 기능과 무관하게 그대로 유지된다 - 사용자가 순서를 바꾸는 기능만 없어졌을 뿐, 생성 시점의 기본 순서 자체는 그대로다.
+  (`BookmarkFolderController.kt`, `BookmarkFolderService.kt`, `BookmarkFolderDTO.kt`, `README.md`)
+
+  </details>
+
 ## [0.10.0] - 2026-09-14
 
 ### Added
