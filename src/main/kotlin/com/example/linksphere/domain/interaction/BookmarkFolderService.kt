@@ -111,34 +111,6 @@ class BookmarkFolderService(
     }
 
     /**
-     * 폴더 순서 일괄 재정렬. 요청 folderIds 가 본인의 모든 폴더 ID set과 정확히 일치해야 함.
-     * 누락/추가/타인 폴더 포함 시 400 INVALID_INPUT.
-     */
-    @Transactional
-    fun reorderFolders(userId: UUID, folderIds: List<UUID>) {
-        val myFolders = bookmarkFolderRepository.findByUserIdOrderBySortOrderAsc(userId)
-        val myFolderIdSet = myFolders.map { it.id }.toSet()
-        val requestIdSet = folderIds.toSet()
-
-        if (requestIdSet.size != folderIds.size) {
-            throw InvalidInputException("Duplicate folder ids in reorder request")
-        }
-        if (requestIdSet != myFolderIdSet) {
-            throw InvalidInputException("Reorder request must contain exactly the user's own folder ids")
-        }
-
-        val folderById = myFolders.associateBy { it.id }
-        val now = LocalDateTime.now()
-        folderIds.forEachIndexed { index, id ->
-            val folder = folderById.getValue(id)
-            if (folder.sortOrder != index) {
-                folder.sortOrder = index
-                folder.updatedAt = now
-            }
-        }
-    }
-
-    /**
      * 다중 선택 일괄 추가 — 단건 addBookmarkFolder 와 동일하게 북마크가 없으면 자동 생성한다.
      * (같은 동작이 선택 개수에 따라 의미가 달라지지 않도록 단건과 계약을 맞춘다.)
      * 반환: 처리한 postId 수.

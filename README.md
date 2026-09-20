@@ -63,7 +63,7 @@ src/main/kotlin/com/example/linksphere/
 │   ├── interaction/                     # 좋아요·북마크(폴더 다중 소속 포함) 도메인
 │   │   ├── InteractionController.kt     # 좋아요 + 북마크 토글 + 폴더 소속 추가/제거
 │   │   ├── InteractionService.kt
-│   │   ├── BookmarkFolderController.kt  # 폴더 CRUD·순서·폴더별 게시글 조회
+│   │   ├── BookmarkFolderController.kt  # 폴더 CRUD·폴더별 게시글 조회
 │   │   ├── BookmarkFolderService.kt
 │   │   ├── BookmarkFolderDTO.kt
 │   │   ├── BookmarkRepository.kt
@@ -187,7 +187,6 @@ Bookmark Folder 섹션 참고.
 | `GET`    | `/bookmark/folders`                | 내 폴더 목록 (폴더별 소속 수 + 미분류 수)         | ✅   |
 | `POST`   | `/bookmark/folders`                | 폴더 생성                                         | ✅   |
 | `PATCH`  | `/bookmark/folders/{folderId}`     | 폴더 이름 수정                                    | ✅   |
-| `PATCH`  | `/bookmark/folders/reorder`        | 폴더 순서 일괄 재정렬 (본인 폴더 ID 전체 필요)    | ✅   |
 | `DELETE` | `/bookmark/folders/{folderId}`     | 폴더 삭제 (그 폴더에만 있던 북마크만 미분류로)    | ✅   |
 | `GET`    | `/bookmark/folders/{folderKey}/posts` | 폴더별 게시글 조회. `folderKey`: `all` \| `uncategorized` \| 폴더 UUID | ✅   |
 

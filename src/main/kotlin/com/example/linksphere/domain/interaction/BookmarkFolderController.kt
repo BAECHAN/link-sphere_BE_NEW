@@ -9,7 +9,7 @@ import org.springframework.security.core.Authentication
 import org.springframework.web.bind.annotation.*
 import java.util.UUID
 
-@Tag(name = "북마크 폴더", description = "북마크를 담는 폴더의 생성·조회·수정·삭제·정렬")
+@Tag(name = "북마크 폴더", description = "북마크를 담는 폴더의 생성·조회·수정·삭제")
 @RestController
 @RequestMapping("/bookmark/folders")
 class BookmarkFolderController(private val bookmarkFolderService: BookmarkFolderService) {
@@ -51,21 +51,6 @@ class BookmarkFolderController(private val bookmarkFolderService: BookmarkFolder
         val userId = authentication.getUserId() ?: throw IllegalArgumentException("User not authenticated")
         val folder = bookmarkFolderService.updateFolder(userId, folderId, request)
         return ApiResponse(200, "북마크 폴더 수정 성공", folder)
-    }
-
-    @Operation(
-        summary = "북마크 폴더 순서 변경",
-        description = "folderIds 는 본인이 가진 폴더 id 전체를 중복 없이 새 순서로 담아야 한다. " +
-            "실패: 400 INVALID_INPUT(id 중복·누락·본인 소유 아닌 id 포함)",
-    )
-    @PatchMapping("/reorder")
-    fun reorderFolders(
-        @RequestBody request: ReorderFoldersRequest,
-        authentication: Authentication?,
-    ): ApiResponse<Unit> {
-        val userId = authentication.getUserId() ?: throw IllegalArgumentException("User not authenticated")
-        bookmarkFolderService.reorderFolders(userId, request.folderIds)
-        return ApiResponse(200, "북마크 폴더 순서 변경 성공", Unit)
     }
 
     @Operation(
