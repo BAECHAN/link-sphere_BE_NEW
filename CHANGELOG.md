@@ -9,6 +9,27 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `post` 죽은 og:image 썸네일 게시글 3건 복구, 강제 재크롤링 도구 신설
+  <details><summary>배경·구현</summary>
+
+  FE에서 og:image 로드 실패로 인한 콘솔 에러/rate limit 소진 문제를 조사하던 중, 프로덕션
+  게시글 전수(고유 og:image 124개)를 직접 curl로 검사해 상시 실패 3건을 확정했다 - daumcdn
+  서명 URL 만료 2건(`expires` 타임스탬프가 이미 과거), 삭제된 YouTube 썸네일 해상도 1건(404).
+  기존 재크롤링 경로(`PATCH /post/{id}`에서 title을 비우면 `PostService.updatePost`가
+  재크롤링하는 흐름)는 기존 `ogImage`가 이미 값을 갖고 있으면 덮어쓰지 않도록 설계돼 있어(사용자가
+  손댄 값을 실수로 되돌리지 않기 위함) 이 세 건처럼 "값은 있지만 죽은" 케이스를 못 고쳤다.
+  `OgImageBackfillRunner`(로컬 1회성 CLI, `PostAiBackfillRunner`/`OrphanImageCleanupRunner`와
+  동일한 `@Profile` 가드 + dry-run 우선 shape - 이 코드베이스에 admin 개념이 없어 REST로 노출하지
+  않는다)를 신설해 지정한 게시글 ID의 og:image를 무조건 재크롤링·덮어쓰도록 했다. 세 URL 모두
+  재크롤링 시 새 서명·해상도의 살아있는 og:image를 반환하는 것을 dry-run으로 먼저 확인하고,
+  각 신규 URL이 실제로 200을 반환하는지 별도로 curl 검증한 뒤 `--commit`으로 반영했다. 반영 후
+  프로덕션 API가 새 og:image를 서빙하고 그 URL이 200을 반환하는 것까지 확인했다.
+  (`tools/OgImageBackfillRunner.kt`(신규))
+
+  </details>
+
 ## [0.10.0] - 2026-09-14
 
 ### Added
