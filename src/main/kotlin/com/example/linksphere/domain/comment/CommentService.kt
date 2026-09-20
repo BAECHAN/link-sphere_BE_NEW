@@ -5,6 +5,7 @@ import com.example.linksphere.domain.member.MemberRepository
 import com.example.linksphere.domain.member.TableMember
 import com.example.linksphere.domain.post.PostRepository
 import com.example.linksphere.global.common.SupabaseStorageService
+import com.example.linksphere.global.exception.ForbiddenException
 import com.example.linksphere.global.exception.InvalidInputException
 import com.example.linksphere.global.exception.PostNotFoundException
 import org.springframework.context.ApplicationEventPublisher
@@ -276,7 +277,7 @@ class CommentService(
                 ?: throw IllegalArgumentException("Comment not found")
 
         if (comment.userId != userId) {
-            throw IllegalAccessException("Not authorized to delete this comment")
+            throw ForbiddenException("Not authorized to delete this comment")
         }
 
         val imageUrls = extractManagedImageUrls(comment.content)
@@ -357,7 +358,7 @@ class CommentService(
                 ?: throw IllegalArgumentException("Comment not found")
 
         if (comment.userId != userId) {
-            throw IllegalAccessException("Not authorized to update this comment")
+            throw ForbiddenException("Not authorized to update this comment")
         }
 
         if (comment.isDeleted) {

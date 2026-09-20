@@ -221,6 +221,19 @@ http://localhost:8080/api/swagger-ui/index.html
 
 운영 환경에서도 스펙 JSON(`/api/v3/api-docs`)은 계속 제공됩니다.
 
+**⚠️ 이 스펙 JSON을 FE가 실제로 소비합니다.** FE 레포는 `openapi-typescript`로
+이 스펙을 읽어 응답 타입을 코드젠하고(`src/shared/api/generated/`, 상세는 FE
+`docs/OPENAPI-CODEGEN.md` 참고), `openapi-drift-check.yml`이 6시간마다 운영
+`/api/v3/api-docs`를 호출해 FE에 커밋된 스냅샷과 비교합니다 — 불일치하면 FE
+레포에 GitHub Issue가 자동으로 열립니다. 즉 BE에서 DTO 필드를 추가/제거하거나
+nullable 여부를 바꾸면 FE 레포에 영향이 전파됩니다.
+
+Kotlin `String?` 같은 nullable 타입은 springdoc이 기본적으로 `required` 배열에서만
+빼고 스펙에 `nullable: true`를 붙이지 않는데, 실제 런타임(Jackson)은 그 필드를 항상
+포함하고 값만 `null`로 내려보냅니다. `global/config/NullableAwareModelConverter.kt`가
+빌드된 스펙을 후처리해 이 간극을 메꿉니다(`$ref`로 참조되는 중첩 객체 프로퍼티는
+아직 처리하지 못함 — 원시 타입 프로퍼티만 대상).
+
 ---
 
 ## 시작하기
@@ -301,10 +314,11 @@ FCM을 사용하려면 `src/main/resources/firebase-service-account.json` 파일
 ### 배포 프로세스 요약
 
 1. **GitHub Push**: `main` 브랜치에 코드가 푸시됩니다.
-2. **GitHub Actions**: `./gradlew shadowJar`로 fat JAR를 빌드하고 **AWS S3**에 업로드합니다.
+2. **GitHub Actions**: `./gradlew ktlintCheck test shadowJar`로 검사·테스트 통과 후 fat JAR를 빌드하고 **AWS S3**에 업로드합니다.
 3. **Lambda 코드 업데이트**: S3의 새 JAR를 참조하도록 Lambda 함수를 업데이트합니다.
 4. **버전 발행**: `publish-version`으로 **SnapStart 스냅샷**을 생성합니다.
-5. **alias 업데이트**: `prod` alias가 새 버전을 가리키도록 교체합니다.
+5. **연속 호출 검증**: 방금 발행한 버전을 5회 연속 직접 호출해 전부 `statusCode 200`인지 확인합니다. 하나라도 실패하면 아래 승격 없이 워크플로우가 실패합니다.
+6. **alias 업데이트**: 검증을 통과했을 때만 `prod` alias가 새 버전을 가리키도록 교체합니다.
 
 자세한 배포 과정은 [**docs/DEPLOY.md**](./docs/DEPLOY.md) 문서를 참고해주세요.
 

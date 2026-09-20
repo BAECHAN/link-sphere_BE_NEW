@@ -30,7 +30,25 @@
 
   </details>
 
+### Changed
+
+- `post` 게시글 목록의 categories N+1 쿼리 제거
+  <details><summary>배경·구현</summary>
+
+  `TablePost.categories`(`@ManyToMany`, LAZY)만 게시글 목록·북마크 목록의 작성자·북마크·반응·댓글수 배치 조회(`PostService.buildResponsesFromPosts`)에서 빠져 있어 페이지 크기만큼 카테고리 조회 쿼리가 추가로 발생하고 있었다. fetch join 대신 `default_batch_fetch_size`를 선택했다 - 컬렉션 fetch join은 페이지네이션과 함께 쓰면 Hibernate가 LIMIT/OFFSET을 SQL이 아니라 메모리에서 적용해 오히려 전체 결과를 다 가져오는 역효과가 있기 때문이다. 실 DB 없이는 SQL 로그로 배치 쿼리 전환을 직접 확인하지 못했다(이 레포에 `@DataJpaTest` 등 실 DB 대상 테스트 인프라가 없음) - 실제 쿼리 개수 감소는 배포 후 확인이 필요하다.
+  (`application.yml`)
+
+  </details>
+
 ### Fixed
+
+- `comment` 댓글 삭제·수정 권한 실패를 500 대신 403으로 응답
+  <details><summary>배경·구현</summary>
+
+  `CommentService`의 `deleteComment`·`updateComment`가 작성자 확인 실패 시 `IllegalAccessException`을 던지는데 `GlobalExceptionHandler`에 이 예외 전용 핸들러가 없어 catch-all(500)로 떨어지고 있었다 - `CommentController.kt`의 Swagger 문서 주석에 이미 "알려진 결함"으로 기록돼 있던 문제다. 같은 "소유자 아님 → 403" 개념을 `PostService`·`InteractionService`·`BookmarkFolderService`가 이미 `ForbiddenException`으로 처리하고 있어, 새 예외 클래스나 새 핸들러를 추가하는 대신 그 기존 예외로 통일했다. 이 경로에 테스트가 전혀 없어 두 메서드 모두 회귀 테스트를 추가했다.
+  (`CommentService.kt`, `CommentController.kt`, `CommentServiceTest.kt`)
+
+  </details>
 
 - `post` 죽은 og:image 썸네일 게시글 3건 복구, 강제 재크롤링 도구 신설
   <details><summary>배경·구현</summary>

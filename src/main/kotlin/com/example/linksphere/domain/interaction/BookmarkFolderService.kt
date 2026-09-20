@@ -2,7 +2,7 @@ package com.example.linksphere.domain.interaction
 
 import com.example.linksphere.domain.post.HangulKeyboardConverter
 import com.example.linksphere.domain.post.PostPageResponse
-import com.example.linksphere.domain.post.PostService
+import com.example.linksphere.domain.post.PostResponseAssembler
 import com.example.linksphere.global.exception.BookmarkFolderNotFoundException
 import com.example.linksphere.global.exception.DuplicateFolderNameException
 import com.example.linksphere.global.exception.ForbiddenException
@@ -19,7 +19,7 @@ class BookmarkFolderService(
     private val bookmarkFolderRepository: BookmarkFolderRepository,
     private val bookmarkRepository: BookmarkRepository,
     private val bookmarkFolderItemRepository: BookmarkFolderItemRepository,
-    private val postService: PostService,
+    private val postResponseAssembler: PostResponseAssembler,
 ) {
 
     @Transactional(readOnly = true)
@@ -247,13 +247,13 @@ class BookmarkFolderService(
                 if (correctedPage.totalElements > 0L) {
                     return PostPageResponse.from(
                         correctedPage,
-                        postService.buildResponsesFromPosts(correctedPage.content, userId),
+                        postResponseAssembler.buildResponsesFromPosts(correctedPage.content, userId),
                         correctedSearch,
                     )
                 }
             }
         }
 
-        return PostPageResponse.from(postPage, postService.buildResponsesFromPosts(postPage.content, userId))
+        return PostPageResponse.from(postPage, postResponseAssembler.buildResponsesFromPosts(postPage.content, userId))
     }
 }
