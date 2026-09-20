@@ -1,6 +1,6 @@
 # AWS Lambda SnapStart 배포 가이드
 
-> 마지막 검토: 2026-08-07
+> 마지막 검토: 2026-09-21
 
 ## 아키텍처 개요
 
@@ -167,7 +167,7 @@ aws lambda create-function \
   --role arn:aws:iam::ACCOUNT_ID:role/lambda-execution-role \
   --code S3Bucket=link-sphere-lambda-deploy,S3Key=initial.jar \
   --memory-size 2048 \
-  --timeout 30 \
+  --timeout 120 \
   --architectures arm64 \
   --snap-start ApplyOn=PublishedVersions
 ```
@@ -385,7 +385,7 @@ aws events put-targets \
 | 2. JDK 17 | Amazon Corretto 설치 (Lambda 런타임과 동일 계열) |
 | 3. Gradle 캐시 | 의존성 캐시로 빌드 시간 단축 |
 | 4. Firebase JSON | GitHub Secret → `src/main/resources/firebase-service-account.json` (classpath 포함) |
-| 5. shadowJar 빌드 | `./gradlew shadowJar` → 모든 의존성 포함된 fat JAR |
+| 5. shadowJar 빌드 | `./gradlew ktlintCheck test shadowJar` → 스타일 검사·테스트 통과 후 모든 의존성 포함된 fat JAR |
 | 6. JAR 검증 | 파일 존재 및 `LambdaHandler` 클래스 포함 여부 확인 |
 | 7. AWS 자격증명 | GitHub Secrets로 AWS 인증 |
 | 8. S3 업로드 | `deployments/YYYYMMDD-HHMMSS.jar` 키로 업로드 |
