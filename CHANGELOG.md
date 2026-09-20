@@ -32,6 +32,14 @@
 
 ### Fixed
 
+- `comment` 댓글 삭제·수정 권한 실패를 500 대신 403으로 응답
+  <details><summary>배경·구현</summary>
+
+  `CommentService`의 `deleteComment`·`updateComment`가 작성자 확인 실패 시 `IllegalAccessException`을 던지는데 `GlobalExceptionHandler`에 이 예외 전용 핸들러가 없어 catch-all(500)로 떨어지고 있었다 - `CommentController.kt`의 Swagger 문서 주석에 이미 "알려진 결함"으로 기록돼 있던 문제다. 같은 "소유자 아님 → 403" 개념을 `PostService`·`InteractionService`·`BookmarkFolderService`가 이미 `ForbiddenException`으로 처리하고 있어, 새 예외 클래스나 새 핸들러를 추가하는 대신 그 기존 예외로 통일했다. 이 경로에 테스트가 전혀 없어 두 메서드 모두 회귀 테스트를 추가했다.
+  (`CommentService.kt`, `CommentController.kt`, `CommentServiceTest.kt`)
+
+  </details>
+
 - `post` 죽은 og:image 썸네일 게시글 3건 복구, 강제 재크롤링 도구 신설
   <details><summary>배경·구현</summary>
 
