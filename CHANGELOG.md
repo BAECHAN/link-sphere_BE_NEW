@@ -9,6 +9,27 @@
 
 ## [Unreleased]
 
+### Added
+
+- `config` OpenAPI 스펙에 Kotlin nullable 필드를 `nullable: true`로 반영하는 컨버터 추가
+  <details><summary>배경·구현</summary>
+
+  springdoc은 Kotlin의 `String?` 같은 nullable 타입을 "required 목록에서 빼는 것"으로만
+  표현하고 스키마에 `nullable: true`를 안 붙인다. 그런데 실제 런타임은 Jackson 기본 설정
+  (`JsonInclude.ALWAYS`)이라 값이 없으면 키가 생략되는 게 아니라 값이 `null`로 온다 - 스펙은
+  "키가 없을 수 있다"고 말하지만 실제로는 "키는 항상 있고 값이 null일 수 있다"이다. FE가 이
+  스펙으로 타입을 생성하면 `string | undefined`가 되어 실제 `null` 응답과 어긋난다(FE
+  link-sphere_FE_NEW의 openapi-codegen 도입 계획 Phase 0.5, 2026-09-20 발견). `resolve()`가
+  실제 Kotlin Class를 얻는 시점(`NullableAwareModelConverter`)과 컴포넌트 스키마가 이름
+  기준으로 전부 모이는 시점(`NullableAwareOpenApiCustomizer`)을 분리했다 - 이름이 있는
+  모델은 최초 1회만 프로퍼티가 채워진 완전한 Schema로 등록되고 이후 참조 지점은
+  `{$ref: "..."}`만 있는 빈 Schema를 돌려받아, `ModelConverter.resolve()` 하나만으로는
+  적용이 안 되는 것을 로컬 bootRun으로 실측했다. required 배열은 건드리지 않아 기존
+  클라이언트 검증에는 영향 없다.
+  (`NullableAwareModelConverter.kt`(신규))
+
+  </details>
+
 ### Fixed
 
 - `post` 죽은 og:image 썸네일 게시글 3건 복구, 강제 재크롤링 도구 신설
