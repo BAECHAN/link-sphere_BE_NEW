@@ -7,6 +7,7 @@ import com.example.linksphere.domain.member.TableMember
 import com.example.linksphere.domain.post.PostRepository
 import com.example.linksphere.domain.post.TablePost
 import com.example.linksphere.global.common.SupabaseStorageService
+import com.example.linksphere.global.exception.ForbiddenException
 import com.example.linksphere.global.exception.InvalidInputException
 import com.example.linksphere.global.exception.PostNotFoundException
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -225,6 +226,21 @@ class CommentServiceTest {
     }
 
     @Test
+    fun `deleteComment throws ForbiddenException when the caller is not the author`() {
+        val ownerId = UUID.randomUUID()
+        val otherUserId = UUID.randomUUID()
+        val commentId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val comment = TableComment(id = commentId, postId = postId, userId = ownerId, content = "내용")
+
+        `when`(commentRepository.findById(commentId)).thenReturn(Optional.of(comment))
+
+        assertThrows(ForbiddenException::class.java) {
+            commentService.deleteComment(commentId, otherUserId)
+        }
+    }
+
+    @Test
     fun `deleteImagesForPost 는 댓글 이미지를 커밋 이후에만 스토리지에서 지운다`() {
         val postId = UUID.randomUUID()
         val (imageUrl) = imageUrls(1)
@@ -346,6 +362,21 @@ class CommentServiceTest {
             commentService.updateComment(UUID.randomUUID(), UUID.randomUUID(), contentOfBytes(6_003), null)
         }
         verifyNoInteractions(commentRepository)
+    }
+
+    @Test
+    fun `updateComment throws ForbiddenException when the caller is not the author`() {
+        val ownerId = UUID.randomUUID()
+        val otherUserId = UUID.randomUUID()
+        val commentId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val comment = TableComment(id = commentId, postId = postId, userId = ownerId, content = "내용")
+
+        `when`(commentRepository.findById(commentId)).thenReturn(Optional.of(comment))
+
+        assertThrows(ForbiddenException::class.java) {
+            commentService.updateComment(commentId, otherUserId, "수정 내용", null)
+        }
     }
 
     @Test

@@ -72,8 +72,7 @@ class CommentController(private val commentService: CommentService) {
 
     @Operation(
         summary = "댓글 삭제",
-        description = "실패: 404 NOT_FOUND(댓글 없음). 작성자가 아니면 403 이 아니라 500 " +
-            "INTERNAL_SERVER_ERROR 로 응답한다(IllegalAccessException 전용 핸들러가 없음 — 알려진 결함, 이 문서화 작업 범위 밖).",
+        description = "실패: 404 NOT_FOUND(댓글 없음) · 403 FORBIDDEN(작성자가 아님)",
     )
     @DeleteMapping("/comment/{commentId}")
     fun deleteComment(
@@ -86,9 +85,9 @@ class CommentController(private val commentService: CommentService) {
 
     @Operation(
         summary = "댓글 수정",
-        description = "실패: 404 NOT_FOUND(댓글 없음) · 400 INVALID_INPUT(이미지 개수·본문 길이 초과). " +
-            "작성자가 아니거나 이미 삭제된 댓글이면 403/409 가 아니라 500 INTERNAL_SERVER_ERROR 로 " +
-            "응답한다(전용 핸들러 없음 — 알려진 결함, 이 문서화 작업 범위 밖).",
+        description = "실패: 404 NOT_FOUND(댓글 없음) · 400 INVALID_INPUT(이미지 개수·본문 길이 초과) · " +
+            "403 FORBIDDEN(작성자가 아님). 이미 삭제된 댓글이면 409가 아니라 500 " +
+            "INTERNAL_SERVER_ERROR 로 응답한다(IllegalStateException 전용 핸들러가 없음 — 알려진 결함, 이 수정 범위 밖).",
     )
     @PatchMapping("/comment/{commentId}")
     fun updateComment(
