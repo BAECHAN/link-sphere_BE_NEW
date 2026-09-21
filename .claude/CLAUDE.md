@@ -345,7 +345,12 @@ fun createFolder(
     @RequestBody request: CreateFolderRequest,
     authentication: Authentication   // nullable 아님 → Security가 보장
 ): ApiResponse<FolderResponse> {
-    val userId = authentication.getUserId() ?: throw IllegalArgumentException("User not authenticated")
+    // Security가 인증을 보장하므로 이 분기는 "인증 안 됨"이 아니라 "이미 검증된 토큰의
+    // principal이 UUID로 파싱 안 됨" - 있으면 안 되는 내부 불변조건 위반이다. 그래서
+    // IllegalArgumentException(→404)이 아니라 IllegalStateException(전용 핸들러 없이
+    // catch-all → 500)을 쓴다 (2026-09-21 정정, `CommentController.kt`의
+    // `toRequiredUserId()`가 원래 이 패턴이었다).
+    val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
     return ApiResponse(HttpStatus.CREATED.value(), "폴더 생성 성공", service.createFolder(userId, request))
 }
 

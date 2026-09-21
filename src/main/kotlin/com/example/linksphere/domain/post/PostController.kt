@@ -25,7 +25,7 @@ class PostController(private val postService: PostService) {
         @RequestBody request: PostCreateRequest,
         authentication: Authentication,
     ): ApiResponse<PostResponse> {
-        val userId = authentication.getUserId() ?: throw IllegalArgumentException("User not authenticated")
+        val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
         val post = postService.createPost(userId, request)
         return ApiResponse(HttpStatus.CREATED.value(), "Post created", post)
     }
@@ -78,7 +78,7 @@ class PostController(private val postService: PostService) {
         @RequestBody request: PostUpdateRequest,
         authentication: Authentication,
     ): ApiResponse<PostResponse> {
-        val userId = authentication.getUserId() ?: throw IllegalArgumentException("User not authenticated")
+        val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
         val post = postService.updatePost(id, userId, request)
         return ApiResponse(HttpStatus.OK.value(), "Post updated", post)
     }
@@ -93,7 +93,7 @@ class PostController(private val postService: PostService) {
         @RequestBody request: PostVisibilityUpdateRequest,
         authentication: Authentication,
     ): ApiResponse<PostResponse> {
-        val userId = authentication.getUserId() ?: throw IllegalArgumentException("User not authenticated")
+        val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
         val post = postService.updatePostVisibility(id, userId, request)
         return ApiResponse(HttpStatus.OK.value(), "Post visibility updated", post)
     }
@@ -108,7 +108,7 @@ class PostController(private val postService: PostService) {
         @PathVariable id: UUID,
         authentication: Authentication,
     ): ApiResponse<Unit> {
-        val userId = authentication.getUserId() ?: throw IllegalArgumentException("User not authenticated")
+        val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
         postService.deletePost(id, userId)
         return ApiResponse(HttpStatus.OK.value(), "Post deleted", Unit)
     }
