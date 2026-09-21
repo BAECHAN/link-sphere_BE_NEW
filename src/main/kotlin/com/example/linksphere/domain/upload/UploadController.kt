@@ -25,7 +25,7 @@ class UploadController(private val uploadService: UploadService) {
         @RequestBody request: UploadUrlRequest,
         authentication: Authentication,
     ): ApiResponse<UploadUrlResponse> {
-        authentication.getUserId() ?: throw IllegalArgumentException("User not authenticated")
+        authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
         return ApiResponse(
             HttpStatus.CREATED.value(),
             "서명된 업로드 URL 발급 성공",

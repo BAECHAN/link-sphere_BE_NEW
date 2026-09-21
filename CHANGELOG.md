@@ -69,6 +69,14 @@
 
   </details>
 
+- `auth` 인증 필수 엔드포인트의 원칙적으로 불가능한 인증 실패 케이스가 404로 잘못 응답되던 문제 수정
+  <details><summary>배경·구현</summary>
+
+  `PostController`·`InteractionController`·`BookmarkFolderController`·`UploadController`가 `authentication.getUserId() ?: throw IllegalArgumentException("User not authenticated")` 패턴을 쓰고 있었는데, `GlobalExceptionHandler`가 `IllegalArgumentException`을 전부 404 NOT_FOUND로 매핑해 메시지와 상태 코드가 어긋났다. `.claude/CLAUDE.md`의 "Never 새 예외 클래스 없이 IllegalArgumentException 남용" 규칙과도 정면으로 충돌하는 코드였다(그 규칙 바로 아래 "인증 처리 패턴" 예시 코드 자체가 이 패턴을 쓰고 있었다). `SecurityConfig.kt`의 `.anyRequest().authenticated()`를 확인한 결과 이 컨트롤러들의 엔드포인트는 전부 그 대상이라, Security가 이미 인증을 보장한 뒤에만 컨트롤러에 도달한다 - 즉 이 분기가 실제로 걸리는 유일한 경우는 "인증 자체가 안 됨"이 아니라 "이미 검증된 토큰의 principal이 UUID로 파싱되지 않음"이라는, 있으면 안 되는 내부 불변조건 위반이다. 같은 문제를 `CommentController.kt`의 `toRequiredUserId()`는 이미 `IllegalStateException`(전용 핸들러가 없어 catch-all → 500)으로 올바르게 처리하고 있어, 나머지 4개 컨트롤러도 그 선례에 맞춰 `IllegalStateException`으로 통일했다. `.claude/CLAUDE.md`의 예시 코드도 함께 정정했다.
+  (`PostController.kt`, `InteractionController.kt`, `BookmarkFolderController.kt`, `UploadController.kt`, `.claude/CLAUDE.md`)
+
+  </details>
+
 ### Removed
 
 - `bookmark` FE에서 호출하는 곳이 없는 폴더 순서 재정렬(reorder) 엔드포인트 제거
