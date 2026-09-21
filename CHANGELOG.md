@@ -30,6 +30,14 @@
 
   </details>
 
+- `infra` ArchUnit 도입 - Controller-Repository 직접 참조 금지, Service 간 도메인 순환 의존 금지 규칙 2개 추가
+  <details><summary>배경·구현</summary>
+
+  PostService가 BookmarkFolderService를 참조하고 BookmarkFolderService가 다시 PostService를 참조하는 순환 의존이 있었는데, 코드 리뷰로는 못 잡고 Spring이 빈 생성 시점에 기동을 못 하는 형태로만 드러났다(`PostResponseAssembler`로 분리해 해결). 같은 종류의 문제를 CI가 자동으로 잡도록, 컴파일된 바이트코드만 분석해 DB·Spring 컨텍스트 없이 수십 ms 안에 끝나는 ArchUnit을 도입했다. 전체 레이어링을 강제하는 게 목표가 아니라 최소한의 규칙 2개만 뒀다: (1) Controller가 Repository를 직접 참조하지 않는다 (2) `*Service` 클래스만 도메인별로 슬라이스로 묶어(커스텀 `SliceAssignment`) 그 슬라이스끼리 순환 의존이 없어야 한다. Repository를 도메인 간에 한쪽 방향으로만 참조하는 건 이 레포에서 이미 흔한 정상 패턴이라(`PostService`가 `interaction` 도메인 Repository를 쓰는 것 등) 패키지 전체를 슬라이스로 잡는 일반적인 방식은 오탐이 났다 - `*Service` 클래스만 걸러 슬라이스로 잡아 해결했다. 두 규칙 모두 실제로 걸리는지 임시로 `CategoryService`에 `PostService` 의존을 추가해 순환을 만들어 테스트가 실패하는 것까지 확인한 뒤 되돌렸다.
+  (`build.gradle.kts`, `ArchitectureRulesTest.kt`(신규))
+
+  </details>
+
 ### Changed
 
 - `post` 게시글 목록의 categories N+1 쿼리 제거
