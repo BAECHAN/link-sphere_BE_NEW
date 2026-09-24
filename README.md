@@ -222,7 +222,7 @@ http://localhost:8080/api/swagger-ui/index.html
 
 **⚠️ 이 스펙 JSON을 FE가 실제로 소비합니다.** FE 레포는 `openapi-typescript`로
 이 스펙을 읽어 응답 타입을 코드젠하고(`src/shared/api/generated/`, 상세는 FE
-`docs/OPENAPI-CODEGEN.md` 참고), `openapi-drift-check.yml`이 6시간마다 운영
+`docs/OPENAPI-CODEGEN.md` 참고), `openapi-drift-check.yml`이 매일 한 번 운영
 `/api/v3/api-docs`를 호출해 FE에 커밋된 스냅샷과 비교합니다 — 불일치하면 FE
 레포에 GitHub Issue가 자동으로 열립니다. 즉 BE에서 DTO 필드를 추가/제거하거나
 nullable 여부를 바꾸면 FE 레포에 영향이 전파됩니다.
