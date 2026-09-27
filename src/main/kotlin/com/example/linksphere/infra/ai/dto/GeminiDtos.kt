@@ -28,15 +28,17 @@ data class AiAnalysisResult(
 )
 
 // embedContent 전용 - generateContent와 URL 경로는 같은 패밀리지만 요청 바디는 완전히
-// 다르다(공식 문서: ai.google.dev/api/embeddings). generateContent와 달리 모델명을
-// URL뿐 아니라 바디에도 "models/{model}" 형태로 함께 보내야 한다.
+// 다르다. generateContent와 달리 모델명을 URL뿐 아니라 바디에도 "models/{model}" 형태로
+// 함께 보내야 한다. outputDimensionality는 공식 문서(ai.google.dev/api/embeddings)가
+// "권장"이라고 설명한 config.outputDimensionality 중첩 형태로 보내면
+// gemini-embedding-2가 400("Unknown name \"config\"")으로 거부한다 - 실제로 curl로
+// 직접 호출해 확인한 결과 최상위 outputDimensionality 필드라야 받아들인다(2026-09-27,
+// 문서 예시가 이 모델 버전과 안 맞았던 것으로 보인다).
 data class EmbedContentRequest(
     val model: String,
     val content: Content,
-    val config: EmbedContentConfig? = null,
+    val outputDimensionality: Int? = null,
 )
-
-data class EmbedContentConfig(val outputDimensionality: Int? = null)
 
 data class EmbedContentResponse(val embedding: ContentEmbedding?)
 
