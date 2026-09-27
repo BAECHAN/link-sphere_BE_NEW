@@ -1,6 +1,6 @@
 # Link-Sphere BE — 게시글 AI 분석 비동기화 (2026-08-01)
 
-> 마지막 검토: 2026-09-09
+> 마지막 검토: 2026-09-27
 
 ## 1. 문제
 
@@ -645,7 +645,83 @@ aiSummary=null, PENDING/FAILED 1시간 경과)는 `--url-like` 값과 무관하�
 §5.6의 "공식 API도 대안이 아니다"는 `captions.download`(자막) 한정이다. 영상 **설명**을
 가져오는 `videos.list`는 API 키만으로 되고 OAuth가 필요 없어, 이번 §5.7에서 채택했다.
 
-### 5.8 남은 것
+### 5.9 원인 ⑦ — 도쿄 IP 때문에 인프런·YouTube 링크가 일본어로 수집됐다 (2026-09-27)
+
+운영 게시글 실측: 인프런 강의 URL을 등록하면 제목·설명·AI 요약이 전부 일본어로 저장됐다
+(`postId 6dc0471e-...`). YouTube 커뮤니티 게시물 1건도 제목이 일본어 문구
+(`...さんからの投稿`)로 저장돼 있었다(`postId ea4afc65-...`, 2026-02-24). 원인은 두 사이트가
+서로 다르다 - `safeConnect`가 `Accept-Language` 헤더를 아예 안 보낸다는 점은 같지만, 그
+결과로 벌어지는 일은 다르다.
+
+```mermaid
+flowchart TD
+    A["safeConnect가 URL 요청<br/>(Accept-Language 헤더 없음, 2026-09-27 이전)"] --> B{"사이트가<br/>언어를 어떻게 정하나?"}
+    B -->|"YouTube: 요청 헤더를 그대로 따름"| C["도쿄 Lambda 요청 → ja-JP 응답"]
+    B -->|"인프런: 접속 국가로 정함<br/>(클라이언트에 리다이렉트 안 보임)"| D["도쿄 Lambda 요청 → 같은 URL이 그대로 ja 응답<br/>(307 없음, 엣지에서 오리진 경로만 바뀜)"]
+
+    C --> E["og:title·title 태그가 일본어<br/>Gemini가 원문 언어 유지 지시받아<br/>AI 요약도 일본어"]
+    D --> E
+
+    E --> F["수정 1: Accept-Language: ko-KR 추가"]
+    F --> G{"헤더로 해결되나?"}
+    G -->|"YouTube: 예"| H["ko-KR 응답"]
+    G -->|"인프런: 아니오(도쿄 재현 실측)<br/>언어 접두 경로만 지역 무관 한국어"| I["수정 2: 알려진 호스트에 한해<br/>요청 전 /ko 접두어 강제 삽입"]
+    I --> K["ko 응답"]
+```
+
+**증거 (2026-09-27, 도쿄 리전 실측)**:
+
+| 대상 | 헤더 없음 | `Accept-Language: ko-KR` |
+| --- | --- | --- |
+| 인프런 원본 URL(`/course/.../dashboard?cid=...`, 언어 접두어 없음) | 200, `lang=ja`, 리다이렉트 없음 | 200, `lang=ja` (동일) |
+| 인프런 `/ko/course/...?cid=...`(언어 접두어 있음) | 200, `lang=ko` | 200, `lang=ko` (동일) |
+| YouTube 커뮤니티 게시물 | 200, `lang=ja-JP` | 200, `lang=ko-KR` |
+
+재현 방법: BE Lambda와 같은 리전(`ap-northeast-1`)에서 실행해야 하는데, 이 세션은 AWS
+계정에 새 Lambda를 만드는 동작이 하네스에서 차단돼(공유 리소스 변경) 직접 만들지 못했다.
+대신 사용자가 AWS CloudShell(도쿄 리전)에서 `safeConnect`와 동일한 User-Agent·Referer로
+위 요청을 직접 실행해 결과를 전달했다.
+
+**원인 분석**:
+
+- 인프런은 Next.js i18n을 쓰고 `localeDetection:false`·`defaultLocale:"ko"`로 설정돼
+  있다(페이지에 심긴 설정 직접 확인) - 이 설정만 보면 접두어 없는 URL은 지역과 무관하게
+  항상 한국어(defaultLocale)가 나와야 한다. 그런데 실제로는 도쿄에서 일본어가 나오고,
+  그 과정에 클라이언트가 보는 리다이렉트가 전혀 없다 - 즉 Next.js 라우팅이 아니라 그
+  앞단(CloudFront 추정)에서 접속 국가를 보고 오리진 요청 경로를 안 보이게 바꿔치기하는
+  것으로 추정된다. 그 라우팅 설정 자체는 이 레포 밖(인프런 인프라)이라 직접 확인은 못
+  했다.
+- YouTube는 이런 엣지 레벨 재작성이 없어 `Accept-Language`를 그대로 따른다 - 헤더
+  추가만으로 충분하다.
+- 인프런의 언어 접두 경로(`/ko/`, `/en/`, `/ja/`, `/vi/` - `hreflang` alternate 링크로
+  실측)는 이 엣지 재작성 대상이 아닌 듯, 접속 지역과 무관하게 항상 그 언어를 돌려준다.
+  단, `/course/.../dashboard` 서브경로는 인증 없이 접근하면 언어 접두어·쿼리를 지우고
+  `/course/{slug}`로 307 리다이렉트한다(로컬 확인) - 그래서 `applyLocaleOverride`를
+  `safeConnect`의 매 홉마다(리다이렉트로 접두어가 지워진 뒤에도) 다시 적용한다.
+
+**수정 — `UrlMetadataExtractor.kt`**:
+
+1. `safeConnect`에 `Accept-Language: ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7` 헤더 추가.
+2. `LOCALE_OVERRIDE_HOSTS`(호스트 → 강제 로케일 맵, 현재 `inflearn.com` → `ko` 하나)에 있는
+   호스트는 경로 첫 세그먼트가 이미 알려진 로케일(`ko`/`en`/`vi`/`ja`)이 아니면 `/ko`를
+   강제로 끼워 넣는다(`applyLocaleOverride`, 매 홉마다 적용).
+
+**남은 한계**:
+
+- `LOCALE_OVERRIDE_HOSTS`는 지금 인프런 하나만 등록돼 있다. 같은 패턴(엣지 레벨 국가별
+  라우팅 + 언어 접두 경로)의 다른 사이트를 만나면 이 맵에 한 줄을 추가해야 한다 - 자동
+  감지가 아니다.
+- 엣지가 정확히 무엇으로 판단하는지(접속 IP의 GeoIP, 별도 헤더 등)는 인프런 인프라
+  내부라 확정하지 못했다 - 리다이렉트가 전혀 없다는 관찰 결과로부터의 추정이다.
+- 이미 저장된 기존 게시글(인프런 1건, YouTube 커뮤니티 1건)은 이 수정과 별개로 수동
+  재수집이 필요하다.
+- `applyLocaleOverride`는 `safeConnect`를 공유하는 RSS 피드 수집(`FeedParser.fetch`)에도
+  똑같이 적용된다. 지금 시딩된 피드 소스(`sql/create_feed_sources.sql`) 중 `inflearn.com`은
+  없어 당장 영향은 없지만, 나중에 그 호스트의 피드를 추가하면 `/ko` 강제 접두가 피드 URL
+  자체에도 걸려 피드가 깨질 수 있다 - 피드 소스를 추가할 때 `LOCALE_OVERRIDE_HOSTS`와
+  겹치는지 확인해야 한다.
+
+### 5.10 남은 것
 
 - Lambda 비동기(Event) 호출은 실패 시 최대 2회 재시도 후 DLQ 없이 조용히
   유실된다(이 레포에 DLQ/`event-invoke-config` 설정 없음) — 원인 ②처럼
