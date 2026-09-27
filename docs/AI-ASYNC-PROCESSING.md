@@ -716,7 +716,9 @@ flowchart TD
 - 정정(2026-09-27): 이미 저장돼 있던 기존 게시글(인프런 1건, YouTube 커뮤니티 1건)은
   이 수정과 별개로 수동 재수집이 필요했다. `PostLocaleBackfillRunner`(신규)로 재수집을
   완료했고, 두 게시글 모두 title·description·aiSummary가 한국어인 것을 프로덕션 API로
-  확인했다.
+  확인했다. 이 2건은 사용자가 직접 발견한 것이라 `PostJapaneseContentScanner`(신규)로
+  전체 233건을 전수조사해 추가 9건(대부분 로케일 수정 전 크롤링된 오래된 YouTube
+  데이터, 1건은 실제 다국어 해시태그 포함 오탐)을 찾아 같은 방식으로 재수집했다.
 - `applyLocaleOverride`는 `safeConnect`를 공유하는 RSS 피드 수집(`FeedParser.fetch`)에도
   똑같이 적용된다. 지금 시딩된 피드 소스(`sql/create_feed_sources.sql`) 중 `inflearn.com`은
   없어 당장 영향은 없지만, 나중에 그 호스트의 피드를 추가하면 `/ko` 강제 접두가 피드 URL

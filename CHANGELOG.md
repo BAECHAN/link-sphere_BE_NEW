@@ -88,6 +88,24 @@
 
   </details>
 
+- `post` 도쿄 리전 오염 전수조사 도구 신설, 추가 발견 8건 재수집
+  <details><summary>배경·구현</summary>
+
+  위에서 고친 2건은 사용자가 직접 발견해 보고한 것이지 전수조사 결과가 아니었다.
+  `PostJapaneseContentScanner`(로컬 읽기 전용 CLI, 전체 게시글의 title·description·
+  aiSummary에 히라가나·가타카나가 섞여 있는지 검사 - 한자만으로는 한국어 한자 병기와
+  오탐 가능성이 있어 판정하지 않는다)를 신설해 전체 233건을 스캔한 결과 9건이 추가로
+  나왔다. 전부 YouTube 링크로, 그중 2건(Shorts)은 §5.9와 무관한 별개 원인(§5.7 "셸
+  페이지" - 크롤링이 본문 대신 YouTube 기본 안내문을 긁는 문제)이었고, 1건은 실제
+  일본어 해시태그(`#ワンピース`)가 포함된 정상 다국어 제목이라 오탐이었다. 나머지
+  6건은 위 로케일 수정 전에 크롤링된 오래된 데이터가 그대로 남아있던 것이었다.
+  `PostLocaleBackfillRunner`로 9건 전부(오탐 포함 - title·description을 그대로
+  덮어써도 무해했다) 재수집해 반영했다. 반영 후 프로덕션 API로 9건 모두
+  title·description·aiSummary가 한국어(또는 원본 그대로)인 것을 확인했다.
+  (`tools/PostJapaneseContentScanner.kt`(신규))
+
+  </details>
+
 - `comment` 댓글 삭제·수정 권한 실패를 500 대신 403으로 응답
   <details><summary>배경·구현</summary>
 
