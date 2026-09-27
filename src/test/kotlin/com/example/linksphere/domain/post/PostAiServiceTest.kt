@@ -7,8 +7,12 @@ import com.example.linksphere.infra.aws.AiJobDispatcher
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
+import org.mockito.ArgumentMatchers
+import org.mockito.ArgumentMatchers.anyString
 import org.mockito.InjectMocks
 import org.mockito.Mock
+import org.mockito.Mockito.never
+import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 import org.mockito.junit.jupiter.MockitoExtension
 import java.util.Optional
@@ -41,6 +45,12 @@ class PostAiServiceTest {
         description = description,
         categories = mutableSetOf(category),
     )
+
+    // Mockito ArgumentMatchers.eq()는 자바에서 null을 반환해 Kotlin non-null 파라미터
+    // (UUID)를 검증할 때 "eq(...) must not be null" NPE가 난다. 이 레포에 mockito-kotlin
+    // 의존성이 없어, 이 매칭 시도가 던지는 null을 실제 값으로 대체해 부작용(매처 등록)만
+    // 남기는 우회 함수를 이 테스트 파일 안에서만 둔다.
+    private fun <T> eqNotNull(value: T): T = ArgumentMatchers.eq(value) ?: value
 
     private fun event(postId: UUID) = PostCreatedEvent(
         postId = postId,
@@ -157,5 +167,49 @@ class PostAiServiceTest {
         postAIService.processAiJob(event(postId))
 
         assertEquals("기존 요약", target.aiSummary)
+    }
+
+    @Test
+    fun `processAiJob은 성공하면 임베딩을 저장한다`() {
+        val postId = UUID.randomUUID()
+        val target = post(title = "이미 좋은 제목입니다")
+        `when`(postRepository.findById(postId)).thenReturn(Optional.of(target))
+        `when`(geminiService.analyzeContentAsync("이미 좋은 제목입니다", null, "본문 내용"))
+            .thenReturn(CompletableFuture.completedFuture(AiAnalysisResult(summary = "요약", tags = emptyList())))
+        val embedding = FloatArray(768) { 0.1f }
+        `when`(geminiService.embedDocument(anyString())).thenReturn(embedding)
+
+        postAIService.processAiJob(event(postId))
+
+        verify(postRepository).updateEmbedding(postId, PostEmbeddingText.toVectorLiteral(embedding))
+    }
+
+    @Test
+    fun `processAiJob은 임베딩이 실패해도 이미 저장된 요약 결과를 되돌리지 않는다`() {
+        val postId = UUID.randomUUID()
+        val target = post(title = "이미 좋은 제목입니다")
+        `when`(postRepository.findById(postId)).thenReturn(Optional.of(target))
+        `when`(geminiService.analyzeContentAsync("이미 좋은 제목입니다", null, "본문 내용"))
+            .thenReturn(CompletableFuture.completedFuture(AiAnalysisResult(summary = "요약", tags = emptyList())))
+        `when`(geminiService.embedDocument(anyString())).thenThrow(RuntimeException("Gemini 임베딩 API 오류"))
+
+        postAIService.processAiJob(event(postId))
+
+        assertEquals(AiStatus.COMPLETED, target.aiStatus)
+        assertEquals("요약", target.aiSummary)
+    }
+
+    @Test
+    fun `processAiJob은 임베딩이 null이면 저장을 시도하지 않는다`() {
+        val postId = UUID.randomUUID()
+        val target = post(title = "이미 좋은 제목입니다")
+        `when`(postRepository.findById(postId)).thenReturn(Optional.of(target))
+        `when`(geminiService.analyzeContentAsync("이미 좋은 제목입니다", null, "본문 내용"))
+            .thenReturn(CompletableFuture.completedFuture(AiAnalysisResult(summary = "요약", tags = emptyList())))
+        `when`(geminiService.embedDocument(anyString())).thenReturn(null)
+
+        postAIService.processAiJob(event(postId))
+
+        verify(postRepository, never()).updateEmbedding(eqNotNull(postId), anyString())
     }
 }

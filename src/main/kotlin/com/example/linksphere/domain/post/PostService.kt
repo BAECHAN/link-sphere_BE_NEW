@@ -219,6 +219,10 @@ class PostService(
             post.tags = metadata.tags.toMutableList()
             post.ogImage = metadata.ogImage
             post.aiSummary = null
+            // 임베딩도 aiSummary와 같은 이유로 리셋한다 - embedding은 insertable/updatable=false라
+            // save(post)로는 안 지워지므로 네이티브 UPDATE로 직접 null을 쓴다. 재수집으로 새
+            // PostCreatedEvent가 발행되면(아래) AI 잡이 새 임베딩으로 다시 채운다.
+            postRepository.updateEmbedding(id, null)
         } else if (metadata != null) {
             // 제목만 비운 재수집은 "제목을 다시 가져와 달라"지 "이 글을 초기화해 달라"가 아니다.
             // 제목이 빈약한 페이지는 본문·썸네일도 못 긁히는 같은 껍데기 페이지라, 여기서 전면

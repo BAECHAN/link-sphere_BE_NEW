@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.transaction.event.TransactionPhase
 import org.springframework.transaction.event.TransactionalEventListener
+import java.util.UUID
 
 @Service
 class PostAIService(
@@ -114,6 +115,12 @@ class PostAIService(
             // saveAndFlush로 즉시 flush시켜 예외가 여기 catch 블록 범위 안에서 나게 만든다.
             postRepository.saveAndFlush(post)
             logger.info("[AI] 분석 완료 - postId: $postId, summary: ${newSummary?.take(100)}, tags: $mergedTags")
+
+            // 임베딩은 요약과 독립된 실패 단위다 - runCatching으로 감싸 실패해도 위에서 이미
+            // 커밋된 COMPLETED 상태·요약을 FAILED로 되돌리지 않는다.
+            runCatching { geminiService.embedDocument(PostEmbeddingText.document(post)) }
+                .onSuccess { embedding -> if (embedding != null) saveEmbedding(postId, embedding) }
+                .onFailure { e -> logger.warn("[AI] 임베딩 실패(요약은 유지) - postId: $postId", e) }
         } catch (e: ObjectOptimisticLockingFailureException) {
             // saveAndFlush가 실패하면 Hibernate 세션이 이미 오염돼(rollback-only) 이 트랜잭션은
             // 커밋할 수 없다. 여기서 삼키고 정상 리턴하면 트랜잭션 매니저가 커밋을 시도하다가
@@ -127,5 +134,15 @@ class PostAIService(
             post.aiStatus = AiStatus.FAILED
             postRepository.saveAndFlush(post)
         }
+    }
+
+    /**
+     * 임베딩 저장 - 네이티브 @Modifying UPDATE라 트랜잭션이 있어야 실행된다. processAiJob
+     * 안에서는 이미 트랜잭션이 열려 있어 이 메서드를 거치지 않아도 되지만, 트랜잭션 밖
+     * (CommandLineRunner)에서 부르는 PostEmbeddingBackfillRunner를 위해 별도로 공개한다.
+     */
+    @Transactional
+    fun saveEmbedding(postId: UUID, embedding: FloatArray) {
+        postRepository.updateEmbedding(postId, PostEmbeddingText.toVectorLiteral(embedding))
     }
 }

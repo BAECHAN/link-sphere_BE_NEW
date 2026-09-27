@@ -39,4 +39,16 @@ interface PostRepository :
     @Modifying
     @Query("UPDATE TablePost p SET p.viewCount = COALESCE(p.viewCount, 0) + 1 WHERE p.id = :id")
     fun incrementViewCount(@Param("id") id: UUID)
+
+    // embedding은 TablePost에 insertable/updatable=false로 매핑돼 있어 JPA save()로는
+    // 못 쓴다 - 항상 이 네이티브 UPDATE로만 쓴다. embeddingLiteral은 "[0.1,0.2,...]" 형식
+    // 문자열이나 null(리셋용)이고, CAST가 Postgres의 vector 입력 파싱을 그대로 쓴다.
+    @Modifying
+    @Query(value = "UPDATE posts SET embedding = CAST(:embeddingLiteral AS vector) WHERE id = :id", nativeQuery = true)
+    fun updateEmbedding(@Param("id") id: UUID, @Param("embeddingLiteral") embeddingLiteral: String?)
+
+    // 백필 대상: 임베딩이 없는 글 중 1시간 이상 지난 것만 - PostAiBackfillRunner와 동일한
+    // 이유로, 방금 등록돼 AI 잡이 진행 중인 글을 동시에 건드리지 않기 위함이다.
+    @Query(value = "SELECT * FROM posts WHERE embedding IS NULL AND created_at < :before ORDER BY created_at", nativeQuery = true)
+    fun findAllWithoutEmbeddingCreatedBefore(@Param("before") before: LocalDateTime): List<TablePost>
 }
