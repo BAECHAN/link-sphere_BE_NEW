@@ -1,6 +1,6 @@
 # Link-Sphere BE — CI 검사 게이트 정비 (2026-09-03)
 
-> 마지막 검토: 2026-09-04
+> 마지막 검토: 2026-09-27
 
 ## 1. 쉬운 설명
 
@@ -162,6 +162,43 @@ CI 설정뿐이라 애플리케이션 로직 리스크는 없었지만, 규칙�
 아니라 애초에 지켰어야 했던 순서였다. 이후 FE 쪽 동일 작업에서는 push 전에
 먼저 확인을 받고 진행했다.
 
+### 7.5 ktlint pre-commit 훅이 워크트리에서 조용히 반쯤 무력화됨
+
+이 게이트와 별개로, ktlint-gradle이 생성한 로컬 `.git/hooks/pre-commit`(당시
+`addKtlintCheckGitPreCommitHook`으로 설치, `ci.yml`/`deploy.yml`이 도는 CI 게이트와는
+무관한 로컬 편의 장치)이 워크트리에서 커밋할 때마다 `Not a directory` 에러를 출력하는
+게 다른 세션에서 발견됐다. 훅이 미스테이징 변경을 잠깐 치웠다가 되돌리는 임시 패치
+경로를 `.git/unstaged-ktlint-git-hook.diff`로 하드코딩했는데, 워크트리에서는 `.git`이
+디렉터리가 아니라 `gitdir: ...`을 담은 파일이기 때문이다. `set +e`로 시작하는 훅이라
+커밋 자체는 막히지 않아 몇 주간 에러 메시지만 찍힌 채 방치돼 있었다.
+
+실측으로 확인한 실제 영향 범위는 처음 우려한 것보다 좁았다 — 다른 워크트리의 변경이
+섞여 들어가는 게 아니라(워크트리마다 워킹 디렉터리가 격리돼 있어 애초에 안 보인다),
+**같은 파일을 부분 스테이징(`git add -p`)할 때만** 격리 실패가 검사 대상을 스테이징본
+대신 워킹 트리본으로 바꿔치기했다. `PostJapaneseContentScanner.kt`를 부분 스테이징해
+재현한 결과, 고치기 전 훅은 스테이징에 없는 위반 때문에 엉뚱하게 실패했고 고친 훅은
+스테이징본만 보고 통과했다.
+
+upstream(`org.jlleitschuh.gradle.ktlint` 14.2.0, 최신)도 이 문제가 있고, 고치는 PR
+([JLLeitschuh/ktlint-gradle#605](https://github.com/JLLeitschuh/ktlint-gradle/pull/605))은
+2022-09부터 머지되지 않은 채 방치돼 있다. 플러그인이 훅 내용이나 설치 위치를
+커스터마이즈하는 확장 포인트를 제공하지 않아 `build.gradle.kts`로는 고칠 수 없었다.
+대신 훅 스크립트 자체를 `.githooks/pre-commit`으로 레포에 커밋하고
+`git config core.hooksPath .githooks`로 가리키게 했다 — [git 공식 문서](https://git-scm.com/docs/githooks)에
+따르면 상대 경로 `core.hooksPath`는 _"워킹 트리의 루트"_ 기준으로 풀리므로(번역),
+워크트리마다 자기 자신의 `.githooks/`를 쓰게 된다. 패치 경로도
+`$(git rev-parse --git-dir)` 기준으로 바꿔 워크트리별로 자기 실제 gitdir
+(`.git/worktrees/<name>/`)을 가리키게 했다.
+
+격리가 실제로 동작하기 시작하면 원본 스크립트에 없던 위험이 하나 생긴다 — 이전에는
+격리 단계 자체가 항상 실패해서 발동하지 않던 "치웠다가 되돌리기 실패 시 변경을 잃는"
+경로가 살아난다. 원본은 되돌리기 성공 여부와 무관하게 임시 패치를 항상 `rm`한다.
+그래서 두 가드를 원본에 없이 추가했다: 이전 실행이 남긴 패치가 있으면 덮어쓰지 않고
+안내 후 중단, 되돌리기가 실패하면 패치를 지우지 않고 안내 후 중단. `core.hooksPath`는
+클론마다 한 번 수동 설정이 필요해(`README.md` "pre-commit 훅 연결"), 머지 시점에 이미
+있던 다른 워크트리들은 각자 한 번씩 pull해야 새 훅을 받는다 — 그 전까지는 로컬 훅
+없이 PR CI(`ci.yml`)의 `ktlintCheck`에만 의존한다.
+
 ## 8. 남은 것
 
 - 이번 검증은 `push`(수동 트리거인 `workflow_dispatch`가 아니라 직접 push)로
@@ -172,7 +209,10 @@ CI 설정뿐이라 애플리케이션 로직 리스크는 없었지만, 규칙�
 
 ## 관련 문서
 
-- [`CHANGELOG.md`](../CHANGELOG.md) — `[Unreleased]`/`Changed`의 `infra` 항목
+- [`CHANGELOG.md`](../CHANGELOG.md) — `[Unreleased]`/`Fixed`의 `infra` 항목(pre-commit
+  훅), `[0.9.0]`/`Changed`의 `infra` 항목(PR·배포 게이트)
+- [JLLeitschuh/ktlint-gradle#605](https://github.com/JLLeitschuh/ktlint-gradle/pull/605) —
+  §7.5에서 다룬 워크트리 미머지 이슈
 - [`.claude/CLAUDE.md`](../.claude/CLAUDE.md) — ignore 패턴 `**/` prefix 규칙
 - FE 레포(`link-sphere_FE_NEW`) `docs/CI-CHECK-GATE.md` — 같은 작업의 FE 관점
   (실제 유령 오류 2,370건이 발견된 쪽. 별도 git 저장소라 링크 대신 경로만 표기)

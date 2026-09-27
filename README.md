@@ -288,6 +288,17 @@ FCM을 사용하려면 `src/main/resources/firebase-service-account.json` 파일
 ./gradlew build
 ```
 
+### 4. pre-commit 훅 연결 (클론마다 1회)
+
+```bash
+git config core.hooksPath .githooks
+```
+
+커밋 전 자동으로 `ktlintCheck`를 실행하는 훅이다(`.githooks/pre-commit`). 상대 경로라
+클론·워크트리마다 한 번씩 실행해야 한다. ktlint-gradle 플러그인이 제공하는
+`./gradlew addKtlintCheckGitPreCommitHook`은 `git worktree`에서 깨지므로(`docs/CI-CHECK-GATE.md`
+§7.5) 쓰지 않는다.
+
 ---
 
 ## 🚀 배포 (Deployment)

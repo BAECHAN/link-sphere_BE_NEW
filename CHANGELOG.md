@@ -76,6 +76,32 @@
 
 ### Fixed
 
+- `infra` 워크트리에서 ktlint pre-commit 훅의 미스테이징 변경 격리가 조용히 깨지던 문제 수정
+  <details><summary>배경·구현</summary>
+
+  ktlint-gradle이 생성하는 `.git/hooks/pre-commit`은 커밋 전에 미스테이징 변경을 임시
+  패치로 빼뒀다가(`git diff` → `git apply -R`) 스테이징된 파일만 검사하고 되돌리는데,
+  패치 경로가 `.git/unstaged-ktlint-git-hook.diff`로 하드코딩돼 있다. 워크트리에서는
+  `.git`이 디렉터리가 아니라 `gitdir: ...`을 담은 파일이라 이 경로 자체가 성립하지 않아
+  `Not a directory` 에러가 나고, `set +e`로 시작하는 훅이라 실패해도 커밋은 그대로
+  진행된다. 실측 결과 대부분의 상황(파일 전체 스테이징)에서는 영향이 없었지만, 한
+  파일을 부분 스테이징(`git add -p`, IDE 청크 커밋)하면 격리가 안 돼 ktlint가 스테이징
+  본이 아니라 워킹 트리본을 검사해 엉뚱하게 실패하거나 통과하는 걸 재현으로 확인했다.
+  upstream 14.2.0(최신)도 이 문제가 있고, 고치는 PR
+  ([JLLeitschuh/ktlint-gradle#605](https://github.com/JLLeitschuh/ktlint-gradle/pull/605))은
+  2022-09부터 머지되지 않았다. 플러그인이 훅 내용을 커스터마이즈하는 설정을 제공하지
+  않아 `build.gradle.kts`로는 못 고치므로, 훅 스크립트를 `.githooks/pre-commit`으로
+  레포에 추적시키고 `core.hooksPath`로 가리키는 방식으로 옮겼다. 패치 경로를
+  `$(git rev-parse --git-dir)` 기준으로 바꿔 각 워크트리가 자기 gitdir을 쓰게 했고,
+  격리가 실제로 동작하기 시작하면서 새로 생기는 위험(훅이 중간에 죽으면 미스테이징
+  변경을 잃을 수 있음)을 막기 위해 남은 패치가 있으면 덮어쓰지 않고 중단하는 가드,
+  복원에 실패하면 패치를 지우지 않고 중단하는 가드를 원본에 없던 안전장치로 추가했다.
+  `core.hooksPath`는 클론마다 한 번 수동 설정이 필요하다(`README.md` "pre-commit 훅
+  연결").
+  (`.githooks/pre-commit`(신규), `docs/CI-CHECK-GATE.md` §7.5)
+
+  </details>
+
 - `post` 클라우드 IP 평판 차단으로 제목·설명을 못 가져온 링크를 무료 공개 프록시로 재시도
   <details><summary>배경·구현</summary>
 

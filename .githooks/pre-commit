@@ -1,0 +1,67 @@
+#!/bin/sh
+# Source: org.jlleitschuh.gradle.ktlint 14.2.0 (GitHook.kt), "check" hook variant.
+# Tracked at .githooks/pre-commit (see README.md "pre-commit 훅 연결") so it works in
+# every git worktree, unlike the plugin's own `.git/hooks/pre-commit` output which
+# hardcodes a `.git/...` path that breaks under `git worktree` (`.git` there is a file,
+# not a directory: "Not a directory" error). See docs/CI-CHECK-GATE.md §7.5.
+#
+# Deviations from the plugin-generated original:
+#   1. `diff` path uses `$(git rev-parse --git-dir)` instead of the hardcoded `.git/...`,
+#      so each worktree isolates its stash-and-restore file under its own real gitdir.
+#   2. If a stale diff file already exists when this hook starts, abort instead of
+#      overwriting it (a previous run may have died before restoring your changes).
+#   3. If restoring the stashed diff fails, keep the file and abort instead of `rm`-ing
+#      it (the original always deletes it, which can silently drop your unstaged work).
+#
+# If you upgrade org.jlleitschuh.gradle.ktlint, diff this file against the newly
+# generated `.git/hooks/pre-commit` to see if upstream changed the check logic
+# (e.g. the -PinternalKtlintGitFilter property) and port that change here.
+######## KTLINT-GRADLE HOOK START (worktree-safe fork) ########
+set +e
+CHANGED_FILES="$(git --no-pager diff --name-status --no-color --cached | awk '$1 != "D" && $NF ~ /\.kts?$/ { print $NF }')"
+
+if [ -z "$CHANGED_FILES" ]; then
+    echo "No Kotlin staged files."
+    exit 0
+fi;
+
+echo "Running ktlint over these files:"
+echo "$CHANGED_FILES"
+
+diff="$(git rev-parse --git-dir)/unstaged-ktlint-git-hook.diff"
+
+if [ -e "$diff" ]; then
+  echo "pre-commit: found a leftover patch at $diff from a previous run that didn't"
+  echo "finish restoring your unstaged changes. Not overwriting it."
+  echo "Inspect it, then either:"
+  echo "  git apply --ignore-whitespace \"$diff\" && rm \"$diff\"   # restore and clean up"
+  echo "  rm \"$diff\"                                              # discard if not needed"
+  exit 1
+fi
+
+git diff --binary --color=never > "$diff"
+if [ -s "$diff" ]; then
+  git apply -R "$diff"
+fi
+
+./gradlew --quiet ktlintCheck -PinternalKtlintGitFilter="$CHANGED_FILES"
+gradle_command_exit_code=$?
+
+echo "Completed ktlint run."
+
+if [ -s "$diff" ]; then
+  git apply --ignore-whitespace "$diff"
+  restore_exit_code=$?
+  if [ "$restore_exit_code" -ne 0 ]; then
+    echo "pre-commit: failed to restore your unstaged changes from $diff (exit $restore_exit_code)."
+    echo "Not deleting it. Restore manually with:"
+    echo "  git apply --ignore-whitespace \"$diff\""
+    exit 1
+  fi
+fi
+rm "$diff"
+unset diff
+
+echo "Completed ktlint hook."
+exit $gradle_command_exit_code
+######## KTLINT-GRADLE HOOK END (worktree-safe fork) ########
