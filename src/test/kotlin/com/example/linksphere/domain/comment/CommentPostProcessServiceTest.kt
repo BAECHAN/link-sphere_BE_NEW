@@ -64,7 +64,7 @@ class CommentPostProcessServiceTest {
         doThrow(RuntimeException("Firebase 전송 계층 오류"))
             .`when`(fcmNotificationService)
             .sendCommentNotification(postAuthorId, "tester", "댓글 내용", postId, commentId)
-        `when`(urlMetadataExtractor.extract(articleUrl, true)).thenReturn(meta)
+        `when`(urlMetadataExtractor.extract(articleUrl)).thenReturn(meta)
         `when`(commentRepository.save(comment)).thenReturn(comment)
 
         // 예외를 던지지 않고 정상 종료해야 한다 - FCM 전송 실패가 링크 프리뷰 갱신까지 막으면 안 된다.

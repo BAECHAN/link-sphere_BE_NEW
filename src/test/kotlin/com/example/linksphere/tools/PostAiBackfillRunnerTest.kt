@@ -105,7 +105,7 @@ class PostAiBackfillRunnerTest {
         `when`(postRepository.findAllByUserIdAndAiSummaryIsNull(botId)).thenReturn(listOf(post()))
         stubNoStuckBacklog()
         `when`(feedSourceRepository.findAllByEnabledTrue()).thenReturn(emptyList())
-        `when`(urlMetadataExtractor.extract("https://example.com/article", true)).thenReturn(metadata("재크롤링 본문"))
+        `when`(urlMetadataExtractor.extract("https://example.com/article")).thenReturn(metadata("재크롤링 본문"))
 
         runner.run(emptyArray())
 
@@ -118,7 +118,7 @@ class PostAiBackfillRunnerTest {
         `when`(postRepository.findAllByUserIdAndAiSummaryIsNull(botId)).thenReturn(listOf(post()))
         stubNoStuckBacklog()
         `when`(feedSourceRepository.findAllByEnabledTrue()).thenReturn(emptyList())
-        `when`(urlMetadataExtractor.extract("https://example.com/article", true)).thenReturn(metadata("재크롤링 본문"))
+        `when`(urlMetadataExtractor.extract("https://example.com/article")).thenReturn(metadata("재크롤링 본문"))
 
         runner.run(arrayOf("--commit"))
 
@@ -133,7 +133,7 @@ class PostAiBackfillRunnerTest {
         `when`(memberRepository.findFirstByIsBotTrue()).thenReturn(bot)
         `when`(postRepository.findAllByUserIdAndAiSummaryIsNull(botId)).thenReturn(listOf(post(url)))
         stubNoStuckBacklog()
-        `when`(urlMetadataExtractor.extract(url, true)).thenReturn(metadata(null))
+        `when`(urlMetadataExtractor.extract(url)).thenReturn(metadata(null))
         val source = TableFeedSource(id = UUID.randomUUID(), name = "테스트 소스", url = "https://feed.example.com/rss")
         `when`(feedSourceRepository.findAllByEnabledTrue()).thenReturn(listOf(source))
         `when`(feedParser.fetch(source.url)).thenReturn(listOf(FeedEntry(title = "제목", link = url, content = "RSS 폴백 본문")))
@@ -179,7 +179,7 @@ class PostAiBackfillRunnerTest {
         stubNoStuckBacklog()
         `when`(postRepository.findAllByUrlContainingIgnoreCase("youtu")).thenReturn(listOf(post(url)))
         `when`(feedSourceRepository.findAllByEnabledTrue()).thenReturn(emptyList())
-        `when`(urlMetadataExtractor.extract(url, true)).thenReturn(metadata("재크롤링 본문"))
+        `when`(urlMetadataExtractor.extract(url)).thenReturn(metadata("재크롤링 본문"))
 
         runner.run(arrayOf("--url-like=youtu", "--commit"))
 
@@ -210,7 +210,7 @@ class PostAiBackfillRunnerTest {
         `when`(feedSourceRepository.findAllByEnabledTrue()).thenReturn(emptyList())
         // limit=1이면 targets가 첫 건으로 잘리므로 나머지 두 건은 애초에 extract가 호출되지
         // 않는다 - 첫 건만 스텁해야 UnnecessaryStubbingException을 피한다.
-        `when`(urlMetadataExtractor.extract(urls[0], true)).thenReturn(metadata("재크롤링 본문"))
+        `when`(urlMetadataExtractor.extract(urls[0])).thenReturn(metadata("재크롤링 본문"))
 
         runner.run(arrayOf("--limit=1", "--commit"))
 
@@ -229,7 +229,7 @@ class PostAiBackfillRunnerTest {
             ),
         ).thenReturn(listOf(post(url)))
         `when`(feedSourceRepository.findAllByEnabledTrue()).thenReturn(emptyList())
-        `when`(urlMetadataExtractor.extract(url, true)).thenReturn(metadata("재크롤링 본문"))
+        `when`(urlMetadataExtractor.extract(url)).thenReturn(metadata("재크롤링 본문"))
 
         runner.run(arrayOf("--commit"))
 

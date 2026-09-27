@@ -503,9 +503,8 @@ Gemini가 "실제 내용은 구글 관련 하단 링크입니다"라고 대놓�
 `smartstore.naver.com`(3건, 봇 차단), `news.hada.io`(10건 중 다수, AWS IP 403) —
 외부 프록시 없이는 본문 확보가 불가능해 범위 밖으로 남겼다. `ignoreHttpErrors`
 덕에 이들도 제목만은 개선됐다(URL 그대로 폴백 — 에러 페이지 `<title>`로
-오염되지 않는다). 2026-09-27, §5.10에서 무료 공개 프록시로 이 유형의 차단을
-일부 우회하는 수정이 들어갔다 — 다만 이 세 도메인에도 통하는지는 검증되지
-않았다(§5.10 "남은 한계" 참고).
+오염되지 않는다). 2026-09-27, 무료 공개 프록시로 이 유형의 차단을 우회하는
+시도가 있었으나 되돌려졌다 — §5.10 참고.
 
 ### 5.6 검토했지만 채택하지 않음 — YouTube 자막(스크립트) 크롤링 (2026-09-07)
 
@@ -727,98 +726,45 @@ flowchart TD
   자체에도 걸려 피드가 깨질 수 있다 - 피드 소스를 추가할 때 `LOCALE_OVERRIDE_HOSTS`와
   겹치는지 확인해야 한다.
 
-### 5.10 원인 ⑧ — 클라우드 IP 평판 차단을 무료 공개 프록시로 우회 (2026-09-27)
+### 5.10 시도했지만 되돌림 — 무료 공개 프록시로 클라우드 IP 차단 우회 (2026-09-27)
 
 사용자가 `https://techblog.woowahan.com/7425/`를 등록했는데 제목이 URL 그대로,
 설명이 `null`로 저장됐다. non-2xx 응답 분기는 지금까지 로그를 한 줄도 남기지
 않아(§5.5의 `ignoreHttpErrors` 도입 이후 이 분기가 catch 블록을 타지 않게 되면서
 로그 자리를 잃었다), 원인을 CloudWatch가 아니라 **저장된 Post row를 역추적해서야**
-알아냈다 — `tags`에 호스트가 들어 있다는 것이 `parseMetadata`가 정상 실행됐다는
-증거였다(catch 블록을 탔다면 `tags`는 항상 빈 배열이다).
+알아냈다.
 
-```mermaid
-flowchart TD
-    A["safeConnect가 도쿄 Lambda IP로 요청"] --> B{"응답 상태코드"}
-    B -->|"2xx"| C["정상 처리 (변경 없음)"]
-    B -->|"non-2xx (지금까지 로그 없음)"| D["NEW: WARN 로그<br/>status·server 헤더 기록"]
-    D --> E{"allowProxyFallback?<br/>(비공개 글·YouTube는 false)"}
-    E -->|false| F["기존 동작 유지<br/>title=URL, description=null"]
-    E -->|true| G["allorigins.win 경유 재시도<br/>(비-클라우드 IP로 대상 사이트 접근)"]
-    G -->|"2xx + 본문 충분"| H["프록시 결과 채택"]
-    G -->|"실패"| F
-```
+**시도**: 1차 크롤링이 non-2xx를 받으면 `https://api.allorigins.win/raw?url=`(무료
+공개 프록시)으로 한 번 더 시도하는 `fetchViaCrawlProxy`를 추가해 2회에 걸쳐
+배포했다(PR #30, #33). 비공개 글은 URL이 제3자로 나가면 안 되므로
+`allowProxyFallback: Boolean`을 `extract()`의 필수 인자로 받게 해 6개 호출부
+전부가 각자의 `isPrivate`를 명시적으로 넘기게 했다.
 
-**증거 (2026-09-27, 이 세션에서 직접 실측)**:
+**실측(2026-09-27, 프로덕션 vs 이 세션)**:
 
 | 요청 경로 | 결과 |
 | --- | --- |
-| 도쿄 Lambda(추정 IP) | non-2xx, `server: cloudflare` 헤더 (저장된 Post row로 역추적) |
-| 이 세션의 비-클라우드 IP(Korea Telecom, 직접 curl) | 200, `og:title`/`og:description` 정상 수신 |
-| `https://api.allorigins.win/raw?url=`(무료 공개 프록시) 경유 | 200, 동일한 `og:title`/`og:description` 정상 수신 |
-| `https://corsproxy.io/?url=` 경유 | 빈 응답 (원인 불명 — 채택하지 않음) |
-| `https://r.jina.ai/`(클라우드 호스팅 리더 서비스) 경유 | 403 "보안 위배 접근 제한" — 클라우드 호스팅 서비스도 막힘 |
+| 도쿄 Lambda, allorigins 경유, 타임아웃 8000ms | `SocketTimeoutException`, 약 **4초**에 끊김 |
+| 도쿄 Lambda, allorigins 경유, 타임아웃 **15000ms로 늘린 뒤** | `SocketTimeoutException`, 여전히 약 **7.56초**에 끊김(2회 재현, 7.558s·7.565s) |
+| 이 세션(비-클라우드 IP)에서 allorigins 직접 호출 | **200 성공, 7.32초** 소요 |
 
-**원인 분석**: `server: cloudflare` 헤더와 위 표를 종합하면, 이 사이트는 요청 IP가
-AWS 같은 클라우드/데이터센터 ASN에 속하는지로 차단 여부를 정하는 것으로 추정된다
-(국가가 아니라 ASN 기준 — 그래서 Lambda 리전을 서울로 옮겨도 소용없을 가능성이
-높다). `allorigins.win`은 그 목록에 없는 IP를 쓰는 것으로 보인다. `r.jina.ai`가
-막힌 것을 보면 "클라우드에 있으면 무조건 통과"도 아니다 — 어떤 서비스가 통하는지는
-실측해야 안다.
+**되돌린 이유**: 타임아웃을 8초→15초로 87% 늘렸는데도 정확히 같은 지점(~7.5초)에서
+끊겼다 — 즉 "시간을 더 줘서" 해결되는 문제가 아니라는 뜻이다. 반면 이 세션(비-클라우드
+IP)에서는 거의 같은 시간(7.32초)을 기다린 뒤 성공했다. 가장 그럴듯한 설명은
+techblog.woowahan.com이 클라우드 IP(직접이든 allorigins를 통해 전달되는 원본 IP든)
+요청에 대해서만 응답을 일부러 지연시키거나 끊는 방어(tarpit류)를 쓰고 있어,
+allorigins라는 중계 한 단계만으로는 이 방어를 우회하지 못한다는 것이다 — 확정된
+원인은 아니다. 결과적으로 무료 프록시 1개를 경유하는 접근으로는 이 사이트를
+복구할 수 없다고 판단해, 프록시 재시도 로직 전체(`fetchViaCrawlProxy`,
+`parseProxyResponse`, `allowProxyFallback` 파라미터, 관련 테스트·환경변수)를
+되돌렸다. non-2xx WARN 로그(`status`·`server` 헤더 기록, 이 사고의
+결정적 증거였던 `server: cloudflare`를 남긴다)만 남겨뒀다 — 프록시와 무관하게
+"왜 실패했는지 로그에 안 남는다"는 원래 문제를 고치는 부분이라 되돌리지 않았다.
 
-**수정 — `UrlMetadataExtractor.kt`**:
-
-- non-2xx 응답에 `[Crawling] 비정상 응답 - $url, status=$status, server=...` WARN
-  로그를 추가했다(이 사고에서 결정적 증거였던 `server` 헤더까지 남겨, 다음엔 curl
-  재현 없이 바로 원인 부류를 알 수 있게 한다).
-- non-2xx일 때만(2xx+본문부실인 §5.5의 케이스는 대상 아님 — JS 렌더링 사이트에
-  매번 헛수고 왕복 + URL 전송이 생기는 것을 피하기 위해 범위를 좁혔다)
-  `allorigins.win`으로 한 번 더 시도하는 `fetchViaCrawlProxy`를 추가했다. YouTube는
-  이미 자체 폴백(Data API·oEmbed)이 있어 제외했다.
-- 1차 크롤링에서 예외(SSRF 검증 실패·타임아웃 등)가 난 경우는 폴백 대상이 아니다 -
-  SSRF 가드를 우회하는 경로를 새로 만들지 않기 위함이고, 예외 기반 차단의 증거도
-  없었다.
-
-**비공개 글은 제외한다**: 공개 글의 URL은 이미 이 앱에서 공개돼 있어 프록시로
-보내도 새로 새는 정보가 없다. 비공개 글의 URL은 토큰 붙은 개인 공유 링크일 수
-있어 SLA 없는 무료 제3자 서비스로 보내지 않는다. `UrlMetadataExtractor.extract`가
-`allowProxyFallback: Boolean`을 필수 인자로 받게 해, 호출부(`PostService.createPost`/
-`updatePost`, 댓글 링크 미리보기, 백필 러너 3종) 전부가 각자의 `isPrivate`를
-명시적으로 넘긴다.
-
-**운영 파라미터**:
-
-| 항목 | 값 | 위치 |
-| --- | --- | --- |
-| 프록시 주소 | `https://api.allorigins.win/raw?url=` | `UrlMetadataExtractor.kt`의 `DEFAULT_CRAWL_PROXY_URL_PREFIX` |
-| 타임아웃 | 15000ms(정정: 최초 배포값 8000ms — 아래 "첫 배포 실측" 참고) | `CRAWL_PROXY_TIMEOUT_MS` |
-| 재시도 | 없음, 1회만 | - |
-| 킬스위치 | `crawl.proxy.url-prefix` 프로퍼티(환경변수 `CRAWL_PROXY_URL_PREFIX`)를 빈 문자열로 설정하면 즉시 끔 — SLA 없는 무료 서비스가 문제를 일으킬 때 배포 없이 대응 | `docs/DEPLOY.md` §4 |
-
-**첫 배포 실측(2026-09-27, 프로덕션)**: 8000ms로 배포한 직후 사용자가
-`techblog.woowahan.com/7425/` 글의 제목을 비워 재수집을 2회 트리거했는데, 둘 다
-`java.net.SocketTimeoutException: Read timed out`으로 실패했다. 그런데 로그
-타임스탬프 간격은 두 번 다 약 4초 — **설정한 8초 한도에 닿기도 전에 끊겼다.** 즉
-"시간을 더 줘서 해결되는 문제"가 아니라 그보다 낮은 층위(네트워크 경로·프록시
-서버 자신의 타임아웃 등)에서 끊긴 것일 가능성이 있다. CloudFront origin
-timeout(30초)도 전혀 근접하지 않았다(해당 요청 전체 소요 5.4초). 정확한 원인은
-아직 모르지만, 우연이었을 가능성을 배제할 수 없어 15000ms로 늘려 재검증 중이다 -
-그래도 계속 비슷한 지점에서 끊긴다면 타임아웃 문제가 아니라는 뜻이다.
-
-**남은 한계**:
-
-- 다른 알려진 차단 도메인(`news.hada.io`, `stackoverflow.com`,
-  `smartstore.naver.com` — §5.5)에도 `allorigins.win`이 통하는지는 **검증되지
-  않았다**. 이번엔 이 세션의 네트워크 제약으로 techblog.woowahan.com 1건만
-  실측했다.
-- `allorigins.win`은 SLA 없는 무료 서비스다 — 언제든 중단·차단·요청 형식 변경이
-  있을 수 있어 위 킬스위치를 함께 배포했다.
-- 프록시가 `Accept-Language` 헤더를 그대로 전달하는지 확인하지 않았다 - §5.9와
-  같은 부류의 언어 문제가 프록시 경로에서 재발할 수 있다.
-- RSS 피드 수집(`FeedParser.fetch` → `safeConnect`)에는 적용되지 않는다 - 우아한
-  형제들 피드 소스는 2026-09-06에 비활성화된 채로 그대로 둔다(`docs/RSS-FEED-BOT.md`
-  참고). 사용자가 직접 등록한 글에만 이번 수정이 적용된다.
-- JS로 렌더링되는 사이트(§5.5의 `d2.naver.com`·`tech.kakao.com`)는 2xx를 받으므로
-  이번 폴백 대상이 아니다 - 여전히 본문을 못 얻는다.
+**남은 것**: 이 부류의 실패(non-2xx, `tags`에 호스트만 있고 title=URL·
+description=null)는 이제 로그로는 보이지만 자동 복구 수단은 없다 — 대신 FE에서
+`aiStatus=NONE`을 신호로 카드에 "정보를 가져오지 못했어요" 안내를 보여주는
+방향으로 바꿨다(link-sphere_FE_NEW 쪽 변경, 이 문서 범위 밖).
 
 ### 5.11 남은 것
 

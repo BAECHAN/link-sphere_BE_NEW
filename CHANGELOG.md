@@ -102,7 +102,29 @@
 
   </details>
 
-- `post` 클라우드 IP 평판 차단으로 제목·설명을 못 가져온 링크를 무료 공개 프록시로 재시도
+- `post` 무료 공개 프록시로 크롤링 실패를 재시도하던 기능을 되돌림
+  <details><summary>배경·구현</summary>
+
+  바로 아래 항목(무료 공개 프록시로 재시도)을 8000ms→15000ms 타임아웃까지 늘려
+  두 차례 배포했지만, 실측 결과 타임아웃을 87% 늘렸는데도 정확히 같은 지점
+  (~7.5초)에서 `SocketTimeoutException`이 재현됐다 - 시간을 더 줘서 해결되는
+  문제가 아니라는 뜻이다. 반면 이 프록시(allorigins.win) 자체는 비-클라우드
+  IP에서는 거의 같은 시간(7.32초)을 기다린 뒤 정상 응답했다 - 대상 사이트가
+  클라우드 IP(직접이든 프록시를 통해 전달되는 원본 IP든)만 골라 응답을 지연·
+  차단하는 것으로 추정된다(확정 아님). 무료 프록시 1개를 경유하는 접근으로는
+  복구할 수 없다고 판단해 프록시 재시도 로직 전체(`fetchViaCrawlProxy`,
+  `parseProxyResponse`, `allowProxyFallback` 파라미터, 관련 테스트·환경변수
+  `CRAWL_PROXY_URL_PREFIX`)를 되돌렸다. non-2xx WARN 로그(`status`·`server`
+  헤더 기록)만 남겼다 - 프록시와 무관하게 "왜 실패했는지 로그에 안 남는다"는
+  원래 문제를 고치는 부분이라서다. 대신 이 부류의 실패를 FE 카드에서 안내하는
+  방향으로 바꿨다(link-sphere_FE_NEW 별도 변경).
+  (`UrlMetadataExtractor.kt`, `PostService.kt`, `CommentPostProcessService.kt`,
+  `PostAiBackfillRunner.kt`, `PostLocaleBackfillRunner.kt`, `OgImageBackfillRunner.kt`,
+  `docs/AI-ASYNC-PROCESSING.md` §5.10, `docs/DEPLOY.md`, `docs/RSS-FEED-BOT.md`)
+
+  </details>
+
+- `post` 클라우드 IP 평판 차단으로 제목·설명을 못 가져온 링크를 무료 공개 프록시로 재시도(위 항목에서 되돌림)
   <details><summary>배경·구현</summary>
 
   사용자가 `techblog.woowahan.com` URL을 등록했는데 제목이 URL 그대로, 설명이
