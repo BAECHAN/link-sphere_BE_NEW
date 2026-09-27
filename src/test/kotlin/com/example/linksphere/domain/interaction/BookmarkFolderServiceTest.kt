@@ -5,6 +5,7 @@ import com.example.linksphere.domain.post.TablePost
 import com.example.linksphere.global.exception.BookmarkFolderNotFoundException
 import com.example.linksphere.global.exception.ForbiddenException
 import com.example.linksphere.global.exception.InvalidInputException
+import com.example.linksphere.infra.ai.GeminiService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
@@ -37,6 +38,8 @@ class BookmarkFolderServiceTest {
     @Mock private lateinit var bookmarkFolderItemRepository: BookmarkFolderItemRepository
 
     @Mock private lateinit var postResponseAssembler: PostResponseAssembler
+
+    @Mock private lateinit var geminiService: GeminiService
 
     @InjectMocks private lateinit var bookmarkFolderService: BookmarkFolderService
 
@@ -289,7 +292,7 @@ class BookmarkFolderServiceTest {
             .thenReturn(emptyPage)
         `when`(bookmarkRepository.findBookmarkedPosts(userId, null, false, "latest", "네이버", pageable))
             .thenReturn(correctedPage)
-        `when`(postResponseAssembler.buildResponsesFromPosts(listOf(post), userId)).thenReturn(emptyList())
+        `when`(postResponseAssembler.buildResponsesFromPosts(listOf(post), userId, listOf("네이버"))).thenReturn(emptyList())
 
         val result = bookmarkFolderService.getBookmarkedPosts(userId, "all", null, "spdlqj", 0, 10)
 
