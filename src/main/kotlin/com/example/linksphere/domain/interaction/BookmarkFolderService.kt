@@ -3,10 +3,12 @@ package com.example.linksphere.domain.interaction
 import com.example.linksphere.domain.post.HangulKeyboardConverter
 import com.example.linksphere.domain.post.PostPageResponse
 import com.example.linksphere.domain.post.PostResponseAssembler
+import com.example.linksphere.domain.post.PostSearchQuery
 import com.example.linksphere.global.exception.BookmarkFolderNotFoundException
 import com.example.linksphere.global.exception.DuplicateFolderNameException
 import com.example.linksphere.global.exception.ForbiddenException
 import com.example.linksphere.global.exception.InvalidInputException
+import org.slf4j.LoggerFactory
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
@@ -21,6 +23,8 @@ class BookmarkFolderService(
     private val bookmarkFolderItemRepository: BookmarkFolderItemRepository,
     private val postResponseAssembler: PostResponseAssembler,
 ) {
+
+    private val logger = LoggerFactory.getLogger(BookmarkFolderService::class.java)
 
     @Transactional(readOnly = true)
     fun getFolders(userId: UUID): FolderListResponse {
@@ -217,6 +221,7 @@ class BookmarkFolderService(
                         pageable,
                     )
                 if (correctedPage.totalElements > 0L) {
+                    logSearch(search = search, total = correctedPage.totalElements, corrected = true)
                     return PostPageResponse.from(
                         correctedPage,
                         postResponseAssembler.buildResponsesFromPosts(correctedPage.content, userId),
@@ -226,6 +231,20 @@ class BookmarkFolderService(
             }
         }
 
+        logSearch(search = search, total = postPage.totalElements, corrected = false)
         return PostPageResponse.from(postPage, postResponseAssembler.buildResponsesFromPosts(postPage.content, userId))
+    }
+
+    /** PostService.logSearch와 동일한 형태 - 북마크함 검색어별 결과 건수를 로그로 남긴다. */
+    private fun logSearch(search: String?, total: Long, corrected: Boolean) {
+        if (search.isNullOrBlank()) return
+
+        logger.info(
+            "[Search] scope=bookmark tokens={} total={} corrected={} q=\"{}\"",
+            PostSearchQuery.tokenize(search).size,
+            total,
+            corrected,
+            search.replace(Regex("[\\r\\n\"]"), " ").take(100),
+        )
     }
 }
