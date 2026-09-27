@@ -8,6 +8,7 @@ import com.example.linksphere.domain.interaction.BookmarkRepository
 import com.example.linksphere.global.exception.BookmarkFolderNotFoundException
 import com.example.linksphere.global.exception.ForbiddenException
 import com.example.linksphere.global.exception.PostNotFoundException
+import com.example.linksphere.infra.ai.GeminiService
 import org.slf4j.LoggerFactory
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.data.domain.PageRequest
@@ -29,6 +30,7 @@ class PostService(
     private val eventPublisher: ApplicationEventPublisher,
     private val urlMetadataExtractor: UrlMetadataExtractor,
     private val safeUrlValidator: SafeUrlValidator,
+    private val geminiService: GeminiService,
 ) {
 
     private val logger = LoggerFactory.getLogger(PostService::class.java)
@@ -120,45 +122,55 @@ class PostService(
         currentUserId: UUID?,
     ): PostPageResponse {
         val pageable = PageRequest.of(page, size)
-        val postPage = postRepository.findPosts(category, search, filter, nickname, currentUserId, pageable)
+        val searchTokens = PostSearchQuery.tokenize(search)
+        // embedQuery는 실패·타임아웃이면 null을 돌려준다 - 그러면 findPosts가 키워드 전용으로
+        // 동작해 검색 자체가 Gemini 장애로 실패하는 일은 없다.
+        val queryEmbedding = search?.takeIf { searchTokens.isNotEmpty() }?.let { geminiService.embedQuery(PostEmbeddingText.query(it)) }
+        val postPage = postRepository.findPosts(category, search, filter, nickname, currentUserId, pageable, queryEmbedding)
 
-        // 검색 결과가 없으면 한/영 자판 미스매칭 보정 후보로 한 번 더 검색한다 (예: spdlqj -> 네이버)
+        // 검색 결과가 없으면 한/영 자판 미스매칭 보정 후보로 한 번 더 검색한다 (예: spdlqj -> 네이버).
+        // 보정 검색은 키워드 전용으로만 한다 - 드문 폴백 경로에 임베딩 호출을 추가하지 않는다.
         if (postPage.totalElements == 0L && !search.isNullOrBlank()) {
             val correctedSearch = HangulKeyboardConverter.convertIfMislayout(search)
             if (correctedSearch != null) {
                 val correctedPage =
                     postRepository.findPosts(category, correctedSearch, filter, nickname, currentUserId, pageable)
                 if (correctedPage.totalElements > 0L) {
-                    logSearch(search = search, total = correctedPage.totalElements, corrected = true)
+                    logSearch(search = search, total = correctedPage.totalElements, corrected = true, semantic = false)
                     return PostPageResponse.from(
                         correctedPage,
-                        postResponseAssembler.buildResponsesFromPosts(correctedPage.content, currentUserId),
+                        postResponseAssembler.buildResponsesFromPosts(
+                            correctedPage.content,
+                            currentUserId,
+                            PostSearchQuery.tokenize(correctedSearch),
+                        ),
                         correctedSearch,
                     )
                 }
             }
         }
 
-        logSearch(search = search, total = postPage.totalElements, corrected = false)
+        logSearch(search = search, total = postPage.totalElements, corrected = false, semantic = queryEmbedding != null)
         return PostPageResponse.from(
             postPage,
-            postResponseAssembler.buildResponsesFromPosts(postPage.content, currentUserId),
+            postResponseAssembler.buildResponsesFromPosts(postPage.content, currentUserId, searchTokens),
         )
     }
 
     /**
-     * 검색어별 결과 건수를 로그로 남긴다 - 0건 검색어 파악, 추후 의미 검색 도입 시 임계값
-     * 튜닝 근거로 쓴다. 검색어 원문은 CloudWatch에 남지만 사용자 식별 정보는 포함하지 않고,
-     * 줄바꿈·따옴표는 Logs Insights 파싱이 깨지지 않도록 한 줄로 정리한다.
+     * 검색어별 결과 건수를 로그로 남긴다 - 0건 검색어 파악, 의미 검색 임계값 튜닝 근거로 쓴다.
+     * 검색어 원문은 CloudWatch에 남지만 사용자 식별 정보는 포함하지 않고, 줄바꿈·따옴표는
+     * Logs Insights 파싱이 깨지지 않도록 한 줄로 정리한다.
      */
-    private fun logSearch(search: String?, total: Long, corrected: Boolean) {
+    private fun logSearch(search: String?, total: Long, corrected: Boolean, semantic: Boolean) {
         if (search.isNullOrBlank()) return
 
         logger.info(
-            "[Search] scope=feed tokens={} total={} corrected={} q=\"{}\"",
+            "[Search] scope=feed tokens={} total={} corrected={} semantic={} q=\"{}\"",
             PostSearchQuery.tokenize(search).size,
             total,
             corrected,
+            semantic,
             search.replace(Regex("[\\r\\n\"]"), " ").take(100),
         )
     }

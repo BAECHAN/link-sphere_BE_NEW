@@ -35,8 +35,10 @@ class PostResponseAssembler(
 
     /**
      * Post 리스트를 PostResponse 리스트로 변환하면서 author/likes/bookmarks/comments를 batch fetch.
+     * searchTokens가 있으면 각 글이 키워드로도 걸렸는지 다시 판정해 isSemanticMatch를 채운다
+     * (검색이 없는 일반 목록 조회는 기본값(emptyList)이라 항상 false).
      */
-    fun buildResponsesFromPosts(posts: List<TablePost>, currentUserId: UUID?): List<PostResponse> {
+    fun buildResponsesFromPosts(posts: List<TablePost>, currentUserId: UUID?, searchTokens: List<String> = emptyList()): List<PostResponse> {
         if (posts.isEmpty()) return emptyList()
 
         val postIds = posts.mapNotNull { it.id }
@@ -96,6 +98,7 @@ class PostResponseAssembler(
                 isBookmarked = postId in bookmarkedPostIds,
                 bookmarkFolderIds = folderIdsByPost[postId] ?: emptyList(),
                 commentCount = commentCountMap[postId] ?: 0,
+                isSemanticMatch = searchTokens.isNotEmpty() && !PostSearchQuery.matchesKeywordLiterally(post, searchTokens),
             )
         }
     }
@@ -150,6 +153,7 @@ class PostResponseAssembler(
         isBookmarked: Boolean,
         bookmarkFolderIds: List<UUID> = emptyList(),
         commentCount: Int,
+        isSemanticMatch: Boolean = false,
     ): PostResponse = PostResponse(
         id = postId,
         url = post.url,
@@ -175,5 +179,6 @@ class PostResponseAssembler(
             bookmarkFolderIds = bookmarkFolderIds,
         ),
         author = author,
+        isSemanticMatch = isSemanticMatch,
     )
 }

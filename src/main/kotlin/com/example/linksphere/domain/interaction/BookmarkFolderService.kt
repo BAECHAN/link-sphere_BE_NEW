@@ -1,6 +1,7 @@
 package com.example.linksphere.domain.interaction
 
 import com.example.linksphere.domain.post.HangulKeyboardConverter
+import com.example.linksphere.domain.post.PostEmbeddingText
 import com.example.linksphere.domain.post.PostPageResponse
 import com.example.linksphere.domain.post.PostResponseAssembler
 import com.example.linksphere.domain.post.PostSearchQuery
@@ -8,6 +9,7 @@ import com.example.linksphere.global.exception.BookmarkFolderNotFoundException
 import com.example.linksphere.global.exception.DuplicateFolderNameException
 import com.example.linksphere.global.exception.ForbiddenException
 import com.example.linksphere.global.exception.InvalidInputException
+import com.example.linksphere.infra.ai.GeminiService
 import org.slf4j.LoggerFactory
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.repository.findByIdOrNull
@@ -22,6 +24,7 @@ class BookmarkFolderService(
     private val bookmarkRepository: BookmarkRepository,
     private val bookmarkFolderItemRepository: BookmarkFolderItemRepository,
     private val postResponseAssembler: PostResponseAssembler,
+    private val geminiService: GeminiService,
 ) {
 
     private val logger = LoggerFactory.getLogger(BookmarkFolderService::class.java)
@@ -197,6 +200,9 @@ class BookmarkFolderService(
             }
 
         val pageable = PageRequest.of(page, size)
+        val searchTokens = PostSearchQuery.tokenize(search)
+        // 실패·타임아웃이면 null - findBookmarkedPosts가 키워드 전용으로 동작한다.
+        val queryEmbedding = search?.takeIf { searchTokens.isNotEmpty() }?.let { geminiService.embedQuery(PostEmbeddingText.query(it)) }
         val postPage =
             bookmarkRepository.findBookmarkedPosts(
                 userId,
@@ -205,9 +211,11 @@ class BookmarkFolderService(
                 sort ?: "latest",
                 search,
                 pageable,
+                queryEmbedding,
             )
 
-        // 검색 결과가 없으면 한/영 자판 미스매칭 보정 후보로 한 번 더 검색한다 (예: spdlqj -> 네이버)
+        // 검색 결과가 없으면 한/영 자판 미스매칭 보정 후보로 한 번 더 검색한다 (예: spdlqj -> 네이버).
+        // 보정 검색은 키워드 전용으로만 한다 - 드문 폴백 경로에 임베딩 호출을 추가하지 않는다.
         if (postPage.totalElements == 0L && !search.isNullOrBlank()) {
             val correctedSearch = HangulKeyboardConverter.convertIfMislayout(search)
             if (correctedSearch != null) {
@@ -221,29 +229,34 @@ class BookmarkFolderService(
                         pageable,
                     )
                 if (correctedPage.totalElements > 0L) {
-                    logSearch(search = search, total = correctedPage.totalElements, corrected = true)
+                    logSearch(search = search, total = correctedPage.totalElements, corrected = true, semantic = false)
                     return PostPageResponse.from(
                         correctedPage,
-                        postResponseAssembler.buildResponsesFromPosts(correctedPage.content, userId),
+                        postResponseAssembler.buildResponsesFromPosts(
+                            correctedPage.content,
+                            userId,
+                            PostSearchQuery.tokenize(correctedSearch),
+                        ),
                         correctedSearch,
                     )
                 }
             }
         }
 
-        logSearch(search = search, total = postPage.totalElements, corrected = false)
-        return PostPageResponse.from(postPage, postResponseAssembler.buildResponsesFromPosts(postPage.content, userId))
+        logSearch(search = search, total = postPage.totalElements, corrected = false, semantic = queryEmbedding != null)
+        return PostPageResponse.from(postPage, postResponseAssembler.buildResponsesFromPosts(postPage.content, userId, searchTokens))
     }
 
     /** PostService.logSearch와 동일한 형태 - 북마크함 검색어별 결과 건수를 로그로 남긴다. */
-    private fun logSearch(search: String?, total: Long, corrected: Boolean) {
+    private fun logSearch(search: String?, total: Long, corrected: Boolean, semantic: Boolean) {
         if (search.isNullOrBlank()) return
 
         logger.info(
-            "[Search] scope=bookmark tokens={} total={} corrected={} q=\"{}\"",
+            "[Search] scope=bookmark tokens={} total={} corrected={} semantic={} q=\"{}\"",
             PostSearchQuery.tokenize(search).size,
             total,
             corrected,
+            semantic,
             search.replace(Regex("[\\r\\n\"]"), " ").take(100),
         )
     }
