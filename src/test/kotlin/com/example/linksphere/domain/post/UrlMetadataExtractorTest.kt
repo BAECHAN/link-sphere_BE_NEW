@@ -263,4 +263,34 @@ class UrlMetadataExtractorTest {
 
         assertEquals(5000, metadata!!.pageContent!!.length)
     }
+
+    @Test
+    fun `applyLocaleOverride는 인프런 URL에 언어 접두어가 없으면 ko를 끼워 넣는다`() {
+        val result = extractor.applyLocaleOverride("https://www.inflearn.com/course/foo?cid=1")
+
+        assertEquals("https://www.inflearn.com/ko/course/foo?cid=1", result)
+    }
+
+    @Test
+    fun `applyLocaleOverride는 www 없는 인프런 호스트도 인식한다`() {
+        val result = extractor.applyLocaleOverride("https://inflearn.com/course/foo")
+
+        assertEquals("https://inflearn.com/ko/course/foo", result)
+    }
+
+    @Test
+    fun `applyLocaleOverride는 이미 언어 접두어가 있으면 그대로 둔다`() {
+        val koUrl = "https://www.inflearn.com/ko/course/foo?cid=1"
+        val enUrl = "https://www.inflearn.com/en/course/foo?cid=1"
+
+        assertEquals(koUrl, extractor.applyLocaleOverride(koUrl))
+        assertEquals(enUrl, extractor.applyLocaleOverride(enUrl))
+    }
+
+    @Test
+    fun `applyLocaleOverride는 알려지지 않은 호스트는 건드리지 않는다`() {
+        val url = "https://www.youtube.com/watch?v=abc123"
+
+        assertEquals(url, extractor.applyLocaleOverride(url))
+    }
 }

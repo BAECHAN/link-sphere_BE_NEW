@@ -249,6 +249,7 @@ nullable + `ON DELETE SET NULL`로 둬서, 봇 글을 관리자가 지워도 원
 | 크롤링 본문 최소 길이 | 1,000자 | `UrlMetadataExtractor.kt` `MIN_PAGE_CONTENT_LENGTH` — 이 밑이면 네비·푸터 같은 껍데기로 보고 `null` 처리해 RSS 본문 폴백으로 넘긴다(`docs/AI-ASYNC-PROCESSING.md` §5.5) |
 | 메타 설명(og:description 등) 최소 길이 | 40자 | `UrlMetadataExtractor.kt` `MIN_META_DESCRIPTION_LENGTH` |
 | 크롤링 응답 최대 바이트 | 4MB | `UrlMetadataExtractor.kt` `safeConnect`의 `.maxBodySize(...)` — gzip 해제 후 바이트 기준 |
+| 크롤링 요청 언어 | `ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7` | `UrlMetadataExtractor.kt` `safeConnect`의 `Accept-Language` 헤더 — Lambda가 도쿄 IP라 이게 없으면 IP로 지역을 판별하는 사이트가 일본어판을 내려준다(`docs/AI-ASYNC-PROCESSING.md` §5.9) |
 
 코드 값들은 `private const val` 컴패니언 오브젝트 상수로, 이미 있는
 `LambdaHandler.kt`의 `WARMUP_PATHS`/`WARMUP_ITERATIONS`와 같은 스타일이다 — 이

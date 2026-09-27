@@ -50,6 +50,23 @@
 
 ### Fixed
 
+- `post` 도쿄 리전 IP 때문에 링크 제목·설명이 일본어로 수집되던 문제 수정
+  <details><summary>배경·구현</summary>
+
+  인프런 강의 URL을 등록하면 제목·설명·AI 요약이 전부 일본어로 저장되는 문제가 있었다
+  (운영 게시글로 실측). BE Lambda가 `ap-northeast-1`(도쿄)에서 도는데 `UrlMetadataExtractor`의
+  `safeConnect`가 `Accept-Language` 헤더를 보내지 않아 일어난 일이다. 두 사이트 유형을
+  도쿄 리전에서 직접 재현해 서로 다른 원인임을 확인했다(`docs/AI-ASYNC-PROCESSING.md` §5.9).
+  YouTube는 헤더를 그대로 따라 헤더만 추가하면 고쳐진다. 반면 인프런은 헤더를 무시하고
+  접속 국가로 언어를 정하는데, 그 리다이렉트가 클라이언트에 드러나지 않아 헤더로도 못
+  고친다 - 대신 언어 접두 경로(`/ko/course/...`)는 접속 지역과 무관하게 한국어를 그대로
+  준다는 것까지 확인해, 알려진 호스트(`inflearn.com`)에 한해 그 접두어를 요청 전에 강제로
+  끼워 넣는 예외 처리를 추가했다. 같은 요청 함수를 쓰는 RSS 피드 수집(`FeedParser`)에도
+  헤더 추가는 동일하게 적용된다.
+  (`UrlMetadataExtractor.kt`, `SafeConnectTest.kt`(신규))
+
+  </details>
+
 - `comment` 댓글 삭제·수정 권한 실패를 500 대신 403으로 응답
   <details><summary>배경·구현</summary>
 

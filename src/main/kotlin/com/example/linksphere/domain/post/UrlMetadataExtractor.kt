@@ -14,7 +14,24 @@ import java.nio.charset.StandardCharsets
 
 private const val USER_AGENT =
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+// Lambda가 도쿄(ap-northeast-1) IP로 나가므로, 이 헤더가 없으면 IP 기반 지역 판별을 쓰는
+// 사이트(예: 인프런)가 한국 URL을 등록해도 일본어판을 내려준다(2026-09-27 실측,
+// docs/AI-ASYNC-PROCESSING.md §5.9). q값 있는 en 폴백을 남겨 한국어판이 없는 사이트는
+// 지금처럼 영어를 받게 한다.
+private const val ACCEPT_LANGUAGE = "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7"
 private const val MAX_REDIRECTS = 5
+
+// 인프런처럼 CloudFront 엣지가 접속 국가로 언어를 정하되 그 사실을 리다이렉트로 드러내지
+// 않는 사이트가 있다 - Accept-Language 헤더도 무시한다(2026-09-27 도쿄 Lambda 재현,
+// docs/AI-ASYNC-PROCESSING.md §5.9). 반면 언어 접두 경로(예: /ko/course/...)는 접속 지역과
+// 무관하게 그 언어를 그대로 준다는 것까지 같은 재현으로 확인했다. 호스트 → 강제 로케일
+// 맵으로 둬 같은 패턴의 사이트가 늘면 한 줄만 추가하면 된다.
+private val LOCALE_OVERRIDE_HOSTS = mapOf("inflearn.com" to "ko")
+
+// 사용자가 명시적으로 다른 언어 링크(예: /en/course/...)를 등록했으면 그 선택을 덮어쓰지
+// 않는다 - 인프런이 실제로 쓰는 로케일 4개(hreflang alternate 링크 실측, 2026-09-27).
+private val KNOWN_LOCALE_SEGMENTS = setOf("ko", "en", "vi", "ja")
 
 // FeedParser.MAX_CONTENT_LENGTH와 같은 값으로 맞춘다 - 둘이 서로의 폴백이라 성격을 같게 둔다.
 private const val MAX_CONTENT_LENGTH = 5000
@@ -255,11 +272,13 @@ class UrlMetadataExtractor(
         var currentUrl = url
         var hop = 0
         while (true) {
+            currentUrl = applyLocaleOverride(currentUrl)
             safeUrlValidator.validate(currentUrl)
             val response =
                 Jsoup.connect(currentUrl)
                     .userAgent(USER_AGENT)
                     .referrer("http://google.com")
+                    .header("Accept-Language", ACCEPT_LANGUAGE)
                     .timeout(5000)
                     // YouTube watch 페이지 HTML이 실측 1.3~1.4MB고, Jsoup 기본 상한 2MB는 여유가
                     // 1.5배뿐인 데다, 넘어도 예외 없이 조용히 잘린다. 이 상한은 gzip 해제 후
@@ -284,6 +303,23 @@ class UrlMetadataExtractor(
             val location = response.header("Location") ?: throw IllegalStateException("Redirect without Location: $currentUrl")
             currentUrl = URI(currentUrl).resolve(location).toString()
         }
+    }
+
+    /**
+     * [LOCALE_OVERRIDE_HOSTS]에 있는 호스트면 경로 첫 세그먼트에 언어 접두어를 강제로 끼워
+     * 넣는다. safeConnect가 매 홉(최초 요청 포함)마다 호출한다 - 그 사이트의 리다이렉트가
+     * 접두어를 지우고 되돌리더라도(인프런 dashboard 서브경로 실측) 다음 홉에서 다시 붙는다.
+     * 네트워크 없이 검증할 수 있도록 internal로 분리했다 - parseMetadata·toMetadata와 같은 이유.
+     */
+    internal fun applyLocaleOverride(url: String): String {
+        val uri = runCatching { URI(url) }.getOrNull() ?: return url
+        val host = uri.host?.removePrefix("www.") ?: return url
+        val locale = LOCALE_OVERRIDE_HOSTS[host] ?: return url
+
+        val firstSegment = uri.path.removePrefix("/").substringBefore("/")
+        if (firstSegment in KNOWN_LOCALE_SEGMENTS) return url
+
+        return URI(uri.scheme, uri.authority, "/$locale${uri.path}", uri.query, uri.fragment).toString()
     }
 
     private fun isYoutubeUrl(url: String) = url.contains("youtube.com") || url.contains("youtu.be")
