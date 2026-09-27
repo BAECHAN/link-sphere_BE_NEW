@@ -76,6 +76,30 @@
 
 ### Fixed
 
+- `post` 클라우드 IP 평판 차단으로 제목·설명을 못 가져온 링크를 무료 공개 프록시로 재시도
+  <details><summary>배경·구현</summary>
+
+  사용자가 `techblog.woowahan.com` URL을 등록했는데 제목이 URL 그대로, 설명이
+  `null`로 저장됐다. 이 사이트가 `server: cloudflare` 헤더를 반환하고, 도쿄
+  Lambda 요청만 non-2xx를 받는 것을 실측으로 확인했다 - 같은 요청을 비-클라우드
+  IP나 무료 공개 프록시(`allorigins.win`)로 보내면 정상적으로 `og:title`/
+  `og:description`을 받는다(클라우드/데이터센터 ASN 평판 차단으로 추정). non-2xx
+  응답 분기는 지금까지 로그를 한 줄도 남기지 않아, 원인을 CloudWatch가 아니라
+  저장된 Post row를 역추적해서야 알아냈다 - 그 로그도 이번에 추가했다.
+  `UrlMetadataExtractor.extract`가 non-2xx를 받으면(YouTube 제외) `allorigins.win`
+  으로 한 번 더 시도하고, 그래도 실패하면 예외 없이 기존 동작(title=URL,
+  description=null)으로 내려간다. 비공개 글의 URL은 이미 공개된 공개 글과 달리
+  제3자로 보내면 새로운 노출이 생기므로, `allowProxyFallback: Boolean`을 필수
+  인자로 받아 호출부(등록·수정·댓글 링크 미리보기·백필 러너 3종) 전부가 각자의
+  `isPrivate`를 명시적으로 넘기게 했다. 프록시는 SLA 없는 무료 서비스라 환경변수
+  (`CRAWL_PROXY_URL_PREFIX`)로 즉시 끌 수 있는 킬스위치를 함께 뒀다
+  (`docs/AI-ASYNC-PROCESSING.md` §5.10).
+  (`UrlMetadataExtractor.kt`, `PostService.kt`, `CommentPostProcessService.kt`,
+  `PostAiBackfillRunner.kt`, `PostLocaleBackfillRunner.kt`, `OgImageBackfillRunner.kt`,
+  `CrawlProxyFallbackTest.kt`(신규))
+
+  </details>
+
 - `post` 도쿄 리전 IP 때문에 링크 제목·설명이 일본어로 수집되던 문제 수정
   <details><summary>배경·구현</summary>
 

@@ -200,7 +200,7 @@ class PostServiceTest {
     // 크롤링을 항상 성공 취급(pageContent = null)해 AI 이벤트 발행 경로를 건드리지 않는다 —
     // 아래 등록+북마크 테스트들의 관심사가 아니므로 고정값으로 단순화.
     private fun stubMetadataExtraction(url: String) {
-        `when`(urlMetadataExtractor.extract(url)).thenReturn(
+        `when`(urlMetadataExtractor.extract(url, true)).thenReturn(
             UrlMetadata(title = "제목", description = null, ogImage = null, tags = emptyList(), pageContent = null),
         )
     }
@@ -311,6 +311,26 @@ class PostServiceTest {
     }
 
     @Test
+    fun `비공개 글로 등록하면 크롤링 프록시 폴백을 허용하지 않는다`() {
+        val userId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val url = "https://example.com/private"
+        val savedPost = TablePost(id = postId, userId = userId, url = url, title = "제목", isPrivate = true)
+
+        `when`(urlMetadataExtractor.extract(url, false)).thenReturn(
+            UrlMetadata(title = "제목", description = null, ogImage = null, tags = emptyList(), pageContent = null),
+        )
+        `when`(postRepository.save(any())).thenReturn(savedPost)
+        stubAssemblerResponse(postId)
+
+        postService.createPost(userId, PostCreateRequest(url = url, isPrivate = true))
+
+        // 비공개 글의 URL은 제3자 프록시로 나가면 안 된다 - allowProxyFallback=false로
+        // 넘기는지 확인한다(docs/AI-ASYNC-PROCESSING.md §5.10).
+        verify(urlMetadataExtractor).extract(url, false)
+    }
+
+    @Test
     fun `남의 폴더로 등록하면 ForbiddenException 이 발생하고 북마크가 생성되지 않는다`() {
         val userId = UUID.randomUUID()
         val otherUserId = UUID.randomUUID()
@@ -379,7 +399,7 @@ class PostServiceTest {
         val savedPost = TablePost(id = postId, userId = userId, url = url, title = "실제 영상 제목", isPrivate = false)
 
         `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
-        `when`(urlMetadataExtractor.extract(url)).thenReturn(
+        `when`(urlMetadataExtractor.extract(url, true)).thenReturn(
             UrlMetadata(title = "실제 영상 제목", description = null, ogImage = null, tags = emptyList(), pageContent = null),
         )
         val savedPostCaptor = ArgumentCaptor.forClass(TablePost::class.java)
@@ -389,7 +409,7 @@ class PostServiceTest {
         postService.updatePost(postId, userId, PostUpdateRequest(title = ""))
 
         assertEquals("실제 영상 제목", savedPostCaptor.value.title)
-        verify(urlMetadataExtractor).extract(url)
+        verify(urlMetadataExtractor).extract(url, true)
         // URL은 그대로이므로 등록 시점에 이미 통과한 값을 다시 검증하지 않는다.
         verifyNoInteractions(safeUrlValidator)
     }
@@ -403,7 +423,7 @@ class PostServiceTest {
         val savedPost = TablePost(id = postId, userId = userId, url = url, title = "기존 좋은 제목", isPrivate = false)
 
         `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
-        `when`(urlMetadataExtractor.extract(url)).thenReturn(
+        `when`(urlMetadataExtractor.extract(url, true)).thenReturn(
             UrlMetadata(title = "- YouTube", description = null, ogImage = null, tags = emptyList(), pageContent = null),
         )
         val savedPostCaptor = ArgumentCaptor.forClass(TablePost::class.java)
@@ -435,7 +455,7 @@ class PostServiceTest {
         val savedPost = post
 
         `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
-        `when`(urlMetadataExtractor.extract(url)).thenReturn(
+        `when`(urlMetadataExtractor.extract(url, true)).thenReturn(
             UrlMetadata(
                 title = "새 제목",
                 description = "새 설명",
@@ -474,7 +494,7 @@ class PostServiceTest {
         val savedPost = post
 
         `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
-        `when`(urlMetadataExtractor.extract(url)).thenReturn(
+        `when`(urlMetadataExtractor.extract(url, true)).thenReturn(
             UrlMetadata(
                 title = "새 제목",
                 description = null,
@@ -516,7 +536,7 @@ class PostServiceTest {
         val savedPost = post
 
         `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
-        `when`(urlMetadataExtractor.extract(newUrl)).thenReturn(
+        `when`(urlMetadataExtractor.extract(newUrl, true)).thenReturn(
             UrlMetadata(
                 title = "새 링크 제목",
                 description = "새 링크 설명",
@@ -557,6 +577,6 @@ class PostServiceTest {
         postService.updatePost(postId, userId, PostUpdateRequest(title = "사용자가 직접 쓴 제목"))
 
         assertEquals("사용자가 직접 쓴 제목", savedPostCaptor.value.title)
-        verify(urlMetadataExtractor, never()).extract(ArgumentMatchers.anyString())
+        verify(urlMetadataExtractor, never()).extract(ArgumentMatchers.anyString(), ArgumentMatchers.anyBoolean())
     }
 }

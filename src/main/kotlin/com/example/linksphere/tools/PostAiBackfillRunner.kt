@@ -109,7 +109,10 @@ class PostAiBackfillRunner(
         var resolved = 0
         var unresolved = 0
         targets.forEach { post ->
-            val recrawled = runCatching { urlMetadataExtractor.extract(post.url).pageContent }.getOrNull()
+            val recrawled =
+                runCatching {
+                    urlMetadataExtractor.extract(post.url, allowProxyFallback = !post.isPrivate).pageContent
+                }.getOrNull()
             val content = recrawled ?: feedContentByNormalizedUrl[FeedUrlNormalizer.normalize(post.url)]
 
             if (content == null) {

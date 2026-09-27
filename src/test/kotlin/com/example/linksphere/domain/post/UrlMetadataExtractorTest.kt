@@ -15,7 +15,12 @@ class UrlMetadataExtractorTest {
     // YoutubeVideoClient는 목으로만 채워둔다(FeedParserTest가 UrlMetadataExtractor를
     // 목으로 채우는 것과 같은 이유).
     private val extractor =
-        UrlMetadataExtractor(ObjectMapper(), mock(SafeUrlValidator::class.java), mock(YoutubeVideoClient::class.java))
+        UrlMetadataExtractor(
+            ObjectMapper(),
+            mock(SafeUrlValidator::class.java),
+            mock(YoutubeVideoClient::class.java),
+            crawlProxyUrlPrefix = "",
+        )
 
     // baseUri를 넘겨야 og:image 상대경로의 abs: 절대화가 실제 코드와 같은 조건에서 검증된다.
     private fun parse(
@@ -292,5 +297,63 @@ class UrlMetadataExtractorTest {
         val url = "https://www.youtube.com/watch?v=abc123"
 
         assertEquals(url, extractor.applyLocaleOverride(url))
+    }
+
+    // parseProxyResponse: 프록시(allorigins) 응답을 파싱하는 순수 함수 검증.
+    // 2026-09-27 techblog.woowahan.com 실측 근거는 docs/AI-ASYNC-PROCESSING.md §5.10 참고.
+
+    @Test
+    fun `parseProxyResponse는 200과 본문이 충분하면 채택한다`() {
+        val body = "가".repeat(1200)
+        val html = """<html><head><meta property="og:title" content="원본 제목"></head><body><p>$body</p></body></html>"""
+
+        val metadata = extractor.parseProxyResponse(html, 200, "https://techblog.woowahan.com/7425/")
+
+        assertEquals("원본 제목", metadata!!.title)
+        assertEquals(1200, metadata.pageContent!!.length)
+    }
+
+    @Test
+    fun `parseProxyResponse는 og_image 상대경로를 프록시 도메인이 아니라 원본 호스트 기준으로 절대화한다`() {
+        val html =
+            """<html><head><meta property="og:image" content="/img/t.png"></head>
+            |<body><p>${"가".repeat(1200)}</p></body></html>
+            """.trimMargin()
+
+        val metadata = extractor.parseProxyResponse(html, 200, "https://techblog.woowahan.com/7425/")
+
+        assertEquals("https://techblog.woowahan.com/img/t.png", metadata!!.ogImage)
+    }
+
+    @Test
+    fun `parseProxyResponse는 tags에 원본 호스트를 담는다`() {
+        val html = """<html><body><p>${"가".repeat(1200)}</p></body></html>"""
+
+        val metadata = extractor.parseProxyResponse(html, 200, "https://techblog.woowahan.com/7425/")
+
+        assertEquals(listOf("techblog.woowahan.com"), metadata!!.tags)
+    }
+
+    @Test
+    fun `parseProxyResponse는 200이어도 본문이 챌린지 페이지 수준으로 짧으면 null이다`() {
+        val html = "<html><head><title>Just a moment...</title></head><body></body></html>"
+
+        val metadata = extractor.parseProxyResponse(html, 200, "https://example.com/a")
+
+        assertNull(metadata)
+    }
+
+    @Test
+    fun `parseProxyResponse는 프록시 자신이 실패하면 null이다`() {
+        val metadata = extractor.parseProxyResponse("", 500, "https://example.com/a")
+
+        assertNull(metadata)
+    }
+
+    @Test
+    fun `parseProxyResponse는 200인데 body가 비어도 null이다`() {
+        val metadata = extractor.parseProxyResponse("", 200, "https://example.com/a")
+
+        assertNull(metadata)
     }
 }
