@@ -67,6 +67,27 @@
 
   </details>
 
+- `post` 도쿄 리전 오염으로 일본어로 저장됐던 기존 게시글 2건 수동 재수집
+  <details><summary>배경·구현</summary>
+
+  위 로케일 수정은 신규 크롤링만 막을 뿐, 이미 일본어로 저장된 기존 게시글(인프런
+  1건, YouTube 커뮤니티 1건, §5.9)은 별도 조치가 필요했다. 기존 재크롤링 경로
+  (`PATCH /post/{id}`에서 title을 비우면 도는 재크롤링)는 이미 값이 있는
+  `description`을 덮지 않도록 설계돼 있어(사용자가 손댄 값을 실수로 되돌리지 않기
+  위함) title은 고쳐져도 description은 일본어로 남는다.
+  `OgImageBackfillRunner`(#18)와 동일한 이유로 `PostLocaleBackfillRunner`(로컬
+  1회성 CLI, `--post-id`로 지정한 게시글의 title·description을 재크롤링 결과로
+  무조건 덮어쓰고 `PostAIService.processAiJob`을 직접 호출해 aiSummary까지
+  재분석)를 신설했다. dry-run으로 두 게시글의 title·description이 한국어로
+  정상 재수집되는 것을 먼저 확인한 뒤 `--commit`으로 반영했다. 인프런 게시글은
+  첫 `--commit` 실행에서 title·description은 반영됐지만 aiSummary는 이전
+  일본어 값으로 남았다 - 정확한 원인은 확인하지 못했다(로그상 Gemini 요청은
+  전송됐다). 같은 postId로 한 번 더 실행하니 정상 반영됐다. 반영 후 프로덕션
+  API로 두 게시글 모두 title·description·aiSummary가 한국어인 것을 확인했다.
+  (`tools/PostLocaleBackfillRunner.kt`(신규))
+
+  </details>
+
 - `comment` 댓글 삭제·수정 권한 실패를 500 대신 403으로 응답
   <details><summary>배경·구현</summary>
 
