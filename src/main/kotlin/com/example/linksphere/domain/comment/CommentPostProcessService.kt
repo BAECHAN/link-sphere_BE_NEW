@@ -90,7 +90,10 @@ class CommentPostProcessService(
 
     private fun updateLinkMetadata(comment: TableComment) {
         val url = comment.linkUrl ?: return
-        val meta = urlMetadataExtractor.extract(url)
+        // 댓글이 달린 글이 비공개면 그 안의 링크도 같은 취급 - post를 못 찾으면(레이스) 보수적으로
+        // 차단한다(프록시로 URL을 보내지 않음).
+        val isPrivate = postRepository.findByIdOrNull(comment.postId)?.isPrivate ?: true
+        val meta = urlMetadataExtractor.extract(url, allowProxyFallback = !isPrivate)
         comment.linkTitle = meta.title
         comment.linkDescription = meta.description
         comment.linkOgImage = meta.ogImage

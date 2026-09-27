@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component
 import java.net.URI
 import java.net.URLEncoder
@@ -21,6 +22,19 @@ private const val USER_AGENT =
 // 지금처럼 영어를 받게 한다.
 private const val ACCEPT_LANGUAGE = "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7"
 private const val MAX_REDIRECTS = 5
+
+// 1차 크롤링이 non-2xx일 때만 타는 폴백 대상. 2026-09-27 techblog.woowahan.com 실측 —
+// 도쿄 Lambda 403(server: cloudflare), 이 세션의 비-클라우드 IP·allorigins 경유는 둘 다
+// 200 + og:* 정상 수신. 즉 사이트 문제가 아니라 클라우드 IP 평판 차단으로 추정된다
+// (docs/AI-ASYNC-PROCESSING.md §5.10). corsproxy.io도 같은 실측에서 시도했으나 원인 불명의
+// 빈 응답이라 채택하지 않았다 - 문서에만 기록.
+private const val DEFAULT_CRAWL_PROXY_URL_PREFIX = "https://api.allorigins.win/raw?url="
+
+// 프록시는 대상 사이트 왕복 + 중계 구간이 하나 더 있어 1차 크롤링(5000ms)보다 길게 둔다.
+// non-2xx는 보통 1초 안에 응답이 오므로 실사용 최악값은 대략 1초 + 8초 - CloudFront origin
+// timeout 30초(docs/AI-ASYNC-PROCESSING.md "1. 문제" - 35.9초 요청이 504를 받은 실측 기록)
+// 안에 넉넉히 들어온다.
+private const val CRAWL_PROXY_TIMEOUT_MS = 8000
 
 // 인프런처럼 CloudFront 엣지가 접속 국가로 언어를 정하되 그 사실을 리다이렉트로 드러내지
 // 않는 사이트가 있다 - Accept-Language 헤더도 무시한다(2026-09-27 도쿄 Lambda 재현,
@@ -66,11 +80,17 @@ class UrlMetadataExtractor(
     private val objectMapper: ObjectMapper,
     private val safeUrlValidator: SafeUrlValidator,
     private val youtubeVideoClient: YoutubeVideoClient,
+    @Value("\${crawl.proxy.url-prefix:$DEFAULT_CRAWL_PROXY_URL_PREFIX}") private val crawlProxyUrlPrefix: String,
 ) {
 
     private val logger = LoggerFactory.getLogger(UrlMetadataExtractor::class.java)
 
-    fun extract(url: String): UrlMetadata = try {
+    /**
+     * [allowProxyFallback]은 1차 크롤링이 non-2xx일 때 무료 프록시(allorigins)로 한 번 더
+     * 시도할지 결정한다. 호출부가 명시적으로 넘긴다(기본값 없음) - 비공개 글은 URL이 제3자로
+     * 나가면 안 되므로 반드시 `false`를 넘겨야 한다(docs/AI-ASYNC-PROCESSING.md §5.10 참고).
+     */
+    fun extract(url: String, allowProxyFallback: Boolean): UrlMetadata = try {
         // YouTube면 Data API를 1순위로 시도한다 - 성공하면 아래 스크래핑을 통째로
         // 건너뛴다. 실패(키 없음·videoId 파싱 불가·쿼터 초과·설명 하한 미달)하면
         // null이라 그대로 기존 스크래핑 경로로 떨어진다. 자세한 경위는
@@ -80,7 +100,23 @@ class UrlMetadataExtractor(
         }
 
         val response = safeConnect(url)
-        val metadata = parseMetadata(response.parse(), url, response.statusCode())
+        val statusCode = response.statusCode()
+        var metadata = parseMetadata(response.parse(), url, statusCode)
+
+        // 2xx가 아니면 이 사이트가 이 요청을 명시적으로 거부했다는 뜻이다. 지금까지 이 분기는
+        // 로그를 한 줄도 남기지 않아, techblog.woowahan.com 사고를 로그가 아니라 저장된 Post
+        // row를 역추적해서야 알아냈다(docs/AI-ASYNC-PROCESSING.md §5.10). server 헤더까지
+        // 남기는 이유는 그 사고의 결정적 증거가 `server: cloudflare`였기 때문이다 - 다음엔
+        // curl 재현 없이 바로 원인 부류를 알 수 있다.
+        if (statusCode !in 200..299) {
+            logger.warn("[Crawling] 비정상 응답 - $url, status=$statusCode, server=${response.header("server")}")
+
+            // YouTube는 이미 자체 폴백(Data API·oEmbed)이 있어 제외한다. 비공개 글은
+            // allowProxyFallback=false로 호출부가 걸러 URL을 제3자로 보내지 않는다.
+            if (allowProxyFallback && !isYoutubeUrl(url) && crawlProxyUrlPrefix.isNotBlank()) {
+                fetchViaCrawlProxy(url)?.let { metadata = it }
+            }
+        }
 
         var title = metadata.title
         var ogImage = metadata.ogImage
@@ -323,6 +359,52 @@ class UrlMetadataExtractor(
     }
 
     private fun isYoutubeUrl(url: String) = url.contains("youtube.com") || url.contains("youtu.be")
+
+    /**
+     * 1차 크롤링이 non-2xx를 받았을 때만 호출된다. 대상 사이트가 아니라 무료 공개 중계
+     * 서비스(allorigins)로 요청을 보내, 우리 Lambda(도쿄 리전)가 아닌 그 서비스의 IP로 대상
+     * 사이트에 접근한다. SLA 없는 무료 서비스라 실패는 전부 조용히 null로 흡수한다 - 실패하면
+     * 그냥 오늘까지의 동작(title=URL, description=null)으로 내려간다. 예외가 createPost까지
+     * 새로 올라가지 않는다.
+     */
+    private fun fetchViaCrawlProxy(url: String): UrlMetadata? = try {
+        val target = applyLocaleOverride(url)
+        val proxyUrl = crawlProxyUrlPrefix + URLEncoder.encode(target, StandardCharsets.UTF_8)
+        val response =
+            Jsoup.connect(proxyUrl)
+                .userAgent(USER_AGENT)
+                .timeout(CRAWL_PROXY_TIMEOUT_MS)
+                .maxBodySize(4 * 1024 * 1024)
+                .ignoreContentType(true)
+                .ignoreHttpErrors(true)
+                .execute()
+
+        val metadata = parseProxyResponse(response.body(), response.statusCode(), url)
+        if (metadata != null) {
+            logger.info("[Crawling] 프록시 폴백 성공 - $url, pageContentLength=${metadata.pageContent?.length}")
+        } else {
+            logger.warn("[Crawling] 프록시 폴백 실패 - $url, status=${response.statusCode()}")
+        }
+        metadata
+    } catch (e: Exception) {
+        logger.warn("[Crawling] 프록시 폴백 예외 - $url", e)
+        null
+    }
+
+    /**
+     * 네트워크 없이 검증할 수 있도록 분리한 순수 함수 - parseMetadata와 같은 이유.
+     *
+     * baseUri는 반드시 원본 [url]로 준다 - `Jsoup.parse(body, url)`이 아니라 프록시 자신의
+     * 도메인을 baseUri로 쓰면 og:image 상대경로가 allorigins 도메인 기준으로 절대화된다.
+     *
+     * 채택 게이트는 pageContent != null이다 - 프록시 자신이 차단당해 200 + 챌린지 페이지
+     * ("Just a moment..." 등)를 그대로 돌려줘도 본문이 하한 미달이라 여기서 걸러진다
+     * (§5.5에서 이미 막은 것과 같은 회귀 방지).
+     */
+    internal fun parseProxyResponse(body: String, statusCode: Int, url: String): UrlMetadata? {
+        if (statusCode !in 200..299) return null
+        return parseMetadata(Jsoup.parse(body, url), url, 200).takeIf { it.pageContent != null }
+    }
 
     private fun fetchYoutubeMetadata(url: String): Map<String, String>? = try {
         // url을 그대로 문자열 보간하면 `?si=` 같은 추적 파라미터의 `&`가 oEmbed 쿼리 자체를 쪼갠다.

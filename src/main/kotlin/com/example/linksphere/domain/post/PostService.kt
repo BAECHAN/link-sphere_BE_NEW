@@ -37,7 +37,9 @@ class PostService(
     fun createPost(userId: UUID, request: PostCreateRequest, fallbackContent: String? = null): PostResponse {
         val url = request.url.trim()
         validateUrl(url)
-        val metadata = urlMetadataExtractor.extract(url)
+        // 공개 글의 URL은 이미 이 앱에서 공개돼 있어 프록시로 보내도 새로 새는 정보가 없다.
+        // 비공개 글은 토큰 붙은 개인 링크일 수 있어 제3자(allorigins)로 보내지 않는다.
+        val metadata = urlMetadataExtractor.extract(url, allowProxyFallback = !request.isPrivate)
         // 크롤링이 실패하면 pageContent가 null이라 AI 분석이 통째로 스킵된다(아래 aiStatus=NONE).
         // fallbackContent는 어떤 @RequestBody DTO에도 없는 파라미터라 외부 사용자가 채울 수 없고,
         // 봇 경로(FeedItemProcessor)가 RSS 본문을 미리 크롤링해 넘겨줄 때만 대체된다.
@@ -197,7 +199,8 @@ class PostService(
         if (newUrl != null) validateUrl(newUrl)
 
         val recrawlUrl = newUrl ?: post.url.takeIf { titleCleared }
-        val metadata = recrawlUrl?.let { urlMetadataExtractor.extract(it) }
+        // post.isPrivate은 161줄에서 이미 request.isPrivate로 갱신된 뒤라 새 값을 반영한다.
+        val metadata = recrawlUrl?.let { urlMetadataExtractor.extract(it, allowProxyFallback = !post.isPrivate) }
 
         // 제목 우선순위: 사용자가 직접 쓴 제목 > 재수집 제목 > 기존 제목.
         // 재수집 제목이 빈약하면 채택하지 않는다 - "- YouTube" 같은 껍데기 제목이 멀쩡한 기존

@@ -61,7 +61,10 @@ class OgImageBackfillRunner(
         var updated = 0
         var unresolved = 0
         targets.forEach { post ->
-            val newOgImage = runCatching { urlMetadataExtractor.extract(post.url).ogImage }.getOrNull()
+            val newOgImage =
+                runCatching {
+                    urlMetadataExtractor.extract(post.url, allowProxyFallback = !post.isPrivate).ogImage
+                }.getOrNull()
 
             if (newOgImage == null) {
                 unresolved++

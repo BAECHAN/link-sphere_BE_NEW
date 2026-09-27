@@ -45,7 +45,12 @@ class SafeConnectTest {
             }
 
         val extractor =
-            UrlMetadataExtractor(ObjectMapper(), mock(SafeUrlValidator::class.java), mock(YoutubeVideoClient::class.java))
+            UrlMetadataExtractor(
+                ObjectMapper(),
+                mock(SafeUrlValidator::class.java),
+                mock(YoutubeVideoClient::class.java),
+                crawlProxyUrlPrefix = "",
+            )
         extractor.safeConnect(baseUrl)
 
         assertTrue(receivedAcceptLanguage?.startsWith("ko-KR") == true, "actual=$receivedAcceptLanguage")
