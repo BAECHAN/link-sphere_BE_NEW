@@ -27,5 +27,7 @@ interface BookmarkRepositoryCustom {
         sort: String,
         search: String?,
         pageable: Pageable,
+        // 검색어 임베딩 - null이면 키워드 전용(기존 동작 그대로).
+        queryEmbedding: FloatArray? = null,
     ): Page<TablePost>
 }

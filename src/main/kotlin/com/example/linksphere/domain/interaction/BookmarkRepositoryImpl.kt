@@ -24,8 +24,12 @@ class BookmarkRepositoryImpl : BookmarkRepositoryCustom {
         sort: String,
         search: String?,
         pageable: Pageable,
+        queryEmbedding: FloatArray?,
     ): Page<TablePost> {
         val cb = entityManager.criteriaBuilder
+        // count/data 쿼리가 정확히 같은 후보 집합을 봐야 총 건수가 실제 반환 건수와
+        // 일치한다 - 여기서 한 번만 계산해 양쪽에 그대로 넘긴다.
+        val semanticMatches = PostSearchQuery.resolveSemanticMatches(entityManager, queryEmbedding)
 
         // 1) count query — bookmark 기준 (post와 1:1 매칭이므로 동일). 폴더 필터는 EXISTS 세미조인이라 row가 증식하지 않는다.
         val countQuery = cb.createQuery(Long::class.java)
@@ -43,6 +47,7 @@ class BookmarkRepositoryImpl : BookmarkRepositoryCustom {
                     folderId,
                     onlyUncategorized,
                     search,
+                    semanticMatches,
                 ).toTypedArray(),
             )
         val total = entityManager.createQuery(countQuery).singleResult
@@ -66,6 +71,7 @@ class BookmarkRepositoryImpl : BookmarkRepositoryCustom {
                     folderId,
                     onlyUncategorized,
                     search,
+                    semanticMatches,
                 ).toTypedArray(),
             )
 
@@ -75,7 +81,7 @@ class BookmarkRepositoryImpl : BookmarkRepositoryCustom {
         val orders =
             if (searchTokens.isNotEmpty() && sort == "latest") {
                 listOf(
-                    cb.desc(PostSearchQuery.relevanceScore(cb, postJoin, searchTokens)),
+                    cb.desc(PostSearchQuery.relevanceScore(cb, postJoin, searchTokens, semanticMatches)),
                     cb.desc(bookmarkRoot.get<Any>("createdAt")),
                 )
             } else {
@@ -125,6 +131,7 @@ class BookmarkRepositoryImpl : BookmarkRepositoryCustom {
         folderId: UUID?,
         onlyUncategorized: Boolean,
         search: String?,
+        semanticMatches: Map<UUID, Double>,
     ): List<Predicate> {
         val predicates = mutableListOf<Predicate>()
 
@@ -151,10 +158,10 @@ class BookmarkRepositoryImpl : BookmarkRepositoryCustom {
             predicates.add(if (onlyUncategorized) cb.not(cb.exists(sub)) else cb.exists(sub))
         }
 
-        // Search Filter (Title, Description, or Tags) — 토큰 분리 후 OR 매칭 (피드 검색과 동일 로직)
+        // Search Filter (Title, Description, Tags, AI 요약) — 토큰 분리 후 OR 매칭 + 의미 매칭 (피드 검색과 동일 로직)
         val searchTokens = PostSearchQuery.tokenize(search)
         if (searchTokens.isNotEmpty()) {
-            predicates.add(PostSearchQuery.searchPredicate(cb, postJoin, searchTokens))
+            predicates.add(PostSearchQuery.searchPredicate(cb, postJoin, searchTokens, semanticMatches))
         }
 
         // Post visibility: isPrivate=false OR post.userId=currentUserId (북마크 소유자)

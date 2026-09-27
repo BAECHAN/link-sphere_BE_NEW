@@ -21,8 +21,12 @@ class PostRepositoryImpl : PostRepositoryCustom {
         nickname: String?,
         currentUserId: UUID?,
         pageable: Pageable,
+        queryEmbedding: FloatArray?,
     ): Page<TablePost> {
         val cb = entityManager.criteriaBuilder
+        // count/data 쿼리가 정확히 같은 후보 집합을 봐야 총 건수가 실제 반환 건수와
+        // 일치한다 - 여기서 한 번만 계산해 양쪽에 그대로 넘긴다.
+        val semanticMatches = PostSearchQuery.resolveSemanticMatches(entityManager, queryEmbedding)
 
         // 1. Create count query
         val countQuery = cb.createQuery(Long::class.java)
@@ -38,6 +42,7 @@ class PostRepositoryImpl : PostRepositoryCustom {
                 filter,
                 nickname,
                 currentUserId,
+                semanticMatches,
             )
         countQuery
             .select(cb.countDistinct(countRoot))
@@ -59,6 +64,7 @@ class PostRepositoryImpl : PostRepositoryCustom {
                 filter,
                 nickname,
                 currentUserId,
+                semanticMatches,
             )
         query.select(root).where(*predicates.toTypedArray())
 
@@ -66,7 +72,7 @@ class PostRepositoryImpl : PostRepositoryCustom {
         val searchTokens = PostSearchQuery.tokenize(search)
         if (searchTokens.isNotEmpty()) {
             query.orderBy(
-                cb.desc(PostSearchQuery.relevanceScore(cb, root, searchTokens)),
+                cb.desc(PostSearchQuery.relevanceScore(cb, root, searchTokens, semanticMatches)),
                 cb.desc(root.get<Any>("createdAt")),
             )
         } else if (pageable.sort.isSorted) {
@@ -104,6 +110,7 @@ class PostRepositoryImpl : PostRepositoryCustom {
         filter: String?,
         nickname: String?,
         currentUserId: UUID?,
+        semanticMatches: Map<UUID, Double>,
     ): List<Predicate> {
         val predicates = mutableListOf<Predicate>()
 
@@ -144,10 +151,10 @@ class PostRepositoryImpl : PostRepositoryCustom {
             }
         }
 
-        // Search Filter (Title, Description, or Tags) — 토큰 분리 후 OR 매칭
+        // Search Filter (Title, Description, Tags, AI 요약) — 토큰 분리 후 OR 매칭 + 의미 매칭
         val searchTokens = PostSearchQuery.tokenize(search)
         if (searchTokens.isNotEmpty()) {
-            predicates.add(PostSearchQuery.searchPredicate(cb, root, searchTokens))
+            predicates.add(PostSearchQuery.searchPredicate(cb, root, searchTokens, semanticMatches))
         }
 
         // Nickname Filter (Partial Match)

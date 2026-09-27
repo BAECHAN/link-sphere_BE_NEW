@@ -1,9 +1,21 @@
 package com.example.linksphere.domain.post
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import java.util.UUID
 
 class PostSearchQueryTest {
+
+    private fun post(title: String, description: String? = null, tags: List<String>? = null, aiSummary: String? = null) = TablePost(
+        userId = UUID.randomUUID(),
+        url = "https://example.com",
+        title = title,
+        description = description,
+        tags = tags,
+        aiSummary = aiSummary,
+    )
 
     @Test
     fun `tokenize splits on whitespace`() {
@@ -54,5 +66,31 @@ class PostSearchQueryTest {
     @Test
     fun `STRIP_CHARS_KEEP_COMMA keeps commas between tags but removes other symbols`() {
         assertEquals("라이프스타일,데이터", stripKeepComma("라이프스타일,데이터!"))
+    }
+
+    @Test
+    fun `matchesKeywordLiterally는 제목에 토큰이 있으면 true`() {
+        assertTrue(PostSearchQuery.matchesKeywordLiterally(post(title = "Zustand 입문 가이드"), listOf("zustand")))
+    }
+
+    @Test
+    fun `matchesKeywordLiterally는 토큰이 어디에도 없으면 false`() {
+        val target = post(title = "Zustand 입문 가이드", description = "가벼운 상태 저장소", tags = listOf("React"))
+        assertFalse(PostSearchQuery.matchesKeywordLiterally(target, listOf("상태관리")))
+    }
+
+    @Test
+    fun `matchesKeywordLiterally는 기호가 섞인 제목도 스트립된 형태로 찾는다`() {
+        assertTrue(PostSearchQuery.matchesKeywordLiterally(post(title = "NN/g - 닐슨 노먼 그룹"), listOf("nng")))
+    }
+
+    @Test
+    fun `matchesKeywordLiterally는 태그 목록에서도 찾는다`() {
+        assertTrue(PostSearchQuery.matchesKeywordLiterally(post(title = "제목", tags = listOf("Zustand", "React")), listOf("zustand")))
+    }
+
+    @Test
+    fun `matchesKeywordLiterally는 토큰이 없으면 false`() {
+        assertFalse(PostSearchQuery.matchesKeywordLiterally(post(title = "아무 글"), emptyList()))
     }
 }

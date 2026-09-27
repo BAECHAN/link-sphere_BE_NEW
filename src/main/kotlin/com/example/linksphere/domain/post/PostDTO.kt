@@ -58,6 +58,9 @@ data class PostResponse(
     val stats: PostStats,
     val userInteractions: PostUserInteractions,
     val author: UserSummary,
+    // 검색 결과 배지("의미로 찾았어요")용 - 검색어가 있고 이 글이 키워드로는 안 걸렸지만
+    // 의미 검색으로 걸렸을 때만 true. 검색이 없거나 키워드로 걸린 결과는 항상 false.
+    val isSemanticMatch: Boolean = false,
 )
 
 data class PostPageResponse(

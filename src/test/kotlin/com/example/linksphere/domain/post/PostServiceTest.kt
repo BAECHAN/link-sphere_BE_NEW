@@ -9,6 +9,7 @@ import com.example.linksphere.domain.interaction.TableBookmarkFolder
 import com.example.linksphere.global.exception.BookmarkFolderNotFoundException
 import com.example.linksphere.global.exception.ForbiddenException
 import com.example.linksphere.global.exception.PostNotFoundException
+import com.example.linksphere.infra.ai.GeminiService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
@@ -52,6 +53,8 @@ class PostServiceTest {
     @Mock private lateinit var urlMetadataExtractor: UrlMetadataExtractor
 
     @Mock private lateinit var safeUrlValidator: SafeUrlValidator
+
+    @Mock private lateinit var geminiService: GeminiService
 
     @InjectMocks private lateinit var postService: PostService
 
