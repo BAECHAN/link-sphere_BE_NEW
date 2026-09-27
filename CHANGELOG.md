@@ -38,6 +38,19 @@
 
   </details>
 
+- `post`/`bookmark` 검색 요청마다 검색어·결과 건수를 로그로 남기도록 추가
+  <details><summary>배경·구현</summary>
+
+  0건으로 끝나는 검색어가 뭔지, 검색이 얼마나 쓰이는지 지금까지는 알 방법이 없었다.
+  `docs/plans/2026-09-27-search-quality.md`(의미 기반 하이브리드 검색 도입 계획)의
+  1단계로, 임계값·가중치를 실측 없이 추측하지 않기 위한 사전 근거 수집이 목적이다.
+  검색어가 있을 때만 `[Search] scope=feed|bookmark tokens={} total={} corrected={}
+  q="{}"` 한 줄을 남긴다 - 사용자 식별 정보는 넣지 않고, 검색어의 줄바꿈·따옴표는
+  CloudWatch Logs Insights 파싱이 깨지지 않게 정리해서 찍는다.
+  (`PostService.kt`, `BookmarkFolderService.kt`)
+
+  </details>
+
 ### Changed
 
 - `post` 게시글 목록의 categories N+1 쿼리 제거
@@ -45,6 +58,19 @@
 
   `TablePost.categories`(`@ManyToMany`, LAZY)만 게시글 목록·북마크 목록의 작성자·북마크·반응·댓글수 배치 조회(`PostService.buildResponsesFromPosts`)에서 빠져 있어 페이지 크기만큼 카테고리 조회 쿼리가 추가로 발생하고 있었다. fetch join 대신 `default_batch_fetch_size`를 선택했다 - 컬렉션 fetch join은 페이지네이션과 함께 쓰면 Hibernate가 LIMIT/OFFSET을 SQL이 아니라 메모리에서 적용해 오히려 전체 결과를 다 가져오는 역효과가 있기 때문이다. 실 DB 없이는 SQL 로그로 배치 쿼리 전환을 직접 확인하지 못했다(이 레포에 `@DataJpaTest` 등 실 DB 대상 테스트 인프라가 없음) - 실제 쿼리 개수 감소는 배포 후 확인이 필요하다.
   (`application.yml`)
+
+  </details>
+
+- `post` 검색 대상에 AI 요약(`ai_summary`)을 추가(설명과 같은 가중치)
+  <details><summary>배경·구현</summary>
+
+  운영 데이터 216건 중 173건에 `aiSummary`가 있는데 검색 대상에서 빠져 있었다.
+  실측(배포 API로 직접 확인) 결과 요약을 포함하면 `테스트` 4→14건, `성능` 15→29건,
+  `상태관리` 0→2건, `접근성` 0→2건으로 늘었다. `PostSearchQuery.searchPredicate`/
+  `relevanceScore`가 이미 계산해두던 title/description/tags 정규화와 같은 구조로
+  `aiSummary` 정규화를 추가했다 - 결과가 줄어드는 방향이 아니라 늘어나기만 하는
+  확장이라 회귀 위험이 없다.
+  (`PostSearchQuery.kt`)
 
   </details>
 
@@ -103,6 +129,25 @@
   덮어써도 무해했다) 재수집해 반영했다. 반영 후 프로덕션 API로 9건 모두
   title·description·aiSummary가 한국어(또는 원본 그대로)인 것을 확인했다.
   (`tools/PostJapaneseContentScanner.kt`(신규))
+
+  </details>
+
+- `post` 검색이 기호가 섞인 제목("NN/g" 등)을 찾지 못하던 문제 수정
+  <details><summary>배경·구현</summary>
+
+  검색어 `nng`로 "NN/g - 닐슨 노먼 그룹은 뭘 하는 곳일까?" 글을 찾을 수 없었다(배포
+  API로 실측: `search=nng` 0건, `search=nn/g` 1건). `PostSearchQuery.norm()`이 공백만
+  지우고("nn/g -..." → "nn/g-...") 기호는 그대로 둬 `nng`와 문자열이 달라진 탓이다.
+  필드 쪽 텍스트에서만 명시적 기호 목록을 `regexp_replace`로 제거한 버전을 만들어
+  기존 매칭과 OR로 묶었다 - 검색어 쪽은 그대로 두므로 결과가 줄어드는 방향이 아니라
+  늘어나기만 한다("node.js"로 "nodejs"를 못 찾는 것처럼 남는 한계는 있다).
+  `[^[:alnum:]]` 같은 부정 문자 클래스 대신 지울 기호를 나열한 목록을 썼다 - DB
+  로케일에 따라 한글이 "영숫자"로 인식되지 않아 통째로 사라질 위험을 피하기 위해서다.
+  `searchPredicate()`(검색 필터)와 `relevanceScore()`(정렬 점수) 양쪽 다 기호 제거
+  버전을 반영했다 - 필터만 고치면 기호 제거로만 걸린 결과가 점수 0점이라 맨 뒤로
+  밀린다. 태그는 `array_to_string(tags, ',')`로 합친 문자열이라 쉼표는 남기고 그 외
+  기호만 지우는 별도 목록을 썼다 - 쉼표까지 지우면 태그끼리 이어붙어 오매칭된다.
+  (`PostSearchQuery.kt`, `PostSearchQueryTest.kt`)
 
   </details>
 

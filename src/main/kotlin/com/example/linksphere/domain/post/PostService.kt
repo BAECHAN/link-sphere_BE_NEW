@@ -127,6 +127,7 @@ class PostService(
                 val correctedPage =
                     postRepository.findPosts(category, correctedSearch, filter, nickname, currentUserId, pageable)
                 if (correctedPage.totalElements > 0L) {
+                    logSearch(search = search, total = correctedPage.totalElements, corrected = true)
                     return PostPageResponse.from(
                         correctedPage,
                         postResponseAssembler.buildResponsesFromPosts(correctedPage.content, currentUserId),
@@ -136,9 +137,27 @@ class PostService(
             }
         }
 
+        logSearch(search = search, total = postPage.totalElements, corrected = false)
         return PostPageResponse.from(
             postPage,
             postResponseAssembler.buildResponsesFromPosts(postPage.content, currentUserId),
+        )
+    }
+
+    /**
+     * 검색어별 결과 건수를 로그로 남긴다 - 0건 검색어 파악, 추후 의미 검색 도입 시 임계값
+     * 튜닝 근거로 쓴다. 검색어 원문은 CloudWatch에 남지만 사용자 식별 정보는 포함하지 않고,
+     * 줄바꿈·따옴표는 Logs Insights 파싱이 깨지지 않도록 한 줄로 정리한다.
+     */
+    private fun logSearch(search: String?, total: Long, corrected: Boolean) {
+        if (search.isNullOrBlank()) return
+
+        logger.info(
+            "[Search] scope=feed tokens={} total={} corrected={} q=\"{}\"",
+            PostSearchQuery.tokenize(search).size,
+            total,
+            corrected,
+            search.replace(Regex("[\\r\\n\"]"), " ").take(100),
         )
     }
 
