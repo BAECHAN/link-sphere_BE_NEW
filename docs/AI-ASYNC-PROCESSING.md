@@ -713,8 +713,10 @@ flowchart TD
   감지가 아니다.
 - 엣지가 정확히 무엇으로 판단하는지(접속 IP의 GeoIP, 별도 헤더 등)는 인프런 인프라
   내부라 확정하지 못했다 - 리다이렉트가 전혀 없다는 관찰 결과로부터의 추정이다.
-- 이미 저장된 기존 게시글(인프런 1건, YouTube 커뮤니티 1건)은 이 수정과 별개로 수동
-  재수집이 필요하다.
+- 정정(2026-09-27): 이미 저장돼 있던 기존 게시글(인프런 1건, YouTube 커뮤니티 1건)은
+  이 수정과 별개로 수동 재수집이 필요했다. `PostLocaleBackfillRunner`(신규)로 재수집을
+  완료했고, 두 게시글 모두 title·description·aiSummary가 한국어인 것을 프로덕션 API로
+  확인했다.
 - `applyLocaleOverride`는 `safeConnect`를 공유하는 RSS 피드 수집(`FeedParser.fetch`)에도
   똑같이 적용된다. 지금 시딩된 피드 소스(`sql/create_feed_sources.sql`) 중 `inflearn.com`은
   없어 당장 영향은 없지만, 나중에 그 호스트의 피드를 추가하면 `/ko` 강제 접두가 피드 URL
