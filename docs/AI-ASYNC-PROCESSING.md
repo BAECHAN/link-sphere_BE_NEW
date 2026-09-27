@@ -790,9 +790,19 @@ AWS 같은 클라우드/데이터센터 ASN에 속하는지로 차단 여부를 
 | 항목 | 값 | 위치 |
 | --- | --- | --- |
 | 프록시 주소 | `https://api.allorigins.win/raw?url=` | `UrlMetadataExtractor.kt`의 `DEFAULT_CRAWL_PROXY_URL_PREFIX` |
-| 타임아웃 | 8000ms(1차 크롤링 5000ms보다 길게 — 중계 구간 추가) | `CRAWL_PROXY_TIMEOUT_MS` |
+| 타임아웃 | 15000ms(정정: 최초 배포값 8000ms — 아래 "첫 배포 실측" 참고) | `CRAWL_PROXY_TIMEOUT_MS` |
 | 재시도 | 없음, 1회만 | - |
 | 킬스위치 | `crawl.proxy.url-prefix` 프로퍼티(환경변수 `CRAWL_PROXY_URL_PREFIX`)를 빈 문자열로 설정하면 즉시 끔 — SLA 없는 무료 서비스가 문제를 일으킬 때 배포 없이 대응 | `docs/DEPLOY.md` §4 |
+
+**첫 배포 실측(2026-09-27, 프로덕션)**: 8000ms로 배포한 직후 사용자가
+`techblog.woowahan.com/7425/` 글의 제목을 비워 재수집을 2회 트리거했는데, 둘 다
+`java.net.SocketTimeoutException: Read timed out`으로 실패했다. 그런데 로그
+타임스탬프 간격은 두 번 다 약 4초 — **설정한 8초 한도에 닿기도 전에 끊겼다.** 즉
+"시간을 더 줘서 해결되는 문제"가 아니라 그보다 낮은 층위(네트워크 경로·프록시
+서버 자신의 타임아웃 등)에서 끊긴 것일 가능성이 있다. CloudFront origin
+timeout(30초)도 전혀 근접하지 않았다(해당 요청 전체 소요 5.4초). 정확한 원인은
+아직 모르지만, 우연이었을 가능성을 배제할 수 없어 15000ms로 늘려 재검증 중이다 -
+그래도 계속 비슷한 지점에서 끊긴다면 타임아웃 문제가 아니라는 뜻이다.
 
 **남은 한계**:
 

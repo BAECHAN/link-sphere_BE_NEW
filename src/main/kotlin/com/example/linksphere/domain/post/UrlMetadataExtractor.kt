@@ -30,11 +30,13 @@ private const val MAX_REDIRECTS = 5
 // 빈 응답이라 채택하지 않았다 - 문서에만 기록.
 private const val DEFAULT_CRAWL_PROXY_URL_PREFIX = "https://api.allorigins.win/raw?url="
 
-// 프록시는 대상 사이트 왕복 + 중계 구간이 하나 더 있어 1차 크롤링(5000ms)보다 길게 둔다.
-// non-2xx는 보통 1초 안에 응답이 오므로 실사용 최악값은 대략 1초 + 8초 - CloudFront origin
+// 2026-09-27 실측: 8000ms로 배포한 첫날 techblog.woowahan.com 재수집 2회 모두
+// SocketTimeoutException("Read timed out")로 실패했는데, 로그 타임스탬프 간격은 약 4초 -
+// 즉 설정한 한도(8초)에 닿기도 전에 끊겼다. 시간을 더 줘서 되는 문제가 아닐 수 있다는
+// 뜻이지만, 우연이었을 가능성도 배제 못 해 15000ms로 늘려 재검증한다. CloudFront origin
 // timeout 30초(docs/AI-ASYNC-PROCESSING.md "1. 문제" - 35.9초 요청이 504를 받은 실측 기록)
-// 안에 넉넉히 들어온다.
-private const val CRAWL_PROXY_TIMEOUT_MS = 8000
+// 안에는 1차 크롤링(보통 1초 내 403)을 더해도 여전히 넉넉하다.
+private const val CRAWL_PROXY_TIMEOUT_MS = 15000
 
 // 인프런처럼 CloudFront 엣지가 접속 국가로 언어를 정하되 그 사실을 리다이렉트로 드러내지
 // 않는 사이트가 있다 - Accept-Language 헤더도 무시한다(2026-09-27 도쿄 Lambda 재현,
