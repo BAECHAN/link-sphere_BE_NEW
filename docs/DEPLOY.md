@@ -194,7 +194,6 @@ Lambda 콘솔 → Configuration → Environment variables:
 | `SPRING_DATASOURCE_PASSWORD` | Supabase DB 비밀번호 |
 | `GEMINI_API_KEY` | Gemini API 키 |
 | `YOUTUBE_API_KEY` | YouTube Data API v3 키 (영상 설명 추출용, `docs/AI-ASYNC-PROCESSING.md` §5.7 참고) |
-| `CRAWL_PROXY_URL_PREFIX` | (선택) 크롤링 실패(non-2xx) 시 재시도할 무료 프록시 주소 접두어. 기본값은 코드에 내장된 `https://api.allorigins.win/raw?url=`이며, 빈 문자열로 설정하면 이 폴백을 완전히 끈다(킬스위치, `docs/AI-ASYNC-PROCESSING.md` §5.10 참고) |
 | `SUPABASE_BUCKET` | Supabase 스토리지 버킷명 |
 | `SUPABASE_KEY` | Supabase service role key |
 | `SUPABASE_URL` | `https://<project>.supabase.co` |

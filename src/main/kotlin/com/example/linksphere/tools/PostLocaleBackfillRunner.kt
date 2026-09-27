@@ -70,10 +70,7 @@ class PostLocaleBackfillRunner(
         println("대상 ${targets.size}건 (요청 ${idTokens.size}건)")
 
         targets.forEach { post ->
-            val metadata =
-                runCatching {
-                    urlMetadataExtractor.extract(post.url, allowProxyFallback = !post.isPrivate)
-                }.getOrNull()
+            val metadata = runCatching { urlMetadataExtractor.extract(post.url) }.getOrNull()
             if (metadata == null) {
                 println("  [미해결] ${post.title} | ${post.url} - 재수집 실패")
                 return@forEach

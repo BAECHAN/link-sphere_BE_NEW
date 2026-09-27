@@ -386,10 +386,9 @@ flush 미보장이 겹치는, 로컬/운영 환경 차이가 아니라 순수하
   피드 fetch 자체가 403이라 비활성화함(User-Agent 문제가 아니라 IP 차단으로
   보임, 재시도할 필요 없음). 정정(2026-09-27): 이 차단은 RSS 경로만 막았을 뿐,
   같은 도메인을 **사용자가 직접 등록**하는 경로(`POST /post`)는 이 지식이
-  적용되지 않아 그대로 재발했다 — 그 경로는
-  [AI-ASYNC-PROCESSING.md 5.10절](./AI-ASYNC-PROCESSING.md)에서 무료 공개
-  프록시로 우회하도록 고쳤다. 이 피드 소스 자체는 여전히 비활성 상태로 둔다
-  (`FeedParser`는 이번 수정의 적용 대상이 아니다).
+  적용되지 않아 그대로 재발했다. 무료 공개 프록시로 우회하는 시도가 있었으나
+  되돌려졌다 — [AI-ASYNC-PROCESSING.md 5.10절](./AI-ASYNC-PROCESSING.md) 참고.
+  이 피드 소스 자체는 여전히 비활성 상태로 둔다.
 - GeekNews 항목 링크가 원문이 아니라 토론 페이지(`news.hada.io/topic?id=...`)인
   점 — 그대로 둘지는 실제 등록 결과를 더 보고 판단
 - Lambda 비동기(Event) 호출이 DLQ 없이 실패해 `ai_status=PENDING`이 영구히
