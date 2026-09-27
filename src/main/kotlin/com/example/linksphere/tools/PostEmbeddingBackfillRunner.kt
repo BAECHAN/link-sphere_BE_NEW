@@ -51,6 +51,14 @@ class PostEmbeddingBackfillRunner(
         }
         println("대상 ${targets.size}건")
 
+        if (!commit) {
+            // dry-run은 대상만 보여준다 - Gemini는 절대 호출하지 않는다. PostAiBackfillRunner와
+            // 동일한 원칙(무료 티어 쿼터를 "미리보기"로 쓰지 않는다).
+            targets.forEach { post -> println("  [대상] ${post.title} | ${post.url}") }
+            println("dry-run 모드 - 실제로 임베딩을 생성하려면 --commit을 붙이세요.")
+            return
+        }
+
         var succeeded = 0
         var failed = 0
         targets.forEach { post ->
@@ -61,17 +69,14 @@ class PostEmbeddingBackfillRunner(
                 return@forEach
             }
 
-            succeeded++
-            println("  [성공] ${post.title} | ${post.url}")
-            if (commit) {
-                runCatching { postAIService.saveEmbedding(post.id!!, embedding) }
-                    .onFailure { e -> println("    저장 실패 - ${post.url}: ${e.message}") }
-            }
+            runCatching { postAIService.saveEmbedding(post.id!!, embedding) }
+                .onSuccess {
+                    succeeded++
+                    println("  [성공] ${post.title} | ${post.url}")
+                }
+                .onFailure { e -> println("  [저장 실패] ${post.url}: ${e.message}") }
         }
 
         println("성공 $succeeded 건, 실패 $failed 건")
-        if (!commit) {
-            println("dry-run 모드 - 실제로 저장하려면 --commit을 붙이세요.")
-        }
     }
 }

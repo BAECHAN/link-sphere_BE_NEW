@@ -247,7 +247,7 @@ class GeminiService(
             EmbedContentRequest(
                 model = "models/$embeddingModel",
                 content = Content(parts = listOf(Part(text = text))),
-                config = EmbedContentConfig(outputDimensionality = embeddingDimensions),
+                outputDimensionality = embeddingDimensions,
             )
 
         return try {
