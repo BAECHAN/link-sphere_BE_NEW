@@ -41,4 +41,11 @@ class TablePost(
     @Column(name = "ai_status")
     var aiStatus: AiStatus = AiStatus.NONE,
     @Column(name = "is_private", nullable = false) var isPrivate: Boolean = false,
+    // 검색 의미 매칭용 임베딩(pgvector). 쓰기는 항상 PostRepository.updateEmbedding()의
+    // 네이티브 UPDATE로만 한다 - insertable/updatable=false로 막아, AI 잡이 막 써넣은
+    // 새 임베딩을 그 사이 다른 경로의 전체 save()가 옛 값(또는 null)으로 덮어쓰는 경쟁을
+    // 방지한다.
+    @Column(name = "embedding", insertable = false, updatable = false)
+    @JdbcTypeCode(SqlTypes.VECTOR)
+    val embedding: FloatArray? = null,
 )

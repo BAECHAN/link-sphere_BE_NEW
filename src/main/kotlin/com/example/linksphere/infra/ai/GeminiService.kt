@@ -31,6 +31,19 @@ class GeminiService(
     private val restClient = RestClient.builder().requestFactory(requestFactory).build()
     private val baseUrl = "https://generativelanguage.googleapis.com/v1beta/models"
 
+    // 검색 질의 임베딩은 실제 검색 요청 스레드에서 동기 호출된다 - 문서 임베딩(AI 잡, 별도
+    // Lambda 호출이라 시간 여유 있음)과 달리 짧게 끊어야 검색 자체가 느려지지 않는다.
+    // 실패하면 embedQuery가 null을 돌려주고 호출부가 키워드 전용으로 폴백한다.
+    private val queryRequestFactory =
+        JdkClientHttpRequestFactory(HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(1)).build())
+            .apply { setReadTimeout(Duration.ofMillis(1500)) }
+    private val queryRestClient = RestClient.builder().requestFactory(queryRequestFactory).build()
+
+    // 요약 모델과 별도 상수 - 서로 다른 임베딩 모델의 벡터는 비교할 수 없어 generateContent
+    // 처럼 실패 시 다음 모델로 폴백하는 방식을 쓰지 않는다.
+    private val embeddingModel = "gemini-embedding-2"
+    private val embeddingDimensions = 768
+
     init {
         logger.info("[GeminiService] Initialized with models: $models")
     }
@@ -216,5 +229,43 @@ class GeminiService(
 
         logger.info("[Gemini API] Parsed Summary: ${summary?.take(50)}..., Tags: $tags")
         return AiAnalysisResult(summary, tags, title, description)
+    }
+
+    /** 글 등록·재수집 시 저장할 문서 임베딩. AI 잡(별도 Lambda 호출) 안에서만 불러 시간 여유가 있다. */
+    fun embedDocument(text: String): FloatArray? = embed(restClient, text)
+
+    /** 검색 시점 질의 임베딩. 실패/타임아웃이면 null - 호출부가 키워드 전용 검색으로 폴백한다. */
+    fun embedQuery(text: String): FloatArray? = embed(queryRestClient, text)
+
+    private fun embed(client: RestClient, text: String): FloatArray? {
+        if (apiKey.isBlank() || apiKey == "your-api-key-here") {
+            logger.warn("Gemini API Key is missing or invalid. Skipping embedding.")
+            return null
+        }
+
+        val request =
+            EmbedContentRequest(
+                model = "models/$embeddingModel",
+                content = Content(parts = listOf(Part(text = text))),
+                config = EmbedContentConfig(outputDimensionality = embeddingDimensions),
+            )
+
+        return try {
+            client
+                .post()
+                .uri("$baseUrl/$embeddingModel:embedContent?key=$apiKey")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(request)
+                .retrieve()
+                .body(EmbedContentResponse::class.java)
+                ?.embedding
+                ?.values
+                ?.toFloatArray()
+        } catch (e: Exception) {
+            // generateContent와 달리 상태 코드 기반 모델 폴백이 없고, 질의 경로는 타임아웃
+            // (HttpStatusCodeException이 아님)도 흔히 나므로 넓게 잡아 항상 null로 폴백시킨다.
+            logger.warn("[Gemini API] 임베딩 실패", e)
+            null
+        }
     }
 }

@@ -92,6 +92,10 @@ dependencies {
     implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8")
     runtimeOnly("org.postgresql:postgresql")
 
+    // posts.embedding(pgvector) 컬럼을 FloatArray로 매핑 - Spring Boot 3.5.8이 관리하는
+    // hibernate-core 버전(6.6.36.Final, `./gradlew dependencies`로 확인)과 맞춘다.
+    implementation("org.hibernate.orm:hibernate-vector:6.6.36.Final")
+
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
     testImplementation("org.springframework.security:spring-security-test")
