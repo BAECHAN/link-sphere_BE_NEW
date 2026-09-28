@@ -1,6 +1,5 @@
 package com.example.linksphere.domain.auth
 
-import com.example.linksphere.domain.auth.jwt.JwtTokenProvider
 import com.example.linksphere.domain.member.MemberService
 import com.example.linksphere.global.exception.DuplicateMemberException
 import com.example.linksphere.global.exception.DuplicateNicknameException
@@ -8,6 +7,7 @@ import com.example.linksphere.global.exception.InvalidCredentialsException
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
+import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest
@@ -23,6 +23,7 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 
@@ -44,7 +45,7 @@ class AuthControllerTest {
 
     @MockitoBean private lateinit var memberService: MemberService
 
-    @MockitoBean private lateinit var jwtTokenProvider: JwtTokenProvider
+    @MockitoBean private lateinit var memberSessionService: MemberSessionService
 
     @Test
     @WithMockUser
@@ -237,5 +238,59 @@ class AuthControllerTest {
                         """{"status":401,"code":"INVALID_CREDENTIALS","message":"Invalid email or password"}""",
                     ),
             )
+    }
+
+    @Test
+    @WithMockUser
+    fun `login 성공 시 __Host-refreshToken 쿠키를 authResult의 만료 시각만큼 세팅한다`() {
+        val request = LoginRequest("test@example.com", "password1!")
+        `when`(authService.login(request))
+            .thenReturn(AuthResult("access-token", "refresh-token", refreshExpiresInSeconds = 604800L))
+
+        mockMvc.perform(
+            post("/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(jacksonObjectMapper().writeValueAsString(request))
+                .with(csrf()),
+        )
+            .andExpect(status().isOk)
+            .andExpect(cookie().value("__Host-refreshToken", "refresh-token"))
+            .andExpect(cookie().maxAge("__Host-refreshToken", 604800))
+            .andExpect(cookie().httpOnly("__Host-refreshToken", true))
+            .andExpect(cookie().secure("__Host-refreshToken", true))
+            .andExpect(cookie().path("__Host-refreshToken", "/"))
+    }
+
+    @Test
+    @WithMockUser
+    fun `logout은 쿠키 값을 authService에 그대로 전달하고 쿠키를 만료시킨다`() {
+        mockMvc.perform(
+            post("/auth/logout")
+                .cookie(jakarta.servlet.http.Cookie("__Host-refreshToken", "refresh-token"))
+                .with(csrf()),
+        )
+            .andExpect(status().isOk)
+            .andExpect(cookie().maxAge("__Host-refreshToken", 0))
+
+        verify(authService).logout("refresh-token")
+    }
+
+    @Test
+    @WithMockUser
+    fun `logout은 쿠키가 없어도 200을 반환한다`() {
+        mockMvc.perform(post("/auth/logout").with(csrf()))
+            .andExpect(status().isOk)
+
+        verify(authService).logout(null)
+    }
+
+    @Test
+    @WithMockUser(username = "3fa85f64-5717-4562-b3fc-2c963f66afa6")
+    fun `logout-all은 인증된 사용자 id로 authService를 호출하고 쿠키를 만료시킨다`() {
+        mockMvc.perform(post("/auth/logout-all").with(csrf()))
+            .andExpect(status().isOk)
+            .andExpect(cookie().maxAge("__Host-refreshToken", 0))
+
+        verify(authService).logoutAll("3fa85f64-5717-4562-b3fc-2c963f66afa6")
     }
 }

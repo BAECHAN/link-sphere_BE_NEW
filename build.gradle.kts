@@ -104,11 +104,6 @@ dependencies {
     // 아키텍처 규칙을 컴파일된 바이트코드로 검증 - DB·Spring 컨텍스트 없이 수십 ms 안에 끝난다.
     testImplementation("com.tngtech.archunit:archunit-junit5:1.5.0")
 
-    // JWT 구현을 위한 JJWT 라이브러리 추가
-    implementation("io.jsonwebtoken:jjwt-api:0.12.5")
-    runtimeOnly("io.jsonwebtoken:jjwt-impl:0.12.5")
-    runtimeOnly("io.jsonwebtoken:jjwt-jackson:0.12.5")
-
     // SpringDoc OpenAPI (Swagger) 라이브러리 추가 — UI 에셋 제외한 API 스펙만 포함
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-api:2.7.0")
 

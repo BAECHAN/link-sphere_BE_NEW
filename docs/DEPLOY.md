@@ -197,7 +197,6 @@ Lambda 콘솔 → Configuration → Environment variables:
 | `SUPABASE_BUCKET` | Supabase 스토리지 버킷명 |
 | `SUPABASE_KEY` | Supabase service role key |
 | `SUPABASE_URL` | `https://<project>.supabase.co` |
-| `JWT_SECRET` | JWT 서명 키 (최소 32자) |
 | `ORIGIN_VERIFY_SECRET` | CloudFront가 오리진 커스텀 헤더로 붙이는 값(§5-1 참고). 미설정 시 그 검사는 건너뛴다(fail-open) |
 
 > Spring Boot는 `SPRING_DATASOURCE_URL` → `spring.datasource.url` 형식으로 환경변수를 자동 바인딩한다.

@@ -29,7 +29,7 @@ data class SignupRequest(
 
 data class TokenResponse(val accessToken: String)
 
-data class AuthResult(val accessToken: String, val refreshToken: String)
+data class AuthResult(val accessToken: String, val refreshToken: String, val refreshExpiresInSeconds: Long)
 
 data class AccountResponse(
     val id: String,

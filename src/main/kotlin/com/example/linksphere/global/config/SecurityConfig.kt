@@ -1,6 +1,6 @@
 package com.example.linksphere.global.config
 
-import com.example.linksphere.domain.auth.jwt.JwtAuthenticationFilter
+import com.example.linksphere.domain.auth.SessionAuthenticationFilter
 import com.example.linksphere.global.config.security.CustomAccessDeniedHandler
 import com.example.linksphere.global.config.security.CustomAuthenticationEntryPoint
 import org.springframework.boot.context.properties.bind.Bindable
@@ -22,7 +22,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource
 @Configuration
 @EnableWebSecurity
 class SecurityConfig(
-    private val jwtAuthenticationFilter: JwtAuthenticationFilter,
+    private val sessionAuthenticationFilter: SessionAuthenticationFilter,
     private val customAuthenticationEntryPoint: CustomAuthenticationEntryPoint,
     private val customAccessDeniedHandler: CustomAccessDeniedHandler,
     private val environment: Environment,
@@ -77,7 +77,7 @@ class SecurityConfig(
                 }
             }
             .addFilterBefore(
-                jwtAuthenticationFilter,
+                sessionAuthenticationFilter,
                 UsernamePasswordAuthenticationFilter::class.java,
             )
 
