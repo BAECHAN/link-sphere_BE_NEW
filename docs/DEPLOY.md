@@ -501,17 +501,29 @@ aws iam put-role-policy \
 `MailService`가 발송을 건너뛴다(fail-open) - 로그인·가입 등 나머지 인증 흐름은
 이 값과 무관하게 정상 동작한다.
 
-### 10. 탈퇴 유예 만료 계정 정리 (EventBridge 스케줄 룰) — 절차 정리 (미적용)
+### 10. 탈퇴 유예 만료 계정 정리 (기존 EventBridge 룰에 타겟 추가) — 절차 정리 (미적용)
 
-`AccountPurgeService`가 회원탈퇴 신청 후 14일이 지난 계정을 매일 익명화한다
-(`docs/plans/2026-09-29-account-deletion-grace-period.md`). 8장 RSS 피드 수집과
-동일한 형식의 규칙을 하나 더 만든다. 적용 순서(`CHANGELOG.md`
-`[Unreleased] > Migration` 참고):
+`AccountPurgeService`가 회원탈퇴 신청 후 14일이 지난 계정을 익명화한다
+(`docs/plans/2026-09-29-account-deletion-grace-period.md`). 실제 발생 빈도가
+낮을 것으로 예상돼(탈퇴 자체가 드문 액션 + 14일 유예 중 로그인 복구까지
+거치고 남는 경우만 대상) 전용 규칙을 새로 만드는 대신 **8장 RSS 피드 수집
+규칙(`link-sphere-feed-crawl`, 4일마다 실행)에 타겟을 하나 추가**하는 방식을
+택했다 - 새 `put-rule`·`add-permission` 없이 `put-targets` 한 번으로 끝난다.
+
+**왜 권한을 새로 부여하지 않아도 되는가**: Lambda의 EventBridge 호출 허용
+권한(`add-permission`)은 타겟이 아니라 **규칙(rule ARN) 단위**로 부여된다 -
+"이 규칙에서 오는 호출은 허용"이라는 조건이지 "이 타겟에서 오는 호출"이
+아니다. 이미 `EventBridgeFeedCrawl` 권한 문(`source-arn`이 `link-sphere-feed-crawl`
+룰 ARN)이 있으므로, 같은 룰에 타겟을 추가하면 그 권한을 그대로 쓴다.
+`LambdaHandler`는 어느 룰이 호출했는지는 보지 않고 페이로드의 `linksphereJob`
+값으로만 분기하므로(`"feed-crawl"` vs `"account-purge"`) 코드 쪽 영향도 없다.
+
+적용 순서(`CHANGELOG.md` `[Unreleased] > Migration` 참고):
 
 1. `sql/add_member_deletion_requested_at.sql`을 코드 배포 **전에** 먼저 실행
    (`members.deletion_requested_at` 컬럼 + 만료 조회용 부분 인덱스)
 2. 코드가 `prod`로 배포되고 5회 연속 invoke 게이트를 통과한 뒤,
-3. 아래 EventBridge 룰을 만들기 **전에** 수동으로 한 번 트리거해 검증한다:
+3. 아래 타겟을 추가하기 **전에** 수동으로 한 번 트리거해 검증한다:
    ```bash
    echo '{"linksphereJob":"account-purge"}' > /tmp/account-purge-event.json
    aws lambda invoke --function-name link-sphere-api:prod --log-type Tail \
@@ -523,30 +535,12 @@ aws iam put-role-policy \
    뒤에만 다음 단계로 진행한다. 배포 직후에는 유예 만료 대상이 없어 보통
    `purged=0`이다 - 그 자체로는 실패가 아니다.
 
-> **타겟은 반드시 `prod` alias여야 한다** — 이유는 6장 워밍 핑과 동일(`$LATEST`엔
-> SnapStart 스냅샷이 적용되지 않음).
-
 ```bash
-# 매일 UTC 18:00(KST 03:00) 실행되는 규칙 생성 - 사용자 트래픽이 가장 적은
-# 시간대를 골랐다(정확한 수치 실측은 안 함, 야간이라는 통상적 가정)
-aws events put-rule \
-  --name link-sphere-account-purge \
-  --schedule-expression "cron(0 18 * * ? *)" \
-  --region ap-northeast-1
-
-# Lambda가 EventBridge 호출을 허용하도록 권한 부여
-aws lambda add-permission \
-  --function-name link-sphere-api \
-  --qualifier prod \
-  --statement-id EventBridgeAccountPurge \
-  --action lambda:InvokeFunction \
-  --principal events.amazonaws.com \
-  --source-arn arn:aws:events:ap-northeast-1:ACCOUNT_ID:rule/link-sphere-account-purge \
-  --region ap-northeast-1
-
-# 대상 지정 — LambdaHandler가 linksphereJob 필드로 일반 HTTP 이벤트와 구분한다
+# link-sphere-feed-crawl 룰(8장, 4일마다 UTC 22:00)에 두 번째 타겟을 추가한다.
+# put-targets는 Id로 추가·갱신만 하고 기존 타겟(feed-crawl)은 건드리지 않으므로
+# 기존 타겟을 다시 나열할 필요가 없다.
 aws events put-targets \
-  --rule link-sphere-account-purge \
+  --rule link-sphere-feed-crawl \
   --region ap-northeast-1 \
   --targets '[{
     "Id": "account-purge",
@@ -555,15 +549,21 @@ aws events put-targets \
   }]'
 ```
 
-- **이 배포 이후 14일 안에 규칙을 만들어야 한다** — 늦어지면 유예가 끝난 계정이
-  "탈퇴한 사용자"로 계속 숨겨진 채로 남지만, 실제 익명화·개인 데이터 삭제만
-  미뤄진다(데이터 손상 없음, 규칙을 만드는 즉시 밀린 대상부터 처리된다).
+- 등록 직후 `aws events list-targets-by-rule --rule link-sphere-feed-crawl
+  --region ap-northeast-1`로 타겟이 `feed-crawl`·`account-purge` 둘 다 남아있는지
+  확인한다(권한 재사용이 실제로 되는지는 AWS 문서 근거로만 판단했고 이 정확한
+  시나리오로 직접 재현 검증은 안 했다 - 다음 실행 시각에 CloudWatch Logs에서
+  `[AccountPurge]` 로그가 실제로 찍히는지까지 확인해야 완전히 검증된 것이다).
+- **4일마다 실행되므로 최악의 경우 유예가 끝나고 최대 4일이 더 지나야 실제
+  익명화된다**(14일 유예 + 최대 4일 = 최대 18일). 늦어져도 유예가 끝난 계정은
+  이미 "탈퇴한 사용자"로 숨겨져 있어 데이터 손상은 없다 - 실제 익명화·개인
+  데이터 삭제만 미뤄진다.
 - 회원별로 별도 트랜잭션이라(`AccountPurgeService.purgeExpired`) 한 명이 실패해도
-  나머지는 그대로 처리된다 - 실패 건은 다음날 재시도된다(claim 조건이 다시
-  통과하므로 별도 재처리 코드가 필요 없다).
+  나머지는 그대로 처리된다 - 실패 건은 다음 실행에 재시도된다(claim 조건이
+  다시 통과하므로 별도 재처리 코드가 필요 없다).
 - 결과 확인: `SELECT count(*) FROM members WHERE deletion_requested_at IS NOT NULL
-  AND deleted_at IS NULL AND deletion_requested_at < now() - interval '14 days';`가
-  0에 가깝게 유지되는지 주기적으로 확인한다(0이 아니면 규칙이 안 돌고 있거나
+  AND deleted_at IS NULL AND deletion_requested_at < now() - interval '18 days';`가
+  0에 가깝게 유지되는지 주기적으로 확인한다(0이 아니면 타겟이 안 돌고 있거나
   실패가 누적되는 신호).
 
 ---
