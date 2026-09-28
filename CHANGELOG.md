@@ -455,7 +455,8 @@
   (`FcmTokenRepository.kt`, `FcmTokenService.kt`, `FcmService.kt`,
   `FcmNotificationService.kt`, `TableFcmToken.kt`, `FcmTokenController.kt`,
   `MemberSessionService.kt`, `SessionAuthenticationFilter.kt`, `SecurityUtils.kt`,
-  `CommentPostProcessService.kt`, `FcmTokenServiceTest.kt`(신규))
+  `CommentPostProcessService.kt`, `FcmTokenServiceTest.kt`(신규),
+  [PR #50](https://github.com/BAECHAN/link-sphere_BE_NEW/pull/50))
 
   </details>
 
