@@ -8,8 +8,10 @@ import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import org.mockito.ArgumentCaptor
+import org.mockito.ArgumentMatchers.any
 import org.mockito.InjectMocks
 import org.mockito.Mock
+import org.mockito.Mockito.never
 import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.verifyNoInteractions
@@ -20,11 +22,14 @@ import java.time.Instant
 import java.util.UUID
 
 /**
- * ArgumentMatchers.any()/eq()는 Kotlin non-null 파라미터(Instant, TableMemberSession 등)에
- * 쓰면 null을 반환해 즉시 NPE가 나고, 그 예외가 Mockito의 매처 스택을 미소비 상태로 남겨
- * 같은 JVM에서 도는 무관한 다른 테스트 클래스까지 연쇄로 깨뜨린다(실측 확인). 이 파일은
- * 그 어떤 matcher도 쓰지 않고 ArgumentCaptor(캡처만, 비교 안 함)와 verify + concrete 값,
- * verifyNoMoreInteractions만으로 "아무 일도 안 함"까지 검증한다.
+ * ArgumentMatchers.any()/eq()는 Kotlin **non-null** 파라미터(TableMemberSession 등)에 쓰면
+ * null을 반환해 즉시 NPE가 나고, 그 예외가 Mockito의 매처 스택을 미소비 상태로 남겨 같은
+ * JVM에서 도는 무관한 다른 테스트 클래스까지 연쇄로 깨뜨린다(실측 확인). save() 검증은 그
+ * 문제를 피해 ArgumentCaptor(캡처만, 비교 안 함)와 concrete 값 + verifyNoMoreInteractions로
+ * 한다. 반면 consumeRefreshIfActive/revokeFamily/revokeAllActiveForMember는 파라미터가
+ * **nullable**(UUID?/Instant?, MemberSessionRepository.kt 참고)이라 이 문제가 없어
+ * any()를 그대로 stub(양쪽 다 any()만 써서 matcher 종류를 안 섞는다)에 쓴다 - 정확히 어떤
+ * 값이 넘어갔는지는 필요한 곳에서만 별도 ArgumentCaptor로 검증한다.
  */
 @ExtendWith(MockitoExtension::class)
 class MemberSessionServiceTest {
@@ -85,7 +90,7 @@ class MemberSessionServiceTest {
     }
 
     @Test
-    fun `rotate는 유효한 refresh면 기존 행을 revoke하고 같은 family_id로 새 행을 만든다`() {
+    fun `rotate는 유효한 refresh면 원자적으로 소비 처리하고 같은 family_id로 새 행을 만든다`() {
         val familyId = UUID.randomUUID()
         val memberId = UUID.randomUUID()
         val refreshExpiresAt = Instant.now().plusSeconds(1000)
@@ -97,48 +102,56 @@ class MemberSessionServiceTest {
             familyId = familyId,
         )
         `when`(memberSessionRepository.findByRefreshTokenHash(SecureToken.hash(rawToken))).thenReturn(current)
+        // consumeRefreshIfActive가 1(성공)을 반환해야 회전이 진행된다 - 0이면(레이스에서
+        // 졌거나 이미 revoke됨) 다른 분기로 빠진다(별도 테스트).
+        `when`(memberSessionRepository.consumeRefreshIfActive(any(), any())).thenReturn(1)
 
         val issued = memberSessionService.rotate(rawToken)
 
-        // 1회차 save: 기존 행을 revoke 처리, 2회차 save: 새 행
-        val captor = ArgumentCaptor.forClass(TableMemberSession::class.java)
-        verify(memberSessionRepository, times(2)).save(captor.capture())
+        val idCaptor = ArgumentCaptor.forClass(UUID::class.java)
+        verify(memberSessionRepository).consumeRefreshIfActive(idCaptor.capture(), any())
+        assertEquals(current.id, idCaptor.value)
 
-        val revokedOld = captor.allValues[0]
-        assertEquals(current, revokedOld)
-        assertNotEquals(null, revokedOld.revokedAt)
+        val newSessionCaptor = ArgumentCaptor.forClass(TableMemberSession::class.java)
+        verify(memberSessionRepository).save(newSessionCaptor.capture())
+        val newSession = newSessionCaptor.value
 
-        val newSession = captor.allValues[1]
         assertEquals(memberId, newSession.memberId)
         assertEquals(familyId, newSession.familyId)
         // 절대 수명은 연장되지 않는다 - 원래 refreshExpiresAt을 그대로 물려받는다.
         assertEquals(refreshExpiresAt, newSession.refreshExpiresAt)
+        // access 만료도 그 절대 수명을 넘지 않는다(이 케이스는 1000초 여유가 있어 1시간보다
+        // 작으므로 실제로 캡을 맞고 refreshExpiresAt과 같아진다).
+        assertEquals(refreshExpiresAt, newSession.accessExpiresAt)
 
         assertNotEquals(0L, issued.refreshExpiresInSeconds)
+        // revokeFamily는 호출되지 않는다 - 정상 회전이지 재사용/레이스가 아니다.
+        verify(memberSessionRepository, never()).revokeFamily(any(), any())
     }
 
     @Test
-    fun `rotate는 이미 revoke된 refresh가 다시 제시되면(재사용) 같은 계열 전체를 폐기하고 예외를 던진다`() {
+    fun `rotate는 이미 소비된(또는 동시 요청에 진) refresh면 같은 계열 전체를 폐기하고 예외를 던진다`() {
         val familyId = UUID.randomUUID()
-        val rawToken = "reused-token"
-        val alreadyRevoked = session(
+        val rawToken = "reused-or-raced-token"
+        val current = session(
             refreshTokenHash = SecureToken.hash(rawToken),
             familyId = familyId,
-            revokedAt = Instant.now().minusSeconds(60),
         )
-        `when`(memberSessionRepository.findByRefreshTokenHash(SecureToken.hash(rawToken))).thenReturn(alreadyRevoked)
+        `when`(memberSessionRepository.findByRefreshTokenHash(SecureToken.hash(rawToken))).thenReturn(current)
+        // 0 = 조건부 UPDATE가 아무 행도 못 건드림 - 이미 revoke돼 있었거나(재사용) 동시에 온
+        // 다른 요청이 먼저 이겼거나(레이스), 둘 중 뭐든 안전하게 재사용으로 취급한다.
+        `when`(memberSessionRepository.consumeRefreshIfActive(any(), any())).thenReturn(0)
 
         assertThrows(InvalidTokenException::class.java) {
             memberSessionService.rotate(rawToken)
         }
 
         val familyCaptor = ArgumentCaptor.forClass(UUID::class.java)
-        val nowCaptor = ArgumentCaptor.forClass(Instant::class.java)
-        verify(memberSessionRepository).revokeFamily(familyCaptor.capture(), nowCaptor.capture())
+        verify(memberSessionRepository).revokeFamily(familyCaptor.capture(), any())
         assertEquals(familyId, familyCaptor.value)
 
-        verify(memberSessionRepository).findByRefreshTokenHash(SecureToken.hash(rawToken))
-        verifyNoMoreInteractions(memberSessionRepository)
+        // 소비 실패로 끝나므로 새 세션은 저장되지 않는다.
+        verify(memberSessionRepository, never()).save(any())
     }
 
     @Test
@@ -231,14 +244,17 @@ class MemberSessionServiceTest {
     }
 
     @Test
-    fun `checkAccessToken은 revoke된 행이면 Invalid`() {
-        val rawToken = "revoked"
+    fun `checkAccessToken은 revoke됐지만 자연 만료 전이면 Expired(회전한 다른 탭 대비, Invalid 아님)`() {
+        // 회전은 이전 행의 revokedAt을 채우지만 access 자체는 원래 accessExpiresAt까지
+        // 유효했어야 한다 - 여기서 Invalid를 주면 다른 탭이 즉시 로그아웃된다(PR #42 리뷰).
+        // Expired를 주면 FE가 공유 refresh 쿠키로 조용히 회복을 시도한다.
+        val rawToken = "revoked-but-not-expired"
         `when`(memberSessionRepository.findByAccessTokenHash(SecureToken.hash(rawToken)))
             .thenReturn(session(accessTokenHash = SecureToken.hash(rawToken), revokedAt = Instant.now()))
 
         val result = memberSessionService.checkAccessToken(rawToken)
 
-        assertEquals(AccessTokenCheck.Invalid, result)
+        assertEquals(AccessTokenCheck.Expired, result)
     }
 
     @Test
