@@ -198,6 +198,7 @@ Lambda 콘솔 → Configuration → Environment variables:
 | `SUPABASE_KEY` | Supabase service role key |
 | `SUPABASE_URL` | `https://<project>.supabase.co` |
 | `JWT_SECRET` | JWT 서명 키 (최소 32자) |
+| `ORIGIN_VERIFY_SECRET` | CloudFront가 오리진 커스텀 헤더로 붙이는 값(§5-1 참고). 미설정 시 그 검사는 건너뛴다(fail-open) |
 
 > Spring Boot는 `SPRING_DATASOURCE_URL` → `spring.datasource.url` 형식으로 환경변수를 자동 바인딩한다.
 
@@ -219,6 +220,29 @@ aws lambda add-permission \
   --principal "*" \
   --function-url-auth-type NONE
 ```
+
+#### 5-1. Function URL 직접 호출 임시 잠금 (오리진 시크릿 헤더) — 적용 완료 (2026-09-28)
+
+Function URL이 `--auth-type NONE`이라 CloudFront를 거치지 않고 직접 두드려도 요청이
+그대로 들어간다 — WAF(2장)가 CloudFront 앞단에만 있어서 직접 호출은 WAF를 완전히
+우회한다. 진짜 잠금(OAC로 `AWS_IAM` 전환)은 별도 라운드에서 다루고, 이번엔 CloudFront가
+오리진에 커스텀 헤더를 붙이도록 설정해 "이 헤더가 없으면 거절"하는 임시 잠금만 건다
+(`FunctionUrlOriginGuard.kt`, `LambdaHandler.handleRequest` 최상단).
+
+```bash
+# 1. 시크릿 생성 후 Lambda 환경변수로 설정(다른 값들과 같은 방식, 1장 참고)
+# 2. CloudFront 콘솔 → 이 오리진(Function URL) → Origin Custom Headers 에 추가:
+#    이름: X-Origin-Verify
+#    값:   <위에서 만든 시크릿과 동일한 값>
+```
+
+- EventBridge 워밍 핑(6장)·CI 5-invoke 게이트는 `rawPath`+`requestContext.http.method`만
+  담은 합성 이벤트를 쓰고 `requestContext.domainName`이 없어 이 검사 자체를 건너뛴다
+  (`FunctionUrlOriginGuardTest.kt`로 고정).
+- 환경변수가 아직 없으면(배포 과도기) 검사를 건너뛴다 — 설정 누락으로 API 전체가 막히는
+  것보다 지금 수준(공개 상태)을 유지하는 쪽이 안전하다는 판단.
+- 한계: 직접 호출 자체는 여전히 Lambda까지 도달해(과금 대상) 403만 받는다. 완전 차단은
+  OAC 전환 이후.
 
 ### 6. 워밍 핑 (EventBridge 스케줄 룰) — 적용 완료 (2026-07-25)
 

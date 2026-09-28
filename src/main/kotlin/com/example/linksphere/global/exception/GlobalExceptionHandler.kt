@@ -125,13 +125,35 @@ class GlobalExceptionHandler {
 
     @ExceptionHandler(io.jsonwebtoken.JwtException::class)
     fun handleJwtException(e: io.jsonwebtoken.JwtException): ResponseEntity<ErrorResponse> {
+        // 원문(e.message)은 응답에 노출하지 않는다 - 서명·만료 등 내부 검증 실패 사유를 그대로
+        // 돌려주면 공격자에게 어떤 검증에서 걸렸는지 힌트를 준다. 로그로만 남긴다.
+        logger.warn("JWT validation failed", e)
         val response =
             ErrorResponse(
                 status = HttpStatus.UNAUTHORIZED.value(),
                 code = "INVALID_REFRESH_TOKEN",
-                message = "Token validation failed: ${e.message}",
+                message = "Invalid token",
             )
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response)
+    }
+
+    // 메서드 파라미터(@RequestParam 등)에 직접 붙인 @Size 같은 제약 위반 - @Valid @RequestBody의
+    // MethodArgumentNotValidException과 달리 클래스 레벨 @Validated가 있는 컨트롤러에서
+    // jakarta.validation.ConstraintViolationException으로 던져진다. 핸들러가 없으면
+    // handleException(500)으로 떨어진다.
+    @ExceptionHandler(jakarta.validation.ConstraintViolationException::class)
+    fun handleConstraintViolationException(
+        e: jakarta.validation.ConstraintViolationException,
+    ): ResponseEntity<ErrorResponse> {
+        val message = e.constraintViolations.joinToString("; ") { "${it.propertyPath}: ${it.message}" }
+        logger.warn("Constraint violation: {}", message)
+        val response =
+            ErrorResponse(
+                status = HttpStatus.BAD_REQUEST.value(),
+                code = "INVALID_INPUT",
+                message = message.ifBlank { "Invalid input" },
+            )
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response)
     }
 
     @ExceptionHandler(IllegalArgumentException::class)
