@@ -123,6 +123,17 @@ class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response)
     }
 
+    @ExceptionHandler(RateLimitExceededException::class)
+    fun handleRateLimitExceededException(e: RateLimitExceededException): ResponseEntity<ErrorResponse> {
+        val response =
+            ErrorResponse(
+                status = HttpStatus.TOO_MANY_REQUESTS.value(),
+                code = "RATE_LIMIT_EXCEEDED",
+                message = e.message ?: "Too many requests",
+            )
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(response)
+    }
+
     // 메서드 파라미터(@RequestParam 등)에 직접 붙인 @Size 같은 제약 위반 - @Valid @RequestBody의
     // MethodArgumentNotValidException과 달리 클래스 레벨 @Validated가 있는 컨트롤러에서
     // jakarta.validation.ConstraintViolationException으로 던져진다. 핸들러가 없으면

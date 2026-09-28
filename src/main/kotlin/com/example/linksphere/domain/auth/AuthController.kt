@@ -1,10 +1,12 @@
 package com.example.linksphere.domain.auth
 
 import com.example.linksphere.global.common.ApiResponse
+import com.example.linksphere.global.common.ClientIpResolver
 import com.example.linksphere.global.common.getUserId
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.security.SecurityRequirements
 import io.swagger.v3.oas.annotations.tags.Tag
+import jakarta.servlet.http.HttpServletRequest
 import jakarta.validation.Valid
 import jakarta.validation.constraints.Size
 import org.springframework.http.HttpHeaders
@@ -39,23 +41,23 @@ class AuthController(private val authService: AuthService) {
 
     @Operation(
         summary = "회원가입",
-        description = "이 API 만 실제 HTTP 201 로 응답한다. 실패: 400 INVALID_INPUT · 409 DUPLICATE_MEMBER · 409 DUPLICATE_NICKNAME",
+        description = "이 API 만 실제 HTTP 201 로 응답한다. 실패: 400 INVALID_INPUT · 409 DUPLICATE_MEMBER · 409 DUPLICATE_NICKNAME · 429 RATE_LIMIT_EXCEEDED",
     )
     @SecurityRequirements
     @PostMapping("/signup")
-    fun signup(@Valid @RequestBody request: SignupRequest): ResponseEntity<ApiResponse<AccountResponse>> = ResponseEntity.status(HttpStatus.CREATED)
-        .body(ApiResponse(HttpStatus.CREATED.value(), "Signup successful", authService.signup(request)))
+    fun signup(@Valid @RequestBody request: SignupRequest, httpRequest: HttpServletRequest): ResponseEntity<ApiResponse<AccountResponse>> = ResponseEntity.status(HttpStatus.CREATED)
+        .body(ApiResponse(HttpStatus.CREATED.value(), "Signup successful", authService.signup(request, ClientIpResolver.resolve(httpRequest))))
 
     @Operation(
         summary = "로그인",
         description = "accessToken 은 본문으로, refreshToken 은 HttpOnly·Secure·SameSite=Lax 쿠키(최대 7일)로 내려간다. " +
             "둘 다 서버가 발급한 불투명 토큰이다(JWT 아님) - member_sessions 테이블로 매 요청마다 진위를 판정한다. " +
-            "실패: 401 INVALID_CREDENTIALS",
+            "실패: 401 INVALID_CREDENTIALS · 429 RATE_LIMIT_EXCEEDED",
     )
     @SecurityRequirements
     @PostMapping("/login")
-    fun login(@RequestBody request: LoginRequest): ResponseEntity<ApiResponse<TokenResponse>> {
-        val authResult = authService.login(request)
+    fun login(@RequestBody request: LoginRequest, httpRequest: HttpServletRequest): ResponseEntity<ApiResponse<TokenResponse>> {
+        val authResult = authService.login(request, ClientIpResolver.resolve(httpRequest))
         return createCookieResponse(
             authResult,
             ApiResponse(HttpStatus.OK.value(), "Login successful", TokenResponse(authResult.accessToken)),

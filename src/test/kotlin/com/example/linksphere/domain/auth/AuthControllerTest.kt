@@ -4,6 +4,7 @@ import com.example.linksphere.domain.member.MemberService
 import com.example.linksphere.global.exception.DuplicateMemberException
 import com.example.linksphere.global.exception.DuplicateNicknameException
 import com.example.linksphere.global.exception.InvalidCredentialsException
+import com.example.linksphere.global.exception.RateLimitExceededException
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
@@ -51,7 +52,7 @@ class AuthControllerTest {
     @WithMockUser
     fun `signup returns 409 DUPLICATE_MEMBER when DuplicateMemberException is thrown`() {
         val request = SignupRequest("test@example.com", "password1!", "testuser")
-        `when`(authService.signup(request))
+        `when`(authService.signup(request, null))
             .thenThrow(
                 DuplicateMemberException("Email already exists"),
             )
@@ -78,7 +79,7 @@ class AuthControllerTest {
     @WithMockUser
     fun `signup returns 409 DUPLICATE_NICKNAME when DuplicateNicknameException is thrown`() {
         val request = SignupRequest("test@example.com", "password1!", "testuser")
-        `when`(authService.signup(request))
+        `when`(authService.signup(request, null))
             .thenThrow(DuplicateNicknameException("testuser"))
 
         val mapper = jacksonObjectMapper()
@@ -92,6 +93,26 @@ class AuthControllerTest {
         )
             .andExpect(status().isConflict)
             .andExpect(jsonPath("$.code").value("DUPLICATE_NICKNAME"))
+    }
+
+    @Test
+    @WithMockUser
+    fun `signup returns 429 RATE_LIMIT_EXCEEDED when RateLimitExceededException is thrown`() {
+        val request = SignupRequest("test@example.com", "password1!", "testuser")
+        `when`(authService.signup(request, null))
+            .thenThrow(RateLimitExceededException("Too many requests, please try again later"))
+
+        val mapper = jacksonObjectMapper()
+        val json = mapper.writeValueAsString(request)
+
+        mockMvc.perform(
+            post("/auth/signup")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json)
+                .with(csrf()),
+        )
+            .andExpect(status().isTooManyRequests)
+            .andExpect(jsonPath("$.code").value("RATE_LIMIT_EXCEEDED"))
     }
 
     @Test
@@ -219,7 +240,7 @@ class AuthControllerTest {
     @WithMockUser
     fun `login returns 401 when InvalidCredentialsException is thrown`() {
         val request = LoginRequest("test@example.com", "wrongpassword")
-        `when`(authService.login(request))
+        `when`(authService.login(request, null))
             .thenThrow(InvalidCredentialsException("Invalid email or password"))
 
         val mapper = jacksonObjectMapper()
@@ -242,9 +263,29 @@ class AuthControllerTest {
 
     @Test
     @WithMockUser
+    fun `login returns 429 RATE_LIMIT_EXCEEDED when RateLimitExceededException is thrown`() {
+        val request = LoginRequest("test@example.com", "wrongpassword")
+        `when`(authService.login(request, null))
+            .thenThrow(RateLimitExceededException("Too many requests, please try again later"))
+
+        val mapper = jacksonObjectMapper()
+        val json = mapper.writeValueAsString(request)
+
+        mockMvc.perform(
+            post("/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json)
+                .with(csrf()),
+        )
+            .andExpect(status().isTooManyRequests)
+            .andExpect(jsonPath("$.code").value("RATE_LIMIT_EXCEEDED"))
+    }
+
+    @Test
+    @WithMockUser
     fun `login 성공 시 __Host-refreshToken 쿠키를 authResult의 만료 시각만큼 세팅한다`() {
         val request = LoginRequest("test@example.com", "password1!")
-        `when`(authService.login(request))
+        `when`(authService.login(request, null))
             .thenReturn(AuthResult("access-token", "refresh-token", refreshExpiresInSeconds = 604800L))
 
         mockMvc.perform(

@@ -243,6 +243,23 @@ Function URL이 `--auth-type NONE`이라 CloudFront를 거치지 않고 직접 �
 - 한계: 직접 호출 자체는 여전히 Lambda까지 도달해(과금 대상) 403만 받는다. 완전 차단은
   OAC 전환 이후.
 
+#### 5-2. 실제 요청자 IP 전달 (CloudFront-Viewer-Address) — 적용 완료 (2026-09-28)
+
+로그인 실패·가입 레이트리밋(`RateLimitService`, `ClientIpResolver.kt`)이 IP별 버킷을
+나누려면 오리진(Lambda)이 실제 요청자 IP를 알아야 한다. `CloudFront-Viewer-Address`는
+"AllViewer" 계열 오리진 요청 정책이 자동으로 포함하는 일반 뷰어 헤더가 아니라, 오리진
+요청 정책의 헤더 목록에 **명시적으로 추가**해야만 전달되는 CloudFront 전용 헤더다.
+
+```bash
+# CloudFront 콘솔 → 이 오리진(Function URL)의 오리진 요청 정책 → 헤더 목록에 추가:
+#   CloudFront-Viewer-Address
+```
+
+- 값 형식은 `ip:port`(IPv6는 `[::1]:port`) — `ClientIpResolver`가 포트를 잘라낸다.
+- 헤더가 아직 없으면(설정 전, 또는 Phase 0 가드를 우회하는 합성 이벤트) `ClientIpResolver`
+  가 `null`을 반환하고 `RateLimitService`는 그 축의 레이트리밋만 건너뛴다(5-1과 같은
+  fail-open 원칙) — 설정 누락으로 로그인·가입 자체가 막히지 않는다.
+
 ### 6. 워밍 핑 (EventBridge 스케줄 룰) — 적용 완료 (2026-07-25)
 
 콜드스타트 발생 비율을 낮추기 위해 5분마다 `prod` alias를 호출해 컨테이너 1개를 살려둔다.
