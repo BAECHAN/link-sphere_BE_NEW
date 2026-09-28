@@ -21,7 +21,7 @@
   알 방법이 없었다 - `AccountResponse`가 지금까지 `emailVerified`만 노출하고 실제
   이메일은 내려주지 않았기 때문이다. `AccountResponse.email`을 추가해 FE가 이 값을
   그대로 재발송 요청에 실어 보낼 수 있게 했다.
-  (`AuthDTO.kt`, `AuthService.kt`)
+  (`AuthDTO.kt`, `AuthService.kt`, [PR #46](https://github.com/BAECHAN/link-sphere_BE_NEW/pull/46))
 
   </details>
 
