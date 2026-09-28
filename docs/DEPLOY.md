@@ -207,23 +207,51 @@ Lambda 콘솔 → Configuration → Environment variables:
 ### 5. Function URL 생성
 
 ```bash
-# prod alias에 Function URL 생성 (OAC 전환 후 AuthType은 AWS_IAM — 아래 5-1 참고)
+# prod alias에 Function URL 생성
 aws lambda create-function-url-config \
   --function-name link-sphere-api \
   --qualifier prod \
-  --auth-type AWS_IAM
+  --auth-type NONE
+
+# 퍼블릭 접근 허용
+aws lambda add-permission \
+  --function-name link-sphere-api \
+  --qualifier prod \
+  --statement-id FunctionURLAllowPublicAccess \
+  --action lambda:InvokeFunctionUrl \
+  --principal "*" \
+  --function-url-auth-type NONE
 ```
 
-> 과거엔 `--auth-type NONE` + `FunctionURLAllowPublicAccess` 공개 권한으로 만들었다.
-> Phase 7(OAC 전환, 2026-09-29)에서 `AWS_IAM`으로 바꾸고 그 공개 권한은 제거했다 —
-> 지금 새로 만드는 환경이면 처음부터 `AWS_IAM`으로 만들면 된다.
+> **지금 프로덕션은 위 상태(`AuthType: NONE`, 완전 공개) 그대로다.** 아래 5-1은
+> 이 상태를 CloudFront OAC + `AWS_IAM`으로 전환하는 **예정된 절차**를 적어둔 것이지,
+> 아직 실행되지 않았다 — `docs/plans/2026-09-28-auth-hardening.md` Phase 7의 BE·FE
+> 코드가 각각 배포·검증된 뒤에 마지막 단계로 실행한다. 지금 새로 환경을 만드는
+> 상황이 아니라면 이 섹션은 그대로 참고만 하고, 실제 `AuthType` 전환 여부는 반드시
+> `aws lambda get-function-url-config --function-name link-sphere-api --qualifier prod`로
+> 직접 확인한다 — 이 문서의 서술만 믿지 않는다(바로 이 문서가 과거에 한 번 실제
+> 상태와 다른 "적용 완료" 표기를 갖고 있었던 사고 사례가 있다, 아래 정정 참고).
 
-#### 5-1. Function URL 직접 호출 완전 차단 (CloudFront OAC) — 적용 완료 (2026-09-29)
+#### 5-1. Function URL 직접 호출 완전 차단 (CloudFront OAC) — 절차 정리 (미적용)
 
-Function URL이 `AWS_IAM`이고 CloudFront 오리진에 Origin Access Control(OAC)이
-연결돼 있어, CloudFront를 거치지 않고 직접 두드리면 Lambda의 IAM 인가 단계에서
-즉시 403을 받는다(WAF 경유 없이도 차단 — WAF보다 앞단에서 막히므로 §2 WAF와는
-독립적인 방어선이다).
+전환하면: Function URL이 `AWS_IAM`이고 CloudFront 오리진에 Origin Access
+Control(OAC)이 연결돼, CloudFront를 거치지 않고 직접 두드리면 Lambda의 IAM 인가
+단계에서 즉시 403을 받게 된다(WAF 경유 없이도 차단 — WAF보다 앞단에서 막히므로
+§2 WAF와는 독립적인 방어선이다).
+
+**전환 전 체크리스트** (하나라도 빠지면 전환 즉시 쓰기 요청이 전부 실패한다):
+
+- [ ] FE가 `Authorization` 대신 `X-Access-Token` 헤더로 토큰을 보내는지 확인
+  (OAC `SigningBehavior: Always`가 `Authorization`을 CloudFront 자신의 SigV4
+  서명으로 덮어쓴다)
+- [ ] FE의 모든 POST/PUT/PATCH/DELETE(로그인·글쓰기·댓글·multipart 업로드 포함)가
+  본문의 SHA256을 계산해 `x-amz-content-sha256` 헤더로 보내는지 확인 — [AWS 공식
+  문서](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-restricting-access-to-lambda.html)에
+  따르면 CloudFront는 바디를 오리진으로 스트리밍만 할 뿐 이 해시를 대신 계산해주지
+  않는다 — Lambda는 서명되지 않은 페이로드(unsigned payload)를 지원하지 않으므로
+  헤더가 없는 요청은 이 단계에서 거절된다
+
+절차:
 
 ```bash
 # 1. CloudFront에 Function URL 호출 권한 부여 (공식 문서: 두 액션 모두 필요 -
@@ -264,9 +292,10 @@ aws lambda remove-permission --function-name link-sphere-api --qualifier prod \
 한때 Phase 0가 "적용 완료"라고 적어뒀으나, Phase 7 작업 중 직접 조회해보니
 `ORIGIN_VERIFY_SECRET` 환경변수가 실제로는 설정된 적이 없었다(fail-open 상태로
 계속 공개돼 있었음, `AuthType: NONE`·CloudFront에 `CustomHeaders` 없음을 CLI로
-확인) — 표기 오류였다. 이제 OAC(위 5-1)가 그 자리를 대체하므로 이 임시 잠금은
-더 이상 쓰지 않는다. `FunctionUrlOriginGuard.kt` 코드 자체는 유지하되(제거는
-별도 판단), `ORIGIN_VERIFY_SECRET`을 새로 설정할 필요는 없다.
+확인) — 표기 오류였다. OAC(위 5-1) 전환이 완료되면 이 임시 잠금을 대체하게 되므로
+그 전환 전까지는 `ORIGIN_VERIFY_SECRET`을 새로 설정할 필요는 없다.
+`FunctionUrlOriginGuard.kt` 코드 자체는 유지하되(제거는 별도 판단), 전환 전까지는
+지금처럼 fail-open 상태로 남는다는 점을 인지하고 있어야 한다.
 
 #### 5-2. 실제 요청자 IP 전달 (CloudFront-Viewer-Address) — 적용 완료 (2026-09-28)
 
@@ -572,6 +601,8 @@ gh workflow run deploy.yml --repo BAECHAN/link-sphere_BE_NEW --ref main
 # health check
 curl https://<function-url>/actuator/health
 # 응답: {"status":"UP"}
+# (OAC 전환 후에는 이 직접 호출이 403을 반환하는 게 정상이다 — §5-1 참고.
+#  전환 후 헬스체크는 CloudFront 경유(`https://<cloudfront-domain>/api/actuator/health`)로 한다)
 
 # SnapStart 동작 확인 (CloudWatch Logs)
 # RESTORE_START / RESTORE_END 로그가 보이면 SnapStart 정상 동작

@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import org.mockito.InjectMocks
 import org.mockito.Mock
+import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.verifyNoInteractions
 import org.mockito.Mockito.`when`
@@ -15,6 +16,7 @@ import org.mockito.junit.jupiter.MockitoExtension
 import org.springframework.mock.web.MockHttpServletRequest
 import org.springframework.mock.web.MockHttpServletResponse
 import org.springframework.security.core.context.SecurityContextHolder
+import java.util.UUID
 
 /**
  * X-Access-Token 우선 읽기(CloudFront OAC 전환, docs/plans/2026-09-28-auth-hardening.md
@@ -41,7 +43,7 @@ class SessionAuthenticationFilterTest {
         request.addHeader("X-Access-Token", "token-from-custom-header")
         request.addHeader("Authorization", "Bearer token-from-authorization-header")
         `when`(memberSessionService.checkAccessToken("token-from-custom-header"))
-            .thenReturn(AccessTokenCheck.Valid(java.util.UUID.randomUUID()))
+            .thenReturn(AccessTokenCheck.Valid(UUID.randomUUID()))
 
         filter.doFilter(request, MockHttpServletResponse(), filterChain)
 
@@ -53,7 +55,7 @@ class SessionAuthenticationFilterTest {
         val request = MockHttpServletRequest()
         request.addHeader("Authorization", "Bearer token-from-authorization-header")
         `when`(memberSessionService.checkAccessToken("token-from-authorization-header"))
-            .thenReturn(AccessTokenCheck.Valid(java.util.UUID.randomUUID()))
+            .thenReturn(AccessTokenCheck.Valid(UUID.randomUUID()))
 
         filter.doFilter(request, MockHttpServletResponse(), filterChain)
 
@@ -66,11 +68,28 @@ class SessionAuthenticationFilterTest {
         request.addHeader("X-Access-Token", "")
         request.addHeader("Authorization", "Bearer token-from-authorization-header")
         `when`(memberSessionService.checkAccessToken("token-from-authorization-header"))
-            .thenReturn(AccessTokenCheck.Valid(java.util.UUID.randomUUID()))
+            .thenReturn(AccessTokenCheck.Valid(UUID.randomUUID()))
 
         filter.doFilter(request, MockHttpServletResponse(), filterChain)
 
         verify(memberSessionService).checkAccessToken("token-from-authorization-header")
+    }
+
+    @Test
+    fun `X-Access-Token이 유효하지 않아도 Authorization으로 폴백하지 않는다`() {
+        // 우선순위의 보안 의미를 고정한다 - X-Access-Token이 있으면 그 값만으로
+        // 판정하고, 틀렸다고 해서 다른 헤더로 조용히 넘어가지 않는다.
+        val request = MockHttpServletRequest()
+        request.addHeader("X-Access-Token", "wrong-token")
+        request.addHeader("Authorization", "Bearer token-from-authorization-header")
+        `when`(memberSessionService.checkAccessToken("wrong-token"))
+            .thenReturn(AccessTokenCheck.Invalid)
+
+        filter.doFilter(request, MockHttpServletResponse(), filterChain)
+
+        verify(memberSessionService).checkAccessToken("wrong-token")
+        verify(memberSessionService, never()).checkAccessToken("token-from-authorization-header")
+        assertNull(SecurityContextHolder.getContext().authentication)
     }
 
     @Test
@@ -98,7 +117,7 @@ class SessionAuthenticationFilterTest {
 
     @Test
     fun `유효한 토큰이면 SecurityContext에 memberId로 인증을 채운다`() {
-        val memberId = java.util.UUID.randomUUID()
+        val memberId = UUID.randomUUID()
         val request = MockHttpServletRequest()
         request.addHeader("X-Access-Token", "valid-token")
         `when`(memberSessionService.checkAccessToken("valid-token"))

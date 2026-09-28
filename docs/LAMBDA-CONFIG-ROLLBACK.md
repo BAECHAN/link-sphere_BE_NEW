@@ -109,11 +109,14 @@ aws lambda update-function-url-config --function-name link-sphere-api \
 되돌리는 데 필요한 변경은 오직 `AuthType`뿐이다.
 
 **기존 공개 권한(`FunctionURLAllowPublicAccess`)을 이미 제거한 뒤라면** 위 롤백만으론
-부족하다 — `AuthType: NONE`이라도 `lambda:InvokeFunctionUrl`을 익명(`principal: "*"`)에게
-허용하는 권한 자체가 없으면 CloudFront를 거치지 않은 직접 호출은 여전히 막히지만(문제
-없음), **CloudFront 경유 호출도 함께 막힌다** — OAC가 꺼진(`AuthType: NONE`) 상태에서는
-CloudFront가 굳이 서명하지 않으므로 별도 권한이 필요하다. 이 경우 아래로 공개 권한을
-다시 추가한다(원래 있었던 것과 동일한 statement id·설정):
+부족하다 — `AuthType: NONE`은 익명(`principal: "*"`) 호출이 허용되려면 별도로
+`lambda:InvokeFunctionUrl` 권한이 부여돼 있어야 한다는 뜻일 뿐, 그 권한 자체를
+자동으로 주지는 않는다. CloudFront는 OAC가 오리진에 연결돼 있는 한 `AuthType`
+설정과 무관하게 계속 SigV4로 서명해서 보내지만, `AuthType: NONE`인 Function URL은
+그 서명을 검사하지 않는다(무해하게 무시) — 대신 요청을 통과시키려면 "누구든 호출
+가능"이라는 별도의 명시적 권한이 있어야 한다. 공개 권한을 제거해버리면 그 "누구든"에
+CloudFront도 포함되지 않게 되어 **CloudFront 경유 호출까지 함께 막힌다.** 이 경우
+아래로 공개 권한을 다시 추가한다(원래 있었던 것과 동일한 statement id·설정):
 
 ```bash
 aws lambda add-permission --function-name link-sphere-api --qualifier prod \
