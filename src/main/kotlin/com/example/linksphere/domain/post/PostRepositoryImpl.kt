@@ -8,6 +8,7 @@ import jakarta.persistence.criteria.*
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.PageImpl
 import org.springframework.data.domain.Pageable
+import java.time.Instant
 import java.util.UUID
 
 class PostRepositoryImpl : PostRepositoryCustom {
@@ -166,9 +167,16 @@ class PostRepositoryImpl : PostRepositoryCustom {
                 )
             subquery.select(memberRoot.get("id"))
             subquery.where(
-                cb.like(
-                    cb.lower(memberRoot.get("nickname")),
-                    "%${nickname.lowercase()}%",
+                cb.and(
+                    cb.like(
+                        cb.lower(memberRoot.get("nickname")),
+                        "%${nickname.lowercase()}%",
+                    ),
+                    // 탈퇴 유예 중(1단계) · 익명화 완료(2단계) 둘 다 제외한다 - 퍼지 완료된
+                    // 회원은 nickname 자체가 null이라 애초에 like에 안 걸리지만, 유예 중인
+                    // 회원은 실제 닉네임이 여전히 남아있어 이 조건이 없으면 검색에 걸린다
+                    // (TableMember.isWithdrawn과 같은 기준).
+                    cb.isNull(memberRoot.get<Instant>("deletionRequestedAt")),
                 ),
             )
             predicates.add(root.get<UUID>("userId").`in`(subquery))

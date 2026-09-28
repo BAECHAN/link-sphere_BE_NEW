@@ -151,8 +151,21 @@ class AuthService(
             throw InvalidCredentialsException("Invalid email or password")
         }
 
+        // 비밀번호가 일치한 뒤에만 유예 상태를 확인한다 - 먼저 확인하면 "이 이메일이 탈퇴
+        // 유예 중"이라는 사실이 비밀번호 없이도 외부에 드러난다. cancelPendingDeletion은
+        // 유예 중이 아니었으면 그냥 0행 업데이트로 끝나 false를 반환한다(정상 로그인).
+        // false인데 member.deletionRequestedAt이 채워져 있다면 AccountPurgeService가 먼저
+        // 그 회원을 가져간 것이다(경합 R1) - 실패 기록 없이 로그인 실패로 처리한다(퍼지된
+        // 회원의 비밀번호는 어차피 매칭 불가능한 값으로 바뀌어 있어 이 분기가 아니어도
+        // 결국 위의 matches()에서 걸린다, 여기 도달하는 건 매칭 UPDATE와 퍼지 UPDATE
+        // 사이의 아주 좁은 창일 때뿐이다).
+        val deletionCancelled = memberService.cancelPendingDeletion(member.id!!)
+        if (!deletionCancelled && member.deletionRequestedAt != null) {
+            throw InvalidCredentialsException("Invalid email or password")
+        }
+
         val session = memberSessionService.createSession(member.id!!)
-        return AuthResult(session.accessToken, session.refreshToken, session.refreshExpiresInSeconds)
+        return AuthResult(session.accessToken, session.refreshToken, session.refreshExpiresInSeconds, deletionCancelled)
     }
 
     private fun recordLoginFailure(emailBucket: String, ipBucket: String?) {

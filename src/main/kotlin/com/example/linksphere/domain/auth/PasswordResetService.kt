@@ -86,6 +86,15 @@ class PasswordResetService(
         val member =
             memberRepository.findById(token.memberId)
                 .orElseThrow { IllegalStateException("Member not found for action token: ${token.memberId}") }
+
+        // 익명화(퍼지)가 끝난 뒤에는 막는다 - 막지 않으면 퍼지 전에 발급된 토큰으로
+        // deleted-<id>@deleted.invalid 행에 알려진 비밀번호를 설정할 수 있게 된다. 탈퇴
+        // 유예 중(deletionRequestedAt만 있고 deletedAt은 아직 없음)인 계정은 오히려 이
+        // 경로로 비밀번호를 복구해 로그인하는 것이 정상 시나리오라 막지 않는다.
+        if (member.deletedAt != null) {
+            throw InvalidActionTokenException("Invalid or expired token")
+        }
+
         member.password = passwordEncoder.encode(newPassword)
         memberRepository.save(member)
 

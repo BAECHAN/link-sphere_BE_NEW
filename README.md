@@ -38,7 +38,8 @@ src/main/kotlin/com/example/linksphere/
 │   │   ├── AuthController.kt            # 회원가입, 로그인, 토큰 갱신, 로그아웃, 내 정보, 비밀번호 변경, 회원탈퇴
 │   │   ├── AuthDTO.kt
 │   │   ├── AuthService.kt
-│   │   ├── AccountDeletionService.kt    # 회원탈퇴(하드삭제 아님, 계정 행 익명화)
+│   │   ├── AccountDeletionService.kt    # 회원탈퇴 신청(14일 유예)·유예 만료 시 익명화
+│   │   ├── AccountPurgeService.kt       # 유예 만료 계정을 매일 익명화하는 예약 작업
 │   │   ├── PasswordResetService.kt      # 비밀번호 찾기 요청/확인
 │   │   ├── TableAuthRateLimit.kt        # 로그인 실패·가입 시도 카운터(고정 윈도)
 │   │   ├── AuthRateLimitRepository.kt
@@ -158,7 +159,7 @@ src/main/kotlin/com/example/linksphere/
 | `GET`    | `/auth/account`                          | 내 계정 정보 조회                             | ✅   |
 | `PATCH`  | `/auth/account`                          | 닉네임·이미지 수정                            | ✅   |
 | `PATCH`  | `/auth/account/password`                 | 비밀번호 변경                                 | ✅   |
-| `DELETE` | `/auth/account`                          | 회원탈퇴 (계정 행 익명화, 하드삭제 아님)      | ✅   |
+| `DELETE` | `/auth/account`                          | 회원탈퇴 신청 (14일 유예, 로그인 시 자동 복구)| ✅   |
 | `GET`    | `/auth/account/nickname-availability`    | 닉네임 사용 가능 여부                         | ❌   |
 | `GET`    | `/auth/email-availability`               | 이메일 사용 가능 여부                         | ❌   |
 | `POST`   | `/auth/password-reset/request`           | 비밀번호 찾기 요청 (항상 200)                 | ❌   |

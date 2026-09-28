@@ -61,7 +61,7 @@ class CommentPostProcessService(
 
     private fun sendNotification(comment: TableComment) {
         val commenter = memberRepository.findByIdOrNull(comment.userId) ?: return
-        val nickname = commenter.nickname ?: "누군가"
+        val nickname = commenter.publicNickname ?: "누군가"
         val contentPreview = comment.content.take(50)
 
         val parentId = comment.parentId

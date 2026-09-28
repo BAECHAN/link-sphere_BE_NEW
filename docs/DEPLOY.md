@@ -501,6 +501,71 @@ aws iam put-role-policy \
 `MailService`가 발송을 건너뛴다(fail-open) - 로그인·가입 등 나머지 인증 흐름은
 이 값과 무관하게 정상 동작한다.
 
+### 10. 탈퇴 유예 만료 계정 정리 (EventBridge 스케줄 룰) — 절차 정리 (미적용)
+
+`AccountPurgeService`가 회원탈퇴 신청 후 14일이 지난 계정을 매일 익명화한다
+(`docs/plans/2026-09-29-account-deletion-grace-period.md`). 8장 RSS 피드 수집과
+동일한 형식의 규칙을 하나 더 만든다. 적용 순서(`CHANGELOG.md`
+`[Unreleased] > Migration` 참고):
+
+1. `sql/add_member_deletion_requested_at.sql`을 코드 배포 **전에** 먼저 실행
+   (`members.deletion_requested_at` 컬럼 + 만료 조회용 부분 인덱스)
+2. 코드가 `prod`로 배포되고 5회 연속 invoke 게이트를 통과한 뒤,
+3. 아래 EventBridge 룰을 만들기 **전에** 수동으로 한 번 트리거해 검증한다:
+   ```bash
+   echo '{"linksphereJob":"account-purge"}' > /tmp/account-purge-event.json
+   aws lambda invoke --function-name link-sphere-api:prod --log-type Tail \
+     --payload fileb:///tmp/account-purge-event.json /tmp/out.json \
+     --query 'LogResult' --output text | base64 -d
+   ```
+   로그의 `[AccountPurge] 완료 - purged=N, skipped=N, failed=N` 요약을 확인하고,
+   같은 명령을 한 번 더 실행해도 `purged`가 늘지 않는지(멱등성)까지 확인한
+   뒤에만 다음 단계로 진행한다. 배포 직후에는 유예 만료 대상이 없어 보통
+   `purged=0`이다 - 그 자체로는 실패가 아니다.
+
+> **타겟은 반드시 `prod` alias여야 한다** — 이유는 6장 워밍 핑과 동일(`$LATEST`엔
+> SnapStart 스냅샷이 적용되지 않음).
+
+```bash
+# 매일 UTC 18:00(KST 03:00) 실행되는 규칙 생성 - 사용자 트래픽이 가장 적은
+# 시간대를 골랐다(정확한 수치 실측은 안 함, 야간이라는 통상적 가정)
+aws events put-rule \
+  --name link-sphere-account-purge \
+  --schedule-expression "cron(0 18 * * ? *)" \
+  --region ap-northeast-1
+
+# Lambda가 EventBridge 호출을 허용하도록 권한 부여
+aws lambda add-permission \
+  --function-name link-sphere-api \
+  --qualifier prod \
+  --statement-id EventBridgeAccountPurge \
+  --action lambda:InvokeFunction \
+  --principal events.amazonaws.com \
+  --source-arn arn:aws:events:ap-northeast-1:ACCOUNT_ID:rule/link-sphere-account-purge \
+  --region ap-northeast-1
+
+# 대상 지정 — LambdaHandler가 linksphereJob 필드로 일반 HTTP 이벤트와 구분한다
+aws events put-targets \
+  --rule link-sphere-account-purge \
+  --region ap-northeast-1 \
+  --targets '[{
+    "Id": "account-purge",
+    "Arn": "arn:aws:lambda:ap-northeast-1:ACCOUNT_ID:function:link-sphere-api:prod",
+    "Input": "{\"linksphereJob\":\"account-purge\"}"
+  }]'
+```
+
+- **이 배포 이후 14일 안에 규칙을 만들어야 한다** — 늦어지면 유예가 끝난 계정이
+  "탈퇴한 사용자"로 계속 숨겨진 채로 남지만, 실제 익명화·개인 데이터 삭제만
+  미뤄진다(데이터 손상 없음, 규칙을 만드는 즉시 밀린 대상부터 처리된다).
+- 회원별로 별도 트랜잭션이라(`AccountPurgeService.purgeExpired`) 한 명이 실패해도
+  나머지는 그대로 처리된다 - 실패 건은 다음날 재시도된다(claim 조건이 다시
+  통과하므로 별도 재처리 코드가 필요 없다).
+- 결과 확인: `SELECT count(*) FROM members WHERE deletion_requested_at IS NOT NULL
+  AND deleted_at IS NULL AND deletion_requested_at < now() - interval '14 days';`가
+  0에 가깝게 유지되는지 주기적으로 확인한다(0이 아니면 규칙이 안 돌고 있거나
+  실패가 누적되는 신호).
+
 ---
 
 ## GitHub 설정

@@ -47,7 +47,7 @@ class PostResponseAssembler(
             memberRepository.findAllById(posts.map { it.userId }.distinct())
                 .associate { m ->
                     val id = m.id!!
-                    id to UserSummary(id, m.nickname, m.image)
+                    id to UserSummary(id, m.publicNickname, m.publicImage)
                 }
 
         val allBookmarks = bookmarkRepository.findAllByPostIdIn(postIds)
@@ -114,8 +114,8 @@ class PostResponseAssembler(
         val author =
             UserSummary(
                 id = dbAuthor.id ?: throw IllegalStateException("User ID cannot be null"),
-                nickname = dbAuthor.nickname,
-                image = dbAuthor.image,
+                nickname = dbAuthor.publicNickname,
+                image = dbAuthor.publicImage,
             )
 
         val isBookmarked = currentUserId?.let { bookmarkRepository.existsByUserIdAndPostId(it, postId) } ?: false

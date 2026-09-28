@@ -11,6 +11,23 @@
 
 ### Added
 
+- `auth` 탈퇴 유예 만료 계정을 매일 정리하는 예약 작업(`AccountPurgeService`, `account-purge`) 신설
+  <details><summary>배경·구현</summary>
+
+  아래 "회원탈퇴 14일 유예기간" 변경(Changed 절 참고)의 2단계를 실행하는 배치다.
+  `LambdaHandler`가 `feed-crawl`과 같은 shape로 EventBridge cron을 직접 받는다 - 매일
+  KST 03:00, `{"linksphereJob":"account-purge"}`. 회원별로 별도 빈
+  (`AccountDeletionService.purge`)의 `@Transactional` 메서드를 호출해 한 명 실패가
+  나머지를 막지 않게 하고(`runCatching`), 90초 데드라인을 두어 남은 건은 다음날로
+  미룬다(`FeedCrawlService.collectAndDispatch`와 동일한 패턴). 대상 조회
+  (`MemberRepository.findIdsPendingPurge`)와 실제 익명화 확정(`claimForPurge`)이 같은
+  cutoff 조건을 각자 재검증한다 - 조회 뒤 그 사이 로그인으로 복구된 회원을 걸러낸다
+  (경합 상세는 `docs/plans/2026-09-29-account-deletion-grace-period.md` 참고).
+  (`AccountPurgeService.kt`(신규), `LambdaHandler.kt`,
+  [PR #TODO](https://github.com/BAECHAN/link-sphere_BE_NEW/pull/TODO))
+
+  </details>
+
 - `auth` 계정 조회 응답(`GET /auth/account`)에 이메일 주소 추가
   <details><summary>배경·구현</summary>
 
@@ -146,6 +163,37 @@
 
 ### Changed
 
+- `auth` 회원탈퇴(`DELETE /auth/account`)에 14일 유예기간 도입 - 로그인하면 자동 복구
+  <details><summary>배경·구현</summary>
+
+  기존엔 탈퇴 신청 즉시 계정을 익명화했고 복구 경로가 전혀 없었다 - "탈퇴 번복이
+  가능한가" 질문에서 시작해, Discord(14일)·Instagram·X(둘 다 30일)를 비롯한
+  업계 선례를 조사한 결과 대부분 유예기간을 두고 재로그인으로 복구하는 구조였다
+  (조사 상세: `docs/plans/2026-09-29-account-deletion-grace-period.md`).
+
+  탈퇴 신청(1단계, `AccountDeletionService.requestDeletion`)은 이제 회원 행을 건드리지
+  않는다 - `deletion_requested_at`만 채우고, 세션을 전부 폐기하고, FCM 토큰만 바로
+  지운다(유예 중 푸시 중단). 14일 안에 로그인하면(`AuthService.login`) 조건부 UPDATE
+  (`MemberRepository.cancelDeletionRequest`)로 신청이 취소되고 `TokenResponse.
+  deletionCancelled=true`가 내려간다 - FE가 이 값으로 복구 안내 토스트를 띄운다.
+  유예 중에도 다른 사용자에게는 탈퇴한 것처럼 보인다 - `TableMember.isWithdrawn`
+  (`deletedAt` 또는 `deletionRequestedAt`이 있으면 true) 기준으로
+  `publicNickname`/`publicImage`가 null을 반환하며, 댓글·게시글 작성자 표시·닉네임
+  검색·댓글 알림 문구가 전부 이 기준을 쓴다.
+
+  14일이 지나면 예약 작업(`AccountPurgeService`, 위 Added 절)이 `AccountDeletionService.
+  purge`를 호출해 기존과 동일한 익명화(이메일→`.invalid`, 비밀번호→매칭 불가능한 값,
+  닉네임·이미지→null)와 개인 데이터 삭제(북마크·좋아요·조회기록·FCM 토큰)를 수행한다 -
+  북마크 등은 복구 가능성 때문에 이번에 2단계로 미뤄졌다(1단계에서는 지우지 않음).
+  신청(로그인의 `cancelDeletionRequest`)과 퍼지(`claimForPurge`)는 각자 조건부 UPDATE로
+  경합을 가른다 - `MemberSessionRepository.consumeRefreshIfActive`와 같은 패턴.
+  (`AccountDeletionService.kt`, `AuthService.kt`, `AuthDTO.kt`, `AuthController.kt`,
+  `TableMember.kt`, `MemberRepository.kt`, `MemberService.kt`, `CommentService.kt`,
+  `PostResponseAssembler.kt`, `CommentPostProcessService.kt`, `PostRepositoryImpl.kt`,
+  [PR #TODO](https://github.com/BAECHAN/link-sphere_BE_NEW/pull/TODO))
+
+  </details>
+
 - `post` 게시글 목록의 categories N+1 쿼리 제거
   <details><summary>배경·구현</summary>
 
@@ -168,6 +216,20 @@
   </details>
 
 ### Fixed
+
+- `auth` 익명화(퍼지) 완료된 계정에도 비밀번호 재설정이 허용되던 문제 수정
+  <details><summary>배경·구현</summary>
+
+  위 "회원탈퇴 14일 유예기간" 작업 중 발견한 기존 구멍이다(`PasswordResetService.
+  confirmReset`이 회원 상태를 전혀 확인하지 않았다) - 퍼지되기 전에 발급된 재설정
+  토큰(유효기간 1시간)을 그 뒤에 사용하면 `deleted-<id>@deleted.invalid` 행에 알려진
+  비밀번호를 설정할 수 있었다. `member.deletedAt != null`이면
+  `InvalidActionTokenException`을 던지도록 가드를 추가했다. 유예 중(`deletedAt`은
+  아직 없고 `deletionRequestedAt`만 있는) 계정은 막지 않는다 - 비밀번호를 잊은
+  사용자가 재설정으로 복구하는 것은 정상 시나리오다.
+  (`PasswordResetService.kt`)
+
+  </details>
 
 - `infra` 워크트리에서 ktlint pre-commit 훅의 미스테이징 변경 격리가 조용히 깨지던 문제 수정
   <details><summary>배경·구현</summary>
@@ -390,6 +452,21 @@
   `docs/DEPLOY.md`, `docs/LAMBDA-CONFIG-ROLLBACK.md`)
 
   </details>
+
+### Migration
+
+- `sql/add_member_deletion_requested_at.sql` **반드시 BE 코드 배포 전에 실행** —
+  `members.deletion_requested_at` 컬럼과 만료 조회용 부분 인덱스를 추가한다. 컬럼이
+  없으면 `TableMember` 매핑이 깨져 모든 member 조회(로그인 포함)가 즉시 실패한다
+  (`add_member_auth_columns.sql`과 같은 경고).
+- EventBridge 스케줄 룰(`link-sphere-account-purge`) 생성 필요 — BE 배포 후
+  `{"linksphereJob":"account-purge"}`를 prod에 수동으로 한 번 트리거해 정상 동작·
+  멱등성(중복 익명화 없음)을 확인한 다음 만든다(`docs/DEPLOY.md` 10장). 매일 KST
+  03:00 실행. **이 배포 이후 14일 안에** 만들어야 한다 — 늦어지면 유예 만료 계정이
+  숨겨진 채로 남고 익명화만 미뤄진다(데이터 손상은 없음).
+- FE 의존: `TokenResponse.deletionCancelled` 필드 추가. 배포 순서 무관 — 구버전 FE는
+  이 필드를 무시하고, 신버전 FE는 BE가 아직 이 필드를 안 보내도(구버전 BE) 기본값
+  `undefined`로 안전하게 처리한다.
 
 ## [0.10.0] - 2026-09-14
 

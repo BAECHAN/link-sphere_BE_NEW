@@ -285,7 +285,7 @@ class AuthControllerTest {
             .andExpect(status().isOk)
             .andExpect(cookie().maxAge("__Host-refreshToken", 0))
 
-        verify(accountDeletionService).deleteAccount("user", "correct1!")
+        verify(accountDeletionService).requestDeletion("user", "correct1!")
     }
 
     @Test
@@ -293,7 +293,7 @@ class AuthControllerTest {
     fun `deleteAccount returns 401 when password is wrong`() {
         val request = DeleteAccountRequest(password = "wrong")
         doThrow(InvalidCredentialsException("Password is incorrect"))
-            .`when`(accountDeletionService).deleteAccount("user", "wrong")
+            .`when`(accountDeletionService).requestDeletion("user", "wrong")
 
         mockMvc.perform(
             delete("/auth/account")
@@ -504,6 +504,23 @@ class AuthControllerTest {
             .andExpect(cookie().httpOnly("__Host-refreshToken", true))
             .andExpect(cookie().secure("__Host-refreshToken", true))
             .andExpect(cookie().path("__Host-refreshToken", "/"))
+    }
+
+    @Test
+    @WithMockUser
+    fun `login 응답 본문에 deletionCancelled가 담긴다`() {
+        val request = LoginRequest("test@example.com", "password1!")
+        `when`(authService.login(request, null))
+            .thenReturn(AuthResult("access-token", "refresh-token", refreshExpiresInSeconds = 604800L, deletionCancelled = true))
+
+        mockMvc.perform(
+            post("/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(jacksonObjectMapper().writeValueAsString(request))
+                .with(csrf()),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.data.deletionCancelled").value(true))
     }
 
     @Test
