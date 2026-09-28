@@ -1,6 +1,6 @@
 # Lambda 배포 설정 롤백 런북
 
-> 마지막 검토: 2026-07-25
+> 마지막 검토: 2026-09-29
 
 2026-07-25 502 장애 대응 과정에서 작성된 변경 전 상태 스냅샷 겸, 이후에도
 prod alias를 안전 버전으로 되돌릴 때 계속 참고하는 롤백 절차서다.
@@ -88,6 +88,52 @@ aws events remove-targets --rule link-sphere-api-warmup --ids warmup
 aws events delete-rule --name link-sphere-api-warmup
 aws lambda remove-permission --function-name $F --qualifier prod \
   --statement-id EventBridgeWarmup
+```
+
+## Function URL AuthType / CloudFront OAC 롤백 (2026-09-29 Phase 7)
+
+Function URL을 `--auth-type AWS_IAM` + CloudFront OAC로 잠그는 작업(위 alias/메모리
+롤백과는 무관한, 별도 변경 축 — `docs/plans/2026-09-28-auth-hardening.md` Phase 7,
+`docs/DEPLOY.md` §5-1 참고) 도중 CloudFront 경유 요청이 401/403/500 등으로 실패하면
+아래 한 줄로 즉시 공개 상태로 되돌린다.
+
+```bash
+aws lambda update-function-url-config --function-name link-sphere-api \
+  --qualifier prod --auth-type NONE
+```
+
+이 명령은 CloudFront 오리진에 OAC가 여전히 연결돼 있어도 안전하다 — Function URL이
+`NONE`이면 CloudFront가 보낸 SigV4 서명을 아예 검사하지 않고 무시하기 때문이다.
+`add-permission`으로 부여한 CloudFront invoke 권한, `create-origin-access-control`로
+만든 OAC 자체, 배포 설정에 연결한 `OriginAccessControlId`는 그대로 둬도 무해하다 —
+되돌리는 데 필요한 변경은 오직 `AuthType`뿐이다.
+
+**기존 공개 권한(`FunctionURLAllowPublicAccess`)을 이미 제거한 뒤라면** 위 롤백만으론
+부족하다 — `AuthType: NONE`은 익명(`principal: "*"`) 호출이 허용되려면 별도로
+`lambda:InvokeFunctionUrl` 권한이 부여돼 있어야 한다는 뜻일 뿐, 그 권한 자체를
+자동으로 주지는 않는다. CloudFront는 OAC가 오리진에 연결돼 있는 한 `AuthType`
+설정과 무관하게 계속 SigV4로 서명해서 보내지만, `AuthType: NONE`인 Function URL은
+그 서명을 검사하지 않는다(무해하게 무시) — 대신 요청을 통과시키려면 "누구든 호출
+가능"이라는 별도의 명시적 권한이 있어야 한다. 공개 권한을 제거해버리면 그 "누구든"에
+CloudFront도 포함되지 않게 되어 **CloudFront 경유 호출까지 함께 막힌다.** 이 경우
+아래로 공개 권한을 다시 추가한다(원래 있었던 것과 동일한 statement id·설정):
+
+```bash
+aws lambda add-permission --function-name link-sphere-api --qualifier prod \
+  --statement-id FunctionURLAllowPublicAccess --action lambda:InvokeFunctionUrl \
+  --principal "*" --function-url-auth-type NONE
+```
+
+**즉시 검증**:
+
+```bash
+curl -o /dev/null -w '%{http_code}\n' \
+  https://452wlgf5pesg75zbpiaotptq7i0ckrsb.lambda-url.ap-northeast-1.on.aws/actuator/health
+# 200 기대 (NONE으로 롤백했으므로 직접 호출도 다시 열림)
+
+curl -o /dev/null -w '%{http_code}\n' \
+  https://dbw3brui6htwk.cloudfront.net/api/post?page=0\&size=1
+# 200 기대
 ```
 
 ## 주의

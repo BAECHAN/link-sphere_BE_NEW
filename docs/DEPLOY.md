@@ -223,28 +223,79 @@ aws lambda add-permission \
   --function-url-auth-type NONE
 ```
 
-#### 5-1. Function URL 직접 호출 임시 잠금 (오리진 시크릿 헤더) — 적용 완료 (2026-09-28)
+> **지금 프로덕션은 위 상태(`AuthType: NONE`, 완전 공개) 그대로다.** 아래 5-1은
+> 이 상태를 CloudFront OAC + `AWS_IAM`으로 전환하는 **예정된 절차**를 적어둔 것이지,
+> 아직 실행되지 않았다 — `docs/plans/2026-09-28-auth-hardening.md` Phase 7의 BE·FE
+> 코드가 각각 배포·검증된 뒤에 마지막 단계로 실행한다. 지금 새로 환경을 만드는
+> 상황이 아니라면 이 섹션은 그대로 참고만 하고, 실제 `AuthType` 전환 여부는 반드시
+> `aws lambda get-function-url-config --function-name link-sphere-api --qualifier prod`로
+> 직접 확인한다 — 이 문서의 서술만 믿지 않는다(바로 이 문서가 과거에 한 번 실제
+> 상태와 다른 "적용 완료" 표기를 갖고 있었던 사고 사례가 있다, 아래 정정 참고).
 
-Function URL이 `--auth-type NONE`이라 CloudFront를 거치지 않고 직접 두드려도 요청이
-그대로 들어간다 — WAF(2장)가 CloudFront 앞단에만 있어서 직접 호출은 WAF를 완전히
-우회한다. 진짜 잠금(OAC로 `AWS_IAM` 전환)은 별도 라운드에서 다루고, 이번엔 CloudFront가
-오리진에 커스텀 헤더를 붙이도록 설정해 "이 헤더가 없으면 거절"하는 임시 잠금만 건다
-(`FunctionUrlOriginGuard.kt`, `LambdaHandler.handleRequest` 최상단).
+#### 5-1. Function URL 직접 호출 완전 차단 (CloudFront OAC) — 절차 정리 (미적용)
+
+전환하면: Function URL이 `AWS_IAM`이고 CloudFront 오리진에 Origin Access
+Control(OAC)이 연결돼, CloudFront를 거치지 않고 직접 두드리면 Lambda의 IAM 인가
+단계에서 즉시 403을 받게 된다(WAF 경유 없이도 차단 — WAF보다 앞단에서 막히므로
+§2 WAF와는 독립적인 방어선이다).
+
+**전환 전 체크리스트** (하나라도 빠지면 전환 즉시 쓰기 요청이 전부 실패한다):
+
+- [ ] FE가 `Authorization` 대신 `X-Access-Token` 헤더로 토큰을 보내는지 확인
+  (OAC `SigningBehavior: Always`가 `Authorization`을 CloudFront 자신의 SigV4
+  서명으로 덮어쓴다)
+- [ ] FE의 모든 POST/PUT/PATCH/DELETE(로그인·글쓰기·댓글·multipart 업로드 포함)가
+  본문의 SHA256을 계산해 `x-amz-content-sha256` 헤더로 보내는지 확인 — [AWS 공식
+  문서](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-restricting-access-to-lambda.html)에
+  따르면 CloudFront는 바디를 오리진으로 스트리밍만 할 뿐 이 해시를 대신 계산해주지
+  않는다 — Lambda는 서명되지 않은 페이로드(unsigned payload)를 지원하지 않으므로
+  헤더가 없는 요청은 이 단계에서 거절된다
+
+절차:
 
 ```bash
-# 1. 시크릿 생성 후 Lambda 환경변수로 설정(다른 값들과 같은 방식, 1장 참고)
-# 2. CloudFront 콘솔 → 이 오리진(Function URL) → Origin Custom Headers 에 추가:
-#    이름: X-Origin-Verify
-#    값:   <위에서 만든 시크릿과 동일한 값>
+# 1. CloudFront에 Function URL 호출 권한 부여 (공식 문서: 두 액션 모두 필요 -
+#    https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-restricting-access-to-lambda.html)
+aws lambda add-permission --function-name link-sphere-api --qualifier prod \
+  --statement-id AllowCloudFrontServicePrincipal \
+  --action lambda:InvokeFunctionUrl --principal cloudfront.amazonaws.com \
+  --source-arn arn:aws:cloudfront::<account-id>:distribution/<distribution-id>
+
+aws lambda add-permission --function-name link-sphere-api --qualifier prod \
+  --statement-id AllowCloudFrontServicePrincipalInvokeFunction \
+  --action lambda:InvokeFunction --principal cloudfront.amazonaws.com \
+  --source-arn arn:aws:cloudfront::<account-id>:distribution/<distribution-id>
+
+# 2. OAC 생성 (SigningBehavior=always 권장값)
+aws cloudfront create-origin-access-control --origin-access-control-config \
+  Name=link-sphere-api-lambda-oac,SigningProtocol=sigv4,SigningBehavior=always,OriginAccessControlOriginType=lambda
+
+# 3. CloudFront 콘솔(또는 get-distribution-config → OriginAccessControlId 채워서
+#    update-distribution) → 이 오리진(Function URL)의 Origin access control에 위에서
+#    만든 OAC 연결
+
+# 4. Function URL AuthType 전환
+aws lambda update-function-url-config --function-name link-sphere-api \
+  --qualifier prod --auth-type AWS_IAM
+
+# 5. 검증 후, 기존 공개 권한이 남아있었다면 제거
+aws lambda remove-permission --function-name link-sphere-api --qualifier prod \
+  --statement-id FunctionURLAllowPublicAccess
 ```
 
-- EventBridge 워밍 핑(6장)·CI 5-invoke 게이트는 `rawPath`+`requestContext.http.method`만
-  담은 합성 이벤트를 쓰고 `requestContext.domainName`이 없어 이 검사 자체를 건너뛴다
-  (`FunctionUrlOriginGuardTest.kt`로 고정).
-- 환경변수가 아직 없으면(배포 과도기) 검사를 건너뛴다 — 설정 누락으로 API 전체가 막히는
-  것보다 지금 수준(공개 상태)을 유지하는 쪽이 안전하다는 판단.
-- 한계: 직접 호출 자체는 여전히 Lambda까지 도달해(과금 대상) 403만 받는다. 완전 차단은
-  OAC 전환 이후.
+**롤백**: `aws lambda update-function-url-config --function-name link-sphere-api
+--qualifier prod --auth-type NONE` 한 줄로 즉시 공개 상태로 되돌릴 수 있다(OAC가
+오리진에 붙어 있어도 Function URL이 `NONE`이면 서명을 무시하므로 무해) — 자세한
+장애 대응은 `docs/LAMBDA-CONFIG-ROLLBACK.md` 참고.
+
+**Phase 0(오리진 시크릿 헤더, `FunctionUrlOriginGuard.kt`) 관련 정정**: 이 문서는
+한때 Phase 0가 "적용 완료"라고 적어뒀으나, Phase 7 작업 중 직접 조회해보니
+`ORIGIN_VERIFY_SECRET` 환경변수가 실제로는 설정된 적이 없었다(fail-open 상태로
+계속 공개돼 있었음, `AuthType: NONE`·CloudFront에 `CustomHeaders` 없음을 CLI로
+확인) — 표기 오류였다. OAC(위 5-1) 전환이 완료되면 이 임시 잠금을 대체하게 되므로
+그 전환 전까지는 `ORIGIN_VERIFY_SECRET`을 새로 설정할 필요는 없다.
+`FunctionUrlOriginGuard.kt` 코드 자체는 유지하되(제거는 별도 판단), 전환 전까지는
+지금처럼 fail-open 상태로 남는다는 점을 인지하고 있어야 한다.
 
 #### 5-2. 실제 요청자 IP 전달 (CloudFront-Viewer-Address) — 적용 완료 (2026-09-28)
 
@@ -550,6 +601,8 @@ gh workflow run deploy.yml --repo BAECHAN/link-sphere_BE_NEW --ref main
 # health check
 curl https://<function-url>/actuator/health
 # 응답: {"status":"UP"}
+# (OAC 전환 후에는 이 직접 호출이 403을 반환하는 게 정상이다 — §5-1 참고.
+#  전환 후 헬스체크는 CloudFront 경유(`https://<cloudfront-domain>/api/actuator/health`)로 한다)
 
 # SnapStart 동작 확인 (CloudWatch Logs)
 # RESTORE_START / RESTORE_END 로그가 보이면 SnapStart 정상 동작

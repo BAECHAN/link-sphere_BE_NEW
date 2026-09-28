@@ -40,7 +40,18 @@ class SessionAuthenticationFilter(private val memberSessionService: MemberSessio
         filterChain.doFilter(request, response)
     }
 
+    /**
+     * X-Access-Token을 우선 읽는다 - CloudFront OAC가 오리진 요청에 자신의 SigV4 서명을
+     * Authorization 헤더에 덮어쓰기 때문에(Signing behavior: Always sign), 클라이언트의
+     * 실제 토큰은 그 헤더를 쓸 수 없다(docs/plans/2026-09-28-auth-hardening.md Phase 7 참고).
+     * Authorization Bearer 폴백은 로컬 개발(Function URL을 거치지 않음)과 Swagger UI
+     * (SwaggerConfig.kt의 bearerAuth 스킴이 이 형식으로 보냄)를 위해 남겨둔다.
+     */
     private fun resolveToken(request: HttpServletRequest): String? {
+        val accessTokenHeader = request.getHeader("X-Access-Token")
+        if (!accessTokenHeader.isNullOrBlank()) {
+            return accessTokenHeader
+        }
         val bearerToken = request.getHeader("Authorization")
         if (bearerToken != null && bearerToken.startsWith("Bearer ")) {
             return bearerToken.substring(7)
