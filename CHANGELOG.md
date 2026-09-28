@@ -24,7 +24,7 @@
   cutoff 조건을 각자 재검증한다 - 조회 뒤 그 사이 로그인으로 복구된 회원을 걸러낸다
   (경합 상세는 `docs/plans/2026-09-29-account-deletion-grace-period.md` 참고).
   (`AccountPurgeService.kt`(신규), `LambdaHandler.kt`,
-  [PR #TODO](https://github.com/BAECHAN/link-sphere_BE_NEW/pull/TODO))
+  [PR #48](https://github.com/BAECHAN/link-sphere_BE_NEW/pull/48))
 
   </details>
 
@@ -190,7 +190,7 @@
   (`AccountDeletionService.kt`, `AuthService.kt`, `AuthDTO.kt`, `AuthController.kt`,
   `TableMember.kt`, `MemberRepository.kt`, `MemberService.kt`, `CommentService.kt`,
   `PostResponseAssembler.kt`, `CommentPostProcessService.kt`, `PostRepositoryImpl.kt`,
-  [PR #TODO](https://github.com/BAECHAN/link-sphere_BE_NEW/pull/TODO))
+  [PR #48](https://github.com/BAECHAN/link-sphere_BE_NEW/pull/48))
 
   </details>
 
