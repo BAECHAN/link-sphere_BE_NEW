@@ -11,14 +11,18 @@
 
 ### Added
 
-- `auth` 탈퇴 유예 만료 계정을 매일 정리하는 예약 작업(`AccountPurgeService`, `account-purge`) 신설
+- `auth` 탈퇴 유예 만료 계정을 정리하는 예약 작업(`AccountPurgeService`, `account-purge`) 신설
   <details><summary>배경·구현</summary>
 
   아래 "회원탈퇴 14일 유예기간" 변경(Changed 절 참고)의 2단계를 실행하는 배치다.
-  `LambdaHandler`가 `feed-crawl`과 같은 shape로 EventBridge cron을 직접 받는다 - 매일
-  KST 03:00, `{"linksphereJob":"account-purge"}`. 회원별로 별도 빈
+  `LambdaHandler`가 `feed-crawl`과 같은 shape로 EventBridge를 직접 받는다 -
+  `{"linksphereJob":"account-purge"}`. 전용 EventBridge 룰을 새로 만들지 않고 기존
+  `link-sphere-feed-crawl` 룰(4일마다 실행)에 타겟만 하나 추가했다 - 탈퇴 발생 빈도가
+  낮아 전용 스케줄이 배보다 배꼽이 크다고 판단했고, Lambda의 EventBridge 호출 권한은
+  타겟이 아니라 룰 단위로 부여되므로 새 권한도 필요 없었다(`docs/DEPLOY.md` 10장).
+  회원별로 별도 빈
   (`AccountDeletionService.purge`)의 `@Transactional` 메서드를 호출해 한 명 실패가
-  나머지를 막지 않게 하고(`runCatching`), 90초 데드라인을 두어 남은 건은 다음날로
+  나머지를 막지 않게 하고(`runCatching`), 90초 데드라인을 두어 남은 건은 다음 실행으로
   미룬다(`FeedCrawlService.collectAndDispatch`와 동일한 패턴). 대상 조회
   (`MemberRepository.findIdsPendingPurge`)와 실제 익명화 확정(`claimForPurge`)이 같은
   cutoff 조건을 각자 재검증한다 - 조회 뒤 그 사이 로그인으로 복구된 회원을 걸러낸다
@@ -459,10 +463,12 @@
   `members.deletion_requested_at` 컬럼과 만료 조회용 부분 인덱스를 추가한다. 컬럼이
   없으면 `TableMember` 매핑이 깨져 모든 member 조회(로그인 포함)가 즉시 실패한다
   (`add_member_auth_columns.sql`과 같은 경고).
-- EventBridge 스케줄 룰(`link-sphere-account-purge`) 생성 필요 — BE 배포 후
+- 기존 EventBridge 룰(`link-sphere-feed-crawl`)에 타겟 추가 필요 — BE 배포 후
   `{"linksphereJob":"account-purge"}`를 prod에 수동으로 한 번 트리거해 정상 동작·
-  멱등성(중복 익명화 없음)을 확인한 다음 만든다(`docs/DEPLOY.md` 10장). 매일 KST
-  03:00 실행. **이 배포 이후 14일 안에** 만들어야 한다 — 늦어지면 유예 만료 계정이
+  멱등성(중복 익명화 없음)을 확인한 다음 타겟을 추가한다(`docs/DEPLOY.md` 10장).
+  전용 룰을 새로 만들지 않는다 - 새 권한(`add-permission`) 없이 기존 룰의 권한을
+  그대로 쓴다. 4일마다 실행(feed-crawl과 같은 주기). **이 배포 이후 18일 안에**
+  타겟을 추가해야 한다(14일 유예 + 최대 4일 실행 간격) — 늦어지면 유예 만료 계정이
   숨겨진 채로 남고 익명화만 미뤄진다(데이터 손상은 없음).
 - FE 의존: `TokenResponse.deletionCancelled` 필드 추가. 배포 순서 무관 — 구버전 FE는
   이 필드를 무시하고, 신버전 FE는 BE가 아직 이 필드를 안 보내도(구버전 BE) 기본값
