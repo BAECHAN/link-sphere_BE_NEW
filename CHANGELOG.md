@@ -11,6 +11,39 @@
 
 ### Added
 
+- `auth` 비밀번호 찾기(`POST /auth/password-reset/{request,confirm}`)·이메일 인증
+  (`POST /auth/email-verification/{request,confirm}`, 글쓰기·댓글쓰기 게이트) 추가
+  <details><summary>배경·구현</summary>
+
+  인증 시스템 전면 강화 계획(`docs/plans/2026-09-28-auth-hardening.md`)의 Phase 6.
+  AWS SES로 메일을 보낸다(`MailService`, 신규) - 발송이 실패해도 예외를 절대 밖으로
+  던지지 않고 로그만 남긴다. 발신 주소(`app.mail.from`)가 비어있으면(도메인 미확정
+  상태) 발송 자체를 건너뛴다(fail-open) - 로그인·가입 등 나머지 인증 흐름은 이 값과
+  무관하게 정상 동작한다.
+
+  비밀번호 찾기(`PasswordResetService`, 신규)와 이메일 인증(`AuthService`에 메서드
+  추가)은 같은 `member_action_tokens` 테이블(Phase 2)을 공유한다 - 원문 토큰은
+  저장하지 않고 sha256 해시만 저장하며(`member_sessions`와 같은 패턴), 조건부 UPDATE
+  (`consumeIfActive`)로 재사용·동시 확인 요청을 원자적으로 막는다(Phase 3
+  `consumeRefreshIfActive`와 동일한 이유·형태).
+
+  이메일 인증은 **로그인을 막지 않는다** - 가입 시 인증메일을 자동 발송하고(발송
+  실패해도 가입 자체는 성공), 미인증 상태에서도 로그인·읽기·좋아요·북마크는 그대로
+  된다. 글쓰기(`PostService.createPost`)·댓글쓰기(`CommentService.createComment`,
+  `createReply`)만 403 `EMAIL_NOT_VERIFIED`로 막는다(크롤링 등 비싼 작업 전에 먼저
+  확인). 재발송(`POST /auth/email-verification/request`)은 로그인 여부와 무관하게
+  이메일만으로 호출 가능한 공개 API다.
+
+  비밀번호 찾기 요청도 이메일 존재 여부를 노출하지 않는다(존재하지 않아도 항상 200) -
+  로그인 레이트리밋과 같은 이중 축(이메일 해시 + IP)으로 스팸을 막는다.
+  (`MailService.kt`(신규), `PasswordResetService.kt`(신규),
+  `TableMemberActionToken.kt`(신규), `MemberActionTokenRepository.kt`(신규),
+  `EmailNotVerifiedException.kt`(신규), `InvalidActionTokenException.kt`(신규),
+  `AuthService.kt`, `AuthController.kt`, `AuthDTO.kt`, `MemberService.kt`,
+  `PostService.kt`, `CommentService.kt`, `SecurityConfig.kt`)
+
+  </details>
+
 - `auth` 비밀번호 변경(`PATCH /auth/account/password`)·회원탈퇴(`DELETE /auth/account`) 추가
   <details><summary>배경·구현</summary>
 

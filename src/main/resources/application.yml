@@ -63,6 +63,15 @@ app:
       - http://localhost:*
       - https://localhost:*
       - https://dbw3brui6htwk.cloudfront.net
+  frontend:
+    # 비밀번호 재설정·이메일 인증 메일의 링크를 만들 때 쓴다. cors.allowed-origins의
+    # 프로덕션 값과 같은 CloudFront 도메인 - 커스텀 도메인 확정 후 APP_FRONTEND_URL
+    # 환경변수로 덮어쓴다(docs/DEPLOY.md 참고).
+    url: https://dbw3brui6htwk.cloudfront.net
+  mail:
+    # SES에서 검증된 발신 주소. 비어있으면 MailService가 발송을 건너뛴다(fail-open) -
+    # 도메인 확정 전까지는 Lambda 환경변수 APP_MAIL_FROM으로 개별 검증한 주소를 설정한다.
+    from: ""
 
 logging:
   level:

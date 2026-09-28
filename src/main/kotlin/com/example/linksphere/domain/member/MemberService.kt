@@ -98,6 +98,15 @@ class MemberService(private val memberRepository: MemberRepository) {
         return memberRepository.save(member)
     }
 
+    // 이메일 인증 확인(AuthService.confirmEmailVerification)이 토큰을 소비한 뒤 호출한다.
+    @Transactional
+    fun markEmailVerified(id: UUID): TableMember {
+        val member = findById(id)
+        member.emailVerified = true
+        member.updatedAt = LocalDateTime.now()
+        return memberRepository.save(member)
+    }
+
     // id가 있으면(로그인 사용자의 마이페이지 수정) 본인 현재 닉네임은 중복으로 치지 않는다.
     // id가 없으면(가입 화면, 비로그인) 무조건 존재 여부만 본다.
     fun isNicknameAvailable(id: UUID?, nickname: String): Boolean {

@@ -4,10 +4,15 @@ import com.example.linksphere.domain.member.MemberService
 import com.example.linksphere.domain.member.TableMember
 import com.example.linksphere.global.common.RateLimitService
 import com.example.linksphere.global.common.SecureToken
+import com.example.linksphere.global.exception.InvalidActionTokenException
 import com.example.linksphere.global.exception.InvalidCredentialsException
+import com.example.linksphere.infra.mail.MailService
+import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Duration
+import java.time.Instant
 import java.util.UUID
 
 @Service
@@ -17,7 +22,12 @@ class AuthService(
     private val memberSessionService: MemberSessionService,
     private val passwordEncoder: org.springframework.security.crypto.password.PasswordEncoder,
     private val rateLimitService: RateLimitService,
+    private val memberActionTokenRepository: MemberActionTokenRepository,
+    private val mailService: MailService,
+    @Value("\${app.frontend.url:}") private val frontendUrl: String,
 ) {
+
+    private val logger = LoggerFactory.getLogger(AuthService::class.java)
 
     companion object {
         // 이메일 축은 "특정 계정을 노려 비밀번호를 무작위 대입"을 막는다 - 계정당 15분에 5회면
@@ -34,6 +44,12 @@ class AuthService(
         // IP만 본다.
         private val SIGNUP_IP_WINDOW = Duration.ofHours(1)
         private const val SIGNUP_IP_LIMIT = 5
+
+        private val EMAIL_VERIFY_TOKEN_VALIDITY = Duration.ofHours(24)
+        private val EMAIL_VERIFY_EMAIL_WINDOW = Duration.ofHours(1)
+        private const val EMAIL_VERIFY_EMAIL_LIMIT = 3
+        private val EMAIL_VERIFY_IP_WINDOW = Duration.ofHours(1)
+        private const val EMAIL_VERIFY_IP_LIMIT = 10
     }
 
     @Transactional
@@ -42,10 +58,76 @@ class AuthService(
         rateLimitService.checkNotExceeded(ipBucket, SIGNUP_IP_LIMIT, SIGNUP_IP_WINDOW)
         rateLimitService.recordHit(ipBucket, SIGNUP_IP_WINDOW)
 
-        return toAccountResponse(
+        val member =
             memberService.signup(
                 request.copy(password = passwordEncoder.encode(request.password)),
+            )
+
+        // 발송(토큰 생성 포함)이 실패해도 가입 자체는 성공해야 한다 - MailService 자신도
+        // 내부에서 예외를 삼키지만, 토큰 저장 등 그 앞단이 실패하는 경우까지 방어한다.
+        try {
+            sendVerificationEmail(member)
+        } catch (e: Exception) {
+            logger.error("[AuthService] 가입 인증메일 준비 실패(memberId=${member.id}): ${e.message}")
+        }
+
+        return toAccountResponse(member)
+    }
+
+    // 공개 API - 로그인 여부와 무관하게 이메일만으로 재발송 가능하다. 존재하지 않는 이메일·
+    // 이미 인증된 이메일이어도 항상 같은 방식으로 조용히 끝난다(컨트롤러가 항상 200).
+    @Transactional
+    fun requestEmailVerification(email: String, clientIp: String?) {
+        val normalizedEmail = email.trim().lowercase()
+        val emailBucket = "email-verify:${SecureToken.hash(normalizedEmail)}"
+        val ipBucket = clientIp?.let { "email-verify:ip:$it" }
+        rateLimitService.checkNotExceeded(emailBucket, EMAIL_VERIFY_EMAIL_LIMIT, EMAIL_VERIFY_EMAIL_WINDOW)
+        rateLimitService.checkNotExceeded(ipBucket, EMAIL_VERIFY_IP_LIMIT, EMAIL_VERIFY_IP_WINDOW)
+        rateLimitService.recordHit(emailBucket, EMAIL_VERIFY_EMAIL_WINDOW)
+        rateLimitService.recordHit(ipBucket, EMAIL_VERIFY_IP_WINDOW)
+
+        val member =
+            try {
+                memberService.findByEmail(normalizedEmail)
+            } catch (e: IllegalArgumentException) {
+                return
+            }
+        if (member.emailVerified) return
+
+        sendVerificationEmail(member)
+    }
+
+    @Transactional
+    fun confirmEmailVerification(rawToken: String) {
+        val token =
+            memberActionTokenRepository.findByTokenHash(SecureToken.hash(rawToken))
+                ?.takeIf { it.purpose == MemberActionTokenPurpose.EMAIL_VERIFY }
+                ?: throw InvalidActionTokenException("Invalid or expired token")
+
+        val consumed = memberActionTokenRepository.consumeIfActive(token.id, Instant.now())
+        if (consumed == 0) {
+            throw InvalidActionTokenException("Invalid or expired token")
+        }
+
+        memberService.markEmailVerified(token.memberId)
+    }
+
+    private fun sendVerificationEmail(member: TableMember) {
+        val raw = SecureToken.generate()
+        memberActionTokenRepository.save(
+            TableMemberActionToken(
+                memberId = member.id!!,
+                purpose = MemberActionTokenPurpose.EMAIL_VERIFY,
+                tokenHash = SecureToken.hash(raw),
+                expiresAt = Instant.now().plus(EMAIL_VERIFY_TOKEN_VALIDITY),
             ),
+        )
+
+        val link = "$frontendUrl/verify-email?token=$raw"
+        mailService.send(
+            member.email,
+            "이메일 인증 안내",
+            "<p>아래 링크를 눌러 이메일 인증을 완료해주세요. 24시간 동안 유효합니다.</p><p><a href=\"$link\">$link</a></p>",
         )
     }
 
@@ -131,5 +213,6 @@ class AuthService(
         id = member.id.toString(),
         nickname = member.nickname,
         image = member.image,
+        emailVerified = member.emailVerified,
     )
 }

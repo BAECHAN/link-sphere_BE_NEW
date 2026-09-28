@@ -143,6 +143,13 @@ dependencies {
         exclude(group = "software.amazon.awssdk", module = "apache-client")
     }
     implementation("software.amazon.awssdk:url-connection-client")
+
+    // 비밀번호 찾기·이메일 인증 메일 발송(MailService). 위 lambda 클라이언트와 같은 이유로
+    // netty/apache 대신 url-connection-client를 쓴다.
+    implementation("software.amazon.awssdk:ses") {
+        exclude(group = "software.amazon.awssdk", module = "netty-nio-client")
+        exclude(group = "software.amazon.awssdk", module = "apache-client")
+    }
 }
 
 kotlin {

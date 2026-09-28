@@ -33,6 +33,7 @@ import java.security.Principal
 class AuthController(
     private val authService: AuthService,
     private val accountDeletionService: AccountDeletionService,
+    private val passwordResetService: PasswordResetService,
 ) {
 
     companion object {
@@ -189,6 +190,60 @@ class AuthController(
         return ResponseEntity.ok()
             .header(HttpHeaders.SET_COOKIE, cookie.toString())
             .body(ApiResponse(HttpStatus.OK.value(), "Account deleted", Unit))
+    }
+
+    @Operation(
+        summary = "비밀번호 찾기 요청",
+        description = "이메일이 존재하지 않아도 항상 200을 반환한다(계정 존재 여부 노출 방지). " +
+            "실제 회원이면 1시간짜리 재설정 링크를 메일로 보낸다. 실패: 429 RATE_LIMIT_EXCEEDED",
+    )
+    @SecurityRequirements
+    @PostMapping("/password-reset/request")
+    fun requestPasswordReset(
+        @Valid @RequestBody request: PasswordResetRequest,
+        httpRequest: HttpServletRequest,
+    ): ResponseEntity<ApiResponse<Unit>> {
+        passwordResetService.requestReset(request.email, ClientIpResolver.resolve(httpRequest))
+        return ResponseEntity.ok(ApiResponse(HttpStatus.OK.value(), "Password reset email sent if the account exists", Unit))
+    }
+
+    @Operation(
+        summary = "비밀번호 재설정",
+        description = "메일로 받은 토큰과 새 비밀번호로 재설정한다. 성공하면 그 계정의 모든 세션이 폐기된다 " +
+            "(재로그인 필요). 실패: 400 INVALID_INPUT · 401 INVALID_ACTION_TOKEN(토큰 없음·만료·이미 사용됨)",
+    )
+    @SecurityRequirements
+    @PostMapping("/password-reset/confirm")
+    fun confirmPasswordReset(@Valid @RequestBody request: PasswordResetConfirmRequest): ResponseEntity<ApiResponse<Unit>> {
+        passwordResetService.confirmReset(request.token, request.newPassword)
+        return ResponseEntity.ok(ApiResponse(HttpStatus.OK.value(), "Password reset", Unit))
+    }
+
+    @Operation(
+        summary = "이메일 인증 메일 발송/재발송",
+        description = "로그인 여부와 무관하게 이메일만으로 호출 가능하다. 존재하지 않는 계정·이미 인증된 " +
+            "계정이어도 항상 200을 반환한다(계정 상태 노출 방지). 실패: 429 RATE_LIMIT_EXCEEDED",
+    )
+    @SecurityRequirements
+    @PostMapping("/email-verification/request")
+    fun requestEmailVerification(
+        @Valid @RequestBody request: EmailVerificationRequest,
+        httpRequest: HttpServletRequest,
+    ): ResponseEntity<ApiResponse<Unit>> {
+        authService.requestEmailVerification(request.email, ClientIpResolver.resolve(httpRequest))
+        return ResponseEntity.ok(ApiResponse(HttpStatus.OK.value(), "Verification email sent if applicable", Unit))
+    }
+
+    @Operation(
+        summary = "이메일 인증 확인",
+        description = "메일로 받은 토큰으로 이메일 인증을 완료한다(로그인은 이미 가능한 상태였고, 이 API는 " +
+            "글쓰기·댓글쓰기 제한만 풀어준다). 실패: 401 INVALID_ACTION_TOKEN(토큰 없음·만료·이미 사용됨)",
+    )
+    @SecurityRequirements
+    @PostMapping("/email-verification/confirm")
+    fun confirmEmailVerification(@Valid @RequestBody request: EmailVerificationConfirmRequest): ResponseEntity<ApiResponse<Unit>> {
+        authService.confirmEmailVerification(request.token)
+        return ResponseEntity.ok(ApiResponse(HttpStatus.OK.value(), "Email verified", Unit))
     }
 
     // 마이페이지(로그인)와 가입 화면(비로그인) 둘 다에서 쓴다 - permitAll 경로라 인증 안 된
