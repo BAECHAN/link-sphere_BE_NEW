@@ -11,6 +11,25 @@
 
 ### Added
 
+- `auth` 로그인 실패·가입 시도에 IP·계정 단위 횟수 제한(레이트리밋) 추가
+  <details><summary>배경·구현</summary>
+
+  인증 시스템 전면 강화 계획(`docs/plans/2026-09-28-auth-hardening.md`)의 Phase 4.
+  로그인은 계정당 15분 5회·IP당 15분 20회, 가입은 IP당 1시간 5회로 막는다 - 계정 축은
+  특정 계정을 노린 비밀번호 무작위 대입을, IP 축은 여러 계정을 순회하는 시도·대량 가입
+  봇을 막는 목적으로 서로 다른 한도를 둔다. Phase 2에서 만든 `auth_rate_limits` 고정
+  윈도(fixed window) 카운터 테이블을 그대로 쓴다. 이메일은 해시로만 버킷 키에 들어가
+  테이블 자체엔 PII가 남지 않는다. 초과 시 429 `RATE_LIMIT_EXCEEDED`를 반환한다.
+  실제 요청자 IP는 CloudFront가 오리진에 전달하는 `CloudFront-Viewer-Address` 헤더에서
+  뽑는다 - 오리진 요청 정책에 이 헤더를 명시적으로 추가해야 전달되므로 아직 미설정이면
+  (또는 Function URL을 직접 두드린 합성 이벤트라면) IP 축 레이트리밋만 건너뛴다(설정
+  누락으로 로그인·가입 자체가 막히지 않도록 fail-open, `docs/DEPLOY.md` §5-2 참고).
+  (`RateLimitService.kt`(신규), `ClientIpResolver.kt`(신규), `AuthRateLimitRepository.kt`
+  (신규), `TableAuthRateLimit.kt`(신규), `RateLimitExceededException.kt`(신규),
+  `AuthService.kt`, `AuthController.kt`)
+
+  </details>
+
 - `config` OpenAPI 스펙에 Kotlin nullable 필드를 `nullable: true`로 반영하는 컨버터 추가
   <details><summary>배경·구현</summary>
 
