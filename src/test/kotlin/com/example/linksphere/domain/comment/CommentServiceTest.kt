@@ -7,6 +7,7 @@ import com.example.linksphere.domain.member.TableMember
 import com.example.linksphere.domain.post.PostRepository
 import com.example.linksphere.domain.post.TablePost
 import com.example.linksphere.global.common.SupabaseStorageService
+import com.example.linksphere.global.exception.EmailNotVerifiedException
 import com.example.linksphere.global.exception.ForbiddenException
 import com.example.linksphere.global.exception.InvalidInputException
 import com.example.linksphere.global.exception.PostNotFoundException
@@ -20,6 +21,7 @@ import org.mockito.ArgumentCaptor
 import org.mockito.ArgumentMatchers.any
 import org.mockito.InjectMocks
 import org.mockito.Mock
+import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.verifyNoInteractions
 import org.mockito.Mockito.`when`
@@ -104,7 +106,7 @@ class CommentServiceTest {
         val userId = UUID.randomUUID()
         val postId = UUID.randomUUID()
         val post = TablePost(id = postId, userId = userId, url = "https://example.com", title = "제목", isPrivate = false)
-        val deletedMember = TableMember(id = userId, email = "deleted-$userId@deleted.invalid", password = "pw", nickname = null)
+        val deletedMember = TableMember(id = userId, email = "deleted-$userId@deleted.invalid", password = "pw", nickname = null, emailVerified = true)
 
         `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
         `when`(memberRepository.findById(userId)).thenReturn(Optional.of(deletedMember))
@@ -117,11 +119,28 @@ class CommentServiceTest {
     }
 
     @Test
+    fun `createComment은 이메일 미인증 회원이면 EmailNotVerifiedException을 던지고 댓글을 저장하지 않는다`() {
+        val userId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val post = TablePost(id = postId, userId = userId, url = "https://example.com", title = "제목", isPrivate = false)
+        val unverifiedMember = TableMember(id = userId, email = "a@a.com", password = "pw", nickname = "tester", emailVerified = false)
+
+        `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
+        `when`(memberRepository.findById(userId)).thenReturn(Optional.of(unverifiedMember))
+
+        assertThrows(EmailNotVerifiedException::class.java) {
+            commentService.createComment(postId, userId, "댓글 내용", null)
+        }
+
+        verifyNoInteractions(commentRepository)
+    }
+
+    @Test
     fun `createComment은 이미지 URL만 있는 댓글의 linkUrl을 null로 저장한다`() {
         val userId = UUID.randomUUID()
         val postId = UUID.randomUUID()
         val post = TablePost(id = postId, userId = userId, url = "https://example.com", title = "제목", isPrivate = false)
-        val member = TableMember(id = userId, email = "a@a.com", password = "pw", nickname = "tester")
+        val member = TableMember(id = userId, email = "a@a.com", password = "pw", nickname = "tester", emailVerified = true)
         val imageUrl = "https://xyz.supabase.co/storage/v1/object/public/comments/abc.png"
 
         `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
@@ -141,7 +160,7 @@ class CommentServiceTest {
         val userId = UUID.randomUUID()
         val postId = UUID.randomUUID()
         val post = TablePost(id = postId, userId = userId, url = "https://example.com", title = "제목", isPrivate = false)
-        val member = TableMember(id = userId, email = "a@a.com", password = "pw", nickname = "tester")
+        val member = TableMember(id = userId, email = "a@a.com", password = "pw", nickname = "tester", emailVerified = true)
         val imageUrl = "https://xyz.supabase.co/storage/v1/object/public/comments/abc.png"
         val articleUrl = "https://example.com/article"
 
@@ -174,6 +193,26 @@ class CommentServiceTest {
         assertThrows(PostNotFoundException::class.java) {
             commentService.createReply(parentId, otherUserId, "답글 내용", null)
         }
+    }
+
+    @Test
+    fun `createReply는 이메일 미인증 회원이면 EmailNotVerifiedException을 던지고 답글을 저장하지 않는다`() {
+        val userId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val parentId = UUID.randomUUID()
+        val post = TablePost(id = postId, userId = userId, url = "https://example.com", title = "제목", isPrivate = false)
+        val parentComment = TableComment(id = parentId, postId = postId, userId = userId, content = "부모 댓글")
+        val unverifiedMember = TableMember(id = userId, email = "a@a.com", password = "pw", nickname = "tester", emailVerified = false)
+
+        `when`(commentRepository.findById(parentId)).thenReturn(Optional.of(parentComment))
+        `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
+        `when`(memberRepository.findById(userId)).thenReturn(Optional.of(unverifiedMember))
+
+        assertThrows(EmailNotVerifiedException::class.java) {
+            commentService.createReply(parentId, userId, "답글 내용", null)
+        }
+
+        verify(commentRepository, never()).save(any())
     }
 
     @Test
@@ -401,7 +440,7 @@ class CommentServiceTest {
         val userId = UUID.randomUUID()
         val postId = UUID.randomUUID()
         val post = TablePost(id = postId, userId = userId, url = "https://example.com", title = "제목", isPrivate = false)
-        val member = TableMember(id = userId, email = "a@a.com", password = "pw", nickname = "tester")
+        val member = TableMember(id = userId, email = "a@a.com", password = "pw", nickname = "tester", emailVerified = true)
 
         `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
         `when`(memberRepository.findById(userId)).thenReturn(Optional.of(member))
@@ -417,7 +456,7 @@ class CommentServiceTest {
         val userId = UUID.randomUUID()
         val postId = UUID.randomUUID()
         val post = TablePost(id = postId, userId = userId, url = "https://example.com", title = "제목", isPrivate = false)
-        val member = TableMember(id = userId, email = "a@a.com", password = "pw", nickname = "tester")
+        val member = TableMember(id = userId, email = "a@a.com", password = "pw", nickname = "tester", emailVerified = true)
 
         `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
         `when`(memberRepository.findById(userId)).thenReturn(Optional.of(member))
@@ -440,7 +479,7 @@ class CommentServiceTest {
                 userId = userId,
                 content = "내용\n\n$keptUrl\n$removedUrl1\n$removedUrl2",
             )
-        val member = TableMember(id = userId, email = "a@a.com", password = "pw", nickname = "tester")
+        val member = TableMember(id = userId, email = "a@a.com", password = "pw", nickname = "tester", emailVerified = true)
 
         `when`(commentRepository.findById(commentId)).thenReturn(Optional.of(comment))
         `when`(commentRepository.save(comment)).thenReturn(comment)
@@ -471,7 +510,7 @@ class CommentServiceTest {
         // typedUrl은 첨부가 아니라 본문에 직접 타이핑된 URL이라고 가정 - images 파라미터에도
         // 다시 넘겨 새 content에 그대로 남긴다.
         val comment = TableComment(id = commentId, postId = UUID.randomUUID(), userId = userId, content = "내용\n\n$typedUrl")
-        val member = TableMember(id = userId, email = "a@a.com", password = "pw", nickname = "tester")
+        val member = TableMember(id = userId, email = "a@a.com", password = "pw", nickname = "tester", emailVerified = true)
 
         `when`(commentRepository.findById(commentId)).thenReturn(Optional.of(comment))
         `when`(commentRepository.save(comment)).thenReturn(comment)
@@ -495,7 +534,7 @@ class CommentServiceTest {
         val commentId = UUID.randomUUID()
         val (url) = imageUrls(1)
         val comment = TableComment(id = commentId, postId = UUID.randomUUID(), userId = userId, content = "내용\n\n$url")
-        val member = TableMember(id = userId, email = "a@a.com", password = "pw", nickname = "tester")
+        val member = TableMember(id = userId, email = "a@a.com", password = "pw", nickname = "tester", emailVerified = true)
 
         `when`(commentRepository.findById(commentId)).thenReturn(Optional.of(comment))
         `when`(commentRepository.save(comment)).thenReturn(comment)

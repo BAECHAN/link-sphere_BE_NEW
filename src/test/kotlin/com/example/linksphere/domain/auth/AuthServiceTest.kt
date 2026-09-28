@@ -4,19 +4,25 @@ import com.example.linksphere.domain.member.MemberService
 import com.example.linksphere.domain.member.TableMember
 import com.example.linksphere.global.common.RateLimitService
 import com.example.linksphere.global.common.SecureToken
+import com.example.linksphere.global.exception.InvalidActionTokenException
 import com.example.linksphere.global.exception.InvalidCredentialsException
 import com.example.linksphere.global.exception.RateLimitExceededException
+import com.example.linksphere.infra.mail.MailService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.mockito.ArgumentMatchers.any
+import org.mockito.ArgumentMatchers.anyString
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.verifyNoInteractions
 import org.mockito.Mockito.verifyNoMoreInteractions
 import org.mockito.Mockito.`when`
 import org.springframework.security.crypto.password.PasswordEncoder
 import java.time.Duration
+import java.time.Instant
 import java.util.UUID
 
 // bucketKey·limit·window는 전부 AuthService가 실제로 만드는 값을 그대로 리터럴로 넘겨
@@ -30,6 +36,8 @@ class AuthServiceTest {
     private lateinit var memberSessionService: MemberSessionService
     private lateinit var passwordEncoder: PasswordEncoder
     private lateinit var rateLimitService: RateLimitService
+    private lateinit var memberActionTokenRepository: MemberActionTokenRepository
+    private lateinit var mailService: MailService
     private lateinit var authService: AuthService
 
     private val emailBucket = "login-fail:${SecureToken.hash("test@example.com")}"
@@ -41,7 +49,18 @@ class AuthServiceTest {
         memberSessionService = mock(MemberSessionService::class.java)
         passwordEncoder = mock(PasswordEncoder::class.java)
         rateLimitService = mock(RateLimitService::class.java)
-        authService = AuthService(memberService, memberSessionService, passwordEncoder, rateLimitService)
+        memberActionTokenRepository = mock(MemberActionTokenRepository::class.java)
+        mailService = mock(MailService::class.java)
+        authService =
+            AuthService(
+                memberService,
+                memberSessionService,
+                passwordEncoder,
+                rateLimitService,
+                memberActionTokenRepository,
+                mailService,
+                "https://test.example",
+            )
     }
 
     @Test
@@ -200,5 +219,106 @@ class AuthServiceTest {
         verify(memberSessionService).revokeAllForMember(memberId)
         verify(memberSessionService).createSession(memberId)
         assertEquals("access", result.accessToken)
+    }
+
+    @Test
+    fun `signup은 성공하면 인증메일용 토큰을 저장하고 메일을 보낸다`() {
+        val request = SignupRequest("new@example.com", "password1!", "newuser")
+        val savedMember = TableMember(id = UUID.randomUUID(), email = request.email, password = "encoded")
+        `when`(passwordEncoder.encode(request.password)).thenReturn("encoded")
+        `when`(memberService.signup(request.copy(password = "encoded"))).thenReturn(savedMember)
+
+        authService.signup(request, "203.0.113.1")
+
+        verify(memberActionTokenRepository).save(any())
+        verify(mailService).send(anyString(), anyString(), anyString())
+    }
+
+    @Test
+    fun `signup은 인증메일 준비가 실패해도 가입 자체는 성공한다`() {
+        val request = SignupRequest("new@example.com", "password1!", "newuser")
+        val savedMember = TableMember(id = UUID.randomUUID(), email = request.email, password = "encoded")
+        `when`(passwordEncoder.encode(request.password)).thenReturn("encoded")
+        `when`(memberService.signup(request.copy(password = "encoded"))).thenReturn(savedMember)
+        `when`(memberActionTokenRepository.save(any())).thenThrow(RuntimeException("DB hiccup"))
+
+        val result = authService.signup(request, "203.0.113.1")
+
+        assertEquals(savedMember.id.toString(), result.id)
+    }
+
+    @Test
+    fun `requestEmailVerification은 존재하지 않는 이메일이어도 조용히 끝난다`() {
+        `when`(memberService.findByEmail("unknown@example.com")).thenThrow(IllegalArgumentException("not found"))
+
+        authService.requestEmailVerification("unknown@example.com", "203.0.113.1")
+
+        verifyNoInteractions(memberActionTokenRepository, mailService)
+    }
+
+    @Test
+    fun `requestEmailVerification은 이미 인증된 회원이면 메일을 보내지 않는다`() {
+        val member = TableMember(id = UUID.randomUUID(), email = "test@example.com", password = "enc", emailVerified = true)
+        `when`(memberService.findByEmail("test@example.com")).thenReturn(member)
+
+        authService.requestEmailVerification("test@example.com", "203.0.113.1")
+
+        verifyNoInteractions(memberActionTokenRepository, mailService)
+    }
+
+    @Test
+    fun `requestEmailVerification은 미인증 회원이면 토큰을 저장하고 메일을 보낸다`() {
+        val member = TableMember(id = UUID.randomUUID(), email = "test@example.com", password = "enc", emailVerified = false)
+        `when`(memberService.findByEmail("test@example.com")).thenReturn(member)
+
+        authService.requestEmailVerification("test@example.com", "203.0.113.1")
+
+        verify(memberActionTokenRepository).save(any())
+        verify(mailService).send(anyString(), anyString(), anyString())
+    }
+
+    @Test
+    fun `confirmEmailVerification은 유효하지 않은 토큰이면 InvalidActionTokenException을 던진다`() {
+        `when`(memberActionTokenRepository.findByTokenHash(SecureToken.hash("bad-token"))).thenReturn(null)
+
+        assertThrows(InvalidActionTokenException::class.java) {
+            authService.confirmEmailVerification("bad-token")
+        }
+    }
+
+    @Test
+    fun `confirmEmailVerification은 목적이 다른 토큰이면 InvalidActionTokenException을 던진다`() {
+        val token =
+            TableMemberActionToken(
+                memberId = UUID.randomUUID(),
+                purpose = MemberActionTokenPurpose.PASSWORD_RESET,
+                tokenHash = SecureToken.hash("raw-token"),
+                expiresAt = Instant.now().plusSeconds(3600),
+            )
+        `when`(memberActionTokenRepository.findByTokenHash(SecureToken.hash("raw-token"))).thenReturn(token)
+
+        assertThrows(InvalidActionTokenException::class.java) {
+            authService.confirmEmailVerification("raw-token")
+        }
+
+        verify(memberActionTokenRepository, never()).consumeIfActive(any(), any())
+    }
+
+    @Test
+    fun `confirmEmailVerification은 성공하면 회원을 인증 완료 처리한다`() {
+        val memberId = UUID.randomUUID()
+        val token =
+            TableMemberActionToken(
+                memberId = memberId,
+                purpose = MemberActionTokenPurpose.EMAIL_VERIFY,
+                tokenHash = SecureToken.hash("raw-token"),
+                expiresAt = Instant.now().plusSeconds(3600),
+            )
+        `when`(memberActionTokenRepository.findByTokenHash(SecureToken.hash("raw-token"))).thenReturn(token)
+        `when`(memberActionTokenRepository.consumeIfActive(any(), any())).thenReturn(1)
+
+        authService.confirmEmailVerification("raw-token")
+
+        verify(memberService).markEmailVerified(memberId)
     }
 }

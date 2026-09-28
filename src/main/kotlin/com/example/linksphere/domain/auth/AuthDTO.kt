@@ -14,7 +14,8 @@ data class SignupRequest(
     @field:NotBlank
     @field:Email
     val email: String,
-    // 형식만 검증한다 - 실제 도달 가능한 주소인지는 확인하지 않는다(이메일 인증 미도입)
+    // 형식만 검증한다 - 실제 도달 가능한 주소인지는 가입 후 인증메일 확인으로 검증한다
+    // (미인증이어도 로그인은 되고, 글쓰기·댓글쓰기만 막힌다 - AuthService.signup 참고)
     @field:Size(min = 8, max = 64)
     @field:Pattern(
         regexp = "^(?=.*[a-zA-Z])(?=.*[0-9])(?=.*[^a-zA-Z0-9]).*$",
@@ -57,6 +58,39 @@ data class DeleteAccountRequest(
     val password: String,
 )
 
+data class PasswordResetRequest(
+    @field:NotBlank
+    @field:Email
+    val email: String,
+)
+
+data class PasswordResetConfirmRequest(
+    @field:NotBlank
+    val token: String,
+    // SignupRequest.password와 같은 규칙(길이·조합·ASCII 전용)
+    @field:Size(min = 8, max = 64)
+    @field:Pattern(
+        regexp = "^(?=.*[a-zA-Z])(?=.*[0-9])(?=.*[^a-zA-Z0-9]).*$",
+        message = "Password must contain at least one letter, one digit, and one special character",
+    )
+    @field:Pattern(
+        regexp = "^[\\x20-\\x7E]*$",
+        message = "Password must contain only printable ASCII characters",
+    )
+    val newPassword: String,
+)
+
+data class EmailVerificationRequest(
+    @field:NotBlank
+    @field:Email
+    val email: String,
+)
+
+data class EmailVerificationConfirmRequest(
+    @field:NotBlank
+    val token: String,
+)
+
 data class TokenResponse(val accessToken: String)
 
 data class AuthResult(val accessToken: String, val refreshToken: String, val refreshExpiresInSeconds: Long)
@@ -66,6 +100,9 @@ data class AccountResponse(
     val nickname: String? = null,
     val role: String = "USER", // Default role
     val image: String? = null,
+    // 미인증이어도 로그인은 성공하므로 로그인된 사람도 false일 수 있다 - FE가 배지·글쓰기
+    // 차단 판단에 쓴다.
+    val emailVerified: Boolean = false,
 )
 
 data class UpdateAccountRequest(

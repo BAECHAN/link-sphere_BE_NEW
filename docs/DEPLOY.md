@@ -198,8 +198,11 @@ Lambda 콘솔 → Configuration → Environment variables:
 | `SUPABASE_KEY` | Supabase service role key |
 | `SUPABASE_URL` | `https://<project>.supabase.co` |
 | `ORIGIN_VERIFY_SECRET` | CloudFront가 오리진 커스텀 헤더로 붙이는 값(§5-1 참고). 미설정 시 그 검사는 건너뛴다(fail-open) |
+| `APP_MAIL_FROM` | SES에서 검증된 발신 주소(§8-1 참고). 비어있으면 메일 발송을 건너뛴다(fail-open) |
+| `APP_FRONTEND_URL` | 비밀번호 재설정·이메일 인증 링크에 쓸 프론트엔드 도메인. 미설정 시 `application.yml`의 기본값(CloudFront 도메인)을 그대로 쓴다 - 커스텀 도메인 확정 후 덮어쓴다 |
 
 > Spring Boot는 `SPRING_DATASOURCE_URL` → `spring.datasource.url` 형식으로 환경변수를 자동 바인딩한다.
+> `APP_MAIL_FROM`/`APP_FRONTEND_URL`도 같은 규칙으로 각각 `app.mail.from`/`app.frontend.url`에 매핑된다.
 
 ### 5. Function URL 생성
 
@@ -394,6 +397,58 @@ aws events put-targets \
   확인한다 — `MAX_ITEMS_TOTAL`을 소스 수 미만으로 낮추면 소스 순회 순서 셔플과
   맞물려 실행마다 다른 소스가 잘리므로 특정 소스가 영구히 배제되지는 않는다
   (`docs/RSS-FEED-BOT.md` §8 2026-09-06 항목)
+
+### 9. SES 설정 (비밀번호 찾기·이메일 인증 메일 발송) — 적용 완료 (2026-09-28)
+
+`MailService`가 AWS SES로 비밀번호 재설정·이메일 인증 메일을 보낸다. 도메인이 아직
+확정 전이라 **개별 이메일 주소 검증(샌드박스 모드)**으로 시작한다 - 프로덕션 전환
+(샌드박스 해제, 도메인 통째로 검증)은 도메인 준비 후 별도로 진행한다
+(`docs/plans/2026-09-28-auth-hardening.md` "남은 것" 참고).
+
+#### 9-1. 발신 주소 검증
+
+```bash
+# 실제 받을 수 있는 주소로(도메인 미확정 상태라 개별 주소 검증만 가능) -
+# AWS가 그 주소로 확인 메일을 보내고, 클릭해야 검증이 끝난다
+aws ses verify-email-identity --email-address <발신용-이메일> --region ap-northeast-1
+```
+
+샌드박스 모드에서는 **수신자 주소도 미리 검증**해야 실제 메일함으로 도착한다
+(`aws ses verify-email-identity --email-address <테스트-수신-주소>`) - 검증 안 된
+수신자에게 보내면 API 호출 자체는 200으로 끝나지만(MailService는 SES 응답만 보고
+성공 여부를 판단하므로) 실제로는 전달되지 않는다. 이 제약은 프로덕션 전환 전까지는
+정상이다.
+
+#### 9-2. Lambda 실행 역할에 SES 발송 권한 부여
+
+§1의 GitHub Actions IAM 정책과 달리, 이건 **Lambda 함수 자신의 실행 역할**
+(§3에서 만든 `AWSLambdaBasicExecutionRole` 기반 역할)에 인라인 정책으로 추가한다:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["ses:SendEmail", "ses:SendRawEmail"],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+```bash
+aws iam put-role-policy \
+  --role-name <Lambda 실행 역할 이름> \
+  --policy-name link-sphere-ses-send \
+  --policy-document file://ses-send-policy.json
+```
+
+#### 9-3. Lambda 환경변수
+
+§4 표의 `APP_MAIL_FROM`에 9-1에서 검증한 주소를 설정한다. 미설정이면
+`MailService`가 발송을 건너뛴다(fail-open) - 로그인·가입 등 나머지 인증 흐름은
+이 값과 무관하게 정상 동작한다.
 
 ---
 

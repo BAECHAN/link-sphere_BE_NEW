@@ -6,7 +6,10 @@ import com.example.linksphere.domain.interaction.BookmarkFolderItemRepository
 import com.example.linksphere.domain.interaction.BookmarkFolderRepository
 import com.example.linksphere.domain.interaction.BookmarkRepository
 import com.example.linksphere.domain.interaction.TableBookmarkFolder
+import com.example.linksphere.domain.member.MemberRepository
+import com.example.linksphere.domain.member.TableMember
 import com.example.linksphere.global.exception.BookmarkFolderNotFoundException
+import com.example.linksphere.global.exception.EmailNotVerifiedException
 import com.example.linksphere.global.exception.ForbiddenException
 import com.example.linksphere.global.exception.PostNotFoundException
 import com.example.linksphere.infra.ai.GeminiService
@@ -56,6 +59,8 @@ class PostServiceTest {
 
     @Mock private lateinit var geminiService: GeminiService
 
+    @Mock private lateinit var memberRepository: MemberRepository
+
     @InjectMocks private lateinit var postService: PostService
 
     private fun privatePost(postId: UUID, ownerId: UUID) = TablePost(
@@ -65,6 +70,13 @@ class PostServiceTest {
         title = "제목",
         isPrivate = true,
     )
+
+    // createPost 최상단의 이메일 인증 게이트가 조회하는 회원 - 인증된 상태로 기본값을 준다.
+    private fun stubVerifiedMember(userId: UUID) {
+        `when`(memberRepository.findById(userId)).thenReturn(
+            Optional.of(TableMember(id = userId, email = "$userId@example.com", password = "pw", nickname = "tester", emailVerified = true)),
+        )
+    }
 
     // convertToResponse는 이제 PostResponseAssembler 소관이라, PostService 테스트에서는
     // "무엇을 받아 그대로 반환하는지"만 확인하면 된다 - 값 자체를 만드는 로직(작성자·북마크
@@ -209,12 +221,28 @@ class PostServiceTest {
     }
 
     @Test
+    fun `createPost는 이메일 미인증 회원이면 크롤링 전에 EmailNotVerifiedException을 던진다`() {
+        val userId = UUID.randomUUID()
+        val url = "https://example.com/unverified"
+        `when`(memberRepository.findById(userId)).thenReturn(
+            Optional.of(TableMember(id = userId, email = "a@a.com", password = "pw", nickname = "tester", emailVerified = false)),
+        )
+
+        assertThrows(EmailNotVerifiedException::class.java) {
+            postService.createPost(userId, PostCreateRequest(url = url))
+        }
+
+        verifyNoInteractions(urlMetadataExtractor)
+    }
+
+    @Test
     fun `크롤링에 실패해도 fallbackContent가 있으면 PENDING으로 저장하고 AI 이벤트를 발행한다`() {
         val userId = UUID.randomUUID()
         val postId = UUID.randomUUID()
         val url = "https://example.com/fallback"
         val savedPost = TablePost(id = postId, userId = userId, url = url, title = "제목", isPrivate = false)
 
+        stubVerifiedMember(userId)
         // stubMetadataExtraction이 이미 pageContent = null(크롤링 실패 상황)을 반환한다 - 이 테스트의
         // 관심사가 바로 그 상황에서 fallbackContent가 대신 쓰이는지이므로 그대로 재사용한다.
         stubMetadataExtraction(url)
@@ -238,6 +266,7 @@ class PostServiceTest {
         val url = "https://example.com/human-crawl-fail"
         val savedPost = TablePost(id = postId, userId = userId, url = url, title = "제목", isPrivate = false)
 
+        stubVerifiedMember(userId)
         stubMetadataExtraction(url)
         val savedPostCaptor = ArgumentCaptor.forClass(TablePost::class.java)
         `when`(postRepository.save(savedPostCaptor.capture())).thenReturn(savedPost)
@@ -256,6 +285,7 @@ class PostServiceTest {
         val url = "https://example.com/no-bookmark"
         val savedPost = TablePost(id = postId, userId = userId, url = url, title = "제목", isPrivate = false)
 
+        stubVerifiedMember(userId)
         stubMetadataExtraction(url)
         `when`(postRepository.save(any())).thenReturn(savedPost)
         stubAssemblerResponse(postId)
@@ -278,6 +308,7 @@ class PostServiceTest {
         val folder1 = TableBookmarkFolder(id = folderId1, userId = userId, name = "폴더1")
         val folder2 = TableBookmarkFolder(id = folderId2, userId = userId, name = "폴더2")
 
+        stubVerifiedMember(userId)
         stubMetadataExtraction(url)
         `when`(postRepository.save(any())).thenReturn(savedPost)
         `when`(bookmarkFolderRepository.findAllById(listOf(folderId1, folderId2)))
@@ -302,6 +333,7 @@ class PostServiceTest {
         val url = "https://example.com/uncategorized"
         val savedPost = TablePost(id = postId, userId = userId, url = url, title = "제목", isPrivate = false)
 
+        stubVerifiedMember(userId)
         stubMetadataExtraction(url)
         `when`(postRepository.save(any())).thenReturn(savedPost)
         stubAssemblerResponse(postId, isBookmarked = true)
@@ -323,6 +355,7 @@ class PostServiceTest {
         val savedPost = TablePost(id = postId, userId = userId, url = url, title = "제목", isPrivate = false)
         val foreignFolder = TableBookmarkFolder(id = folderId, userId = otherUserId, name = "남의 폴더")
 
+        stubVerifiedMember(userId)
         stubMetadataExtraction(url)
         `when`(postRepository.save(any())).thenReturn(savedPost)
         `when`(bookmarkFolderRepository.findAllById(listOf(folderId))).thenReturn(listOf(foreignFolder))
@@ -342,6 +375,7 @@ class PostServiceTest {
         val url = "https://example.com/missing-folder"
         val savedPost = TablePost(id = postId, userId = userId, url = url, title = "제목", isPrivate = false)
 
+        stubVerifiedMember(userId)
         stubMetadataExtraction(url)
         `when`(postRepository.save(any())).thenReturn(savedPost)
         `when`(bookmarkFolderRepository.findAllById(listOf(folderId))).thenReturn(emptyList())
@@ -362,6 +396,7 @@ class PostServiceTest {
         val savedPost = TablePost(id = postId, userId = userId, url = url, title = "제목", isPrivate = false)
         val folder = TableBookmarkFolder(id = folderId, userId = userId, name = "폴더")
 
+        stubVerifiedMember(userId)
         stubMetadataExtraction(url)
         `when`(postRepository.save(any())).thenReturn(savedPost)
         `when`(bookmarkFolderRepository.findAllById(listOf(folderId))).thenReturn(listOf(folder))

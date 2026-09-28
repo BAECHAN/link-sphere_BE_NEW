@@ -3,6 +3,7 @@ package com.example.linksphere.domain.auth
 import com.example.linksphere.domain.member.MemberService
 import com.example.linksphere.global.exception.DuplicateMemberException
 import com.example.linksphere.global.exception.DuplicateNicknameException
+import com.example.linksphere.global.exception.InvalidActionTokenException
 import com.example.linksphere.global.exception.InvalidCredentialsException
 import com.example.linksphere.global.exception.RateLimitExceededException
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
@@ -51,6 +52,8 @@ class AuthControllerTest {
     @MockitoBean private lateinit var memberSessionService: MemberSessionService
 
     @MockitoBean private lateinit var accountDeletionService: AccountDeletionService
+
+    @MockitoBean private lateinit var passwordResetService: PasswordResetService
 
     @Test
     @WithMockUser
@@ -302,6 +305,104 @@ class AuthControllerTest {
             .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"))
     }
 
+    @Test
+    @WithMockUser
+    fun `requestPasswordReset은 성공하면 200을 반환하고 passwordResetService에 위임한다`() {
+        val request = PasswordResetRequest(email = "test@example.com")
+
+        mockMvc.perform(
+            post("/auth/password-reset/request")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(jacksonObjectMapper().writeValueAsString(request))
+                .with(csrf()),
+        )
+            .andExpect(status().isOk)
+
+        verify(passwordResetService).requestReset("test@example.com", null)
+    }
+
+    @Test
+    @WithMockUser
+    fun `confirmPasswordReset은 유효하지 않은 토큰이면 401 INVALID_ACTION_TOKEN을 반환한다`() {
+        val request = PasswordResetConfirmRequest(token = "bad-token", newPassword = "newPassword1!")
+        doThrow(InvalidActionTokenException("Invalid or expired token"))
+            .`when`(passwordResetService).confirmReset("bad-token", "newPassword1!")
+
+        mockMvc.perform(
+            post("/auth/password-reset/confirm")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(jacksonObjectMapper().writeValueAsString(request))
+                .with(csrf()),
+        )
+            .andExpect(status().isUnauthorized)
+            .andExpect(jsonPath("$.code").value("INVALID_ACTION_TOKEN"))
+    }
+
+    @Test
+    @WithMockUser
+    fun `confirmPasswordReset은 성공하면 200을 반환한다`() {
+        val request = PasswordResetConfirmRequest(token = "good-token", newPassword = "newPassword1!")
+
+        mockMvc.perform(
+            post("/auth/password-reset/confirm")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(jacksonObjectMapper().writeValueAsString(request))
+                .with(csrf()),
+        )
+            .andExpect(status().isOk)
+
+        verify(passwordResetService).confirmReset("good-token", "newPassword1!")
+    }
+
+    @Test
+    @WithMockUser
+    fun `requestEmailVerification은 성공하면 200을 반환하고 authService에 위임한다`() {
+        val request = EmailVerificationRequest(email = "test@example.com")
+
+        mockMvc.perform(
+            post("/auth/email-verification/request")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(jacksonObjectMapper().writeValueAsString(request))
+                .with(csrf()),
+        )
+            .andExpect(status().isOk)
+
+        verify(authService).requestEmailVerification("test@example.com", null)
+    }
+
+    @Test
+    @WithMockUser
+    fun `confirmEmailVerification은 유효하지 않은 토큰이면 401 INVALID_ACTION_TOKEN을 반환한다`() {
+        val request = EmailVerificationConfirmRequest(token = "bad-token")
+        doThrow(InvalidActionTokenException("Invalid or expired token"))
+            .`when`(authService).confirmEmailVerification("bad-token")
+
+        mockMvc.perform(
+            post("/auth/email-verification/confirm")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(jacksonObjectMapper().writeValueAsString(request))
+                .with(csrf()),
+        )
+            .andExpect(status().isUnauthorized)
+            .andExpect(jsonPath("$.code").value("INVALID_ACTION_TOKEN"))
+    }
+
+    @Test
+    @WithMockUser
+    fun `confirmEmailVerification은 성공하면 200을 반환한다`() {
+        val request = EmailVerificationConfirmRequest(token = "good-token")
+
+        mockMvc.perform(
+            post("/auth/email-verification/confirm")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(jacksonObjectMapper().writeValueAsString(request))
+                .with(csrf()),
+        )
+            .andExpect(status().isOk)
+
+        verify(authService).confirmEmailVerification("good-token")
+    }
+
     // 이 클래스는 실제 SecurityFilterChain(permitAll 설정)을 제외한 슬라이스 테스트라 MockMvc로는
     // "인증 없이 permitAll 통과" 상태를 재현할 수 없다 - 필터체인이 없으면 스프링부트 기본값이
     // 모든 요청을 거부해 @WithMockUser 없인 401이 난다. 그래서 비로그인 경로는 컨트롤러를 직접
@@ -311,7 +412,7 @@ class AuthControllerTest {
         `when`(authService.isNicknameAvailable(null, "newNick"))
             .thenReturn(NicknameAvailabilityResponse(true))
 
-        val response = AuthController(authService, accountDeletionService).checkNicknameAvailability("newNick", null)
+        val response = AuthController(authService, accountDeletionService, passwordResetService).checkNicknameAvailability("newNick", null)
 
         assertEquals(true, response.body?.data?.available)
     }

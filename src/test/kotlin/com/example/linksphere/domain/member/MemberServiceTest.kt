@@ -89,6 +89,19 @@ class MemberServiceTest {
     }
 
     @Test
+    fun `markEmailVerified sets emailVerified to true`() {
+        val memberId = UUID.randomUUID()
+        val member = TableMember(id = memberId, email = "test@example.com", password = "enc", nickname = "tester", emailVerified = false)
+
+        `when`(memberRepository.findById(memberId)).thenReturn(Optional.of(member))
+        `when`(memberRepository.save(member)).thenReturn(member)
+
+        val result = memberService.markEmailVerified(memberId)
+
+        assertEquals(true, result.emailVerified)
+    }
+
+    @Test
     fun `updateAccount throws DuplicateMemberException when nickname already taken`() {
         val memberId = UUID.randomUUID()
         val member = TableMember(id = memberId, email = "test@example.com", password = "enc", nickname = "old")

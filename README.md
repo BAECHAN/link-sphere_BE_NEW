@@ -20,6 +20,7 @@
 | **AI**         | Google Gemini API (gemini-2.5-flash)              |
 | **Push**       | Firebase Cloud Messaging (firebase-admin 9.4.2)  |
 | **Storage**    | Supabase Storage (이미지 업로드)                  |
+| **Mail**       | AWS SES (비밀번호 찾기·이메일 인증)               |
 | **API Docs**   | SpringDoc OpenAPI 2.7.0 (Swagger UI는 로컬 전용)       |
 | **Infra**      | AWS Lambda (SnapStart) + CRaC                     |
 | **기타**       | Jsoup (HTML 파싱), Jackson, Spring Boot Actuator  |
@@ -38,8 +39,11 @@ src/main/kotlin/com/example/linksphere/
 │   │   ├── AuthDTO.kt
 │   │   ├── AuthService.kt
 │   │   ├── AccountDeletionService.kt    # 회원탈퇴(하드삭제 아님, 계정 행 익명화)
+│   │   ├── PasswordResetService.kt      # 비밀번호 찾기 요청/확인
 │   │   ├── TableAuthRateLimit.kt        # 로그인 실패·가입 시도 카운터(고정 윈도)
 │   │   ├── AuthRateLimitRepository.kt
+│   │   ├── TableMemberActionToken.kt    # 비밀번호재설정·이메일인증용 단발성 토큰(해시 저장)
+│   │   ├── MemberActionTokenRepository.kt
 │   │   ├── TableMemberSession.kt        # 로그인 세션(access/refresh 해시) 1행 = 1세션
 │   │   ├── MemberSessionRepository.kt
 │   │   ├── MemberSessionService.kt      # 세션 발급·회전·폐기
@@ -117,12 +121,16 @@ src/main/kotlin/com/example/linksphere/
 │       ├── ForbiddenException.kt
 │       ├── InvalidCredentialsException.kt
 │       ├── InvalidTokenException.kt
+│       ├── InvalidActionTokenException.kt  # 비밀번호재설정·이메일인증 토큰 전용(세션 InvalidTokenException과 분리)
 │       ├── RateLimitExceededException.kt
+│       ├── EmailNotVerifiedException.kt
 │       └── PostNotFoundException.kt
 └── infra/
     ├── ai/
     │   ├── GeminiService.kt             # Gemini AI 콘텐츠 분석
     │   └── dto/GeminiDtos.kt
+    ├── mail/
+    │   └── MailService.kt               # AWS SES 메일 발송(실패해도 로그만, fail-open)
     └── fcm/
         ├── FcmConfig.kt
         ├── FcmService.kt
@@ -140,19 +148,29 @@ src/main/kotlin/com/example/linksphere/
 
 ### 🔐 Auth (`/auth`)
 
-| Method | Endpoint        | 설명                    | 인증 |
-| ------ | --------------- | ----------------------- | ---- |
-| `POST` | `/auth/signup`  | 회원가입                | ❌   |
-| `POST` | `/auth/login`   | 로그인                  | ❌   |
-| `POST` | `/auth/refresh` | Access Token 갱신       | ❌   |
-| `POST` | `/auth/logout`  | 로그아웃 (쿠키 삭제)    | ❌   |
-| `GET`  | `/auth/account` | 내 계정 정보 조회       | ✅   |
+| Method   | Endpoint                                | 설명                                          | 인증 |
+| -------- | ---------------------------------------- | --------------------------------------------- | ---- |
+| `POST`   | `/auth/signup`                           | 회원가입 (인증메일 자동 발송)                 | ❌   |
+| `POST`   | `/auth/login`                            | 로그인 (미인증 이메일이어도 성공)             | ❌   |
+| `POST`   | `/auth/refresh`                          | Access Token 갱신 (회전 + 재사용 탐지)        | ❌   |
+| `POST`   | `/auth/logout`                           | 로그아웃 (이 기기만)                          | ❌   |
+| `POST`   | `/auth/logout-all`                       | 로그아웃 (전체 기기)                          | ✅   |
+| `GET`    | `/auth/account`                          | 내 계정 정보 조회                             | ✅   |
+| `PATCH`  | `/auth/account`                          | 닉네임·이미지 수정                            | ✅   |
+| `PATCH`  | `/auth/account/password`                 | 비밀번호 변경                                 | ✅   |
+| `DELETE` | `/auth/account`                          | 회원탈퇴 (계정 행 익명화, 하드삭제 아님)      | ✅   |
+| `GET`    | `/auth/account/nickname-availability`    | 닉네임 사용 가능 여부                         | ❌   |
+| `GET`    | `/auth/email-availability`               | 이메일 사용 가능 여부                         | ❌   |
+| `POST`   | `/auth/password-reset/request`           | 비밀번호 찾기 요청 (항상 200)                 | ❌   |
+| `POST`   | `/auth/password-reset/confirm`           | 비밀번호 재설정                               | ❌   |
+| `POST`   | `/auth/email-verification/request`       | 인증메일 발송/재발송                          | ❌   |
+| `POST`   | `/auth/email-verification/confirm`       | 이메일 인증 확인                              | ❌   |
 
 ### 📝 Post (`/post`)
 
 | Method   | Endpoint                  | 설명                           | 인증 |
 | -------- | ------------------------- | ------------------------------ | ---- |
-| `POST`   | `/post`                   | 게시글 생성 (AI 분석 포함)     | ✅   |
+| `POST`   | `/post`                   | 게시글 생성 (AI 분석 포함, 이메일 미인증 시 403) | ✅   |
 | `GET`    | `/post`                   | 게시글 목록 조회 (검색·필터)   | ✅   |
 | `GET`    | `/post/{id}`              | 게시글 상세 조회               | ✅   |
 | `PATCH`  | `/post/{id}`              | 게시글 수정                    | ✅   |
@@ -166,8 +184,8 @@ src/main/kotlin/com/example/linksphere/
 | Method   | Endpoint                                      | 설명                    | 인증 |
 | -------- | --------------------------------------------- | ----------------------- | ---- |
 | `GET`    | `/post/{postId}/comment`                      | 댓글 목록 조회          | ✅   |
-| `POST`   | `/post/{postId}/comment`                      | 댓글 작성 (이미지 포함) | ✅   |
-| `POST`   | `/comment/{commentId}/reply`                  | 답글 작성 (이미지 포함) | ✅   |
+| `POST`   | `/post/{postId}/comment`                      | 댓글 작성 (이미지 포함, 이메일 미인증 시 403) | ✅   |
+| `POST`   | `/comment/{commentId}/reply`                  | 답글 작성 (이미지 포함, 이메일 미인증 시 403) | ✅   |
 | `PATCH`  | `/comment/{commentId}`                        | 댓글/답글 수정          | ✅   |
 | `DELETE` | `/comment/{commentId}`                        | 댓글/답글 삭제          | ✅   |
 

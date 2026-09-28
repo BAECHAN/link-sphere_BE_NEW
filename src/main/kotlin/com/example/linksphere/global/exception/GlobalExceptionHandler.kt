@@ -123,6 +123,28 @@ class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response)
     }
 
+    @ExceptionHandler(EmailNotVerifiedException::class)
+    fun handleEmailNotVerifiedException(e: EmailNotVerifiedException): ResponseEntity<ErrorResponse> {
+        val response =
+            ErrorResponse(
+                status = HttpStatus.FORBIDDEN.value(),
+                code = "EMAIL_NOT_VERIFIED",
+                message = e.message ?: "Email verification required",
+            )
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response)
+    }
+
+    @ExceptionHandler(InvalidActionTokenException::class)
+    fun handleInvalidActionTokenException(e: InvalidActionTokenException): ResponseEntity<ErrorResponse> {
+        val response =
+            ErrorResponse(
+                status = HttpStatus.UNAUTHORIZED.value(),
+                code = "INVALID_ACTION_TOKEN",
+                message = e.message ?: "Invalid or expired token",
+            )
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response)
+    }
+
     @ExceptionHandler(RateLimitExceededException::class)
     fun handleRateLimitExceededException(e: RateLimitExceededException): ResponseEntity<ErrorResponse> {
         val response =

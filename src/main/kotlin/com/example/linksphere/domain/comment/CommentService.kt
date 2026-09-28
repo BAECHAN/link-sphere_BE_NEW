@@ -5,6 +5,7 @@ import com.example.linksphere.domain.member.MemberRepository
 import com.example.linksphere.domain.member.TableMember
 import com.example.linksphere.domain.post.PostRepository
 import com.example.linksphere.global.common.SupabaseStorageService
+import com.example.linksphere.global.exception.EmailNotVerifiedException
 import com.example.linksphere.global.exception.ForbiddenException
 import com.example.linksphere.global.exception.InvalidInputException
 import com.example.linksphere.global.exception.PostNotFoundException
@@ -195,6 +196,11 @@ class CommentService(
         val member =
             memberRepository.findByIdOrNull(userId)
                 ?: throw IllegalArgumentException("User not found")
+        // 읽기·좋아요·북마크는 막지 않고 글쓰기·댓글쓰기만 막는다(docs/plans/2026-09-28-auth-hardening.md
+        // "확정된 결정들" 참고). 위에서 이미 조회한 member를 그대로 써 추가 쿼리가 없다.
+        if (!member.emailVerified) {
+            throw EmailNotVerifiedException("Email verification required to create a comment")
+        }
 
         val finalContent = buildFinalContent(content, images)
 
@@ -254,6 +260,9 @@ class CommentService(
         val member =
             memberRepository.findByIdOrNull(userId)
                 ?: throw IllegalArgumentException("User not found")
+        if (!member.emailVerified) {
+            throw EmailNotVerifiedException("Email verification required to create a reply")
+        }
 
         val finalContent = buildFinalContent(content, images)
 

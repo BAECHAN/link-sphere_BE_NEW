@@ -45,6 +45,10 @@ class SecurityConfig(
                     "/auth/logout",
                     "/auth/email-availability",
                     "/auth/account/nickname-availability", // 가입 화면(비로그인)도 조회 가능 - 마이페이지와 겸용
+                    "/auth/password-reset/request",
+                    "/auth/password-reset/confirm",
+                    "/auth/email-verification/request", // 로그인 여부와 무관하게 이메일만으로 재발송 가능
+                    "/auth/email-verification/confirm",
                     "/common/**",
                     "/swagger-ui/**",
                     "/v3/api-docs/**",
