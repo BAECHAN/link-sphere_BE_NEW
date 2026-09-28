@@ -16,7 +16,7 @@
 | **Build Tool** | Gradle 8.14.3 (Kotlin DSL) + Shadow JAR           |
 | **Database**   | Supabase (PostgreSQL)                             |
 | **ORM**        | Spring Data JPA / Hibernate                       |
-| **Auth**       | JWT (jjwt 0.12.5) + Spring Security               |
+| **Auth**       | 서버 관리 세션 토큰(access/refresh, member_sessions 테이블) + Spring Security |
 | **AI**         | Google Gemini API (gemini-2.5-flash)              |
 | **Push**       | Firebase Cloud Messaging (firebase-admin 9.4.2)  |
 | **Storage**    | Supabase Storage (이미지 업로드)                  |
@@ -37,9 +37,10 @@ src/main/kotlin/com/example/linksphere/
 │   │   ├── AuthController.kt            # 회원가입, 로그인, 토큰 갱신, 로그아웃, 내 정보
 │   │   ├── AuthDTO.kt
 │   │   ├── AuthService.kt
-│   │   └── jwt/
-│   │       ├── JwtTokenProvider.kt
-│   │       └── JwtAuthenticationFilter.kt
+│   │   ├── TableMemberSession.kt        # 로그인 세션(access/refresh 해시) 1행 = 1세션
+│   │   ├── MemberSessionRepository.kt
+│   │   ├── MemberSessionService.kt      # 세션 발급·회전·폐기
+│   │   └── SessionAuthenticationFilter.kt
 │   ├── member/                          # 회원 도메인
 │   │   ├── TableMember.kt
 │   │   ├── MemberRepository.kt
@@ -260,9 +261,6 @@ gemini:
 youtube:
   api:
     key: <YOUR_YOUTUBE_DATA_API_V3_KEY>
-
-jwt:
-  secret: <YOUR_JWT_SECRET_KEY>
 
 supabase:
   url: https://<PROJECT>.supabase.co

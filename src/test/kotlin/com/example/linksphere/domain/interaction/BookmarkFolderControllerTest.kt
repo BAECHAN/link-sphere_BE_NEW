@@ -1,6 +1,6 @@
 package com.example.linksphere.domain.interaction
 
-import com.example.linksphere.domain.auth.jwt.JwtTokenProvider
+import com.example.linksphere.domain.auth.MemberSessionService
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest
@@ -30,7 +30,7 @@ class BookmarkFolderControllerTest {
 
     @MockitoBean private lateinit var bookmarkFolderService: BookmarkFolderService
 
-    @MockitoBean private lateinit var jwtTokenProvider: JwtTokenProvider
+    @MockitoBean private lateinit var memberSessionService: MemberSessionService
 
     @Test
     @WithMockUser
