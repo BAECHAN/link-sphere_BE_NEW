@@ -17,6 +17,7 @@ import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 import org.mockito.junit.jupiter.MockitoExtension
+import java.time.Instant
 import java.util.Optional
 import java.util.UUID
 
@@ -61,6 +62,34 @@ class PostResponseAssemblerTest {
 
         assertEquals(2, result.stats.bookmarkCount)
         assertEquals(3, result.userInteractions.bookmarkFolderIds.size)
+    }
+
+    @Test
+    fun `convertToResponse 는 탈퇴 유예 중인 작성자의 닉네임·이미지를 null로 감춘다`() {
+        val ownerId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val post = TablePost(id = postId, userId = ownerId, url = "https://example.com", title = "제목", isPrivate = false)
+        val pendingOwner =
+            TableMember(
+                id = ownerId,
+                email = "owner@example.com",
+                password = "enc",
+                nickname = "owner",
+                image = "https://example.com/a.png",
+                deletionRequestedAt = Instant.now(),
+            )
+
+        `when`(memberRepository.findById(ownerId)).thenReturn(Optional.of(pendingOwner))
+        lenient().`when`(bookmarkRepository.countByPostId(postId)).thenReturn(0L)
+        lenient().`when`(bookmarkRepository.existsByUserIdAndPostId(ownerId, postId)).thenReturn(false)
+        lenient().`when`(postReactionRepository.countByPostId(postId)).thenReturn(0L)
+        lenient().`when`(postReactionRepository.existsByUserIdAndPostId(ownerId, postId)).thenReturn(false)
+        lenient().`when`(commentRepository.countByPostId(postId)).thenReturn(0L)
+
+        val result = assembler.convertToResponse(post, ownerId)
+
+        assertEquals(null, result.author.nickname)
+        assertEquals(null, result.author.image)
     }
 
     @Test

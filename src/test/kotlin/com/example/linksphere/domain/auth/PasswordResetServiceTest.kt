@@ -173,4 +173,64 @@ class PasswordResetServiceTest {
         org.junit.jupiter.api.Assertions.assertEquals("newEncoded", member.password)
         verify(memberSessionService).revokeAllForMember(memberId)
     }
+
+    @Test
+    fun `confirmReset은 이미 익명화(퍼지)된 회원이면 InvalidActionTokenException을 던지고 비밀번호를 바꾸지 않는다`() {
+        val memberId = UUID.randomUUID()
+        val purgedMember =
+            TableMember(
+                id = memberId,
+                email = "deleted-$memberId@deleted.invalid",
+                password = "unmatchable",
+                nickname = null,
+                deletedAt = Instant.now(),
+            )
+        val token =
+            TableMemberActionToken(
+                memberId = memberId,
+                purpose = MemberActionTokenPurpose.PASSWORD_RESET,
+                tokenHash = SecureToken.hash("raw-token"),
+                expiresAt = Instant.now().plusSeconds(3600),
+            )
+        `when`(memberActionTokenRepository.findByTokenHash(SecureToken.hash("raw-token"))).thenReturn(token)
+        `when`(memberActionTokenRepository.consumeIfActive(any(), any())).thenReturn(1)
+        `when`(memberRepository.findById(memberId)).thenReturn(Optional.of(purgedMember))
+
+        assertThrows(InvalidActionTokenException::class.java) {
+            service.confirmReset("raw-token", "newPassword1!")
+        }
+
+        verify(memberRepository, never()).save(org.mockito.ArgumentMatchers.any())
+        verifyNoInteractions(memberSessionService)
+    }
+
+    @Test
+    fun `confirmReset은 탈퇴 유예 중(퍼지 전)인 회원이면 정상적으로 비밀번호를 바꾼다`() {
+        val memberId = UUID.randomUUID()
+        val pendingMember =
+            TableMember(
+                id = memberId,
+                email = "test@example.com",
+                password = "oldEncoded",
+                nickname = "tester",
+                deletionRequestedAt = Instant.now(),
+            )
+        val token =
+            TableMemberActionToken(
+                memberId = memberId,
+                purpose = MemberActionTokenPurpose.PASSWORD_RESET,
+                tokenHash = SecureToken.hash("raw-token"),
+                expiresAt = Instant.now().plusSeconds(3600),
+            )
+        `when`(memberActionTokenRepository.findByTokenHash(SecureToken.hash("raw-token"))).thenReturn(token)
+        `when`(memberActionTokenRepository.consumeIfActive(any(), any())).thenReturn(1)
+        `when`(memberRepository.findById(memberId)).thenReturn(Optional.of(pendingMember))
+        `when`(passwordEncoder.encode("newPassword1!")).thenReturn("newEncoded")
+        `when`(memberRepository.save(pendingMember)).thenReturn(pendingMember)
+
+        service.confirmReset("raw-token", "newPassword1!")
+
+        org.junit.jupiter.api.Assertions.assertEquals("newEncoded", pendingMember.password)
+        verify(memberSessionService).revokeAllForMember(memberId)
+    }
 }

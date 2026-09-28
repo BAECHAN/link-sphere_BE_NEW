@@ -146,6 +146,41 @@ class AuthServiceTest {
         verify(rateLimitService).checkNotExceeded(ipBucket, 20, Duration.ofMinutes(15))
         verifyNoMoreInteractions(rateLimitService)
         assertEquals("access", result.accessToken)
+        assertEquals(false, result.deletionCancelled)
+    }
+
+    @Test
+    fun `login은 유예 중인 회원이 로그인하면 탈퇴 신청을 취소하고 deletionCancelled를 true로 반환한다`() {
+        val request = LoginRequest("test@example.com", "password1!")
+        val memberId = UUID.randomUUID()
+        val member = TableMember(id = memberId, email = request.email, password = "encoded", deletionRequestedAt = Instant.now())
+        `when`(memberService.findByEmail(request.email)).thenReturn(member)
+        `when`(passwordEncoder.matches(request.password, member.password)).thenReturn(true)
+        `when`(memberService.cancelPendingDeletion(memberId)).thenReturn(true)
+        `when`(memberSessionService.createSession(memberId))
+            .thenReturn(IssuedSession("access", "refresh", 604800L))
+
+        val result = authService.login(request, "203.0.113.1")
+
+        verify(memberService).cancelPendingDeletion(memberId)
+        assertEquals(true, result.deletionCancelled)
+    }
+
+    @Test
+    fun `login은 퍼지가 먼저 가져간 회원이면(cancelPendingDeletion이 false) 실패 기록 없이 로그인 실패로 처리한다`() {
+        val request = LoginRequest("test@example.com", "password1!")
+        val memberId = UUID.randomUUID()
+        val member = TableMember(id = memberId, email = request.email, password = "encoded", deletionRequestedAt = Instant.now())
+        `when`(memberService.findByEmail(request.email)).thenReturn(member)
+        `when`(passwordEncoder.matches(request.password, member.password)).thenReturn(true)
+        `when`(memberService.cancelPendingDeletion(memberId)).thenReturn(false)
+
+        assertThrows(InvalidCredentialsException::class.java) {
+            authService.login(request, "203.0.113.1")
+        }
+
+        verifyNoInteractions(memberSessionService)
+        verify(rateLimitService, never()).recordHit(emailBucket, Duration.ofMinutes(15))
     }
 
     @Test

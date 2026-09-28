@@ -107,6 +107,13 @@ class MemberService(private val memberRepository: MemberRepository) {
         return memberRepository.save(member)
     }
 
+    // 로그인 성공 시(AuthService.login) 탈퇴 유예 중인 회원의 신청을 취소한다. AuthService가
+    // TableMember 필드를 직접 건드리지 않는다는 규칙(changePassword와 같은 이유)을 지킨다.
+    // false면 애초에 유예 중이 아니었거나, 퍼지가 먼저 그 회원을 가져간 것이다 - 어느
+    // 쪽인지는 호출부가 member.deletionRequestedAt으로 구분한다.
+    @Transactional
+    fun cancelPendingDeletion(id: UUID): Boolean = memberRepository.cancelDeletionRequest(id) == 1
+
     // id가 있으면(로그인 사용자의 마이페이지 수정) 본인 현재 닉네임은 중복으로 치지 않는다.
     // id가 없으면(가입 화면, 비로그인) 무조건 존재 여부만 본다.
     fun isNicknameAvailable(id: UUID?, nickname: String): Boolean {

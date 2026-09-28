@@ -30,6 +30,7 @@ import org.springframework.context.ApplicationEventPublisher
 import org.springframework.data.domain.PageImpl
 import org.springframework.data.domain.PageRequest
 import org.springframework.transaction.support.TransactionSynchronizationManager
+import java.time.Instant
 import java.util.Optional
 import java.util.UUID
 
@@ -116,6 +117,33 @@ class CommentServiceTest {
         val response = commentService.createComment(postId, userId, "댓글 내용", null)
 
         assertEquals("탈퇴한 사용자", response.author.nickname)
+    }
+
+    @Test
+    fun `createComment은 탈퇴 유예 중(닉네임은 남아있지만 deletionRequestedAt이 있는) 회원도 작성자 표시명을 '탈퇴한 사용자'로 대신한다`() {
+        val userId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val post = TablePost(id = postId, userId = userId, url = "https://example.com", title = "제목", isPrivate = false)
+        val pendingMember =
+            TableMember(
+                id = userId,
+                email = "a@a.com",
+                password = "pw",
+                nickname = "tester",
+                image = "https://example.com/a.png",
+                emailVerified = true,
+                deletionRequestedAt = Instant.now(),
+            )
+
+        `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
+        `when`(memberRepository.findById(userId)).thenReturn(Optional.of(pendingMember))
+        val captor = ArgumentCaptor.forClass(TableComment::class.java)
+        `when`(commentRepository.save(captor.capture())).thenAnswer { captor.value }
+
+        val response = commentService.createComment(postId, userId, "댓글 내용", null)
+
+        assertEquals("탈퇴한 사용자", response.author.nickname)
+        assertEquals(null, response.author.image)
     }
 
     @Test

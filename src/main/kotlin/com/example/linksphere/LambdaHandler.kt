@@ -2,6 +2,7 @@ package com.example.linksphere
 
 import com.amazonaws.services.lambda.runtime.Context
 import com.amazonaws.services.lambda.runtime.RequestStreamHandler
+import com.example.linksphere.domain.auth.AccountPurgeService
 import com.example.linksphere.domain.comment.CommentPostProcessEvent
 import com.example.linksphere.domain.comment.CommentPostProcessService
 import com.example.linksphere.domain.feed.FeedCrawlService
@@ -139,6 +140,10 @@ class LambdaHandler : RequestStreamHandler {
             }
             "feed-item" -> {
                 handleFeedItemJob(event, output)
+                return
+            }
+            "account-purge" -> {
+                handleAccountPurgeJob(output)
                 return
             }
         }
@@ -302,6 +307,15 @@ class LambdaHandler : RequestStreamHandler {
         val payload = mapper.treeToValue(event.get("event"), FeedItemJobEvent::class.java)
         val feedCrawlService = applicationContext.getBean(FeedCrawlService::class.java)
         feedCrawlService.processFeedItemJob(payload)
+        mapper.writeValue(output, mapOf("statusCode" to 200, "body" to "ok"))
+    }
+
+    // EventBridge cron(매일)이 직접 호출하는 진입점 - 탈퇴 유예 14일이 지난 계정을 익명화한다.
+    // 회원 한 명이 실패해도 나머지는 계속 처리하므로(AccountPurgeService 내부의 runCatching)
+    // 여기서 별도 예외 처리는 필요 없다.
+    private fun handleAccountPurgeJob(output: OutputStream) {
+        val accountPurgeService = applicationContext.getBean(AccountPurgeService::class.java)
+        accountPurgeService.purgeExpired()
         mapper.writeValue(output, mapOf("statusCode" to 200, "body" to "ok"))
     }
 }

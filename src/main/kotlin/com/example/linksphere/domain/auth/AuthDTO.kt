@@ -91,9 +91,12 @@ data class EmailVerificationConfirmRequest(
     val token: String,
 )
 
-data class TokenResponse(val accessToken: String)
+// deletionCancelled: 탈퇴 유예 중이던 계정이 이번 로그인으로 복구됐으면 true(로그인에서만
+// 의미 있음 - refresh·changePassword 응답은 항상 기본값 false를 그대로 쓴다). FE가 이 값을
+// 보고 "탈퇴 신청이 취소됐어요" 안내를 띄운다.
+data class TokenResponse(val accessToken: String, val deletionCancelled: Boolean = false)
 
-data class AuthResult(val accessToken: String, val refreshToken: String, val refreshExpiresInSeconds: Long)
+data class AuthResult(val accessToken: String, val refreshToken: String, val refreshExpiresInSeconds: Long, val deletionCancelled: Boolean = false)
 
 data class AccountResponse(
     val id: String,
