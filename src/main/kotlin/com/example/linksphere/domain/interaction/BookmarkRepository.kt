@@ -11,6 +11,9 @@ interface BookmarkRepository :
     BookmarkRepositoryCustom {
     fun existsByUserIdAndPostId(userId: UUID, postId: UUID): Boolean
     fun deleteByUserIdAndPostId(userId: UUID, postId: UUID)
+
+    // 회원탈퇴 시(AccountDeletionService) 그 회원의 북마크를 전부 지운다.
+    fun deleteByUserId(userId: UUID)
     fun countByPostId(postId: UUID): Long
     fun findAllByPostIdIn(postIds: List<UUID>): List<TableBookmark>
     fun findAllByUserIdAndPostIdIn(userId: UUID, postIds: List<UUID>): List<TableBookmark>

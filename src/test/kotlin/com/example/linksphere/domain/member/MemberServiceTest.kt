@@ -76,6 +76,19 @@ class MemberServiceTest {
     }
 
     @Test
+    fun `changePassword updates the encoded password`() {
+        val memberId = UUID.randomUUID()
+        val member = TableMember(id = memberId, email = "test@example.com", password = "oldEncoded", nickname = "tester")
+
+        `when`(memberRepository.findById(memberId)).thenReturn(Optional.of(member))
+        `when`(memberRepository.save(member)).thenReturn(member)
+
+        val result = memberService.changePassword(memberId, "newEncoded")
+
+        assertEquals("newEncoded", result.password)
+    }
+
+    @Test
     fun `updateAccount throws DuplicateMemberException when nickname already taken`() {
         val memberId = UUID.randomUUID()
         val member = TableMember(id = memberId, email = "test@example.com", password = "enc", nickname = "old")

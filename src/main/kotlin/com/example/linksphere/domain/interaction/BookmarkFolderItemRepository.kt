@@ -75,4 +75,10 @@ interface BookmarkFolderItemRepository : JpaRepository<TableBookmarkFolderItem, 
     @Modifying
     @Query("DELETE FROM TableBookmarkFolderItem i WHERE i.folderId = :folderId")
     fun deleteByFolderId(@Param("folderId") folderId: UUID): Int
+
+    // 회원탈퇴 시(AccountDeletionService) 그 회원의 폴더 아이템을 전부 지운다 - 폴더 자체를
+    // 지우기 전에 먼저 호출해야 한다.
+    @Modifying
+    @Query("DELETE FROM TableBookmarkFolderItem i WHERE i.userId = :userId")
+    fun deleteByUserId(@Param("userId") userId: UUID): Int
 }

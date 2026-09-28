@@ -8,6 +8,7 @@ import com.example.linksphere.global.exception.RateLimitExceededException
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
+import org.mockito.Mockito.doThrow
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 import org.springframework.beans.factory.annotation.Autowired
@@ -20,6 +21,7 @@ import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequ
 import org.springframework.security.web.SecurityFilterChain
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
@@ -47,6 +49,8 @@ class AuthControllerTest {
     @MockitoBean private lateinit var memberService: MemberService
 
     @MockitoBean private lateinit var memberSessionService: MemberSessionService
+
+    @MockitoBean private lateinit var accountDeletionService: AccountDeletionService
 
     @Test
     @WithMockUser
@@ -147,6 +151,36 @@ class AuthControllerTest {
 
     @Test
     @WithMockUser
+    fun `signup returns 400 INVALID_INPUT when password exceeds 64 characters`() {
+        val request = SignupRequest("test@example.com", "a1!".repeat(30), "testuser")
+
+        mockMvc.perform(
+            post("/auth/signup")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(jacksonObjectMapper().writeValueAsString(request))
+                .with(csrf()),
+        )
+            .andExpect(status().isBadRequest)
+            .andExpect(jsonPath("$.code").value("INVALID_INPUT"))
+    }
+
+    @Test
+    @WithMockUser
+    fun `signup returns 400 INVALID_INPUT when password contains non-ASCII characters`() {
+        val request = SignupRequest("test@example.com", "password1!비밀번호", "testuser")
+
+        mockMvc.perform(
+            post("/auth/signup")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(jacksonObjectMapper().writeValueAsString(request))
+                .with(csrf()),
+        )
+            .andExpect(status().isBadRequest)
+            .andExpect(jsonPath("$.code").value("INVALID_INPUT"))
+    }
+
+    @Test
+    @WithMockUser
     fun `signup returns 400 INVALID_INPUT when nickname is too short`() {
         val request = SignupRequest("test@example.com", "password1!", "a")
 
@@ -199,6 +233,75 @@ class AuthControllerTest {
             .andExpect(jsonPath("$.data.nickname").value("newNick"))
     }
 
+    @Test
+    @WithMockUser
+    fun `changePassword 성공 시 __Host-refreshToken 쿠키를 새로 세팅한다`() {
+        val request = ChangePasswordRequest(currentPassword = "current1!", newPassword = "newPassword1!")
+        `when`(authService.changePassword("user", request))
+            .thenReturn(AuthResult("new-access-token", "new-refresh-token", refreshExpiresInSeconds = 604800L))
+
+        mockMvc.perform(
+            patch("/auth/account/password")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(jacksonObjectMapper().writeValueAsString(request))
+                .with(csrf()),
+        )
+            .andExpect(status().isOk)
+            .andExpect(cookie().value("__Host-refreshToken", "new-refresh-token"))
+            .andExpect(jsonPath("$.data.accessToken").value("new-access-token"))
+    }
+
+    @Test
+    @WithMockUser
+    fun `changePassword returns 401 when current password is wrong`() {
+        val request = ChangePasswordRequest(currentPassword = "wrong", newPassword = "newPassword1!")
+        `when`(authService.changePassword("user", request))
+            .thenThrow(InvalidCredentialsException("Current password is incorrect"))
+
+        mockMvc.perform(
+            patch("/auth/account/password")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(jacksonObjectMapper().writeValueAsString(request))
+                .with(csrf()),
+        )
+            .andExpect(status().isUnauthorized)
+            .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"))
+    }
+
+    @Test
+    @WithMockUser
+    fun `deleteAccount 성공 시 쿠키를 만료시키고 200을 반환한다`() {
+        val request = DeleteAccountRequest(password = "correct1!")
+
+        mockMvc.perform(
+            delete("/auth/account")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(jacksonObjectMapper().writeValueAsString(request))
+                .with(csrf()),
+        )
+            .andExpect(status().isOk)
+            .andExpect(cookie().maxAge("__Host-refreshToken", 0))
+
+        verify(accountDeletionService).deleteAccount("user", "correct1!")
+    }
+
+    @Test
+    @WithMockUser
+    fun `deleteAccount returns 401 when password is wrong`() {
+        val request = DeleteAccountRequest(password = "wrong")
+        doThrow(InvalidCredentialsException("Password is incorrect"))
+            .`when`(accountDeletionService).deleteAccount("user", "wrong")
+
+        mockMvc.perform(
+            delete("/auth/account")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(jacksonObjectMapper().writeValueAsString(request))
+                .with(csrf()),
+        )
+            .andExpect(status().isUnauthorized)
+            .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"))
+    }
+
     // 이 클래스는 실제 SecurityFilterChain(permitAll 설정)을 제외한 슬라이스 테스트라 MockMvc로는
     // "인증 없이 permitAll 통과" 상태를 재현할 수 없다 - 필터체인이 없으면 스프링부트 기본값이
     // 모든 요청을 거부해 @WithMockUser 없인 401이 난다. 그래서 비로그인 경로는 컨트롤러를 직접
@@ -208,7 +311,7 @@ class AuthControllerTest {
         `when`(authService.isNicknameAvailable(null, "newNick"))
             .thenReturn(NicknameAvailabilityResponse(true))
 
-        val response = AuthController(authService).checkNicknameAvailability("newNick", null)
+        val response = AuthController(authService, accountDeletionService).checkNicknameAvailability("newNick", null)
 
         assertEquals(true, response.body?.data?.available)
     }

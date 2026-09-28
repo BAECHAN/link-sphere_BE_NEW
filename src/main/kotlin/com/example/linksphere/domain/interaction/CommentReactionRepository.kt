@@ -9,6 +9,9 @@ import java.util.UUID
 interface CommentReactionRepository : JpaRepository<TableCommentReaction, CommentReactionId> {
     fun existsByUserIdAndCommentId(userId: UUID, commentId: UUID): Boolean
     fun deleteByUserIdAndCommentId(userId: UUID, commentId: UUID)
+
+    // 회원탈퇴 시(AccountDeletionService) 그 회원의 댓글 좋아요를 전부 지운다.
+    fun deleteByUserId(userId: UUID)
     fun findAllByCommentIdIn(commentIds: List<UUID>): List<TableCommentReaction>
     fun findAllByUserIdAndCommentIdIn(userId: UUID, commentIds: List<UUID>): List<TableCommentReaction>
 
