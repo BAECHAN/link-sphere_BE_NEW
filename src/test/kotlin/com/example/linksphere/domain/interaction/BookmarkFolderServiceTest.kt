@@ -1,10 +1,12 @@
 package com.example.linksphere.domain.interaction
 
+import com.example.linksphere.domain.post.PostRepository
 import com.example.linksphere.domain.post.PostResponseAssembler
 import com.example.linksphere.domain.post.TablePost
 import com.example.linksphere.global.exception.BookmarkFolderNotFoundException
 import com.example.linksphere.global.exception.ForbiddenException
 import com.example.linksphere.global.exception.InvalidInputException
+import com.example.linksphere.global.exception.PostNotFoundException
 import com.example.linksphere.infra.ai.GeminiService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
@@ -40,6 +42,8 @@ class BookmarkFolderServiceTest {
     @Mock private lateinit var postResponseAssembler: PostResponseAssembler
 
     @Mock private lateinit var geminiService: GeminiService
+
+    @Mock private lateinit var postRepository: PostRepository
 
     @InjectMocks private lateinit var bookmarkFolderService: BookmarkFolderService
 
@@ -321,8 +325,12 @@ class BookmarkFolderServiceTest {
         val folderId = UUID.randomUUID()
         val folder = TableBookmarkFolder(id = folderId, userId = userId, name = "개발")
         val postIds = listOf(UUID.randomUUID(), UUID.randomUUID())
+        val posts = postIds.map {
+            TablePost(id = it, userId = userId, url = "https://a.com", title = "글", isPrivate = false)
+        }
 
         `when`(bookmarkFolderRepository.findById(folderId)).thenReturn(Optional.of(folder))
+        `when`(postRepository.findAllById(postIds)).thenReturn(posts)
 
         val result = bookmarkFolderService.batchAddBookmarksToFolder(userId, folderId, postIds)
 
@@ -331,6 +339,42 @@ class BookmarkFolderServiceTest {
             verify(bookmarkRepository).insertIgnoreConflict(userId, postId)
             verify(bookmarkFolderItemRepository).insertIgnoreConflict(userId, postId, folderId)
         }
+    }
+
+    @Test
+    fun `batchAddBookmarksToFolder 는 존재하지 않는 postId 가 섞여있으면 PostNotFoundException`() {
+        val userId = UUID.randomUUID()
+        val folderId = UUID.randomUUID()
+        val folder = TableBookmarkFolder(id = folderId, userId = userId, name = "개발")
+        val existingId = UUID.randomUUID()
+        val missingId = UUID.randomUUID()
+        val existingPost = TablePost(id = existingId, userId = userId, url = "https://a.com", title = "글", isPrivate = false)
+
+        `when`(bookmarkFolderRepository.findById(folderId)).thenReturn(Optional.of(folder))
+        `when`(postRepository.findAllById(listOf(existingId, missingId))).thenReturn(listOf(existingPost))
+
+        assertThrows(PostNotFoundException::class.java) {
+            bookmarkFolderService.batchAddBookmarksToFolder(userId, folderId, listOf(existingId, missingId))
+        }
+        verifyNoInteractions(bookmarkRepository)
+    }
+
+    @Test
+    fun `batchAddBookmarksToFolder 는 타인의 비공개 글이 섞여있으면 PostNotFoundException`() {
+        val userId = UUID.randomUUID()
+        val otherUserId = UUID.randomUUID()
+        val folderId = UUID.randomUUID()
+        val folder = TableBookmarkFolder(id = folderId, userId = userId, name = "개발")
+        val postId = UUID.randomUUID()
+        val privatePost = TablePost(id = postId, userId = otherUserId, url = "https://a.com", title = "글", isPrivate = true)
+
+        `when`(bookmarkFolderRepository.findById(folderId)).thenReturn(Optional.of(folder))
+        `when`(postRepository.findAllById(listOf(postId))).thenReturn(listOf(privatePost))
+
+        assertThrows(PostNotFoundException::class.java) {
+            bookmarkFolderService.batchAddBookmarksToFolder(userId, folderId, listOf(postId))
+        }
+        verifyNoInteractions(bookmarkRepository)
     }
 
     @Test

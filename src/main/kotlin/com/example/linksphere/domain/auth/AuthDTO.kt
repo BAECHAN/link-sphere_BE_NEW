@@ -39,7 +39,12 @@ data class AccountResponse(
 )
 
 data class UpdateAccountRequest(
+    // null 이면 그 필드는 유지한다(부분 수정) - SignupRequest.nickname과 동일한 형식 규칙이지만
+    // 여긴 선택 입력이라 @NotBlank는 붙이지 않는다.
+    @field:Size(min = 2, max = 20)
+    @field:Pattern(regexp = "^[a-zA-Z0-9가-힣_.-]*$")
     val nickname: String? = null,
+    @field:Size(max = 2048)
     val image: String? = null,
 )
 

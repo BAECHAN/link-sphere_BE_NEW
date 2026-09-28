@@ -6,11 +6,13 @@ import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.security.SecurityRequirements
 import io.swagger.v3.oas.annotations.tags.Tag
 import jakarta.validation.Valid
+import jakarta.validation.constraints.Size
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseCookie
 import org.springframework.http.ResponseEntity
 import org.springframework.security.core.Authentication
+import org.springframework.validation.annotation.Validated
 import org.springframework.web.bind.annotation.CookieValue
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PatchMapping
@@ -24,6 +26,7 @@ import java.security.Principal
 @Tag(name = "인증", description = "회원가입·로그인·토큰 갱신·계정 조회")
 @RestController
 @RequestMapping("/auth")
+@Validated // @RequestParam(개별 메서드 파라미터)에 붙인 @Size가 동작하려면 클래스 레벨에 필요하다
 class AuthController(private val authService: AuthService) {
 
     @Operation(
@@ -99,7 +102,7 @@ class AuthController(private val authService: AuthService) {
     )
     @PatchMapping("/account")
     fun updateAccount(
-        @RequestBody request: UpdateAccountRequest,
+        @Valid @RequestBody request: UpdateAccountRequest,
         principal: Principal,
     ): ResponseEntity<ApiResponse<AccountResponse>> = ResponseEntity.ok(ApiResponse(HttpStatus.OK.value(), "Account updated", authService.updateAccount(principal.name, request)))
 
@@ -114,7 +117,7 @@ class AuthController(private val authService: AuthService) {
     @SecurityRequirements
     @GetMapping("/account/nickname-availability")
     fun checkNicknameAvailability(
-        @RequestParam nickname: String,
+        @RequestParam @Size(max = 20) nickname: String,
         authentication: Authentication?,
     ): ResponseEntity<ApiResponse<NicknameAvailabilityResponse>> = ResponseEntity.ok(
         ApiResponse(
@@ -128,7 +131,7 @@ class AuthController(private val authService: AuthService) {
     @SecurityRequirements
     @GetMapping("/email-availability")
     fun checkEmailAvailability(
-        @RequestParam email: String,
+        @RequestParam @Size(max = 254) email: String,
     ): ResponseEntity<ApiResponse<EmailAvailabilityResponse>> = ResponseEntity.ok(
         ApiResponse(HttpStatus.OK.value(), "Email availability checked", authService.isEmailAvailable(email)),
     )

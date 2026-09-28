@@ -143,6 +143,21 @@ class LambdaHandler : RequestStreamHandler {
             }
         }
 
+        // Phase 0: CloudFront를 거치지 않고 Function URL을 직접 두드린 요청을 막는다
+        // (FunctionUrlOriginGuard 참고, docs/plans/2026-09-28-auth-hardening.md).
+        val domainName = event.at("/requestContext/domainName")?.asText()
+        val originVerifyHeader = findHeader(event, FunctionUrlOriginGuard.HEADER_NAME)
+        if (!FunctionUrlOriginGuard.isAllowed(domainName, originVerifyHeader, System.getenv("ORIGIN_VERIFY_SECRET"))) {
+            mapper.writeValue(
+                output,
+                mapOf(
+                    "statusCode" to 403,
+                    "body" to mapper.writeValueAsString(mapOf("status" to 403, "code" to "FORBIDDEN", "message" to "Forbidden")),
+                ),
+            )
+            return
+        }
+
         // rawPath에는 CloudFront가 forward한 전체 경로(/api/auth/login)가 담겨있다.
         // MockMvc는 Tomcat과 달리 context-path(/api)를 자동으로 스트립하지 않으므로,
         // Spring Security의 requestMatchers("/auth/login")가 /api/auth/login과 매칭 실패해 401이 된다.
@@ -165,18 +180,7 @@ class LambdaHandler : RequestStreamHandler {
         // 바이트를 .content()로 넣기만 하면 @RequestParam이 항상 null로 바인딩된다 — 클라이언트가
         // 무엇을 보냈는지와 무관하게 매번 실패한다. multipart(...) 빌더로 Part/파라미터를 명시적으로
         // 등록해야 하므로, MultipartRequestParser로 raw 바이트를 직접 파싱해 등록한다.
-        val contentTypeHeader =
-            event.get("headers")?.let { headers ->
-                val names = headers.fieldNames()
-                var found: String? = null
-                while (names.hasNext()) {
-                    val key = names.next()
-                    if (key.equals("content-type", ignoreCase = true)) {
-                        found = headers.get(key).asText()
-                    }
-                }
-                found
-            }
+        val contentTypeHeader = findHeader(event, "content-type")
         val isMultipart = contentTypeHeader?.startsWith("multipart/", ignoreCase = true) == true
 
         val requestBuilder: MockHttpServletRequestBuilder =
@@ -191,6 +195,10 @@ class LambdaHandler : RequestStreamHandler {
             } else {
                 MockMvcRequestBuilders.request(HttpMethod.valueOf(method), uri)
             }
+        // Function URL 트래픽은 항상 HTTPS다. 이 표시가 없으면 Spring Security의 HSTS
+        // 헤더 작성기가 "보안 연결 아님"으로 보고 응답에 아예 헤더를 안 싣는다(F5,
+        // docs/plans/2026-09-28-auth-hardening.md 참고).
+        requestBuilder.secure(true)
 
         var cookieHeader: String? = null
         event.get("headers")?.let { headers ->
@@ -235,6 +243,22 @@ class LambdaHandler : RequestStreamHandler {
                 "body" to response.contentAsString,
             ),
         )
+    }
+
+    // Lambda 이벤트의 headers 필드는 대소문자가 원본 그대로 들어오므로(예: X-Origin-Verify vs
+    // x-origin-verify) 매번 순회하며 대소문자 구분 없이 찾는다. content-type · X-Origin-Verify
+    // 둘 다 이 함수로 찾는다.
+    private fun findHeader(event: JsonNode, name: String): String? {
+        val headers = event.get("headers") ?: return null
+        val names = headers.fieldNames()
+        var found: String? = null
+        while (names.hasNext()) {
+            val key = names.next()
+            if (key.equals(name, ignoreCase = true)) {
+                found = headers.get(key).asText()
+            }
+        }
+        return found
     }
 
     // AiJobDispatcher가 위임한 AI 분석 작업을 처리한다. 원래 요청의 응답 흐름과 완전히
