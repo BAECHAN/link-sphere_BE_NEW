@@ -361,6 +361,36 @@
 
   </details>
 
+### Security
+
+- `auth` 세션 필터가 `X-Access-Token` 헤더를 우선 읽도록 변경(Lambda Function URL을
+  CloudFront OAC로 잠그기 위한 선행 작업)
+  <details><summary>배경·구현</summary>
+
+  인증 시스템 전면 강화 계획(`docs/plans/2026-09-28-auth-hardening.md`)의 Phase 7.
+  실측 결과(직접 AWS CLI 조회) 프로덕션 Lambda Function URL이 `AuthType: NONE`으로
+  완전히 공개돼 있었고, 앞서 넣어둔 "Phase 0" 임시 잠금(`FunctionUrlOriginGuard.kt`,
+  `X-Origin-Verify` 헤더 대조)도 `ORIGIN_VERIFY_SECRET` 환경변수가 설정된 적이 없어
+  fail-open 상태로 사실상 비활성이었다 - CloudFront의 WAF도 이 직통 경로는 거치지
+  않아 실제로 열려 있는 구멍이었다.
+
+  진짜 잠금은 CloudFront Origin Access Control(OAC)로 Function URL을 `AWS_IAM`
+  전환하는 것인데, OAC의 `SigningBehavior: Always`는 CloudFront가 오리진 요청의
+  `Authorization` 헤더를 자신의 SigV4 서명으로 덮어쓴다([AWS 공식 문서](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-restricting-access-to-lambda.html)) -
+  그래서 클라이언트의 실제 액세스 토큰은 그 헤더를 쓸 수 없다. `SessionAuthenticationFilter.resolveToken()`이
+  `X-Access-Token`을 먼저 읽고, 없으면 기존처럼 `Authorization: Bearer <token>`으로
+  폴백하도록 바꿨다 - 하위 호환이라 FE가 아직 `Authorization`만 보내는 동안에도 그대로
+  동작한다. `Authorization` 폴백은 로컬 개발(Function URL을 거치지 않음)과 Swagger UI
+  (`bearerAuth` 스킴)를 위해 계속 남겨둔다.
+
+  AWS 인프라(OAC 생성·연결, Function URL `AuthType` 전환)는 이 PR의 범위가 아니다 -
+  BE·FE 코드가 각각 배포·검증된 뒤에만 실행한다(`docs/DEPLOY.md` §5-1,
+  `docs/LAMBDA-CONFIG-ROLLBACK.md` 롤백 절차 참고).
+  (`SessionAuthenticationFilter.kt`, `SessionAuthenticationFilterTest.kt`(신규),
+  `docs/DEPLOY.md`, `docs/LAMBDA-CONFIG-ROLLBACK.md`)
+
+  </details>
+
 ## [0.10.0] - 2026-09-14
 
 ### Added

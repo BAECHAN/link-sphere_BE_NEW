@@ -207,44 +207,66 @@ Lambda 콘솔 → Configuration → Environment variables:
 ### 5. Function URL 생성
 
 ```bash
-# prod alias에 Function URL 생성
+# prod alias에 Function URL 생성 (OAC 전환 후 AuthType은 AWS_IAM — 아래 5-1 참고)
 aws lambda create-function-url-config \
   --function-name link-sphere-api \
   --qualifier prod \
-  --auth-type NONE
-
-# 퍼블릭 접근 허용
-aws lambda add-permission \
-  --function-name link-sphere-api \
-  --qualifier prod \
-  --statement-id FunctionURLAllowPublicAccess \
-  --action lambda:InvokeFunctionUrl \
-  --principal "*" \
-  --function-url-auth-type NONE
+  --auth-type AWS_IAM
 ```
 
-#### 5-1. Function URL 직접 호출 임시 잠금 (오리진 시크릿 헤더) — 적용 완료 (2026-09-28)
+> 과거엔 `--auth-type NONE` + `FunctionURLAllowPublicAccess` 공개 권한으로 만들었다.
+> Phase 7(OAC 전환, 2026-09-29)에서 `AWS_IAM`으로 바꾸고 그 공개 권한은 제거했다 —
+> 지금 새로 만드는 환경이면 처음부터 `AWS_IAM`으로 만들면 된다.
 
-Function URL이 `--auth-type NONE`이라 CloudFront를 거치지 않고 직접 두드려도 요청이
-그대로 들어간다 — WAF(2장)가 CloudFront 앞단에만 있어서 직접 호출은 WAF를 완전히
-우회한다. 진짜 잠금(OAC로 `AWS_IAM` 전환)은 별도 라운드에서 다루고, 이번엔 CloudFront가
-오리진에 커스텀 헤더를 붙이도록 설정해 "이 헤더가 없으면 거절"하는 임시 잠금만 건다
-(`FunctionUrlOriginGuard.kt`, `LambdaHandler.handleRequest` 최상단).
+#### 5-1. Function URL 직접 호출 완전 차단 (CloudFront OAC) — 적용 완료 (2026-09-29)
+
+Function URL이 `AWS_IAM`이고 CloudFront 오리진에 Origin Access Control(OAC)이
+연결돼 있어, CloudFront를 거치지 않고 직접 두드리면 Lambda의 IAM 인가 단계에서
+즉시 403을 받는다(WAF 경유 없이도 차단 — WAF보다 앞단에서 막히므로 §2 WAF와는
+독립적인 방어선이다).
 
 ```bash
-# 1. 시크릿 생성 후 Lambda 환경변수로 설정(다른 값들과 같은 방식, 1장 참고)
-# 2. CloudFront 콘솔 → 이 오리진(Function URL) → Origin Custom Headers 에 추가:
-#    이름: X-Origin-Verify
-#    값:   <위에서 만든 시크릿과 동일한 값>
+# 1. CloudFront에 Function URL 호출 권한 부여 (공식 문서: 두 액션 모두 필요 -
+#    https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-restricting-access-to-lambda.html)
+aws lambda add-permission --function-name link-sphere-api --qualifier prod \
+  --statement-id AllowCloudFrontServicePrincipal \
+  --action lambda:InvokeFunctionUrl --principal cloudfront.amazonaws.com \
+  --source-arn arn:aws:cloudfront::<account-id>:distribution/<distribution-id>
+
+aws lambda add-permission --function-name link-sphere-api --qualifier prod \
+  --statement-id AllowCloudFrontServicePrincipalInvokeFunction \
+  --action lambda:InvokeFunction --principal cloudfront.amazonaws.com \
+  --source-arn arn:aws:cloudfront::<account-id>:distribution/<distribution-id>
+
+# 2. OAC 생성 (SigningBehavior=always 권장값)
+aws cloudfront create-origin-access-control --origin-access-control-config \
+  Name=link-sphere-api-lambda-oac,SigningProtocol=sigv4,SigningBehavior=always,OriginAccessControlOriginType=lambda
+
+# 3. CloudFront 콘솔(또는 get-distribution-config → OriginAccessControlId 채워서
+#    update-distribution) → 이 오리진(Function URL)의 Origin access control에 위에서
+#    만든 OAC 연결
+
+# 4. Function URL AuthType 전환
+aws lambda update-function-url-config --function-name link-sphere-api \
+  --qualifier prod --auth-type AWS_IAM
+
+# 5. 검증 후, 기존 공개 권한이 남아있었다면 제거
+aws lambda remove-permission --function-name link-sphere-api --qualifier prod \
+  --statement-id FunctionURLAllowPublicAccess
 ```
 
-- EventBridge 워밍 핑(6장)·CI 5-invoke 게이트는 `rawPath`+`requestContext.http.method`만
-  담은 합성 이벤트를 쓰고 `requestContext.domainName`이 없어 이 검사 자체를 건너뛴다
-  (`FunctionUrlOriginGuardTest.kt`로 고정).
-- 환경변수가 아직 없으면(배포 과도기) 검사를 건너뛴다 — 설정 누락으로 API 전체가 막히는
-  것보다 지금 수준(공개 상태)을 유지하는 쪽이 안전하다는 판단.
-- 한계: 직접 호출 자체는 여전히 Lambda까지 도달해(과금 대상) 403만 받는다. 완전 차단은
-  OAC 전환 이후.
+**롤백**: `aws lambda update-function-url-config --function-name link-sphere-api
+--qualifier prod --auth-type NONE` 한 줄로 즉시 공개 상태로 되돌릴 수 있다(OAC가
+오리진에 붙어 있어도 Function URL이 `NONE`이면 서명을 무시하므로 무해) — 자세한
+장애 대응은 `docs/LAMBDA-CONFIG-ROLLBACK.md` 참고.
+
+**Phase 0(오리진 시크릿 헤더, `FunctionUrlOriginGuard.kt`) 관련 정정**: 이 문서는
+한때 Phase 0가 "적용 완료"라고 적어뒀으나, Phase 7 작업 중 직접 조회해보니
+`ORIGIN_VERIFY_SECRET` 환경변수가 실제로는 설정된 적이 없었다(fail-open 상태로
+계속 공개돼 있었음, `AuthType: NONE`·CloudFront에 `CustomHeaders` 없음을 CLI로
+확인) — 표기 오류였다. 이제 OAC(위 5-1)가 그 자리를 대체하므로 이 임시 잠금은
+더 이상 쓰지 않는다. `FunctionUrlOriginGuard.kt` 코드 자체는 유지하되(제거는
+별도 판단), `ORIGIN_VERIFY_SECRET`을 새로 설정할 필요는 없다.
 
 #### 5-2. 실제 요청자 IP 전달 (CloudFront-Viewer-Address) — 적용 완료 (2026-09-28)
 
