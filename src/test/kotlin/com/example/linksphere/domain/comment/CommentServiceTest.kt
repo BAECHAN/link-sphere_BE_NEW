@@ -100,6 +100,23 @@ class CommentServiceTest {
     }
 
     @Test
+    fun `createComment은 탈퇴한(nickname이 null인) 회원이면 작성자 표시명을 '탈퇴한 사용자'로 대신한다`() {
+        val userId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val post = TablePost(id = postId, userId = userId, url = "https://example.com", title = "제목", isPrivate = false)
+        val deletedMember = TableMember(id = userId, email = "deleted-$userId@deleted.invalid", password = "pw", nickname = null)
+
+        `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
+        `when`(memberRepository.findById(userId)).thenReturn(Optional.of(deletedMember))
+        val captor = ArgumentCaptor.forClass(TableComment::class.java)
+        `when`(commentRepository.save(captor.capture())).thenAnswer { captor.value }
+
+        val response = commentService.createComment(postId, userId, "댓글 내용", null)
+
+        assertEquals("탈퇴한 사용자", response.author.nickname)
+    }
+
+    @Test
     fun `createComment은 이미지 URL만 있는 댓글의 linkUrl을 null로 저장한다`() {
         val userId = UUID.randomUUID()
         val postId = UUID.randomUUID()

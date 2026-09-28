@@ -167,4 +167,38 @@ class AuthServiceTest {
 
         verifyNoInteractions(memberService)
     }
+
+    @Test
+    fun `changePassword는 현재 비밀번호가 틀리면 아무것도 바꾸지 않는다`() {
+        val memberId = UUID.randomUUID()
+        val member = TableMember(id = memberId, email = "test@example.com", password = "encoded")
+        val request = ChangePasswordRequest(currentPassword = "wrong", newPassword = "newPassword1!")
+        `when`(memberService.findById(memberId)).thenReturn(member)
+        `when`(passwordEncoder.matches("wrong", "encoded")).thenReturn(false)
+
+        assertThrows(InvalidCredentialsException::class.java) {
+            authService.changePassword(memberId.toString(), request)
+        }
+
+        verifyNoInteractions(memberSessionService)
+    }
+
+    @Test
+    fun `changePassword는 성공하면 비밀번호를 바꾸고 모든 세션을 폐기한 뒤 이 기기에 새 세션을 발급한다`() {
+        val memberId = UUID.randomUUID()
+        val member = TableMember(id = memberId, email = "test@example.com", password = "oldEncoded")
+        val request = ChangePasswordRequest(currentPassword = "current", newPassword = "newPassword1!")
+        `when`(memberService.findById(memberId)).thenReturn(member)
+        `when`(passwordEncoder.matches("current", "oldEncoded")).thenReturn(true)
+        `when`(passwordEncoder.encode("newPassword1!")).thenReturn("newEncoded")
+        `when`(memberSessionService.createSession(memberId))
+            .thenReturn(IssuedSession("access", "refresh", 604800L))
+
+        val result = authService.changePassword(memberId.toString(), request)
+
+        verify(memberService).changePassword(memberId, "newEncoded")
+        verify(memberSessionService).revokeAllForMember(memberId)
+        verify(memberSessionService).createSession(memberId)
+        assertEquals("access", result.accessToken)
+    }
 }

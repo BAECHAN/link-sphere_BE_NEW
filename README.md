@@ -34,9 +34,12 @@ src/main/kotlin/com/example/linksphere/
 ├── LinkSphereBeApplication.kt           # 메인 애플리케이션
 ├── domain/
 │   ├── auth/                            # 인증 도메인
-│   │   ├── AuthController.kt            # 회원가입, 로그인, 토큰 갱신, 로그아웃, 내 정보
+│   │   ├── AuthController.kt            # 회원가입, 로그인, 토큰 갱신, 로그아웃, 내 정보, 비밀번호 변경, 회원탈퇴
 │   │   ├── AuthDTO.kt
 │   │   ├── AuthService.kt
+│   │   ├── AccountDeletionService.kt    # 회원탈퇴(하드삭제 아님, 계정 행 익명화)
+│   │   ├── TableAuthRateLimit.kt        # 로그인 실패·가입 시도 카운터(고정 윈도)
+│   │   ├── AuthRateLimitRepository.kt
 │   │   ├── TableMemberSession.kt        # 로그인 세션(access/refresh 해시) 1행 = 1세션
 │   │   ├── MemberSessionRepository.kt
 │   │   ├── MemberSessionService.kt      # 세션 발급·회전·폐기
@@ -97,6 +100,9 @@ src/main/kotlin/com/example/linksphere/
 │   │   ├── ApiResponse.kt               # 공통 응답 래퍼
 │   │   ├── ErrorResponse.kt
 │   │   ├── SecurityUtils.kt             # Authentication?.getUserId() 확장 함수
+│   │   ├── SecureToken.kt               # 세션·비밀번호재설정 등 불투명 토큰 발급·해시
+│   │   ├── ClientIpResolver.kt          # CloudFront-Viewer-Address 헤더에서 요청자 IP 추출
+│   │   ├── RateLimitService.kt          # bucketKey·limit·window 기반 범용 고정윈도 카운터
 │   │   └── SupabaseStorageService.kt    # Supabase 이미지 업로드
 │   ├── config/
 │   │   ├── AsyncConfig.kt               # 비동기 스레드풀 설정
@@ -111,6 +117,7 @@ src/main/kotlin/com/example/linksphere/
 │       ├── ForbiddenException.kt
 │       ├── InvalidCredentialsException.kt
 │       ├── InvalidTokenException.kt
+│       ├── RateLimitExceededException.kt
 │       └── PostNotFoundException.kt
 └── infra/
     ├── ai/

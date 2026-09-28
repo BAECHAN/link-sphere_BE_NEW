@@ -19,6 +19,12 @@ import java.util.UUID
 
 private const val DELETED_COMMENT_CONTENT = "삭제된 댓글입니다."
 
+// 회원탈퇴(AccountDeletionService)로 nickname이 null이 된 경우의 표시명. member 연관관계
+// 자체가 null인 경우(정합성 깨진 데이터, "Should not happen with consistent DB")에도 같은
+// 문구를 쓴다 - 둘 다 "이 댓글의 작성자 정보를 보여줄 수 없다"는 같은 상황이라 사용자에게
+// 굳이 구분해 보일 이유가 없다.
+private const val DELETED_MEMBER_NICKNAME = "탈퇴한 사용자"
+
 private val URL_REGEX = Regex("""https?://\S+""")
 
 @Service
@@ -74,13 +80,13 @@ class CommentService(
                     comment.member?.let {
                         CommentAuthor(
                             it.id!!,
-                            it.nickname ?: "Unknown",
+                            it.nickname ?: DELETED_MEMBER_NICKNAME,
                             it.image,
                         )
                     }
                         ?: CommentAuthor(
                             UUID.randomUUID(),
-                            "Unknown",
+                            DELETED_MEMBER_NICKNAME,
                             null,
                         ) // Should not happen with consistent DB
 
@@ -427,7 +433,7 @@ class CommentService(
         content = comment.content,
         isDeleted = comment.isDeleted,
         createdAt = comment.createdAt,
-        author = CommentAuthor(member.id!!, member.nickname ?: "Unknown", member.image),
+        author = CommentAuthor(member.id!!, member.nickname ?: DELETED_MEMBER_NICKNAME, member.image),
         linkMetadata = comment.linkUrl?.let {
             LinkMetadata(
                 url = it,

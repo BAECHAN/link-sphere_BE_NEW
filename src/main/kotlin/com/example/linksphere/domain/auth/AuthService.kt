@@ -98,6 +98,23 @@ class AuthService(
         memberSessionService.revokeAllForMember(UUID.fromString(userId))
     }
 
+    // 성공하면 모든 세션(이 기기 포함)을 폐기한 뒤 이 기기에만 새 세션을 발급한다 - 다른
+    // 기기는 재로그인이 필요해진다(비밀번호가 유출됐을 가능성에 대비한 의도된 동작).
+    @Transactional
+    fun changePassword(userId: String, request: ChangePasswordRequest): AuthResult {
+        val id = UUID.fromString(userId)
+        val member = memberService.findById(id)
+
+        if (!passwordEncoder.matches(request.currentPassword, member.password)) {
+            throw InvalidCredentialsException("Current password is incorrect")
+        }
+
+        memberService.changePassword(id, passwordEncoder.encode(request.newPassword))
+        memberSessionService.revokeAllForMember(id)
+        val session = memberSessionService.createSession(id)
+        return AuthResult(session.accessToken, session.refreshToken, session.refreshExpiresInSeconds)
+    }
+
     fun getAccount(userId: String): AccountResponse = toAccountResponse(memberService.findById(UUID.fromString(userId)))
 
     @Transactional

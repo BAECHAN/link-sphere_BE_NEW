@@ -16,6 +16,7 @@ import org.springframework.http.ResponseEntity
 import org.springframework.security.core.Authentication
 import org.springframework.validation.annotation.Validated
 import org.springframework.web.bind.annotation.CookieValue
+import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PostMapping
@@ -29,7 +30,10 @@ import java.security.Principal
 @RestController
 @RequestMapping("/auth")
 @Validated // @RequestParam(개별 메서드 파라미터)에 붙인 @Size가 동작하려면 클래스 레벨에 필요하다
-class AuthController(private val authService: AuthService) {
+class AuthController(
+    private val authService: AuthService,
+    private val accountDeletionService: AccountDeletionService,
+) {
 
     companion object {
         // __Host- 접두어는 브라우저가 Secure·Path=/·Domain 속성 없음을 강제하는 쿠키 이름
@@ -142,6 +146,50 @@ class AuthController(private val authService: AuthService) {
         @Valid @RequestBody request: UpdateAccountRequest,
         principal: Principal,
     ): ResponseEntity<ApiResponse<AccountResponse>> = ResponseEntity.ok(ApiResponse(HttpStatus.OK.value(), "Account updated", authService.updateAccount(principal.name, request)))
+
+    @Operation(
+        summary = "비밀번호 변경",
+        description = "현재 비밀번호 확인 후 변경한다. 성공하면 이 기기를 포함한 모든 세션이 폐기되고 " +
+            "이 기기에는 새 세션이 발급된다(쿠키도 새로 세팅됨) - 다른 기기는 재로그인이 필요하다. " +
+            "실패: 400 INVALID_INPUT · 401 INVALID_CREDENTIALS(현재 비밀번호 불일치)",
+    )
+    @PatchMapping("/account/password")
+    fun changePassword(
+        @Valid @RequestBody request: ChangePasswordRequest,
+        principal: Principal,
+    ): ResponseEntity<ApiResponse<TokenResponse>> {
+        val authResult = authService.changePassword(principal.name, request)
+        return createCookieResponse(
+            authResult,
+            ApiResponse(HttpStatus.OK.value(), "Password changed", TokenResponse(authResult.accessToken)),
+        )
+    }
+
+    @Operation(
+        summary = "회원 탈퇴",
+        description = "비밀번호 재확인 후 계정을 익명화한다(하드 삭제 아님) - 작성한 글·댓글은 " +
+            "'탈퇴한 사용자'로 표시된 채 그대로 남는다. 북마크·좋아요·조회기록·FCM 토큰은 실제로 " +
+            "삭제된다. 모든 세션이 즉시 폐기되고 이 기기의 쿠키도 만료된다. " +
+            "실패: 401 INVALID_CREDENTIALS(비밀번호 불일치)",
+    )
+    @DeleteMapping("/account")
+    fun deleteAccount(
+        @Valid @RequestBody request: DeleteAccountRequest,
+        principal: Principal,
+    ): ResponseEntity<ApiResponse<Unit>> {
+        accountDeletionService.deleteAccount(principal.name, request.password)
+        val cookie =
+            ResponseCookie.from(REFRESH_COOKIE_NAME, "")
+                .httpOnly(true)
+                .secure(true)
+                .path("/")
+                .maxAge(0)
+                .sameSite("Lax")
+                .build()
+        return ResponseEntity.ok()
+            .header(HttpHeaders.SET_COOKIE, cookie.toString())
+            .body(ApiResponse(HttpStatus.OK.value(), "Account deleted", Unit))
+    }
 
     // 마이페이지(로그인)와 가입 화면(비로그인) 둘 다에서 쓴다 - permitAll 경로라 인증 안 된
     // 요청은 authentication이 null이 아니라 이름이 "anonymousUser"인 익명 토큰으로 들어오고,

@@ -18,4 +18,7 @@ interface PostViewRepository : JpaRepository<TablePostView, PostViewId> {
         nativeQuery = true,
     )
     fun upsertView(@Param("userId") userId: UUID, @Param("postId") postId: UUID)
+
+    // 회원탈퇴 시(AccountDeletionService) 그 회원의 조회기록을 전부 지운다.
+    fun deleteByUserId(userId: UUID)
 }

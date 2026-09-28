@@ -11,6 +11,33 @@
 
 ### Added
 
+- `auth` 비밀번호 변경(`PATCH /auth/account/password`)·회원탈퇴(`DELETE /auth/account`) 추가
+  <details><summary>배경·구현</summary>
+
+  인증 시스템 전면 강화 계획(`docs/plans/2026-09-28-auth-hardening.md`)의 Phase 5.
+  비밀번호 변경은 현재 비밀번호 확인 후 바꾸고, 이 기기를 포함한 모든 세션을 폐기한
+  뒤 이 기기에만 새 세션을 발급한다(다른 기기는 재로그인 필요 - 비밀번호 유출
+  가능성에 대비한 의도된 동작). 비밀번호 규칙도 이번에 함께 조정했다: 길이
+  8~64자(기존 8~20자), 조합 규칙(영문+숫자+특수문자 각 1개) 유지, **출력 가능
+  ASCII만 허용**(BCrypt의 72바이트 한도·유니코드 정규화 방식 차이로 "분명 같은
+  비밀번호인데 로그인이 안 되는" 문제를 원천 차단 - Microsoft Entra ID와 동일한
+  방식).
+
+  회원탈퇴는 **하드 삭제가 아니라 계정 행 익명화**다 - 비밀번호 재확인 후 이메일을
+  `deleted-<id>@deleted.invalid`(RFC 2606 예약 TLD)로, 비밀번호를 매칭 불가능한
+  무작위 값으로, 닉네임·이미지를 null로 바꾸고 `deletedAt`을 채운다. 작성한
+  글·댓글은 그대로 공개 유지되고 익명화된 회원 행을 그대로 참조하므로 작성자
+  표시가 자동으로 "탈퇴한 사용자"가 된다(댓글은 `CommentAuthor.nickname`이
+  non-null이라 `?: "탈퇴한 사용자"` 폴백을 명시적으로 추가했다 - 게시글의
+  `UserSummary.nickname`은 이미 nullable이라 코드 변경 없이 null이 그대로
+  내려간다). 북마크·좋아요·조회기록·FCM 토큰처럼 남에게 안 보이는 개인 전용
+  데이터는 실제로 지운다(비가역이어도 문제없는 범위로 한정).
+  (`AuthDTO.kt`, `AuthService.kt`, `AuthController.kt`, `MemberService.kt`,
+  `AccountDeletionService.kt`(신규), `CommentService.kt`, 6개 interaction/post
+  Repository에 `deleteByUserId` 추가)
+
+  </details>
+
 - `auth` 로그인 실패·가입 시도에 IP·계정 단위 횟수 제한(레이트리밋) 추가
   <details><summary>배경·구현</summary>
 

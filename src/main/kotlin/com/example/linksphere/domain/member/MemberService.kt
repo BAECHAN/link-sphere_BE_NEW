@@ -87,6 +87,17 @@ class MemberService(private val memberRepository: MemberRepository) {
         return memberRepository.save(member)
     }
 
+    // 새 비밀번호는 AuthService가 이미 인코딩해서 넘긴다 - updateAccount와 같은 위치에 두는
+    // 이유는 "회원 데이터 변경은 MemberService를 거친다"는 규칙을 password에도 그대로
+    // 적용하기 위함(AuthService는 TableMember 필드를 직접 건드리지 않는다).
+    @Transactional
+    fun changePassword(id: UUID, encodedPassword: String): TableMember {
+        val member = findById(id)
+        member.password = encodedPassword
+        member.updatedAt = LocalDateTime.now()
+        return memberRepository.save(member)
+    }
+
     // id가 있으면(로그인 사용자의 마이페이지 수정) 본인 현재 닉네임은 중복으로 치지 않는다.
     // id가 없으면(가입 화면, 비로그인) 무조건 존재 여부만 본다.
     fun isNicknameAvailable(id: UUID?, nickname: String): Boolean {
