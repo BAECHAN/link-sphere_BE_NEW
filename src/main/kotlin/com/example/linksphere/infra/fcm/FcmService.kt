@@ -27,24 +27,30 @@ class FcmService(
             return
         }
 
-        val tokens = fcmTokenService.getTokensByUserId(userId)
-        if (tokens.isEmpty()) {
-            logger.debug("[FCM] No tokens for userId: $userId — skipping")
-            return
-        }
-
-        val message = MulticastMessage.builder()
-            .setNotification(
-                Notification.builder()
-                    .setTitle(title)
-                    .setBody(body)
-                    .build(),
-            )
-            .putAllData(data)
-            .addAllTokens(tokens)
-            .build()
-
         try {
+            // 세션이 죽은(로그아웃·재사용탐지·비밀번호변경·자연만료) 기기의 토큰은 발송
+            // 전에 먼저 지운다 - 필터만 하고 지우지 않으면 그 토큰은 발송 대상에서 계속
+            // 빠지기만 할 뿐 FCM의 UNREGISTERED 응답(아래 실패 정리 로직)을 받을 기회가
+            // 없어 영원히 안 지워진다.
+            fcmTokenRepository.deleteStaleTokensForUser(userId)
+
+            val tokens = fcmTokenService.getTokensByUserId(userId)
+            if (tokens.isEmpty()) {
+                logger.debug("[FCM] No tokens for userId: $userId — skipping")
+                return
+            }
+
+            val message = MulticastMessage.builder()
+                .setNotification(
+                    Notification.builder()
+                        .setTitle(title)
+                        .setBody(body)
+                        .build(),
+                )
+                .putAllData(data)
+                .addAllTokens(tokens)
+                .build()
+
             val response = FirebaseMessaging.getInstance().sendEachForMulticast(message)
             logger.info("[FCM] Sent to userId: $userId — success: ${response.successCount}, fail: ${response.failureCount}")
 

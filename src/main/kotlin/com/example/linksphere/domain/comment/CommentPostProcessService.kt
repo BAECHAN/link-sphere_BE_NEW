@@ -1,6 +1,5 @@
 package com.example.linksphere.domain.comment
 
-import com.example.linksphere.domain.member.MemberRepository
 import com.example.linksphere.domain.post.PostRepository
 import com.example.linksphere.domain.post.UrlMetadataExtractor
 import com.example.linksphere.infra.aws.CommentJobDispatcher
@@ -20,7 +19,6 @@ import org.springframework.transaction.event.TransactionalEventListener
 class CommentPostProcessService(
     private val commentRepository: CommentRepository,
     private val postRepository: PostRepository,
-    private val memberRepository: MemberRepository,
     private val fcmNotificationService: FcmNotificationService,
     private val urlMetadataExtractor: UrlMetadataExtractor,
     private val commentJobDispatcher: CommentJobDispatcher,
@@ -60,18 +58,12 @@ class CommentPostProcessService(
     }
 
     private fun sendNotification(comment: TableComment) {
-        val commenter = memberRepository.findByIdOrNull(comment.userId) ?: return
-        val nickname = commenter.publicNickname ?: "누군가"
-        val contentPreview = comment.content.take(50)
-
         val parentId = comment.parentId
         if (parentId == null) {
             // 내 포스트에 타인이 댓글을 달면 알림 (루트 댓글)
             val post = postRepository.findByIdOrNull(comment.postId) ?: return
             fcmNotificationService.sendCommentNotification(
                 postAuthorId = post.userId,
-                commenterNickname = nickname,
-                commentContent = contentPreview,
                 postId = comment.postId,
                 commentId = comment.id,
             )
@@ -80,8 +72,6 @@ class CommentPostProcessService(
             val parent = commentRepository.findByIdOrNull(parentId) ?: return
             fcmNotificationService.sendReplyNotification(
                 parentCommentAuthorId = parent.userId,
-                replierNickname = nickname,
-                replyContent = contentPreview,
                 postId = comment.postId,
                 commentId = comment.id,
             )

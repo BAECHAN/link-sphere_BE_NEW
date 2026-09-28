@@ -1,5 +1,6 @@
 package com.example.linksphere.infra.fcm
 
+import com.example.linksphere.global.common.getSessionFamilyId
 import com.example.linksphere.global.common.getUserId
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.tags.Tag
@@ -26,7 +27,7 @@ class FcmTokenController(private val fcmTokenService: FcmTokenService) {
     ): ResponseEntity<Void> {
         val userId = authentication.getUserId()
             ?: return ResponseEntity.status(401).build()
-        fcmTokenService.registerToken(userId, request.token, request.platform)
+        fcmTokenService.registerToken(userId, request.token, request.platform, authentication.getSessionFamilyId())
         return ResponseEntity.ok().build()
     }
 

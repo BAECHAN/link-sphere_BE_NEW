@@ -15,3 +15,8 @@ fun Authentication?.getUserId(): UUID? {
         null
     }
 }
+
+// SessionAuthenticationFilter가 details에 실어둔 회전 계열 id. FCM 토큰을 세션에
+// 묶을 때(FcmTokenController)만 쓴다 - details가 없으면(예: 테스트에서 직접 만든
+// Authentication) null.
+fun Authentication?.getSessionFamilyId(): UUID? = this?.details as? UUID

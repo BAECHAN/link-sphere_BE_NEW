@@ -1,7 +1,5 @@
 package com.example.linksphere.domain.comment
 
-import com.example.linksphere.domain.member.MemberRepository
-import com.example.linksphere.domain.member.TableMember
 import com.example.linksphere.domain.post.PostRepository
 import com.example.linksphere.domain.post.TablePost
 import com.example.linksphere.domain.post.UrlMetadata
@@ -15,11 +13,9 @@ import org.junit.jupiter.api.extension.ExtendWith
 import org.mockito.InjectMocks
 import org.mockito.Mock
 import org.mockito.Mockito.doThrow
-import org.mockito.Mockito.verify
 import org.mockito.Mockito.verifyNoInteractions
 import org.mockito.Mockito.`when`
 import org.mockito.junit.jupiter.MockitoExtension
-import java.time.Instant
 import java.util.Optional
 import java.util.UUID
 
@@ -29,8 +25,6 @@ class CommentPostProcessServiceTest {
     @Mock private lateinit var commentRepository: CommentRepository
 
     @Mock private lateinit var postRepository: PostRepository
-
-    @Mock private lateinit var memberRepository: MemberRepository
 
     @Mock private lateinit var fcmNotificationService: FcmNotificationService
 
@@ -49,7 +43,6 @@ class CommentPostProcessServiceTest {
         val articleUrl = "https://example.com/article"
 
         val post = TablePost(id = postId, userId = postAuthorId, url = "https://example.com", title = "제목")
-        val commenter = TableMember(id = commenterId, email = "a@a.com", password = "pw", nickname = "tester")
         val comment =
             TableComment(
                 id = commentId,
@@ -61,11 +54,10 @@ class CommentPostProcessServiceTest {
         val meta = UrlMetadata(title = "Article", description = "desc", ogImage = "img", tags = emptyList(), pageContent = null)
 
         `when`(commentRepository.findById(commentId)).thenReturn(Optional.of(comment))
-        `when`(memberRepository.findById(commenterId)).thenReturn(Optional.of(commenter))
         `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
         doThrow(RuntimeException("Firebase 전송 계층 오류"))
             .`when`(fcmNotificationService)
-            .sendCommentNotification(postAuthorId, "tester", "댓글 내용", postId, commentId)
+            .sendCommentNotification(postAuthorId, postId, commentId)
         `when`(urlMetadataExtractor.extract(articleUrl)).thenReturn(meta)
         `when`(commentRepository.save(comment)).thenReturn(comment)
 
@@ -75,27 +67,6 @@ class CommentPostProcessServiceTest {
         assertEquals("Article", comment.linkTitle)
         assertEquals("desc", comment.linkDescription)
         assertEquals("img", comment.linkOgImage)
-    }
-
-    @Test
-    fun `processCommentJob은 탈퇴 유예 중인 작성자의 알림 문구에 '누군가'를 쓴다`() {
-        val postAuthorId = UUID.randomUUID()
-        val commenterId = UUID.randomUUID()
-        val postId = UUID.randomUUID()
-        val commentId = UUID.randomUUID()
-
-        val post = TablePost(id = postId, userId = postAuthorId, url = "https://example.com", title = "제목")
-        val pendingCommenter =
-            TableMember(id = commenterId, email = "a@a.com", password = "pw", nickname = "tester", deletionRequestedAt = Instant.now())
-        val comment = TableComment(id = commentId, postId = postId, userId = commenterId, content = "댓글 내용")
-
-        `when`(commentRepository.findById(commentId)).thenReturn(Optional.of(comment))
-        `when`(memberRepository.findById(commenterId)).thenReturn(Optional.of(pendingCommenter))
-        `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
-
-        commentPostProcessService.processCommentJob(CommentPostProcessEvent(commentId = commentId, notify = true))
-
-        verify(fcmNotificationService).sendCommentNotification(postAuthorId, "누군가", "댓글 내용", postId, commentId)
     }
 
     @Test
