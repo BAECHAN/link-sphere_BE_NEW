@@ -11,6 +11,20 @@
 
 ### Added
 
+- `auth` 계정 조회 응답(`GET /auth/account`)에 이메일 주소 추가
+  <details><summary>배경·구현</summary>
+
+  FE 마이페이지에 "이메일 인증 재발송" 버튼을 추가하려는데(인증 시스템 전면 강화 계획
+  `docs/plans/2026-09-28-auth-hardening.md` §2-2 Phase 5), 재발송 API(`POST
+  /auth/email-verification/request`)가 로그인 여부와 무관하게 이메일을 body로 직접
+  받도록 설계돼 있어(세션에서 유추하지 않음) 로그인된 사용자의 이메일 주소를 FE가
+  알 방법이 없었다 - `AccountResponse`가 지금까지 `emailVerified`만 노출하고 실제
+  이메일은 내려주지 않았기 때문이다. `AccountResponse.email`을 추가해 FE가 이 값을
+  그대로 재발송 요청에 실어 보낼 수 있게 했다.
+  (`AuthDTO.kt`, `AuthService.kt`)
+
+  </details>
+
 - `auth` 비밀번호 찾기(`POST /auth/password-reset/{request,confirm}`)·이메일 인증
   (`POST /auth/email-verification/{request,confirm}`, 글쓰기·댓글쓰기 게이트) 추가
   <details><summary>배경·구현</summary>

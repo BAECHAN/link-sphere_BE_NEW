@@ -214,5 +214,6 @@ class AuthService(
         nickname = member.nickname,
         image = member.image,
         emailVerified = member.emailVerified,
+        email = member.email,
     )
 }
