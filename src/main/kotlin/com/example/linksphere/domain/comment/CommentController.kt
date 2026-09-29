@@ -19,7 +19,7 @@ class CommentController(private val commentService: CommentService) {
 
     @Operation(
         summary = "댓글 목록 조회",
-        description = "JWT 없이도 호출 가능하다. 비공개 글의 댓글은 작성자만 볼 수 있고, 그 외에는 " +
+        description = "인증 토큰 없이도 호출 가능하다. 비공개 글의 댓글은 작성자만 볼 수 있고, 그 외에는 " +
             "글이 없는 것처럼 404 로 응답한다. 실패: 404 POST_NOT_FOUND",
     )
     @SecurityRequirements
