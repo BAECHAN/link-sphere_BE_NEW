@@ -30,6 +30,10 @@ class SessionAuthenticationFilter(private val memberSessionService: MemberSessio
             when (val result = memberSessionService.checkAccessToken(token)) {
                 is AccessTokenCheck.Valid -> {
                     val auth = UsernamePasswordAuthenticationToken(result.memberId.toString(), null, emptyList())
+                    // details에 familyId를 실어 SecurityUtils.getSessionFamilyId()로 꺼내 쓴다
+                    // (FcmTokenController가 토큰 등록 시 사용) - principal은 getUserId()가
+                    // UUID로 파싱하는 계약이라 그대로 memberId 문자열만 담는다.
+                    auth.details = result.familyId
                     SecurityContextHolder.getContext().authentication = auth
                 }
                 AccessTokenCheck.Expired -> request.setAttribute("exception", "TOKEN_EXPIRED")

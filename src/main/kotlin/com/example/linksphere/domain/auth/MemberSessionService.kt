@@ -16,7 +16,10 @@ data class IssuedSession(
 
 /** SessionAuthenticationFilter가 access 토큰 하나를 판정한 결과. */
 sealed interface AccessTokenCheck {
-    data class Valid(val memberId: UUID) : AccessTokenCheck
+    // familyId: 이 access 토큰이 속한 세션의 회전 계열. FcmTokenController가 토큰 등록 시
+    // 이 값을 fcm_tokens.session_family_id에 실어, 나중에 이 세션이 죽으면(로그아웃·
+    // 재사용탐지·비밀번호변경) 그 기기의 FCM 토큰도 함께 무효화되게 한다.
+    data class Valid(val memberId: UUID, val familyId: UUID) : AccessTokenCheck
 
     data object Expired : AccessTokenCheck
 
@@ -144,6 +147,6 @@ class MemberSessionService(private val memberSessionRepository: MemberSessionRep
         // 실패해 결국 로그인 화면으로 수렴한다 - 보안 결과는 같고 UX만 나아진다(PR #42
         // 리뷰에서 발견: 회전 시 다른 탭의 아직 유효한 access가 즉시 로그아웃당하던 문제).
         if (session.revokedAt != null) return AccessTokenCheck.Expired
-        return AccessTokenCheck.Valid(session.memberId)
+        return AccessTokenCheck.Valid(session.memberId, session.familyId)
     }
 }

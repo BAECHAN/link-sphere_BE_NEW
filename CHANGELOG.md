@@ -429,6 +429,41 @@
 
 ### Security
 
+- `fcm` 댓글·답글 푸시를 로그인 세션 생명주기에 바인딩, 알림 문구에서 닉네임·본문 제거
+  <details><summary>배경·구현</summary>
+
+  FCM 토큰은 로그인 세션과 완전히 분리된 수명주기를 가지고 있었다 - 로그아웃해야만
+  서버에서 지워지고, 세션이 자연 만료돼도 그대로 남아 계속 푸시를 받았다. 사용자가
+  오래전 로그인한 계정에서 이 문제를 직접 겪었다(알림 클릭 → 이미 로그아웃 상태).
+
+  `fcm_tokens.session_family_id`에 그 토큰을 등록한 세션의 회전 계열
+  (`member_sessions.family_id`)을 기록해두고, 댓글 발송 시점(`FcmService.sendToUser`)마다
+  그 계열이 아직 살아있는지(`revoked_at IS NULL AND refresh_expires_at > now`) 확인해
+  죽은 계열에 묶인 토큰은 지우고 발송 대상에서 제외한다. `SessionAuthenticationFilter`가
+  `familyId`를 `Authentication.details`에 실어두고(`SecurityUtils.getSessionFamilyId()`),
+  토큰 등록(`POST /fcm/token`)이 이 값을 함께 저장한다(네이티브 upsert로 전환 - 기존
+  `findByToken` 후 분기 저장 방식이 발송 쪽 신규 DELETE와 겹치면 Hibernate
+  StaleObjectStateException 위험이 있었다). 이 바인딩은 로그아웃/전송실패를 트리거로
+  삼는 FCM 토큰 관리의 일반적인 업계 관례(예:
+  [Customer.io 공식 문서](https://docs.customer.io/messaging/channels/push/device-tokens/))를
+  넘어서는 이 레포 맞춤 보강이다 - "세션 TTL 만료" 자체를 트리거로 쓰는 사례는 조사한
+  자료에서 확인되지 않았다.
+
+  별개로, 알림 본문에 있던 `"{닉네임}: {댓글 내용 50자}"`는 세션이 **살아있는** 동안에도
+  잠금화면 등에 댓글 내용을 그대로 노출하고 있었다. `FcmNotificationService`의 body를
+  "회원님의 게시글에 새 댓글이 달렸어요." 같은 일반 문구로 바꿨다 - OWASP MASTG·
+  [EFF](https://www.eff.org/deeplinks/2026/04/how-push-notifications-can-betray-your-privacy-and-what-do-about-it)가
+  공통으로 권고하는 "알림 내용 최소화" 패턴(세부 내용은 앱을 열어야만 볼 수 있게).
+  딥링크에 쓰는 `data.postId`/`commentId`는 그대로 유지한다.
+  (`docs/plans/2026-09-29-fcm-session-binding.md` 참고)
+  (`FcmTokenRepository.kt`, `FcmTokenService.kt`, `FcmService.kt`,
+  `FcmNotificationService.kt`, `TableFcmToken.kt`, `FcmTokenController.kt`,
+  `MemberSessionService.kt`, `SessionAuthenticationFilter.kt`, `SecurityUtils.kt`,
+  `CommentPostProcessService.kt`, `FcmTokenServiceTest.kt`(신규),
+  [PR #50](https://github.com/BAECHAN/link-sphere_BE_NEW/pull/50))
+
+  </details>
+
 - `auth` 세션 필터가 `X-Access-Token` 헤더를 우선 읽도록 변경(Lambda Function URL을
   CloudFront OAC로 잠그기 위한 선행 작업)
   <details><summary>배경·구현</summary>
@@ -459,6 +494,10 @@
 
 ### Migration
 
+- `sql/add_fcm_session_family.sql` **반드시 BE 코드 배포 전에 실행** —
+  `fcm_tokens.session_family_id` 컬럼과 인덱스를 추가한다. 컬럼이 없으면 FCM 토큰
+  등록·발송 쿼리가 즉시 SQL 오류로 실패한다(`ddl-auto: none`이라 애플리케이션 기동
+  자체는 됨).
 - `sql/add_member_deletion_requested_at.sql` **반드시 BE 코드 배포 전에 실행** —
   `members.deletion_requested_at` 컬럼과 만료 조회용 부분 인덱스를 추가한다. 컬럼이
   없으면 `TableMember` 매핑이 깨져 모든 member 조회(로그인 포함)가 즉시 실패한다

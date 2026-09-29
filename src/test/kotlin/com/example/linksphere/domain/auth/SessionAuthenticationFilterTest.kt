@@ -43,7 +43,7 @@ class SessionAuthenticationFilterTest {
         request.addHeader("X-Access-Token", "token-from-custom-header")
         request.addHeader("Authorization", "Bearer token-from-authorization-header")
         `when`(memberSessionService.checkAccessToken("token-from-custom-header"))
-            .thenReturn(AccessTokenCheck.Valid(UUID.randomUUID()))
+            .thenReturn(AccessTokenCheck.Valid(UUID.randomUUID(), UUID.randomUUID()))
 
         filter.doFilter(request, MockHttpServletResponse(), filterChain)
 
@@ -55,7 +55,7 @@ class SessionAuthenticationFilterTest {
         val request = MockHttpServletRequest()
         request.addHeader("Authorization", "Bearer token-from-authorization-header")
         `when`(memberSessionService.checkAccessToken("token-from-authorization-header"))
-            .thenReturn(AccessTokenCheck.Valid(UUID.randomUUID()))
+            .thenReturn(AccessTokenCheck.Valid(UUID.randomUUID(), UUID.randomUUID()))
 
         filter.doFilter(request, MockHttpServletResponse(), filterChain)
 
@@ -68,7 +68,7 @@ class SessionAuthenticationFilterTest {
         request.addHeader("X-Access-Token", "")
         request.addHeader("Authorization", "Bearer token-from-authorization-header")
         `when`(memberSessionService.checkAccessToken("token-from-authorization-header"))
-            .thenReturn(AccessTokenCheck.Valid(UUID.randomUUID()))
+            .thenReturn(AccessTokenCheck.Valid(UUID.randomUUID(), UUID.randomUUID()))
 
         filter.doFilter(request, MockHttpServletResponse(), filterChain)
 
@@ -121,10 +121,24 @@ class SessionAuthenticationFilterTest {
         val request = MockHttpServletRequest()
         request.addHeader("X-Access-Token", "valid-token")
         `when`(memberSessionService.checkAccessToken("valid-token"))
-            .thenReturn(AccessTokenCheck.Valid(memberId))
+            .thenReturn(AccessTokenCheck.Valid(memberId, UUID.randomUUID()))
 
         filter.doFilter(request, MockHttpServletResponse(), filterChain)
 
         assertEquals(memberId.toString(), SecurityContextHolder.getContext().authentication.principal)
+    }
+
+    @Test
+    fun `유효한 토큰이면 SecurityContext의 details에 familyId를 채운다`() {
+        // FcmTokenController가 SecurityUtils.getSessionFamilyId()로 꺼내 쓰는 값이다.
+        val familyId = UUID.randomUUID()
+        val request = MockHttpServletRequest()
+        request.addHeader("X-Access-Token", "valid-token")
+        `when`(memberSessionService.checkAccessToken("valid-token"))
+            .thenReturn(AccessTokenCheck.Valid(UUID.randomUUID(), familyId))
+
+        filter.doFilter(request, MockHttpServletResponse(), filterChain)
+
+        assertEquals(familyId, SecurityContextHolder.getContext().authentication.details)
     }
 }

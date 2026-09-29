@@ -10,24 +10,13 @@ class FcmTokenService(private val fcmTokenRepository: FcmTokenRepository) {
 
     private val logger = LoggerFactory.getLogger(FcmTokenService::class.java)
 
+    // sessionFamilyId: 이 토큰을 등록한 access 토큰이 속한 세션의 회전 계열
+    // (SecurityUtils.getSessionFamilyId()). 같은 토큰이 이미 있으면(기기 재사용·계정
+    // 전환 포함) 소유자·계열을 upsert로 덮어쓴다 - 발송 쪽 deleteStaleTokensForUser와
+    // 겹쳐도 단일 SQL 문이라 안전하다.
     @Transactional
-    fun registerToken(userId: UUID, token: String, platform: String) {
-        val existing = fcmTokenRepository.findByToken(token)
-        if (existing != null) {
-            // 같은 기기에서 계정을 전환하면 토큰이 이전 사용자에게 묶인 채 남아
-            // 이전 사용자의 알림이 새 사용자 기기로 가는 문제가 있어, 소유자를 갱신한다.
-            if (existing.userId != userId) {
-                fcmTokenRepository.deleteByToken(token)
-                fcmTokenRepository.save(TableFcmToken(userId = userId, token = token, platform = platform))
-                logger.info("[FCM] Token reassigned to new userId: $userId")
-            } else {
-                logger.debug("[FCM] Token already registered - userId: $userId")
-            }
-            return
-        }
-        fcmTokenRepository.save(
-            TableFcmToken(userId = userId, token = token, platform = platform),
-        )
+    fun registerToken(userId: UUID, token: String, platform: String, sessionFamilyId: UUID?) {
+        fcmTokenRepository.upsertToken(UUID.randomUUID(), userId, token, platform, sessionFamilyId)
         logger.info("[FCM] Token registered - userId: $userId, platform: $platform")
     }
 

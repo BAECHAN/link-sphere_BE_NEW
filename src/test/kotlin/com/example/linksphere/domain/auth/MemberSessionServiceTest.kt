@@ -276,14 +276,15 @@ class MemberSessionServiceTest {
     }
 
     @Test
-    fun `checkAccessToken은 유효한 행이면 memberId를 담은 Valid`() {
+    fun `checkAccessToken은 유효한 행이면 memberId와 familyId를 담은 Valid`() {
         val rawToken = "valid"
         val memberId = UUID.randomUUID()
+        val familyId = UUID.randomUUID()
         `when`(memberSessionRepository.findByAccessTokenHash(SecureToken.hash(rawToken)))
-            .thenReturn(session(memberId = memberId, accessTokenHash = SecureToken.hash(rawToken)))
+            .thenReturn(session(memberId = memberId, accessTokenHash = SecureToken.hash(rawToken), familyId = familyId))
 
         val result = memberSessionService.checkAccessToken(rawToken)
 
-        assertEquals(AccessTokenCheck.Valid(memberId), result)
+        assertEquals(AccessTokenCheck.Valid(memberId, familyId), result)
     }
 }
