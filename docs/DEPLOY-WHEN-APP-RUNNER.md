@@ -45,7 +45,9 @@
 
 ## ⚙️ GitHub Actions 설정
 
-`.github/workflows/deploy.yml` 파일에 CI/CD 파이프라인이 정의되어 있습니다.
+당시 `.github/workflows/deploy.yml` 파일에는 아래 CI/CD 파이프라인이 정의돼
+있었다 — 지금 `deploy.yml`은 App Runner가 아니라 Lambda 배포 파이프라인이다
+([`DEPLOY.md`](./DEPLOY.md) 참고).
 
 ### 주요 단계
 

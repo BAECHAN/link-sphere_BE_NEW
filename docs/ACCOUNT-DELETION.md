@@ -128,7 +128,7 @@ AND deleted_at IS NULL` 조건)도 같은 파일에 있다.
 | 값 | 실제 위치 |
 | --- | --- |
 | 유예기간(14일) | `AccountDeletionService.kt:52` (`GRACE_PERIOD`) — FE `texts.ts`의 안내 문구에도 같은 값이 중복돼 있다(자동 동기화 없음, §11 참고) |
-| 정리 배치 실행 주기 | AWS 콘솔/CLI — 전용 EventBridge 룰이 아니라 기존 `link-sphere-feed-crawl` 룰(4일마다, `docs/DEPLOY.md` 8장)에 타겟만 추가했다(§9 시행착오 참고). 최악의 경우 유예 만료 후 최대 4일 더 지나야 실제 퍼지된다(14~18일) |
+| 정리 배치 실행 주기 | AWS 콘솔/CLI — 전용 EventBridge 룰이 아니라 기존 `link-sphere-feed-crawl` 룰(4일마다, `docs/DEPLOY.md` 8장)에 타겟만 추가했다(§10-2 시행착오 참고). 최악의 경우 유예 만료 후 최대 4일 더 지나야 실제 퍼지된다(14~18일) |
 | 퍼지 배치 한 번에 처리하는 최대 건수 | `AccountPurgeService.kt`의 `BATCH_SIZE`(200) |
 | 퍼지 배치 데드라인 | `AccountPurgeService.kt`의 `DEADLINE_MILLIS`(90초) — 넘기면 남은 건은 다음 실행으로 미룸 |
 
@@ -162,7 +162,7 @@ AND deleted_at IS NULL` 조건)도 같은 파일에 있다.
   `publicNickname`·`publicImage`를 참조하는 곳 전부에 자동으로 반영된다.
 - **정리 배치 실행 주기를 바꾸려면**: 코드 변경 없이 AWS 인프라만 바꾸면 된다
   (`docs/DEPLOY.md` 10장) — 더 자주 돌리고 싶으면 전용 EventBridge 룰을 새로
-  만들거나(§9 참고, 왜 처음엔 안 그랬는지), 더 촘촘한 기존 룰(예: 6장 워밍
+  만들거나(§10-2 참고, 왜 처음엔 안 그랬는지), 더 촘촘한 기존 룰(예: 6장 워밍
   핑, 5분마다)에 타겟을 옮기면 된다.
 
 ## 9. 검증 결과
