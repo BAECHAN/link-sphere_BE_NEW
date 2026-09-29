@@ -417,6 +417,14 @@
 
   </details>
 
+- `auth` 커스텀 도메인(`linksphere.click`) 연결 후 로그인이 403 `Invalid CORS request`로 막히던 문제 수정
+  <details><summary>배경·구현</summary>
+
+  CloudFront에 커스텀 도메인을 새로 붙였는데 `SecurityConfig.corsConfigurationSource()`가 읽는 `app.cors.allowed-origins`에는 옛 CloudFront 기본 도메인만 있어, 브라우저가 로그인 요청을 CORS 단계에서 차단했다(BE까지 도달하기 전에 막혀 앱 레벨 에러 로그도 안 남는다). 급한 불은 Lambda 환경변수(`APP_CORS_ALLOWED_ORIGINS`, 쉼표 구분 - Spring Boot relaxed binding으로 `List<String>`에 그대로 매핑됨)로 먼저 끄고, 이번 커밋에서 `application.yml` 기본값에 새 도메인을 반영해 정식으로 고쳤다(env var는 배포 후 제거 예정 - 롤백 노트 참고).
+  (`src/main/resources/application.yml`, `docs/DEPLOY.md`)
+
+  </details>
+
 ### Removed
 
 - `bookmark` FE에서 호출하는 곳이 없는 폴더 순서 재정렬(reorder) 엔드포인트 제거
