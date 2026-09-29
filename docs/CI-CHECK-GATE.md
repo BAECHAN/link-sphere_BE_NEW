@@ -84,6 +84,8 @@ Gradle 프로세스 안에서 컴파일 캐시를 공유하는 게 더 빠르고
 | --- | --- | --- |
 | PR CI 트리거 | `pull_request` → `main` | `.github/workflows/ci.yml` |
 | 동시 실행 제어 | 같은 브랜치 새 커밋 push 시 이전 실행 자동 취소 | `ci.yml`의 `concurrency: group: ci-${{ github.ref }}, cancel-in-progress: true` |
+| 체크아웃 깊이 | `fetch-depth: 0`(전체 히스토리) — 아래 "docs/plans 불변성 확인" 스텝이 `origin/${{ github.base_ref }}...HEAD` diff를 떠야 해서 얕은 클론(기본값 1)으로는 base 커밋을 못 찾는다 | `ci.yml`의 "Checkout source" 스텝 |
+| docs/plans 불변성 확인 | `docs/plans/*.md`가 커밋된 뒤 수정(M)됐는지 PR diff로 검사, 있으면 실패 | `ci.yml`의 "docs/plans 불변성 확인" 스텝 |
 | JDK 버전 | 17 (Corretto) | `ci.yml`·`deploy.yml` 공통, `deploy.yml`이 원본 |
 | Gradle 캐시 키 | `gradle-${{ hashFiles('**/*.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties') }}` | `ci.yml`·`deploy.yml` 공통 |
 | 배포 게이트 커맨드 | `./gradlew ktlintCheck test shadowJar --no-daemon` | `deploy.yml` "Ktlint check, test & Build Shadow JAR" 스텝 |
@@ -201,9 +203,11 @@ upstream(`org.jlleitschuh.gradle.ktlint` 14.2.0, 최신)도 이 문제가 있고
 
 ## 8. 남은 것
 
-- 이번 검증은 `push`(수동 트리거인 `workflow_dispatch`가 아니라 직접 push)로
-  `deploy.yml` 경로만 확인됐다 — `ci.yml`이 **실제 PR 이벤트**로 트리거되는
-  것은 다음 PR에서 처음 확인하게 된다
+- 이번 검증 당시(2026-09-03)에는 `push`(수동 트리거인 `workflow_dispatch`가
+  아니라 직접 push)로 `deploy.yml` 경로만 확인됐고, `ci.yml`이 **실제 PR
+  이벤트**로 트리거되는 것은 다음 PR에서 처음 확인하기로 남겨뒀었다 — 이후
+  `ci.yml` 도입(`ef3fe01`) 뒤로 PR이 35개 이상 정상 병합돼(2026-09-29 `git log`
+  확인) 실제 PR 이벤트 트리거는 확인 완료됐다
 - ktlint·test가 실패했을 때 PR 화면에 어떻게 노출되는지(체크 실패 UI)는
   아직 실제로 본 적 없음 — 다음 실패 케이스에서 확인 필요
 

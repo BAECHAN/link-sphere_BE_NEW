@@ -8,8 +8,8 @@
 > **읽고 나면**: 이 문서만 보고 피드 소스를 추가/제거하거나, 수집 주기·건수를 조정하거나,
 > 버그를 재현·수정할 수 있다 (§9 참고).
 >
-> **마지막 검토**: 2026-09-27 (우아한형제들 기술블로그 403이 사용자 등록 경로에도
-> 재발한 사실과 AI-ASYNC-PROCESSING.md 5.10절로의 교차참조 추가)
+> **마지막 검토**: 2026-09-29 (EventBridge 룰이 `account-purge`와 공유되는 사실,
+> Stage C의 임베딩 생성 단계, 오래된 절 참조 정정 반영)
 
 ## 1. RSS가 뭔가요?
 
@@ -74,6 +74,7 @@ flowchart TD
 
   subgraph SC["Stage C · 분석 = AI"]
     C1["Gemini 요약·태그·카테고리"] --> C2["posts UPDATE · ai_status=COMPLETED"]
+    C2 --> C3["임베딩 생성·저장<br/>(요약과 독립된 실패 단위)"]
   end
 ```
 
@@ -158,7 +159,8 @@ EventBridge cron(0 22 */4 * ? *)   # UTC 22:00 = KST 07:00, 4일마다
 [Stage B] FeedCrawlService.processFeedItemJob(event)
   · 항목마다 독립 트랜잭션 — feed_items claim → PostService.createPost(botId, ...)
         │
-[Stage C] "ai-analysis"  ← 기존 경로, 코드 변경 없음
+[Stage C] "ai-analysis"  ← 기존 경로, 코드 변경 없음 (요약·태그·카테고리 저장 뒤
+                             임베딩 생성·저장까지 포함, docs/AI-ASYNC-PROCESSING.md §2 참고)
 ```
 
 ### 5.1 chunk를 5건으로 자른 이유
@@ -241,7 +243,7 @@ nullable + `ON DELETE SET NULL`로 둬서, 봇 글을 관리자가 지워도 원
 
 | 파라미터 | 값 | 실제 위치 |
 | --- | --- | --- |
-| 실행 주기 | 4일마다 UTC 22:00 (KST 오전 7시) | **AWS EventBridge 룰 자체** (`link-sphere-feed-crawl`, `cron(0 22 */4 * ? *)`) — 이 프로젝트는 IaC가 없어서 레포 안 어떤 파일에도 이 cron 표현식을 담은 "설정 파일"은 없다. `docs/DEPLOY.md` 8장의 `aws events put-rule` 커맨드가 유일한 기록이자 값을 바꾸는 방법 |
+| 실행 주기 | 4일마다 UTC 22:00 (KST 오전 7시) | **AWS EventBridge 룰 자체** (`link-sphere-feed-crawl`, `cron(0 22 */4 * ? *)`) — 이 프로젝트는 IaC가 없어서 레포 안 어떤 파일에도 이 cron 표현식을 담은 "설정 파일"은 없다. `docs/DEPLOY.md` 8장의 `aws events put-rule` 커맨드가 유일한 기록이자 값을 바꾸는 방법. **이 룰은 봇 전용이 아니다** — 같은 룰에 `account-purge`(회원탈퇴 14일 유예 정리) 타겟도 붙어 있다([`docs/ACCOUNT-DELETION.md`](./ACCOUNT-DELETION.md) 참고) |
 | 소스당 최대 건수 | 1 | `FeedCrawlService.kt:29` `MAX_ITEMS_PER_SOURCE` |
 | 전체 최대 건수 | 5 | `FeedCrawlService.kt:30` `MAX_ITEMS_TOTAL` |
 | self-invoke chunk 크기 | 5 | `FeedCrawlService.kt:31` `CHUNK_SIZE` |
@@ -260,6 +262,12 @@ nullable + `ON DELETE SET NULL`로 둬서, 봇 글을 관리자가 지워도 원
 **EventBridge 값을 바꾸려면**: `docs/DEPLOY.md` 8장의 `aws events put-rule`
 커맨드를 `--schedule-expression`만 바꿔 재실행하면 된다(같은 이름의 룰에
 다시 `put-rule`을 호출하면 덮어써진다 — 별도 삭제 불필요).
+
+> ⚠️ 이 룰의 스케줄(`cron(0 22 */4 * ? *)`)을 바꾸면 **탈퇴 계정 정리
+> 주기도 함께 바뀐다** — `link-sphere-feed-crawl` 룰에는 `feed-crawl`
+> 타겟과 `account-purge` 타겟이 함께 붙어 있다(전용 EventBridge 룰이 아니다,
+> [`docs/ACCOUNT-DELETION.md`](./ACCOUNT-DELETION.md) 참고). 주기를 늘리면
+> 탈퇴 유예가 만료된 계정이 실제 퍼지되기까지의 최대 지연도 함께 늘어난다.
 
 **`cron(0 22 */4 * ? *)`의 트레이드오프**: day-of-month에 `*/4`를 쓰면 매월
 1·5·9·13·17·21·25·29일에 실행되므로 월 경계(예: 1/29 → 2/1)에서 실제 간격이
@@ -282,7 +290,7 @@ nullable + `ON DELETE SET NULL`로 둬서, 봇 글을 관리자가 지워도 원
 
 | 단계 | 파일 |
 | --- | --- |
-| Stage A 진입 · Lambda 잡 분기 | `LambdaHandler.kt` — 페이로드의 `linksphereJob` 값(`feed-crawl`/`feed-item`/`ai-analysis`)으로 분기 |
+| Stage A 진입 · Lambda 잡 분기 | `LambdaHandler.kt` — 페이로드의 `linksphereJob` 값으로 분기. 이 표는 RSS 봇이 쓰는 값(`feed-crawl`/`feed-item`/`ai-analysis`)만 다룬다 — 실제 전체 값에는 `comment-postprocess`·`account-purge`도 있다(이 문서 범위 밖) |
 | Stage A 본체 | `domain/feed/FeedCrawlService.kt` |
 | RSS/Atom 파싱 | `domain/feed/FeedParser.kt` |
 | 중복 판정 키 생성 | `domain/feed/FeedUrlNormalizer.kt` |
@@ -392,9 +400,9 @@ flush 미보장이 겹치는, 로컬/운영 환경 차이가 아니라 순수하
 - GeekNews 항목 링크가 원문이 아니라 토론 페이지(`news.hada.io/topic?id=...`)인
   점 — 그대로 둘지는 실제 등록 결과를 더 보고 판단
 - Lambda 비동기(Event) 호출이 DLQ 없이 실패해 `ai_status=PENDING`이 영구히
-  남는 문제는 RSS 봇에 국한되지 않는 AI 파이프라인 공통 이슈다 — 원인·백필
-  절차·재발 방지 과제는 [AI-ASYNC-PROCESSING.md](./AI-ASYNC-PROCESSING.md)
-  5.5절 참고
+  남는 문제는 RSS 봇에 국한되지 않는 AI 파이프라인 공통 이슈다 — 원인은
+  [AI-ASYNC-PROCESSING.md](./AI-ASYNC-PROCESSING.md) 5.2절, 백필 절차는 5.4절,
+  재발 방지 과제는 5.11절 참고
 - 2026-09-06 발행 주기 축소(4일 1회·소스당 1건)의 부작용: GeekNews처럼 하루
   10건 넘게 발행하는 소스는 4일치 중 1건만 가져온다. RSS는 최신 글만 노출하므로
   그 창을 벗어난 글은 다시 후보가 되지 않고 영영 누락된다 — 발행량을 줄이기로 한
@@ -414,7 +422,9 @@ flush 미보장이 겹치는, 로컬/운영 환경 차이가 아니라 순수하
 - **self-invoke** — Lambda가 처리 도중 자기 자신을 다시 호출해 나머지 작업을
   넘기는 패턴. 120초 타임아웃을 우회하는 이 레포의 관례(`docs/AI-ASYNC-PROCESSING.md`)
 - **`linksphereJob`** — self-invoke 페이로드에 담기는 마커 필드. `LambdaHandler`가
-  이 값(`feed-crawl`/`feed-item`/`ai-analysis`)으로 어느 Stage를 실행할지 분기한다
+  이 값으로 어느 Stage를 실행할지 분기한다. RSS 봇이 쓰는 값은
+  `feed-crawl`/`feed-item`/`ai-analysis`이고, 이 레포 전체에는 그 외에도
+  `comment-postprocess`·`account-purge` 값이 있다(이 문서 범위 밖)
 - **Stage A / B / C** — 이 문서에서 편의상 붙인 이름. 코드에는 "Stage"라는 이름의
   클래스나 상수가 없다 — 발견(RSS)/등록(크롤링)/분석(AI)의 3단계를 가리킨다
 - **`ai_status`** — `posts` 테이블의 AI 분석 진행 상태(`NONE`/`PENDING`/`COMPLETED`/`FAILED`).

@@ -1,6 +1,6 @@
 # Link-Sphere BE — 게시글 AI 분석 비동기화 (2026-08-01)
 
-> 마지막 검토: 2026-09-27
+> 마지막 검토: 2026-09-29
 
 ## 1. 문제
 
@@ -64,6 +64,8 @@ POST /post
     → PostAIService.processAiJob()
       → Gemini 요약(+제목·설명 폴백) + 카테고리 분류 (병렬)
       → DB 저장 (aiStatus: PENDING → COMPLETED(요약 없이 부분 저장 가능)/FAILED)
+      → 임베딩 생성·저장 (요약 저장과 독립된 실패 단위 — 실패해도 이미 COMPLETED로
+        커밋된 요약·태그는 유지)
 ```
 
 요약과 카테고리 분류도 순차 대신 병렬로 실행한다(`GeminiService.analyzeContentAsync`,
@@ -81,6 +83,14 @@ POST /post
 폴백이다. 크롤링 자체가 실패해 `pageContent`가 없는 경우는 애초에 이 AI
 잡이 발행되지 않으므로(`PostService.createPost`, 그리고 URL 변경·제목 비움으로
 재크롤링하는 `PostService.updatePost`) 이 폴백의 대상이 아니다.
+
+요약·태그·카테고리 저장(`saveAndFlush`)이 끝난 뒤, `PostAIService.processAiJob`은
+`GeminiService.embedDocument`로 임베딩(`gemini-embedding-2` 모델, 768차원)을 만들어
+`saveEmbedding`으로 저장한다. 이 호출은 `runCatching`으로 감싸져 있어 임베딩 생성이
+실패해도(모델 호출 오류 등) 이미 커밋된 `aiStatus=COMPLETED`와 요약·태그를 `FAILED`로
+되돌리지 않는다 — 요약과 임베딩은 서로 독립된 실패 단위다. `PostEmbeddingBackfillRunner`
+(로컬 1회성 도구, `PostAiBackfillRunner`와 동일한 dry-run 우선 shape)가 임베딩이 비어
+있는 기존 게시글을 뒤늦게 채운다.
 
 ### 2.1 결과 확인 방식 — 실시간 알림 없음
 
@@ -106,13 +116,16 @@ Lambda 환경에서 애초에 성립하지 않았기 때문이다(1절). self-in
 `aiStatus=COMPLETED`다. `aiSummary`가 필요한 화면은 상태값과 별개로 그 필드
 자체의 null 여부를 확인해야 한다.
 
-현재 FE는 이 필드를 읽어 UI를 분기하지 않는다(`aiSummary`가 채워져 있으면
-그냥 보여줄 뿐) — PENDING 상태를 사용자에게 "AI 분석 중" 등으로 노출하려면
-FE에서 이 필드를 소비하는 로직이 별도로 필요하다.
+FE는 이 필드 전체로 UI를 분기하지는 않지만, `NONE` 값 하나는 예외다 — PostCard.tsx가
+`!post.description && post.aiStatus === 'NONE'` 조건으로 "이 링크의 정보를 가져오지
+못했어요." 안내 문구를 카드에 표시한다(§5.10 참고). `PENDING`을 "AI 분석 중"처럼
+사용자에게 능동적으로 노출하는 로직은 여전히 없다 — 이걸 추가하려면 FE에서 이 필드를
+소비하는 로직이 별도로 필요하다.
 
 관련 파일: `AiJobDispatcher`, `LambdaHandler.handleAiJob`,
 `PostAIService.processAiJob`, `GeminiService.analyzeContentAsync`,
-`PostCategoryClassifier.classifyAsync`
+`PostCategoryClassifier.classifyAsync`, `GeminiService.embedDocument`,
+`PostAIService.saveEmbedding`
 
 ### 2.2 로컬 환경에서는 AI 처리가 아예 스킵됨 (버그 아님)
 
@@ -166,9 +179,10 @@ fallback을 추가해야 하는데, 아직 구현하지 않았다 — 필요성�
 ## 3. 시행착오 1 — self-invoke가 `$LATEST`를 타던 문제
 
 `AiJobDispatcher`가 `InvokeRequest`에 qualifier를 지정하지 않고 배포했더니, AWS가
-기본값인 `$LATEST`로 호출했다. `application.yml`의 SnapStart는
-`ApplyOn=PublishedVersions`로 설정돼 있어 **`$LATEST`엔 스냅샷 최적화가 적용되지
-않는다** — EventBridge 워밍 핑에서 이미 겪었던 것과 같은 함정이다([DEPLOY.md](./DEPLOY.md)
+기본값인 `$LATEST`로 호출했다. SnapStart는 `application.yml` 항목이 아니라 Lambda
+함수 자체의 설정(AWS 콘솔/CLI, `docs/DEPLOY.md` 참고)이며, 발행된 버전(published
+version)에만 적용되고 **`$LATEST`엔 스냅샷 최적화가 적용되지 않는다** —
+EventBridge 워밍 핑에서 이미 겪었던 것과 같은 함정이다([DEPLOY.md](./DEPLOY.md)
 6장 참고).
 
 실측(1차 배포, `$LATEST`로 실행됨):
@@ -366,9 +380,10 @@ TAGS: AI, 학습, 미래 교육, 자기계발
 
 세 원인 모두 코드 수정 이후에는 재발하지 않지만, 이미 쌓인 게시글은 자동으로
 복구되지 않는다. `tools/PostAiBackfillRunner`(로컬 1회성 도구, `OrphanImageCleanupRunner`
-와 동일한 dry-run 우선 shape)가 `aiSummary`가 비어 있는 글과 `aiStatus`가
-`PENDING`/`FAILED`에 고착된 글(소유자 무관, 생성된 지 1시간 지난 것만 — 진행 중인
-self-invoke 잡과 겹치지 않기 위함)을 재크롤링/RSS 폴백으로 백필한다.
+와 동일한 dry-run 우선 shape)가 `aiSummary`가 비어 있는 **봇 글**
+(`findAllByUserIdAndAiSummaryIsNull(bot.id)`)과, `aiStatus`가 `PENDING`/`FAILED`에
+고착된 글(소유자 무관, 생성된 지 1시간 지난 것만 — 진행 중인 self-invoke 잡과 겹치지
+않기 위함)을 재크롤링/RSS 폴백으로 백필한다.
 
 ```
 ./gradlew bootRun --args='--spring.profiles.active=secret,ai-backfill'            (dry-run)
@@ -767,7 +782,7 @@ flowchart TD
 #### 실제로 한 일 (순서대로)
 
 1. **PR #30** — 계획대로 구현·배포. fresh subagent(Explore)로 계획과 실제 diff를
-   대조해 이탈 없음을 확인한 뒤 진행했다(§11 절차).
+   대조해 이탈 없음을 확인한 뒤 진행했다(`.claude/CLAUDE.md`의 "계획 대비 구현" 절 참고).
 2. **실측 1**: 사용자가 재수집을 트리거 → 8000ms 타임아웃인데 약 **4초**에
    `SocketTimeoutException`.
 3. **PR #33** — "시간이 부족했나?" 판단하에 타임아웃을 8000→15000ms로 상향, 재배포.
@@ -783,8 +798,8 @@ flowchart TD
    삭제. non-2xx WARN 로그(`status`·`server` 헤더 기록, 이 사고의 결정적 증거였던
    `server: cloudflare`를 남긴다)만 유지했다 — 프록시와 무관하게 "왜 실패했는지
    로그에 안 남는다"는 원래 문제를 고치는 부분이라 되돌리지 않았다.
-7. **link-sphere_FE_NEW#216** — `post.aiStatus === 'NONE'`을 신호로 카드에
-   "이 링크의 정보를 가져오지 못했어요."를 표시. 실제 배포 후 이 postId
+7. **link-sphere_FE_NEW#216** — `!post.description && post.aiStatus === 'NONE'`을
+   신호로 카드에 "이 링크의 정보를 가져오지 못했어요."를 표시. 실제 배포 후 이 postId
    페이지에서 문구가 뜨는 것까지 스크린샷으로 확인했다(이 문서 범위 밖,
    FE 레포 CHANGELOG 참고).
 
@@ -862,9 +877,10 @@ allorigins라는 중계 한 단계만으로는 이 방어를 우회하지 못한
 - 남은 `NONE` 20건 중 일부(GeekNews의 오래된 글)는 RSS 피드가 최신 항목만
   노출해 폴백할 본문 자체가 더 이상 없다 — 백필로 복구 불가능한 구조적
   한계다.
-- Gemini 무료 티어 쿼터는 하루 처리량에 실질적 상한을 건다. RSS 봇의 일일
-  발행량(§8, `MAX_ITEMS_TOTAL`)이 늘거나 백필을 자주 돌리면 이 상한에 다시
-  걸릴 수 있다 — 유료 플랜 전환 여부는 이번 범위 밖의 판단.
+- Gemini 무료 티어 쿼터는 하루 처리량에 실질적 상한을 건다. RSS 봇의 발행량
+  (4일 1회 배치, [RSS-FEED-BOT.md](./RSS-FEED-BOT.md) §8의 `MAX_ITEMS_TOTAL`)이
+  늘거나 백필을 자주 돌리면 이 상한에 다시 걸릴 수 있다 — 유료 플랜 전환 여부는
+  이번 범위 밖의 판단.
 
 ## 6. 교훈
 

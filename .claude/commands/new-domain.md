@@ -42,7 +42,7 @@ import java.util.UUID
 @Table(name = "<table_name>")
 class Table<Entity>(
     @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
+    @GeneratedValue(strategy = GenerationType.AUTO)
     @Column(name = "id", updatable = false, nullable = false)
     val id: UUID = UUID.randomUUID(),
 
@@ -168,7 +168,7 @@ class <Entity>Controller(private val <entity>Service: <Entity>Service) {
 
     @GetMapping
     fun get<Entity>s(authentication: Authentication): ApiResponse<List<<Entity>Response>> {
-        val userId = authentication.getUserId() ?: throw IllegalArgumentException("User not authenticated")
+        val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
         return ApiResponse(HttpStatus.OK.value(), "<Entity> 목록 조회 성공", <entity>Service.get<Entity>s(userId))
     }
 
@@ -177,7 +177,7 @@ class <Entity>Controller(private val <entity>Service: <Entity>Service) {
         @RequestBody request: Create<Entity>Request,
         authentication: Authentication
     ): ApiResponse<<Entity>Response> {
-        val userId = authentication.getUserId() ?: throw IllegalArgumentException("User not authenticated")
+        val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
         return ApiResponse(HttpStatus.CREATED.value(), "<Entity> 생성 성공", <entity>Service.create<Entity>(userId, request))
     }
 
@@ -187,7 +187,7 @@ class <Entity>Controller(private val <entity>Service: <Entity>Service) {
         @RequestBody request: Update<Entity>Request,
         authentication: Authentication
     ): ApiResponse<<Entity>Response> {
-        val userId = authentication.getUserId() ?: throw IllegalArgumentException("User not authenticated")
+        val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
         return ApiResponse(HttpStatus.OK.value(), "<Entity> 수정 성공", <entity>Service.update<Entity>(id, userId, request))
     }
 
@@ -196,7 +196,7 @@ class <Entity>Controller(private val <entity>Service: <Entity>Service) {
         @PathVariable id: UUID,
         authentication: Authentication
     ): ApiResponse<Unit> {
-        val userId = authentication.getUserId() ?: throw IllegalArgumentException("User not authenticated")
+        val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
         <entity>Service.delete<Entity>(id, userId)
         return ApiResponse(HttpStatus.OK.value(), "<Entity> 삭제 성공", Unit)
     }

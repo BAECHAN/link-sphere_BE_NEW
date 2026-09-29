@@ -1,6 +1,6 @@
 # AWS Lambda SnapStart 배포 가이드
 
-> 마지막 검토: 2026-09-21
+> 마지막 검토: 2026-09-29
 
 ## 아키텍처 개요
 
@@ -32,12 +32,21 @@ GitHub push (main)
 
 ### Lambda 실행 구조
 ```
-API 요청
-  → Lambda Function URL
-    → LambdaHandler.handleRequest()
-      → MockMvc.perform()
-        → Spring DispatcherServlet (Tomcat 소켓 없음)
-          → 응답
+API 요청 (linksphere.click, HTTPS)
+  → CloudFront (오리진 요청 정책: /api/* 는 관리형 Managed-AllViewerExceptHostHeader,
+    Lambda 오리진에 OAC가 SigV4로 서명)
+    → Lambda Function URL (AuthType: AWS_IAM — CloudFront를 거치지 않은 직접
+      호출은 IAM 인가 단계에서 403, §5-1 참고)
+      → LambdaHandler.handleRequest()
+        → linksphereJob 필드로 분기: 없으면 아래 HTTP 요청 경로, 있으면
+          ai-analysis/comment-postprocess/feed-crawl/feed-item/account-purge
+          같은 내부 작업(self-invoke·EventBridge)을 MockMvc 없이 바로 처리
+        → (HTTP 요청 경로) FunctionUrlOriginGuard 검사 — 지금은 ORIGIN_VERIFY_SECRET이
+          미설정이라 fail-open(항상 통과)이며, OAC가 사실상 이 자리를 대신한다(§5-1
+          "Phase 0 관련 정정" 참고)
+        → MockMvc.perform()
+          → Spring DispatcherServlet (Tomcat 소켓 없음)
+            → 응답
 ```
 
 ---
@@ -209,52 +218,47 @@ Lambda 콘솔 → Configuration → Environment variables:
 
 ### 5. Function URL 생성
 
+> **지금 프로덕션은 이미 `AuthType: AWS_IAM` + CloudFront OAC 상태다** (2026-09-29
+> 적용 완료 — `aws lambda get-function-url-config`로 실측, `docs/plans/2026-09-28-auth-hardening.md`
+> Phase 7). 아래 5·5-1은 **신규 환경을 처음부터 구축할 때 따라갈 절차**로 정리해둔
+> 것이다 — 지금 새로 환경을 만드는 상황이 아니라면 참고만 하고, 실제 상태는 이
+> 문서 서술을 믿지 말고 반드시
+> `aws lambda get-function-url-config --function-name link-sphere-api --qualifier prod`로
+> 직접 확인한다(이 문서가 과거 한 번 실제 상태와 다른 "적용 완료" 표기를 갖고
+> 있었던 사고 사례가 있다, 아래 5-1 "Phase 0 관련 정정" 참고).
+
 ```bash
-# prod alias에 Function URL 생성
+# prod alias에 Function URL 생성 (AWS_IAM — 직접 호출엔 IAM 인가가 필요하다)
 aws lambda create-function-url-config \
   --function-name link-sphere-api \
   --qualifier prod \
-  --auth-type NONE
-
-# 퍼블릭 접근 허용
-aws lambda add-permission \
-  --function-name link-sphere-api \
-  --qualifier prod \
-  --statement-id FunctionURLAllowPublicAccess \
-  --action lambda:InvokeFunctionUrl \
-  --principal "*" \
-  --function-url-auth-type NONE
+  --auth-type AWS_IAM
 ```
 
-> **지금 프로덕션은 위 상태(`AuthType: NONE`, 완전 공개) 그대로다.** 아래 5-1은
-> 이 상태를 CloudFront OAC + `AWS_IAM`으로 전환하는 **예정된 절차**를 적어둔 것이지,
-> 아직 실행되지 않았다 — `docs/plans/2026-09-28-auth-hardening.md` Phase 7의 BE·FE
-> 코드가 각각 배포·검증된 뒤에 마지막 단계로 실행한다. 지금 새로 환경을 만드는
-> 상황이 아니라면 이 섹션은 그대로 참고만 하고, 실제 `AuthType` 전환 여부는 반드시
-> `aws lambda get-function-url-config --function-name link-sphere-api --qualifier prod`로
-> 직접 확인한다 — 이 문서의 서술만 믿지 않는다(바로 이 문서가 과거에 한 번 실제
-> 상태와 다른 "적용 완료" 표기를 갖고 있었던 사고 사례가 있다, 아래 정정 참고).
+이 상태만으로는 아직 아무도(CloudFront조차) 이 Function URL을 호출할 수 없다 —
+5-1에서 CloudFront 서비스 프린시펄에 호출 권한을 주고 OAC를 연결해야 실제로
+트래픽을 받는다.
 
-#### 5-1. Function URL 직접 호출 완전 차단 (CloudFront OAC) — 절차 정리 (미적용)
+#### 5-1. Function URL 직접 호출 완전 차단 (CloudFront OAC) — 적용 완료 (2026-09-29)
 
-전환하면: Function URL이 `AWS_IAM`이고 CloudFront 오리진에 Origin Access
-Control(OAC)이 연결돼, CloudFront를 거치지 않고 직접 두드리면 Lambda의 IAM 인가
-단계에서 즉시 403을 받게 된다(WAF 경유 없이도 차단 — WAF보다 앞단에서 막히므로
-§2 WAF와는 독립적인 방어선이다).
+Function URL이 `AWS_IAM`이고 CloudFront 오리진에 Origin Access Control(OAC,
+`link-sphere-api-lambda-oac`)이 연결돼 있어, CloudFront를 거치지 않고 직접
+두드리면 Lambda의 IAM 인가 단계에서 즉시 403을 받는다(WAF 경유 없이도 차단 —
+WAF보다 앞단에서 막히므로 §2 WAF와는 독립적인 방어선이다).
 
-**전환 전 체크리스트** (하나라도 빠지면 전환 즉시 쓰기 요청이 전부 실패한다):
+**전환 전 체크리스트였음 — 이미 반영 완료, 재구축 시에도 그대로 확인**:
 
-- [ ] FE가 `Authorization` 대신 `X-Access-Token` 헤더로 토큰을 보내는지 확인
+- [x] FE가 `Authorization` 대신 `X-Access-Token` 헤더로 토큰을 보내는지 확인
   (OAC `SigningBehavior: Always`가 `Authorization`을 CloudFront 자신의 SigV4
   서명으로 덮어쓴다)
-- [ ] FE의 모든 POST/PUT/PATCH/DELETE(로그인·글쓰기·댓글·multipart 업로드 포함)가
+- [x] FE의 모든 POST/PUT/PATCH/DELETE(로그인·글쓰기·댓글·multipart 업로드 포함)가
   본문의 SHA256을 계산해 `x-amz-content-sha256` 헤더로 보내는지 확인 — [AWS 공식
   문서](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-restricting-access-to-lambda.html)에
   따르면 CloudFront는 바디를 오리진으로 스트리밍만 할 뿐 이 해시를 대신 계산해주지
   않는다 — Lambda는 서명되지 않은 페이로드(unsigned payload)를 지원하지 않으므로
   헤더가 없는 요청은 이 단계에서 거절된다
 
-절차:
+신규 구축 절차(이미 적용된 지금 환경을 다시 만들 때만 필요):
 
 ```bash
 # 1. CloudFront에 Function URL 호출 권한 부여 (공식 문서: 두 액션 모두 필요 -
@@ -277,45 +281,65 @@ aws cloudfront create-origin-access-control --origin-access-control-config \
 #    update-distribution) → 이 오리진(Function URL)의 Origin access control에 위에서
 #    만든 OAC 연결
 
-# 4. Function URL AuthType 전환
-aws lambda update-function-url-config --function-name link-sphere-api \
-  --qualifier prod --auth-type AWS_IAM
+# 4. Function URL은 5장에서 이미 AWS_IAM으로 생성했으므로 별도 전환이 필요 없다.
+#    (NONE으로 만들어진 기존 환경을 전환하는 경우에만:
+#    aws lambda update-function-url-config --function-name link-sphere-api \
+#      --qualifier prod --auth-type AWS_IAM)
+```
 
-# 5. 검증 후, 기존 공개 권한이 남아있었다면 제거
+**현재 Lambda 리소스 정책에 남아있는 statement**(`aws lambda get-policy
+--function-name link-sphere-api --qualifier prod` 실측, 2026-09-29):
+
+| Sid | Action | Principal | 비고 |
+|-----|--------|-----------|------|
+| `FunctionURLAllowInvokeAction` | `lambda:InvokeFunction` | `*` | 조건 `InvokedViaFunctionUrl=true` |
+| `FunctionURLAllowPublicAccess2` | `lambda:InvokeFunctionUrl` | `*` | 조건 `FunctionUrlAuthType=NONE` — 지금 AuthType이 `AWS_IAM`이라 이 조건은 매치되지 않아 무력한 상태로 남아있음. 정리하려면 아래로 제거할 수 있지만 지금 당장 위험하지는 않다 |
+| `AllowCloudFrontServicePrincipal` / `AllowCloudFrontServicePrincipalInvokeFunction` | `lambda:InvokeFunctionUrl` / `lambda:InvokeFunction` | `cloudfront.amazonaws.com` | `source-arn`이 배포된 distribution(`E1ZZPXFS3GSVZ6`)으로 제한 |
+| `EventBridgeWarmup` / `EventBridgeFeedCrawl` | `lambda:InvokeFunction` | `events.amazonaws.com` | 6장·8장 EventBridge 룰 전용 |
+
+무력해진 공개 권한을 정리하려면:
+
+```bash
 aws lambda remove-permission --function-name link-sphere-api --qualifier prod \
-  --statement-id FunctionURLAllowPublicAccess
+  --statement-id FunctionURLAllowPublicAccess2
 ```
 
 **롤백**: `aws lambda update-function-url-config --function-name link-sphere-api
 --qualifier prod --auth-type NONE` 한 줄로 즉시 공개 상태로 되돌릴 수 있다(OAC가
-오리진에 붙어 있어도 Function URL이 `NONE`이면 서명을 무시하므로 무해) — 자세한
-장애 대응은 `docs/LAMBDA-CONFIG-ROLLBACK.md` 참고.
+오리진에 붙어 있어도 Function URL이 `NONE`이면 서명을 무시하므로 무해 — 게다가
+`FunctionURLAllowPublicAccess2` 권한이 아직 남아있어 이 롤백만으로 바로 공개
+호출이 재개된다, 별도 `add-permission` 불필요) — 자세한 장애 대응은
+`docs/LAMBDA-CONFIG-ROLLBACK.md` 참고.
 
 **Phase 0(오리진 시크릿 헤더, `FunctionUrlOriginGuard.kt`) 관련 정정**: 이 문서는
 한때 Phase 0가 "적용 완료"라고 적어뒀으나, Phase 7 작업 중 직접 조회해보니
 `ORIGIN_VERIFY_SECRET` 환경변수가 실제로는 설정된 적이 없었다(fail-open 상태로
 계속 공개돼 있었음, `AuthType: NONE`·CloudFront에 `CustomHeaders` 없음을 CLI로
-확인) — 표기 오류였다. OAC(위 5-1) 전환이 완료되면 이 임시 잠금을 대체하게 되므로
-그 전환 전까지는 `ORIGIN_VERIFY_SECRET`을 새로 설정할 필요는 없다.
-`FunctionUrlOriginGuard.kt` 코드 자체는 유지하되(제거는 별도 판단), 전환 전까지는
-지금처럼 fail-open 상태로 남는다는 점을 인지하고 있어야 한다.
+확인) — 표기 오류였다. 위 5-1의 OAC 전환이 2026-09-29 완료되면서 이 임시 잠금은
+실질적으로 대체됐다 — `ORIGIN_VERIFY_SECRET`은 지금도 미설정 상태로 남아
+`FunctionUrlOriginGuard`는 계속 fail-open(항상 통과)이지만, CloudFront 없이
+Function URL을 직접 두드리는 시도는 그보다 앞단인 Lambda IAM 인가 단계에서
+이미 403으로 막힌다. `FunctionUrlOriginGuard.kt` 코드 자체는 유지하되(제거는
+별도 판단), 새로 `ORIGIN_VERIFY_SECRET`을 설정할 필요는 없다.
 
-#### 5-2. 실제 요청자 IP 전달 (CloudFront-Viewer-Address) — 적용 완료 (2026-09-28)
+#### 5-2. 실제 요청자 IP 전달 (CloudFront-Viewer-Address) — 적용 완료, 별도 설정 불필요
 
 로그인 실패·가입 레이트리밋(`RateLimitService`, `ClientIpResolver.kt`)이 IP별 버킷을
-나누려면 오리진(Lambda)이 실제 요청자 IP를 알아야 한다. `CloudFront-Viewer-Address`는
-"AllViewer" 계열 오리진 요청 정책이 자동으로 포함하는 일반 뷰어 헤더가 아니라, 오리진
-요청 정책의 헤더 목록에 **명시적으로 추가**해야만 전달되는 CloudFront 전용 헤더다.
+나누려면 오리진(Lambda)이 실제 요청자 IP를 알아야 한다.
 
-```bash
-# CloudFront 콘솔 → 이 오리진(Function URL)의 오리진 요청 정책 → 헤더 목록에 추가:
-#   CloudFront-Viewer-Address
-```
+> **정정(2026-09-29)**: 이 절은 한때 `CloudFront-Viewer-Address`를 오리진 요청
+> 정책의 헤더 목록에 명시적으로 추가해야 한다고 적어뒀으나 틀렸다. 실제 `/api/*`
+> 오리진 요청 정책은 **관리형** `Managed-AllViewerExceptHostHeader`
+> (ID `b689b0a8-53d0-40ab-baf2-68738e2966ac`, `aws cloudfront get-distribution-config`로
+> 확인)이고, AWS 공식 문서(docs.aws.amazon.com)를 재확인한 결과 이 관리형 정책
+> 자체가 device type·viewer location 헤더 전체를 이미 포함하며
+> `CloudFront-Viewer-Address`도 거기 포함된다. 관리형 정책은 헤더 목록을 편집할
+> 수도 없다 — 즉 **이 정책을 쓰는 이상 아무 설정도 하지 않아도 자동으로 전달된다.**
 
 - 값 형식은 `ip:port`(IPv6는 `[::1]:port`) — `ClientIpResolver`가 포트를 잘라낸다.
-- 헤더가 아직 없으면(설정 전, 또는 Phase 0 가드를 우회하는 합성 이벤트) `ClientIpResolver`
-  가 `null`을 반환하고 `RateLimitService`는 그 축의 레이트리밋만 건너뛴다(5-1과 같은
-  fail-open 원칙) — 설정 누락으로 로그인·가입 자체가 막히지 않는다.
+- 헤더가 없으면(합성 이벤트 등 CloudFront를 거치지 않은 호출) `ClientIpResolver`가
+  `null`을 반환하고 `RateLimitService`는 그 축의 레이트리밋만 건너뛴다(fail-open
+  원칙) — 헤더 누락으로 로그인·가입 자체가 막히지 않는다.
 
 ### 6. 워밍 핑 (EventBridge 스케줄 룰) — 적용 완료 (2026-07-25)
 
@@ -388,7 +412,7 @@ aws s3api put-bucket-lifecycle-configuration \
 
 `domain/feed/`가 4일에 1회 RSS/Atom 피드를 수집해 봇 계정 명의로 게시글을 등록한다.
 6장 워밍 핑과 동일한 형식의 규칙을 하나 더 만들었다. 적용 순서
-(`CHANGELOG.md` `[Unreleased] > Migration` 참고):
+(`CHANGELOG.md` `[0.9.0] > Migration` 참고):
 
 1. `sql/create_feed_sources.sql`을 코드 배포 **전에** 먼저 실행 (`members.is_bot` 컬럼 +
    봇 계정 + `feed_sources`/`feed_items` 테이블 + 피드 시딩)
@@ -452,16 +476,25 @@ aws events put-targets \
   맞물려 실행마다 다른 소스가 잘리므로 특정 소스가 영구히 배제되지는 않는다
   (`docs/RSS-FEED-BOT.md` §8 2026-09-06 항목)
 
-### 9. SES 설정 (비밀번호 찾기·이메일 인증 메일 발송) — 적용 완료, 프로덕션 액세스 심사 중 (2026-09-29)
+### 9. SES 설정 (비밀번호 찾기·이메일 인증 메일 발송) — 적용 완료, 프로덕션 액세스 심사 거절(DENIED), 재신청 진행 중 (2026-09-29 확인)
 
 `MailService`가 AWS SES로 비밀번호 재설정·이메일 인증 메일을 보낸다. 처음엔
 도메인이 미확정이라 개별 이메일 주소 검증(샌드박스 모드)으로 시작했는데, 도메인
 (`linksphere.click`)이 정해진 뒤 **도메인 전체를 Easy DKIM으로 검증**하는 쪽으로
 바꿨다 - 개별 주소 검증과 달리 그 도메인의 어떤 발신 주소든(`noreply@`,
-`support@` 등) 추가 작업 없이 바로 쓸 수 있다. **프로덕션 액세스(샌드박스
-해제) 신청은 2026-09-29에 제출했고 AWS 심사 대기 중이다** - 심사 결과가
-나오기 전까지는 여전히 샌드박스 제약(수신자 주소도 미리 검증해야 실제
-메일함으로 도착)이 적용된다.
+`support@` 등) 추가 작업 없이 바로 쓸 수 있다. **프로덕션 액세스(샌드박스 해제)
+신청은 2026-09-29에 제출했으나 AWS 심사에서 거절(DENIED)됐다**(`aws sesv2
+get-account`로 실측, `Details.ReviewDetails`: `{"Status":"DENIED","CaseId":"179066564000784"}`,
+`ProductionAccessEnabled: false`) - 현재 재신청을 진행 중이다. 거절이 풀리기
+전까지는 샌드박스 제약(발송량 상한 `Max24HourSend: 200`·`MaxSendRate: 1`,
+수신자 주소도 미리 검증해야 실제 메일함으로 도착)이 그대로 적용된다.
+
+**영향**: 검증되지 않은 수신자에게는 비밀번호 재설정·이메일 인증 메일이 실제로
+전달되지 않는다(API 호출 자체는 200으로 끝나므로 겉으로는 성공처럼 보인다 -
+9-1 마지막 문단 참고). `PostService`(46번째 줄 부근)·`CommentService`(202·264번째
+줄 부근)가 `member.emailVerified`를 확인해 글쓰기·댓글쓰기를 막고 있으므로,
+이메일이 도착하지 않아 인증을 못 끝낸 신규 가입자는 SES 프로덕션 액세스가
+승인되기 전까지 글쓰기·댓글쓰기가 계속 막힌다(로그인 자체는 가능).
 
 #### 9-1. 발신 도메인 검증 (Easy DKIM)
 
@@ -487,7 +520,10 @@ aws sesv2 put-account-details --mail-type TRANSACTIONAL \
   --production-access-enabled --region ap-northeast-1
 # 상태 확인
 aws sesv2 get-account --region ap-northeast-1 --query 'Details.ReviewDetails.Status'
-# PENDING → 승인되면 사라지고 최상위 ProductionAccessEnabled가 true로 바뀐다
+# PENDING(심사 중) → REVIEWING → 승인되면 ReviewDetails 자체가 사라지고 최상위
+# ProductionAccessEnabled가 true로 바뀐다. 거절되면 DENIED로 남는다 - 2026-09-29
+# 실제 신청 건이 이 상태다(CaseId 179066564000784). 재신청은 위 put-account-details를
+# 다시 실행한다
 ```
 
 승인 전까지는 **수신자 주소도 미리 검증**해야 실제 메일함으로 도착한다
@@ -526,10 +562,14 @@ aws iam put-role-policy \
 (현재 `noreply@linksphere.click`). 미설정이면 `MailService`가 발송을 건너뛴다
 (fail-open) - 로그인·가입 등 나머지 인증 흐름은 이 값과 무관하게 정상 동작한다.
 
-### 10. 탈퇴 유예 만료 계정 정리 (기존 EventBridge 룰에 타겟 추가) — 절차 정리 (미적용)
+### 10. 탈퇴 유예 만료 계정 정리 (기존 EventBridge 룰에 타겟 추가) — 적용 완료 (2026-09-29)
 
 `AccountPurgeService`가 회원탈퇴 신청 후 14일이 지난 계정을 익명화한다
-(`docs/plans/2026-09-29-account-deletion-grace-period.md`). 실제 발생 빈도가
+(`docs/plans/2026-09-29-account-deletion-grace-period.md`). `link-sphere-feed-crawl`
+룰(4일마다 실행, 8장)에 `account-purge` 타겟이 실제로 등록돼 있다
+(`aws events list-targets-by-rule --rule link-sphere-feed-crawl` 실측, 2026-09-29 -
+`feed-crawl`·`account-purge` 두 타겟이 함께 조회됨). 아래는 그때 실행한 절차
+그대로이며, 같은 방식을 다른 배치에도 적용할 때 참고할 수 있다. 실제 발생 빈도가
 낮을 것으로 예상돼(탈퇴 자체가 드문 액션 + 14일 유예 중 로그인 복구까지
 거치고 남는 경우만 대상) 전용 규칙을 새로 만드는 대신 **8장 RSS 피드 수집
 규칙(`link-sphere-feed-crawl`, 4일마다 실행)에 타겟을 하나 추가**하는 방식을
@@ -574,11 +614,12 @@ aws events put-targets \
   }]'
 ```
 
-- 등록 직후 `aws events list-targets-by-rule --rule link-sphere-feed-crawl
-  --region ap-northeast-1`로 타겟이 `feed-crawl`·`account-purge` 둘 다 남아있는지
-  확인한다(권한 재사용이 실제로 되는지는 AWS 문서 근거로만 판단했고 이 정확한
-  시나리오로 직접 재현 검증은 안 했다 - 다음 실행 시각에 CloudWatch Logs에서
-  `[AccountPurge]` 로그가 실제로 찍히는지까지 확인해야 완전히 검증된 것이다).
+- `aws events list-targets-by-rule --rule link-sphere-feed-crawl --region
+  ap-northeast-1`로 타겟이 `feed-crawl`·`account-purge` 둘 다 남아있는지 2026-09-29
+  확인했다(권한 재사용 여부는 AWS 문서 근거로 판단한 뒤 타겟 등록 자체로 간접
+  확인한 것이고, 다음 정기 실행 시각에 CloudWatch Logs에서 `[AccountPurge]` 로그가
+  실제로 찍히는지는 아직 별도로 확인하지 않았다 - 완전한 end-to-end 검증은 그때까지
+  남은 단계다).
 - **4일마다 실행되므로 최악의 경우 유예가 끝나고 최대 4일이 더 지나야 실제
   익명화된다**(14일 유예 + 최대 4일 = 최대 18일). 늦어져도 유예가 끝난 계정은
   이미 "탈퇴한 사용자"로 숨겨져 있어 데이터 손상은 없다 - 실제 익명화·개인
@@ -688,11 +729,15 @@ gh workflow run deploy.yml --repo BAECHAN/link-sphere_BE_NEW --ref main
 ## 배포 후 검증
 
 ```bash
-# health check
+# health check — Function URL을 직접 호출하면 403이 정상이다(AuthType: AWS_IAM +
+# CloudFront OAC, §5-1 참고). 아래는 직접 호출 시 기대 결과를 보여주는 예시다:
 curl https://<function-url>/actuator/health
+# 응답: 403 (IAM 서명 없는 요청은 CloudFront를 거치지 않았다는 뜻이므로 거절)
+
+# 실제 헬스체크는 반드시 CloudFront 경유로 한다:
+curl https://dbw3brui6htwk.cloudfront.net/api/actuator/health
+# (또는 커스텀 도메인) curl https://linksphere.click/api/actuator/health
 # 응답: {"status":"UP"}
-# (OAC 전환 후에는 이 직접 호출이 403을 반환하는 게 정상이다 — §5-1 참고.
-#  전환 후 헬스체크는 CloudFront 경유(`https://<cloudfront-domain>/api/actuator/health`)로 한다)
 
 # SnapStart 동작 확인 (CloudWatch Logs)
 # RESTORE_START / RESTORE_END 로그가 보이면 SnapStart 정상 동작
@@ -715,17 +760,26 @@ FE `docs/DEPLOY.md`의 "CloudFront WAF (수동 관리)" 절 참고.
 로컬에서는 `src/main/resources/application-secret.yml` 파일로 설정값을 관리한다 (gitignore).
 
 ```yaml
-# application-secret.yml 예시 구조
+# application-secret.yml 예시 구조 (README.md "환경 설정"과 동일하게 맞춤 - jwt 설정은
+# 코드에서 사라져 application.yml에 jwt 키 자체가 없다)
 spring:
   datasource:
-    url: jdbc:postgresql://...
-    username: ...
-    password: ...
-jwt:
-  secret: ...
+    url: jdbc:postgresql://<HOST>:<PORT>/<DATABASE>
+    username: <USERNAME>
+    password: <PASSWORD>
+
 gemini:
   api:
-    key: ...
+    key: <YOUR_GEMINI_API_KEY>
+
+youtube:
+  api:
+    key: <YOUR_YOUTUBE_DATA_API_V3_KEY>
+
+supabase:
+  url: https://<PROJECT>.supabase.co
+  key: <SUPABASE_SERVICE_ROLE_KEY>
+  bucket: <BUCKET_NAME>
 ```
 
 Lambda에서는 이 파일 없이 환경변수로 동일한 값을 주입한다. Spring Boot가 `SPRING_DATASOURCE_URL` 형식의 환경변수를 자동으로 `spring.datasource.url`에 바인딩한다.

@@ -1,6 +1,6 @@
 # Link-Sphere BE — 성능 (Lambda 콜드스타트)
 
-> 마지막 검토: 2026-09-03
+> 마지막 검토: 2026-09-29 (§4.5가 JWT 폐지로 삭제된 코드에 대한 기록임을 명시)
 
 이 문서는 **"왜 느렸고, 무엇을 근거로 무엇을 바꿨는지"** 를 남긴다.
 배포 절차는 [DEPLOY.md](./DEPLOY.md), 무엇이 바뀌었는지는 [CHANGELOG.md](../CHANGELOG.md)를 참고.
@@ -93,7 +93,12 @@ Lambda는 메모리에 비례해 vCPU를 준다(1024MB ≈ 0.58 vCPU → 2048MB 
 - `spring.jpa.open-in-view: false` — 요청당 커넥션을 뷰 렌더까지 붙들지 않음 (기본값 true + 기동 경고)
 - `spring.jmx.enabled: false` — MBean 등록 단계 생략
 
-### 4.5 만료 토큰 로그 등급
+### 4.5 만료 토큰 로그 등급 (역사적 기록 — 2026-09-28 JWT 폐지로 이 코드 자체가 삭제됨)
+
+> ⚠️ 아래는 이 최적화를 적용할 당시(2026-08)의 기록이다. `JwtAuthenticationFilter`·
+> `JwtTokenProvider`는 PR #42(`d9afef9`, 2026-09-28)의 JWT 폐지로 `SessionAuthenticationFilter`·
+> `MemberSessionService` 기반 서버 관리 세션으로 완전히 대체되며 삭제됐다 — "현재
+> 적용된 최적화"가 아니라 더 이상 존재하지 않는 코드에 대한 과거 기록이다.
 
 `JwtAuthenticationFilter` / `JwtTokenProvider`가 만료 토큰마다 `ExpiredJwtException`
 **전체 스택트레이스**를 ERROR로 남기고 있었다. 만료는 FE가 refresh로 복구하는 정상 흐름이라

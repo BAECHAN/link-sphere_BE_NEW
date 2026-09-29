@@ -2,7 +2,9 @@
 
 링크를 저장하고 관리하는 웹 서비스의 백엔드 API 서버입니다.
 게시글 작성 시 **Gemini AI**가 자동으로 요약과 태그를 생성하고, 크롤링한
-제목·설명이 빈약할 때는 내용을 분석해 대신 채워줍니다.
+제목·설명이 빈약할 때는 내용을 분석해 대신 채워줍니다. 게시글은 Gemini
+임베딩(pgvector)으로도 색인되어, 게시글 목록 검색은 키워드 매칭과 의미
+기반 검색을 함께 쓰는 하이브리드 방식으로 동작합니다.
 
 ---
 
@@ -17,7 +19,8 @@
 | **Database**   | Supabase (PostgreSQL)                             |
 | **ORM**        | Spring Data JPA / Hibernate                       |
 | **Auth**       | 서버 관리 세션 토큰(access/refresh, member_sessions 테이블) + Spring Security |
-| **AI**         | Google Gemini API (gemini-2.5-flash)              |
+| **AI**         | Google Gemini API (gemini-2.5-flash, 실패 시 gemini-3.1-flash-lite로 폴백) |
+| **검색/임베딩** | Gemini Embedding (gemini-embedding-2) + pgvector(hibernate-vector), 키워드+의미 하이브리드 검색 |
 | **Push**       | Firebase Cloud Messaging (firebase-admin 9.4.2)  |
 | **Storage**    | Supabase Storage (이미지 업로드)                  |
 | **Mail**       | AWS SES (비밀번호 찾기·이메일 인증)               |
@@ -29,6 +32,8 @@
 
 ## 프로젝트 구조
 
+> ※ 주요 파일만 표시 — 전체 구조는 소스 참고
+
 ```
 src/main/kotlin/com/example/linksphere/
 ├── LambdaHandler.kt                     # AWS Lambda 진입점 (MockMvc 기반)
@@ -39,7 +44,7 @@ src/main/kotlin/com/example/linksphere/
 │   │   ├── AuthDTO.kt
 │   │   ├── AuthService.kt
 │   │   ├── AccountDeletionService.kt    # 회원탈퇴 신청(14일 유예)·유예 만료 시 익명화
-│   │   ├── AccountPurgeService.kt       # 유예 만료 계정을 매일 익명화하는 예약 작업
+│   │   ├── AccountPurgeService.kt       # 유예 만료 계정을 4일마다 익명화하는 예약 작업(feed-crawl EventBridge 룰과 공유)
 │   │   ├── PasswordResetService.kt      # 비밀번호 찾기 요청/확인
 │   │   ├── TableAuthRateLimit.kt        # 로그인 실패·가입 시도 카운터(고정 윈도)
 │   │   ├── AuthRateLimitRepository.kt
@@ -58,7 +63,7 @@ src/main/kotlin/com/example/linksphere/
 │   │   ├── PostDTO.kt
 │   │   ├── PostRepository.kt
 │   │   ├── PostRepositoryCustom.kt      # 커스텀 쿼리 인터페이스
-│   │   ├── PostRepositoryImpl.kt        # QueryDSL/JPQL 검색·필터 구현
+│   │   ├── PostRepositoryImpl.kt        # JPA Criteria/JPQL 검색·필터 구현
 │   │   ├── PostService.kt
 │   │   ├── PostAiService.kt             # AI 분석 비동기 처리
 │   │   ├── TablePost.kt
@@ -67,7 +72,7 @@ src/main/kotlin/com/example/linksphere/
 │   │   ├── CommentController.kt         # 댓글·답글 CRUD (이미지 포함)
 │   │   ├── CommentDTO.kt
 │   │   ├── CommentRepository.kt
-│   │   ├── CommentService.kt            # FCM 알림 트리거 포함
+│   │   ├── CommentService.kt            # 댓글·답글 CRUD (알림·링크프리뷰는 CommentPostProcessService가 커밋 후 별도 처리)
 │   │   └── TableComment.kt
 │   ├── interaction/                     # 좋아요·북마크(폴더 다중 소속 포함) 도메인
 │   │   ├── InteractionController.kt     # 좋아요 + 북마크 토글 + 폴더 소속 추가/제거
@@ -93,13 +98,17 @@ src/main/kotlin/com/example/linksphere/
 │   │   ├── CategoryRepository.kt
 │   │   ├── CategoryService.kt
 │   │   └── TableCategory.kt
-│   └── feed/                            # RSS 피드 자동 수집 (봇 계정, 컨트롤러 없음)
-│       ├── FeedCrawlService.kt          # Stage A: 피드 fetch → 후보 URL 5건씩 self-invoke
-│       ├── FeedItemProcessor.kt         # Stage B: claim → createPost (항목당 독립 트랜잭션)
-│       ├── FeedParser.kt                # Jsoup xmlParser로 RSS 2.0 / Atom 파싱
-│       ├── FeedUrlNormalizer.kt         # 중복 판정용 URL 정규화 (dedupe 키 전용)
-│       ├── FeedSourceRepository.kt / FeedItemRepository.kt
-│       └── TableFeedSource.kt / TableFeedItem.kt
+│   ├── feed/                            # RSS 피드 자동 수집 (봇 계정, 컨트롤러 없음)
+│   │   ├── FeedCrawlService.kt          # Stage A: 피드 fetch → 후보 URL 5건씩 self-invoke
+│   │   ├── FeedItemProcessor.kt         # Stage B: claim → createPost (항목당 독립 트랜잭션)
+│   │   ├── FeedParser.kt                # Jsoup xmlParser로 RSS 2.0 / Atom 파싱
+│   │   ├── FeedUrlNormalizer.kt         # 중복 판정용 URL 정규화 (dedupe 키 전용)
+│   │   ├── FeedSourceRepository.kt / FeedItemRepository.kt
+│   │   └── TableFeedSource.kt / TableFeedItem.kt
+│   └── upload/                          # 이미지 업로드용 서명 URL 발급
+│       ├── UploadController.kt
+│       ├── UploadDTO.kt
+│       └── UploadService.kt
 ├── global/
 │   ├── common/
 │   │   ├── ApiResponse.kt               # 공통 응답 래퍼
@@ -128,10 +137,18 @@ src/main/kotlin/com/example/linksphere/
 │       └── PostNotFoundException.kt
 └── infra/
     ├── ai/
-    │   ├── GeminiService.kt             # Gemini AI 콘텐츠 분석
+    │   ├── GeminiService.kt             # Gemini AI 콘텐츠 분석·임베딩 생성 (폴백 모델 포함)
     │   └── dto/GeminiDtos.kt
+    ├── aws/                             # Lambda self-invoke 디스패처 (AI 분석·피드 수집·댓글 후처리)
+    │   ├── AiJobDispatcher.kt
+    │   ├── CommentJobDispatcher.kt
+    │   ├── FeedJobDispatcher.kt
+    │   └── LambdaSelfInvoker.kt
     ├── mail/
     │   └── MailService.kt               # AWS SES 메일 발송(실패해도 로그만, fail-open)
+    ├── youtube/                         # YouTube Data API v3로 영상 설명 보강
+    │   ├── YoutubeVideoClient.kt
+    │   └── dto/
     └── fcm/
         ├── FcmConfig.kt
         ├── FcmService.kt
@@ -172,19 +189,20 @@ src/main/kotlin/com/example/linksphere/
 | Method   | Endpoint                  | 설명                           | 인증 |
 | -------- | ------------------------- | ------------------------------ | ---- |
 | `POST`   | `/post`                   | 게시글 생성 (AI 분석 포함, 이메일 미인증 시 403) | ✅   |
-| `GET`    | `/post`                   | 게시글 목록 조회 (검색·필터)   | ✅   |
-| `GET`    | `/post/{id}`              | 게시글 상세 조회               | ✅   |
+| `GET`    | `/post`                   | 게시글 목록 조회 (검색·필터)   | 선택(로그인 시 좋아요·북마크 반영) |
+| `GET`    | `/post/{id}`              | 게시글 상세 조회               | 선택(로그인 시 좋아요·북마크 반영) |
 | `PATCH`  | `/post/{id}`              | 게시글 수정                    | ✅   |
 | `PATCH`  | `/post/{id}/visibility`   | 게시글 공개/비공개 토글        | ✅   |
 | `DELETE` | `/post/{id}`              | 게시글 삭제                    | ✅   |
 
-**게시글 목록 쿼리 파라미터**: `category`, `keyword`, `nickname`, `tags[]`, `isPrivate` 등
+**게시글 목록 쿼리 파라미터**: `category`, `search`, `filter`, `nickname`, `page`, `size`
 
 ### 💬 Comment (`/post/{postId}/comment`, `/comment/{id}`)
 
 | Method   | Endpoint                                      | 설명                    | 인증 |
 | -------- | --------------------------------------------- | ----------------------- | ---- |
-| `GET`    | `/post/{postId}/comment`                      | 댓글 목록 조회          | ✅   |
+| `GET`    | `/post/{postId}/comment`                      | 댓글 목록 조회          | 선택(로그인 시 좋아요·북마크 반영) |
+| `GET`    | `/comment/my`                                 | 내 댓글 목록 조회 (페이지네이션) | ✅   |
 | `POST`   | `/post/{postId}/comment`                      | 댓글 작성 (이미지 포함, 이메일 미인증 시 403) | ✅   |
 | `POST`   | `/comment/{commentId}/reply`                  | 답글 작성 (이미지 포함, 이메일 미인증 시 403) | ✅   |
 | `PATCH`  | `/comment/{commentId}`                        | 댓글/답글 수정          | ✅   |
@@ -202,6 +220,7 @@ src/main/kotlin/com/example/linksphere/
 | `DELETE` | `/bookmark/{postId}/folders`           | 폴더 소속 전체 해제 (→ 미분류)           | ✅   |
 | `POST`   | `/bookmark/batch/folders/{folderId}/add`    | 여러 게시글을 한 폴더에 일괄 추가 (북마크 없으면 자동 생성) | ✅   |
 | `POST`   | `/bookmark/batch/folders/{folderId}/remove` | 여러 게시글을 한 폴더에서 일괄 제거      | ✅   |
+| `POST`   | `/bookmark/batch/delete`               | 여러 북마크 일괄 삭제 (폴더 구분 없이 북마크 자체를 삭제) | ✅   |
 
 북마크 하나가 **여러 폴더에 동시에 소속**될 수 있다(N:M). 위 단건 세 엔드포인트는 모두
 멱등 — 이미 그 상태여도 200을 반환하며 404를 던지지 않는다. 자세한 폴더 모델은 아래
@@ -234,6 +253,12 @@ Bookmark Folder 섹션 참고.
 | -------- | ------------ | ------------------- | ---- |
 | `POST`   | `/fcm/token` | FCM 토큰 등록       | ✅   |
 | `DELETE` | `/fcm/token` | FCM 토큰 해제       | ✅   |
+
+### 📤 Upload (`/upload`)
+
+| Method | Endpoint              | 설명                                                     | 인증 |
+| ------ | ---------------------- | -------------------------------------------------------- | ---- |
+| `POST` | `/upload/signed-url`   | Supabase Storage 이미지 업로드용 서명 URL 발급 (실제 업로드는 클라이언트가 직접) | ✅   |
 
 ### 📚 Swagger UI
 
@@ -333,9 +358,15 @@ git config core.hooksPath .githooks
 - **AWS Lambda (SnapStart)**: Shadow JAR 기반 서버리스 실행 (도쿄 리전, arm64 / 2048MB)
 - **AWS S3**: Lambda 배포 JAR 저장소 (`deployments/` 30일 만료 수명 주기)
 - **Amazon EventBridge**: 5분 간격 워밍 핑(콜드스타트 완화) + 4일 1회 RSS 피드 자동
-  수집 트리거(`domain/feed/`, `docs/DEPLOY.md` 8장). 설계·시행착오·프로덕션 검증
-  기록은 [**docs/RSS-FEED-BOT.md**](./docs/RSS-FEED-BOT.md) 참고
+  수집 트리거(`domain/feed/`, `docs/DEPLOY.md` 8장). 회원탈퇴 유예 만료 정리
+  (`account-purge`)도 전용 룰 없이 같은 RSS 피드 룰에 타겟만 추가하는 방식으로
+  **이미 적용돼 운영 중**이다(`docs/DEPLOY.md` §10).
+  설계·시행착오·프로덕션 검증 기록은 [**docs/RSS-FEED-BOT.md**](./docs/RSS-FEED-BOT.md) 참고
 - **Amazon CloudFront**: `/api/*` → Lambda, 그 외 → S3(FE). FE와 같은 오리진
+  - 커스텀 도메인(`linksphere.click`)이 연결돼 있고, WAF가 요청 바디 크기 등을
+    제한한다(`SizeRestrictions_BODY`, 8,192바이트 초과 차단). Lambda Origin Access
+    Control(OAC)도 **이미 적용 완료**됐다 — Function URL AuthType은 `AWS_IAM`이고
+    CloudFront가 SigV4로 서명해 호출하는 경로로만 접근 가능하다(`docs/DEPLOY.md` §5-1)
   - SPA 클라이언트 라우팅 폴백은 CloudFront Function(FE 저장소 `infra/cloudfront-functions/`)이
     담당하며 S3 비헤이비어에만 연결되어 있다. **배포 레벨 `CustomErrorResponses`에 403/404를
     다시 추가하지 말 것** — 오리진 구분 없이 걸려서 이 API가 반환하는 403/404까지 index.html로
@@ -427,4 +458,6 @@ SnapStart 체크포인트 **이전**(`companion object init`)에 읽기 전용 �
 
 프론트엔드 프로젝트: [link-sphere_FE_NEW](https://github.com/BAECHAN/link-sphere_FE_NEW)
 
-- CORS 허용 Origin: `http://localhost:31119`, `https://localhost:31119`, AWS CloudFront 도메인
+- CORS 허용 Origin(`application.yml`의 `app.cors.allowed-origins`): `http://localhost:*`,
+  `https://localhost:*`, `https://dbw3brui6htwk.cloudfront.net`, `https://linksphere.click`,
+  `https://www.linksphere.click`

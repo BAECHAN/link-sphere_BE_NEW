@@ -271,7 +271,7 @@ Plan mode로 계획을 세우고 구현한 작업은, PR을 열기 전에:
 ```
 src/main/kotlin/com/example/linksphere/
 ├── domain/                    # 비즈니스 도메인 (평면 구조, 서브패키지 없음)
-│   ├── auth/                  # 인증 (AuthController, AuthService, AuthDTO, jwt/)
+│   ├── auth/                  # 인증 (AuthController, AuthService, AuthDTO, SessionAuthenticationFilter, MemberSessionService 등 평면 구조 — JWT는 PR #42로 폐지, jwt/ 패키지 없음)
 │   ├── category/              # 카테고리
 │   ├── comment/               # 댓글
 │   ├── interaction/           # 좋아요·북마크 (InteractionController, InteractionService, ...)
@@ -295,7 +295,7 @@ src/main/kotlin/com/example/linksphere/
 | 위치 | 규칙 | ✅ | ❌ |
 | ---- | ---- | -- | -- |
 | `domain/` 하위 도메인 | **단수 소문자** | `post/`, `comment/`, `member/` | `posts/`, `Post/`, `post-domain/` |
-| 도메인 내 서브패키지 | **최소화, 단일 소문자** (꼭 필요할 때만) | `jwt/`, `log/` | `jwt-util/`, `utils/` |
+| 도메인 내 서브패키지 | **최소화, 단일 소문자** (꼭 필요할 때만) | `infra/ai/dto/` | `jwt-util/`, `utils/` |
 | `global/` 하위 | **역할 단수 소문자** | `common/`, `config/`, `exception/` | `commons/`, `configs/` |
 | `infra/` 하위 | **기술/서비스명 그대로** | `ai/`, `fcm/`, `storage/` | `ai-service/`, `fcmService/` |
 | infra 내 서브패키지 | **단일 소문자** | `dto/` | `dtos/`, `DTO/` |
@@ -374,6 +374,10 @@ fun getPosts(
 }
 ```
 
+> 예외: 일부 레거시 컨트롤러는 아직 다른 패턴을 쓴다 — `CommentController.kt`는 위 정정 이후에도
+> `authentication.getUserId()` 대신 `@AuthenticationPrincipal principal: String?` +
+> 자체 `toRequiredUserId()`/`toOptionalUserId()` 확장 함수를 그대로 쓰고 있다.
+
 ---
 
 ## 예외 처리 패턴
@@ -410,19 +414,42 @@ fun handleBookmarkFolderNotFoundException(e: BookmarkFolderNotFoundException): R
 | `DuplicateMemberException`    | 409  | `DUPLICATE_MEMBER`      |
 | `InvalidCredentialsException` | 401  | `INVALID_CREDENTIALS`   |
 | `InvalidTokenException`       | 401  | `INVALID_REFRESH_TOKEN` |
+| `EmailNotVerifiedException`   | 403  | `EMAIL_NOT_VERIFIED`    |
+| `InvalidActionTokenException` | 401  | `INVALID_ACTION_TOKEN`  |
+| `RateLimitExceededException`  | 429  | `RATE_LIMIT_EXCEEDED`   |
 
 ---
 
 ## Security — 새 엔드포인트 공개 허용
 
-기본적으로 모든 요청은 인증 필요. 비로그인 허용이 필요한 경우 `SecurityConfig.kt`의 `permitAll()` 목록에 추가:
+기본적으로 모든 요청은 인증 필요. 비로그인 허용이 필요한 경우 `SecurityConfig.kt`의 `permitAll()` 목록에
+추가한다 — **`/auth/**` 같은 와일드카드는 쓰지 않는다.** `/auth/logout-all`·`/auth/account`처럼
+인증이 꼭 필요한 경로까지 함께 공개돼버린다. 실제 코드는 이렇게 경로를 하나씩 나열한다:
 
 ```kotlin
 it.requestMatchers(
-    "/auth/**",
+    "/auth/signup",
+    "/auth/login",
+    "/auth/refresh",
+    "/auth/logout",
+    "/auth/email-availability",
+    "/auth/account/nickname-availability",
+    "/auth/password-reset/request",
+    "/auth/password-reset/confirm",
+    "/auth/email-verification/request",
+    "/auth/email-verification/confirm",
     "/common/**",
-    "/bookmark/folders/public/**",   // 예시: 공개 폴더 조회
+    "/swagger-ui/**",
+    "/v3/api-docs/**",
+    "/error",
+    "/actuator/**",
 ).permitAll()
+it.requestMatchers(
+    HttpMethod.GET,
+    "/post",
+    "/post/*",
+    "/post/*/comment",
+).permitAll()   // GET만 공개 — 같은 경로의 POST/PATCH/DELETE는 여전히 인증 필요
 ```
 
 ---
@@ -436,9 +463,8 @@ it.requestMatchers(
 @Table(name = "bookmark_folders")
 class TableBookmarkFolder(
     @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
     @Column(name = "id", updatable = false, nullable = false)
-    val id: UUID = UUID.randomUUID(),
+    val id: UUID = UUID.randomUUID(),   // DB에 @GeneratedValue 없음 - 애플리케이션에서 직접 생성
 
     @Column(name = "user_id", nullable = false)
     val userId: UUID,
@@ -449,10 +475,10 @@ class TableBookmarkFolder(
     @Column(name = "sort_order", nullable = false)
     var sortOrder: Int = 0,
 
-    @Column(name = "created_at", updatable = false)
+    @Column(name = "created_at", updatable = false, nullable = false)
     val createdAt: LocalDateTime = LocalDateTime.now(),
 
-    @Column(name = "updated_at")
+    @Column(name = "updated_at", nullable = false)
     var updatedAt: LocalDateTime = LocalDateTime.now()
 )
 ```
@@ -469,13 +495,6 @@ class TableBookmark(
 )
 ```
 
-### Self-referential (부모-자식, 폴더 중첩)
-
-```kotlin
-@Column(name = "parent_id", nullable = true)
-var parentId: UUID? = null    // null = 루트 폴더
-```
-
 ---
 
 ## Repository 패턴
@@ -484,7 +503,7 @@ var parentId: UUID? = null    // null = 루트 폴더
 // 기본 Spring Data JPA
 interface BookmarkFolderRepository : JpaRepository<TableBookmarkFolder, UUID> {
     fun findByUserIdOrderBySortOrderAsc(userId: UUID): List<TableBookmarkFolder>
-    fun findByUserIdAndParentIdIsNull(userId: UUID): List<TableBookmarkFolder>
+    fun existsByUserIdAndName(userId: UUID, name: String): Boolean
     fun existsByIdAndUserId(id: UUID, userId: UUID): Boolean
 }
 
@@ -505,26 +524,16 @@ interface PostRepository : JpaRepository<TablePost, UUID>, PostRepositoryCustom
 
 ```kotlin
 // domain/interaction/BookmarkFolderDTO.kt
-data class CreateFolderRequest(
-    val name: String,
-    val parentId: UUID? = null
-)
+data class CreateFolderRequest(val name: String)
 
-data class UpdateFolderRequest(
-    val name: String
-)
-
-data class ReorderFoldersRequest(
-    val folderIds: List<UUID>   // 순서대로 정렬된 ID 목록
-)
+data class UpdateFolderRequest(val name: String)
 
 data class FolderResponse(
     val id: UUID,
     val name: String,
-    val parentId: UUID?,
     val sortOrder: Int,
     val bookmarkCount: Int,
-    val children: List<FolderResponse> = emptyList()
+    val lastUsedAt: LocalDateTime? = null, // 이 폴더에 마지막으로 저장한 시각 — 한 번도 저장 안 됐으면 null
 )
 ```
 
@@ -560,7 +569,6 @@ data class FolderResponse(
 | 커맨드        | 사용법                                      | 역할                                                                   |
 | ------------- | ------------------------------------------- | ---------------------------------------------------------------------- |
 | `/new-domain` | `/new-domain bookmark-folder`               | Entity + Repository + DTO + Service + Controller + Exception 일괄 생성 |
-| `/add-api`    | `/add-api interaction batch-move-bookmarks` | 기존 도메인에 API 엔드포인트 추가                                      |
 
 ---
 
@@ -601,7 +609,7 @@ data class FolderResponse(
   </details>
 ```
 - 요약 줄: `` `스코프` `` + 공백 + 한 줄(72자 이내, 줄바꿈·마침표 없음). 굵게(`**`) 쓰지 않는다.
-  스코프는 `post` `comment` `auth` `member` `bookmark` `category` `upload` `infra` 중 하나.
+  스코프는 `post` `comment` `auth` `member` `bookmark` `category` `upload` `infra` `fcm` `config` 중 하나.
 - 상세 블록: `<summary>`는 `배경·구현`으로 통일. `<summary>` 다음과 `</details>` 앞에 빈 줄을
   반드시 넣는다(없으면 GitHub이 안의 마크다운을 파싱하지 않는다). 배경·트레이드오프·영향
   파일 목록을 요약 없이 그대로 적는다 — 짧은 항목은 상세 블록을 생략해도 된다.
@@ -615,7 +623,7 @@ data class FolderResponse(
    문서로만 남겼다(경위: FE `docs/DECISIONS.md` 2026-09-14 항목)
 3. `chore(release): vX.Y.Z` 커밋 → `git push origin main`
 4. **태그·GitHub Release는 수동으로 만들지 않는다** — `.github/workflows/release.yml`이 `CHANGELOG.md` push를 감지해 최신 버전 섹션을 파싱, 동명 태그가 없으면 자동으로 태그 생성 + `gh release create`까지 수행한다(이미 있으면 스킵하는 멱등 동작). `git tag`/`gh release create`를 직접 실행할 필요 없음.
-- 현재 버전 기준점: `0.1.0` (정식 릴리즈 전 개발 단계 = `0.x`)
+- 현재 버전 기준점: `0.10.0` (정식 릴리즈 전 개발 단계 = `0.x`, `CHANGELOG.md`의 최신 버전 섹션 기준)
 
 ## 문서 파일 위치
 
