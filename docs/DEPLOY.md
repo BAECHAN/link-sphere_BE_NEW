@@ -198,7 +198,7 @@ Lambda 콘솔 → Configuration → Environment variables:
 | `SUPABASE_KEY` | Supabase service role key |
 | `SUPABASE_URL` | `https://<project>.supabase.co` |
 | `ORIGIN_VERIFY_SECRET` | CloudFront가 오리진 커스텀 헤더로 붙이는 값(§5-1 참고). 미설정 시 그 검사는 건너뛴다(fail-open) |
-| `APP_MAIL_FROM` | SES에서 검증된 발신 주소(§8-1 참고). 비어있으면 메일 발송을 건너뛴다(fail-open) |
+| `APP_MAIL_FROM` | SES에서 검증된 발신 주소(§9-1 참고). 현재 `noreply@linksphere.click`로 설정돼 있다(2026-09-29, 도메인 검증 완료 후) - 비어있으면 메일 발송을 건너뛴다(fail-open) |
 | `APP_FRONTEND_URL` | 비밀번호 재설정·이메일 인증 링크에 쓸 프론트엔드 도메인. 미설정 시 `application.yml`의 기본값(CloudFront 도메인)을 그대로 쓴다 - 커스텀 도메인 확정 후 덮어쓴다 |
 
 > Spring Boot는 `SPRING_DATASOURCE_URL` → `spring.datasource.url` 형식으로 환경변수를 자동 바인딩한다.
@@ -449,26 +449,48 @@ aws events put-targets \
   맞물려 실행마다 다른 소스가 잘리므로 특정 소스가 영구히 배제되지는 않는다
   (`docs/RSS-FEED-BOT.md` §8 2026-09-06 항목)
 
-### 9. SES 설정 (비밀번호 찾기·이메일 인증 메일 발송) — 적용 완료 (2026-09-28)
+### 9. SES 설정 (비밀번호 찾기·이메일 인증 메일 발송) — 적용 완료, 프로덕션 액세스 심사 중 (2026-09-29)
 
-`MailService`가 AWS SES로 비밀번호 재설정·이메일 인증 메일을 보낸다. 도메인이 아직
-확정 전이라 **개별 이메일 주소 검증(샌드박스 모드)**으로 시작한다 - 프로덕션 전환
-(샌드박스 해제, 도메인 통째로 검증)은 도메인 준비 후 별도로 진행한다
-(`docs/plans/2026-09-28-auth-hardening.md` "남은 것" 참고).
+`MailService`가 AWS SES로 비밀번호 재설정·이메일 인증 메일을 보낸다. 처음엔
+도메인이 미확정이라 개별 이메일 주소 검증(샌드박스 모드)으로 시작했는데, 도메인
+(`linksphere.click`)이 정해진 뒤 **도메인 전체를 Easy DKIM으로 검증**하는 쪽으로
+바꿨다 - 개별 주소 검증과 달리 그 도메인의 어떤 발신 주소든(`noreply@`,
+`support@` 등) 추가 작업 없이 바로 쓸 수 있다. **프로덕션 액세스(샌드박스
+해제) 신청은 2026-09-29에 제출했고 AWS 심사 대기 중이다** - 심사 결과가
+나오기 전까지는 여전히 샌드박스 제약(수신자 주소도 미리 검증해야 실제
+메일함으로 도착)이 적용된다.
 
-#### 9-1. 발신 주소 검증
+#### 9-1. 발신 도메인 검증 (Easy DKIM)
 
 ```bash
-# 실제 받을 수 있는 주소로(도메인 미확정 상태라 개별 주소 검증만 가능) -
-# AWS가 그 주소로 확인 메일을 보내고, 클릭해야 검증이 끝난다
-aws ses verify-email-identity --email-address <발신용-이메일> --region ap-northeast-1
+# 도메인 통째로 검증 - Easy DKIM이 CNAME 3개(토큰)를 발급한다
+aws sesv2 create-email-identity --email-identity linksphere.click --region ap-northeast-1
+# 응답의 DkimAttributes.Tokens 3개 각각을:
+#   <token>._domainkey.linksphere.click → CNAME → <token>.dkim.amazonses.com
+# 로 FE가 관리하는 Route 53 호스팅 존에 추가한다(FE `docs/DEPLOY.md`의 "커스텀
+# 도메인" 절 - 도메인 자체가 FE 배포 도메인과 같으므로 같은 호스팅 존을 쓴다).
+# 검증 완료까지 보통 1~2분:
+aws sesv2 get-email-identity --email-identity linksphere.click --region ap-northeast-1 \
+  --query 'VerifiedForSendingStatus'
 ```
 
-샌드박스 모드에서는 **수신자 주소도 미리 검증**해야 실제 메일함으로 도착한다
-(`aws ses verify-email-identity --email-address <테스트-수신-주소>`) - 검증 안 된
+**프로덕션 액세스 신청**(샌드박스 해제) - `sesv2:PutAccountDetails`로 콘솔 없이도
+제출 가능하다:
+
+```bash
+aws sesv2 put-account-details --mail-type TRANSACTIONAL \
+  --website-url https://linksphere.click --contact-language EN \
+  --use-case-description "<용도 설명 - 트랜잭션 메일만, 예상 발송량 등>" \
+  --production-access-enabled --region ap-northeast-1
+# 상태 확인
+aws sesv2 get-account --region ap-northeast-1 --query 'Details.ReviewDetails.Status'
+# PENDING → 승인되면 사라지고 최상위 ProductionAccessEnabled가 true로 바뀐다
+```
+
+승인 전까지는 **수신자 주소도 미리 검증**해야 실제 메일함으로 도착한다
+(`aws sesv2 create-email-identity --email-identity <테스트-수신-주소>`) - 검증 안 된
 수신자에게 보내면 API 호출 자체는 200으로 끝나지만(MailService는 SES 응답만 보고
-성공 여부를 판단하므로) 실제로는 전달되지 않는다. 이 제약은 프로덕션 전환 전까지는
-정상이다.
+성공 여부를 판단하므로) 실제로는 전달되지 않는다.
 
 #### 9-2. Lambda 실행 역할에 SES 발송 권한 부여
 
@@ -497,9 +519,9 @@ aws iam put-role-policy \
 
 #### 9-3. Lambda 환경변수
 
-§4 표의 `APP_MAIL_FROM`에 9-1에서 검증한 주소를 설정한다. 미설정이면
-`MailService`가 발송을 건너뛴다(fail-open) - 로그인·가입 등 나머지 인증 흐름은
-이 값과 무관하게 정상 동작한다.
+§4 표의 `APP_MAIL_FROM`에 9-1에서 검증한 도메인 위의 발신 주소를 설정한다
+(현재 `noreply@linksphere.click`). 미설정이면 `MailService`가 발송을 건너뛴다
+(fail-open) - 로그인·가입 등 나머지 인증 흐름은 이 값과 무관하게 정상 동작한다.
 
 ### 10. 탈퇴 유예 만료 계정 정리 (기존 EventBridge 룰에 타겟 추가) — 절차 정리 (미적용)
 
