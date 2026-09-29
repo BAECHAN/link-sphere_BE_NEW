@@ -33,7 +33,7 @@ class PostController(private val postService: PostService) {
     @Operation(
         summary = "게시글 목록 조회",
         description = "category·search·filter·nickname 으로 필터링, page·size 로 페이지네이션한다. " +
-            "JWT 를 보내면 본인의 좋아요·북마크 여부가 응답에 반영된다.",
+            "인증 토큰을 보내면 본인의 좋아요·북마크 여부가 응답에 반영된다.",
     )
     @SecurityRequirements
     @GetMapping

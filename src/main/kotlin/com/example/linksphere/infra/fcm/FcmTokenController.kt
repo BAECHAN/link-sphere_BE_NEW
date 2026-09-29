@@ -18,7 +18,7 @@ class FcmTokenController(private val fcmTokenService: FcmTokenService) {
     @Operation(
         summary = "FCM 토큰 등록",
         description = "다른 컨트롤러와 달리 ApiResponse 로 감싸지 않고 본문 없는 200/401 을 그대로 준다. " +
-            "실패: 401(JWT subject 를 UUID 로 파싱하지 못했을 때)",
+            "실패: 401(인증 principal을 UUID로 파싱하지 못했을 때)",
     )
     @PostMapping("/token")
     fun registerToken(
@@ -34,7 +34,7 @@ class FcmTokenController(private val fcmTokenService: FcmTokenService) {
     // 기기 FCM 토큰 삭제 (로그아웃 시 호출)
     @Operation(
         summary = "FCM 토큰 해제",
-        description = "본문 없는 200/401 을 그대로 준다. 실패: 401(JWT subject 를 UUID 로 파싱하지 못했을 때)",
+        description = "본문 없는 200/401 을 그대로 준다. 실패: 401(인증 principal을 UUID로 파싱하지 못했을 때)",
     )
     @DeleteMapping("/token")
     fun deleteToken(

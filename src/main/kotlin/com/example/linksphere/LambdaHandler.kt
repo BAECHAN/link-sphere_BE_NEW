@@ -77,7 +77,7 @@ class LambdaHandler : RequestStreamHandler {
             val ctx = app.run()
             applicationContext = ctx
             // webAppContextSetup()만으로는 FilterChainProxy(Spring Security)가 MockMvc 필터 체인에
-            // 자동 포함되지 않는다. 명시적으로 추가해야 JwtAuthenticationFilter 등 보안 필터가 실행된다.
+            // 자동 포함되지 않는다. 명시적으로 추가해야 SessionAuthenticationFilter 등 보안 필터가 실행된다.
             val securityFilter = ctx.getBean("springSecurityFilterChain") as jakarta.servlet.Filter
             val builder = MockMvcBuilders.webAppContextSetup(ctx as WebApplicationContext)
             builder.addFilters<org.springframework.test.web.servlet.setup.DefaultMockMvcBuilder>(securityFilter)
@@ -310,7 +310,8 @@ class LambdaHandler : RequestStreamHandler {
         mapper.writeValue(output, mapOf("statusCode" to 200, "body" to "ok"))
     }
 
-    // EventBridge cron(매일)이 직접 호출하는 진입점 - 탈퇴 유예 14일이 지난 계정을 익명화한다.
+    // EventBridge cron(4일마다, link-sphere-feed-crawl 룰을 feed-crawl과 공유)이 직접
+    // 호출하는 진입점 - 탈퇴 유예 14일이 지난 계정을 익명화한다.
     // 회원 한 명이 실패해도 나머지는 계속 처리하므로(AccountPurgeService 내부의 runCatching)
     // 여기서 별도 예외 처리는 필요 없다.
     private fun handleAccountPurgeJob(output: OutputStream) {

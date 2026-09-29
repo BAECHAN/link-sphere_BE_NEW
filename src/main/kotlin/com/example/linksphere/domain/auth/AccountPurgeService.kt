@@ -7,12 +7,13 @@ import org.springframework.stereotype.Service
 import java.time.Instant
 
 /**
- * EventBridge cron(매일, KST 03:00) → LambdaHandler("account-purge")가 호출하는 진입점.
+ * EventBridge cron(4일마다, KST 07:00 - link-sphere-feed-crawl 룰을 feed-crawl과 공유) →
+ * LambdaHandler("account-purge")가 호출하는 진입점.
  * 유예 14일이 지난 탈퇴 신청을 실제로 익명화한다(AccountDeletionService.purge).
  *
  * FeedCrawlService.collectAndDispatch와 같은 shape - 회원별로 별도 빈(AccountDeletionService)의
  * @Transactional 메서드를 호출해 한 명 실패가 나머지를 막지 않게 하고, 90초 데드라인을 두어
- * 남은 건은 다음날 실행으로 미룬다.
+ * 남은 건은 다음 실행(4일 뒤)으로 미룬다.
  */
 @Service
 class AccountPurgeService(

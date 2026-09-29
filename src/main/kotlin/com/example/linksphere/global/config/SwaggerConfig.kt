@@ -35,11 +35,13 @@ class SwaggerConfig {
                 Components()
                     .addSecuritySchemes(
                         securitySchemeName,
+                        // bearerFormat은 지정하지 않는다 - PR #42(JWT 폐지)로 토큰이
+                        // SecureToken.generate()가 만드는 불투명 문자열이 돼, "JWT"라고
+                        // 표시하면 스펙을 읽는 사람에게 형식을 잘못 알리게 된다.
                         SecurityScheme()
                             .name(securitySchemeName)
                             .type(SecurityScheme.Type.HTTP)
-                            .scheme("bearer")
-                            .bearerFormat("JWT"),
+                            .scheme("bearer"),
                     ),
             )
     }
