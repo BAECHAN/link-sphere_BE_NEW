@@ -1,6 +1,6 @@
 # AWS Lambda SnapStart 배포 가이드
 
-> 마지막 검토: 2026-09-29
+> 마지막 검토: 2026-09-30
 
 ## 아키텍처 개요
 
@@ -735,8 +735,7 @@ curl https://<function-url>/actuator/health
 # 응답: 403 (IAM 서명 없는 요청은 CloudFront를 거치지 않았다는 뜻이므로 거절)
 
 # 실제 헬스체크는 반드시 CloudFront 경유로 한다:
-curl https://dbw3brui6htwk.cloudfront.net/api/actuator/health
-# (또는 커스텀 도메인) curl https://linksphere.click/api/actuator/health
+curl https://linksphere.click/api/actuator/health
 # 응답: {"status":"UP"}
 
 # SnapStart 동작 확인 (CloudWatch Logs)
