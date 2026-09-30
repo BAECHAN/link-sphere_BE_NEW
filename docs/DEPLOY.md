@@ -476,25 +476,30 @@ aws events put-targets \
   맞물려 실행마다 다른 소스가 잘리므로 특정 소스가 영구히 배제되지는 않는다
   (`docs/RSS-FEED-BOT.md` §8 2026-09-06 항목)
 
-### 9. SES 설정 (비밀번호 찾기·이메일 인증 메일 발송) — 적용 완료, 프로덕션 액세스 심사 거절(DENIED), 재신청 진행 중 (2026-09-29 확인)
+### 9. SES 설정 (비밀번호 찾기·이메일 인증 메일 발송) — 적용 완료, 프로덕션 액세스 승인 완료 (GRANTED, 2026-09-30 확인)
 
 `MailService`가 AWS SES로 비밀번호 재설정·이메일 인증 메일을 보낸다. 처음엔
 도메인이 미확정이라 개별 이메일 주소 검증(샌드박스 모드)으로 시작했는데, 도메인
 (`linksphere.click`)이 정해진 뒤 **도메인 전체를 Easy DKIM으로 검증**하는 쪽으로
 바꿨다 - 개별 주소 검증과 달리 그 도메인의 어떤 발신 주소든(`noreply@`,
-`support@` 등) 추가 작업 없이 바로 쓸 수 있다. **프로덕션 액세스(샌드박스 해제)
-신청은 2026-09-29에 제출했으나 AWS 심사에서 거절(DENIED)됐다**(`aws sesv2
-get-account`로 실측, `Details.ReviewDetails`: `{"Status":"DENIED","CaseId":"179066564000784"}`,
-`ProductionAccessEnabled: false`) - 현재 재신청을 진행 중이다. 거절이 풀리기
-전까지는 샌드박스 제약(발송량 상한 `Max24HourSend: 200`·`MaxSendRate: 1`,
-수신자 주소도 미리 검증해야 실제 메일함으로 도착)이 그대로 적용된다.
+`support@` 등) 추가 작업 없이 바로 쓸 수 있다.
 
-**영향**: 검증되지 않은 수신자에게는 비밀번호 재설정·이메일 인증 메일이 실제로
-전달되지 않는다(API 호출 자체는 200으로 끝나므로 겉으로는 성공처럼 보인다 -
-9-1 마지막 문단 참고). `PostService`(46번째 줄 부근)·`CommentService`(202·264번째
-줄 부근)가 `member.emailVerified`를 확인해 글쓰기·댓글쓰기를 막고 있으므로,
-이메일이 도착하지 않아 인증을 못 끝낸 신규 가입자는 SES 프로덕션 액세스가
-승인되기 전까지 글쓰기·댓글쓰기가 계속 막힌다(로그인 자체는 가능).
+**프로덕션 액세스(샌드박스 해제) 신청은 2026-09-29에 제출했으나 첫 심사에서는
+거절(DENIED)됐다**(당시 도메인 DKIM 검증이 막 끝난 직후 신청해, 심사 시점에
+도메인이 아직 제대로 검증되지 않은 것으로 보였을 가능성이 있다 - 확정된 사유는
+AWS가 안 알려줘서 추정이다). **같은 케이스(CaseId `179066564000784`)가 이후
+승인(GRANTED)으로 바뀌었다**(`aws sesv2 get-account`로 실측,
+`Details.ReviewDetails`: `{"Status":"GRANTED","CaseId":"179066564000784"}`,
+`ProductionAccessEnabled: true`). 발송 한도도 샌드박스(`Max24HourSend: 200`·
+`MaxSendRate: 1`)에서 프로덕션 기본값(`Max24HourSend: 50000`·`MaxSendRate: 14`)으로
+올라갔고, 이제 수신자 주소를 미리 검증하지 않아도 실제 메일함으로 도착한다.
+
+**영향(해소됨)**: 승인 전에는 검증되지 않은 수신자에게 비밀번호 재설정·이메일
+인증 메일이 실제로 전달되지 않아(API 호출 자체는 200으로 끝나므로 겉으로는
+성공처럼 보였다 - 9-1 마지막 문단 참고), `PostService`(46번째 줄 부근)·
+`CommentService`(202·264번째 줄 부근)가 `member.emailVerified`를 확인해
+막는 글쓰기·댓글쓰기가 신규 가입자에게 사실상 영구히 막혀 있는 상태였다.
+지금은 인증 메일이 정상 도착하므로 이 문제는 해소됐다.
 
 #### 9-1. 발신 도메인 검증 (Easy DKIM)
 
@@ -519,17 +524,15 @@ aws sesv2 put-account-details --mail-type TRANSACTIONAL \
   --use-case-description "<용도 설명 - 트랜잭션 메일만, 예상 발송량 등>" \
   --production-access-enabled --region ap-northeast-1
 # 상태 확인
-aws sesv2 get-account --region ap-northeast-1 --query 'Details.ReviewDetails.Status'
-# PENDING(심사 중) → REVIEWING → 승인되면 ReviewDetails 자체가 사라지고 최상위
-# ProductionAccessEnabled가 true로 바뀐다. 거절되면 DENIED로 남는다 - 2026-09-29
-# 실제 신청 건이 이 상태다(CaseId 179066564000784). 재신청은 위 put-account-details를
-# 다시 실행한다
+aws sesv2 get-account --region ap-northeast-1 --query 'Details.ReviewDetails'
+# PENDING(심사 중) → REVIEWING → 최종적으로 GRANTED 또는 DENIED로 정착한다.
+# 2026-09-29 첫 신청은 DENIED였다가, 이후 같은 케이스(CaseId 179066564000784)가
+# GRANTED로 바뀌었다(2026-09-30 확인) - 별도 재신청 없이 같은 케이스가 재심사된
+# 것으로 보인다. **주의**: 승인돼도 Details.ReviewDetails 필드 자체는 사라지지
+# 않고 Status만 GRANTED로 남는다 - "ReviewDetails가 없어지면 승인"이라고
+# 예상했던 이전 서술은 실측과 달라 정정한다. 최상위 ProductionAccessEnabled가
+# true인지로 판단하는 편이 더 정확하다.
 ```
-
-승인 전까지는 **수신자 주소도 미리 검증**해야 실제 메일함으로 도착한다
-(`aws sesv2 create-email-identity --email-identity <테스트-수신-주소>`) - 검증 안 된
-수신자에게 보내면 API 호출 자체는 200으로 끝나지만(MailService는 SES 응답만 보고
-성공 여부를 판단하므로) 실제로는 전달되지 않는다.
 
 #### 9-2. Lambda 실행 역할에 SES 발송 권한 부여
 
