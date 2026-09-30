@@ -227,20 +227,24 @@ Plan mode로 계획을 세우고 구현한 작업은, PR을 열기 전에:
   작업(읽기 전용 조사·질문 답변은 예외)을 시작할 때는 항상 `EnterWorktree`로 워크트리를 만들고
   그 안에서 작업한다. 워킹트리 파일과 `.git/index`(스테이징 영역)를 세션끼리 공유하면 서로
   덮어쓰거나 무관한 커밋에 남의 변경이 딸려 들어간다 — 실제로 겪은 사고 경위는 이 규칙을
-  도입한 커밋(`2648c7f`) 메시지 참고
-- **Never** `git add`/`git rm`으로 변경을 미리 스테이징 → 워크트리를 쓰지 않는 세션이 하나라도
-  있으면 위와 같은 인덱스 오염이 재발한다. 커밋은 항상 `git commit -- <경로...>` 로 대상 파일을
-  직접 지정한다.
-  **좁은 예외 — 완전히 새 파일**: `git commit -- <경로>`는 한 번도 git이 추적한 적 없는
-  파일에는 "pathspec did not match any files known to git"로 실패한다(`-a`/`--include`도
-  새 파일에는 안 먹힘) — git 구조상 이런 파일은 add(또는 동등한 저수준 명령) 없이는 커밋에
-  넣을 방법 자체가 없다. 이 경우에 한해 그 새 파일만 정확히 지정해 `git add <새-파일-경로>`
-  한 뒤 곧바로 커밋한다(`git add .`/`-A`처럼 범위를 넓히지 않고, 커밋 없이 스테이징만 해둔
-  채로 두지 않는다). 워크트리는 `.git/worktrees/<name>/index`로 완전히 독립된 스테이징
-  영역을 쓰므로(2026-09-27 PR #29에서 `git rev-parse --git-dir`로 직접 확인 - 다른
-  워크트리·세션의 인덱스에 영향 없음) 이 좁은 경우에 한해 위 규칙의 취지(세션 간 인덱스
-  오염 방지)를 깨지 않는다. 처음엔 판단 없이 `git add`로 바로 우회했다가 사용자 지적으로
-  사후에 이 예외를 문서화했다 - 같은 상황이 다시 오면 판단하지 말고 이 예외만 따른다.
+  도입한 커밋(`2648c7f`) 메시지 참고. 메인 체크아웃 파일 편집은 FE 레포
+  `.claude/hooks/edit-guard.mjs`(사용자 설정에 등록하는 PreToolUse 훅)가 막는다 — gitignore된
+  로컬 파일만 예외
+- **Never** 메인 체크아웃에서 `git add`/`git rm`으로 스테이징 → 메인 체크아웃의 `.git/index`는
+  세션끼리 공유돼 위와 같은 인덱스 오염이 재발한다. 커밋은 `git commit -m "<메시지>" -- <경로...>`로
+  대상 파일을 직접 지정하고, 옵션은 반드시 `--` **앞**에 둔다(`git commit -- a.kt -m x`는 `-m`을
+  경로로 읽어 실패한다). **워크트리 안에서는** index가 워크트리마다 따로라서
+  ([git-worktree 문서](https://git-scm.com/docs/git-worktree), 2026-09-27 PR #29에서
+  `git rev-parse --git-dir`로 직접 확인) 다음 세 가지만 허용한다:
+  ① 한 번도 추적된 적 없는 새 파일은 `git add -- <새 파일>` 후 커밋 —
+  [git-commit 문서](https://git-scm.com/docs/git-commit)상 경로 지정 커밋은 Git이 이미 아는 파일만
+  대상으로 한다 ② rebase·merge 충돌 해결 중 해당 파일 add ③ 추적 파일 삭제는 처음부터
+  `git rm <경로>`(`rm`이 전역 차단이라 합법 경로는 이것뿐 — `rm`이 거부된 미추적 파일을 지우려는
+  우회로는 쓰지 않는다. 그때는 절대경로 `rm` 명령을 사용자에게 제시한다). `git add -A`·`git add .`·`-u`·`--all`·`git commit -a`는 어디서나
+  금지(2026-09-29 사용자 결정, 근거와 수치는 FE `docs/plans/2026-09-29-rule-enforcement-hardening.md`).
+  이 규칙과 stash·`reset --hard`·`rm` 처리는 FE 레포 `.claude/hooks/bash-guard.mjs`(사용자 설정에
+  등록하는 PreToolUse 훅)가 실행 직전에 강제한다 — 막히면 메시지가 안내하는 명령으로 바꾸고,
+  우회하지 않는다
 - **Never** 워크트리 진입 후 부트스트랩 생략 → `EnterWorktree`로 만든 워크트리는 gitignore된
   설정 파일이 없다. 진입 직후 반드시 실행:
   ```bash
@@ -252,12 +256,11 @@ Plan mode로 계획을 세우고 구현한 작업은, PR을 열기 전에:
 - **Never** `EnterWorktree` 기본값(`fresh` = `origin/main` 기준)을 확인 없이 사용 → 다른 세션이
   로컬 main에만 커밋하고 아직 push하지 않았다면 그 커밋이 빠진 채로 새 워크트리가 갈라진다.
   작업 시작 전 `git log origin/main..main`으로 미푸시 커밋이 있는지 먼저 확인한다
-- **Never** 작업 끝난 워크트리를 `keep`으로 방치 → 병합·push까지 끝나면 `ExitWorktree`를
-  `action: "remove"`로 정리한다. 세션이 정상 종료되면 harness가 keep/remove를 물어보지만,
-  강제 종료·크래시 시엔 이 프롬프트가 안 뜬다(`.claude/worktrees/ci-guardrails/` 잔존 사례로
-  확인됨). 새 워크트리를 만들기 전 `git worktree list`로 오래된 워크트리가 남아있는지 먼저
-  훑고, 디렉토리는 있는데 목록엔 없는 경우(비정상 종료로 등록이 깨진 경우) `git worktree prune`
-  으로 정리한다
+- **Never** 사용자 요청 없이 워크트리를 지우지 않는다 → 병합·배포까지 확인됐더라도
+  `ExitWorktree(action: "remove")`는 사용자가 "정리해"처럼 명시적으로 요청할 때만 실행한다
+  (2026-09-14 사용자 결정 "당분간은 냅두자"). 작업이 끝나면 `ExitWorktree(action: "keep")`으로
+  나온다. 새 워크트리를 만들기 전 `git worktree list`로 목록을 훑고, 디렉토리는 있는데 목록엔 없는
+  경우(비정상 종료로 등록이 깨진 경우)만 `git worktree prune`으로 정리한다
 - **Never** 새 lint/format 도구의 ignore 패턴을 루트 상대 경로로만 작성 → `.claude/worktrees/`
   같은 중첩 경로가 새서 워크트리 안의 빌드 산출물(`dist/`)이 그대로 린트된다. `.gitignore`에
   있어도 ESLint/Prettier는 자동으로 읽지 않으므로 `dist/**/*`가 아니라 `**/dist/**` 처럼
