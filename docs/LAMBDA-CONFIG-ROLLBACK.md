@@ -1,7 +1,7 @@
 # Lambda 배포 설정 롤백 런북
 
-> 마지막 검토: 2026-09-29 (문서-코드 동기화 감사 — "알려진 안전 지점" 표가
-> JWT 시절 버전을 가리키고 있던 것을 발견해 정정)
+> 마지막 검토: 2026-09-30 (즉시 검증의 CloudFront 경유 예시 URL을 커스텀 도메인
+> `linksphere.click`으로 교체)
 
 2026-07-25 502 장애 대응 과정에서 작성된 변경 전 상태 스냅샷 겸, 이후에도
 prod alias를 안전 버전으로 되돌릴 때 계속 참고하는 롤백 절차서다.
@@ -194,7 +194,7 @@ curl -o /dev/null -w '%{http_code}\n' \
 # 200 기대 (NONE으로 롤백했으므로 직접 호출도 다시 열림)
 
 curl -o /dev/null -w '%{http_code}\n' \
-  https://dbw3brui6htwk.cloudfront.net/api/post?page=0\&size=1
+  https://linksphere.click/api/post?page=0\&size=1
 # 200 기대
 ```
 
