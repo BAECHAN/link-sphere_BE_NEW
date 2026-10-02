@@ -423,6 +423,10 @@ SnapStart 체크포인트 **이전**(`companion object init`)에 읽기 전용 �
 
 ## 문서
 
+**처음 왔다면** — 여기서 시작
+
+- [FE 레포 `docs/ONBOARDING.md`](https://github.com/BAECHAN/link-sphere_FE_NEW/blob/main/docs/ONBOARDING.md) — FE·BE 공통 길잡이: 전체 그림, 기능별 문서·코드 지도, 읽는 순서, 공통 용어 (정본은 FE 레포)
+
 **프로젝트 전반**
 
 - [`CHANGELOG.md`](CHANGELOG.md) — 버전별 변경 사항 (Keep a Changelog)
