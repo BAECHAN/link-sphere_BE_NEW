@@ -58,18 +58,16 @@ class PasswordResetServiceTest {
     }
 
     @Test
-    fun `requestReset은 이메일·IP 두 버킷 모두 한도 확인 후 히트를 기록한다`() {
+    fun `requestReset은 이메일·IP 두 버킷 모두 한도를 소비(기록+확인)한다`() {
         service.requestReset("test@example.com", "203.0.113.1")
 
-        verify(rateLimitService).checkNotExceeded(emailBucket, 3, Duration.ofHours(1))
-        verify(rateLimitService).checkNotExceeded(ipBucket, 10, Duration.ofHours(1))
-        verify(rateLimitService).recordHit(emailBucket, Duration.ofHours(1))
-        verify(rateLimitService).recordHit(ipBucket, Duration.ofHours(1))
+        verify(rateLimitService).consume(emailBucket, 3, Duration.ofHours(1))
+        verify(rateLimitService).consume(ipBucket, 10, Duration.ofHours(1))
     }
 
     @Test
     fun `requestReset은 한도 초과 시 회원 조회 자체를 하지 않는다`() {
-        `when`(rateLimitService.checkNotExceeded(emailBucket, 3, Duration.ofHours(1)))
+        `when`(rateLimitService.consume(emailBucket, 3, Duration.ofHours(1)))
             .thenThrow(RateLimitExceededException("Too many requests, please try again later"))
 
         assertThrows(RateLimitExceededException::class.java) {

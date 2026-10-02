@@ -1,0 +1,280 @@
+# Link-Sphere BE — 트래픽 관리 (다층 방어)
+
+> **문서 성격**: 서사형 — 트래픽이 몰리거나 남용될 때 무엇이 어디서 막는지의 동작 스펙과 도입 배경
+>
+> **대상 독자**: 이 레포 BE를 처음 보거나 오랜만에 돌아온 개발자, 그리고 AWS 콘솔에서 WAF·알람을 손봐야 하는 사람
+>
+> **읽고 나면**: 요청 한도 값을 바꾸거나 새 엔드포인트에 한도를 걸 수 있고, WAF·알람 콘솔 작업을 이 문서만 보고 할 수 있다
+>
+> **마지막 검토**: 2026-10-02
+
+## 1. 쉬운 설명
+
+놀이공원 입구를 생각하면 된다. **정문 경비(WAF)** 는 한 사람이 5분 안에 너무 자주
+드나들면 아예 들여보내지 않는다. 정문을 통과해도 **놀이기구마다 줄 관리(앱 limiter)** 가
+있어서, 비싼 놀이기구(글 등록·이미지 업로드)는 한 사람이 시간당 탈 수 있는 횟수가 정해져
+있다. 검색처럼 누구나 쓰는 시설은 사람이 몰리면 막는 대신 **간이 버전(키워드 검색)으로
+안내**한다. 놀이공원 전체 수용 인원(Lambda 동시 실행 10)은 원래부터 정해져 있고, 그게 다 차면
+입장이 잠시 멈춘다. 마지막으로 **CCTV(알람)** 가 이상 징후를 운영자 메일로 알린다.
+
+```mermaid
+flowchart TD
+  C["클라이언트 (FE)"] --> W
+  W["CloudFront + WAF<br/>IP별 5분 요청 수 집계"] -->|"초과: 403 (Free 플랜은 응답 코드 변경 불가)"| C
+  W --> L["Lambda link-sphere-api<br/>계정 동시 실행 한도 10"]
+  L -->|"10칸이 다 차면: Function URL 429"| C
+  L --> A["Spring 앱"]
+  A --> P{"어느 요청?"}
+  P -->|"POST /post · POST /upload/signed-url"| R["RateLimitService.consume<br/>auth_rate_limits upsert 후 재조회"]
+  R -->|"한도 초과: 429 RATE_LIMIT_EXCEEDED + Retry-After"| C
+  R -->|"한도 안"| S["정상 처리"]
+  P -->|"GET /post?search="| T["RateLimitService.tryConsume<br/>IP별 10분 60회"]
+  T -->|"한도 안"| G["Gemini 임베딩 + 키워드 검색"]
+  T -->|"초과"| K["키워드 검색만 (에러 아님)"]
+  P -->|"GET 목록 API의 size"| Z["Paging.pageRequest<br/>size를 최대 50으로 자름"]
+  M["CloudWatch 알람 · AWS Budgets<br/>(콘솔, 운영자 메일)"] -.감시.-> L
+```
+
+## 2. 전제 지식
+
+- **가정한다**: Spring Boot 컨트롤러·서비스 구조, HTTP 상태 코드(403·429)의 뜻
+- **가정하지 않는다**:
+  - CloudFront·WAF·Lambda Function URL의 연결 구조 → [`DEPLOY.md`](DEPLOY.md) §5와
+    FE 레포 `docs/DEPLOY.md`의 "CloudFront WAF (수동 관리)" 절
+  - 인증 레이트리밋(`auth_rate_limits` 테이블)이 처음 생긴 배경 →
+    [`plans/2026-09-28-auth-hardening.md`](plans/2026-09-28-auth-hardening.md)
+  - 실제 요청자 IP를 얻는 방법(`CloudFront-Viewer-Address`) → [`DEPLOY.md`](DEPLOY.md) §5-2
+
+## 3. 사용한 도구·기술
+
+- 기능 자체
+  - AWS WAF rate-based rule (CloudFront Free 정액 플랜에 포함)
+  - Postgres 고정 윈도 카운터 (`auth_rate_limits`, 기존 테이블 재사용)
+  - HTTP 429 + `Retry-After` 헤더
+  - CloudWatch 알람, AWS Budgets
+- 구현·검증 과정
+  - AWS CLI 읽기 전용 조회(`get-account-settings`, `wafv2 get-web-acl`, `cloudwatch describe-alarms`)
+  - JUnit + Mockito 단위 테스트
+
+## 4. 왜 만들었나
+
+2026-10-02 점검 결과, 기본 방어만 있고 "트래픽 관리"라고 할 장치는 대부분 비어 있었다.
+
+| 층 | 점검 결과 (2026-10-02) | 확인 방법 |
+|---|---|---|
+| WAF | 관리형 규칙 3개만 있음(IP 평판·Common·KnownBadInputs), **IP별 요청 수 제한 없음** | `aws wafv2 get-web-acl` |
+| Lambda | 계정 `ConcurrentExecutions: 10` — 신규 계정용 축소 한도가 우연히 상한 역할 | `aws lambda get-account-settings` |
+| 앱 | 인증 4종에만 limiter. 그나마 확인과 기록이 분리돼 병렬 요청이 한꺼번에 통과할 수 있었음 | 코드 |
+| 비싼 엔드포인트 | 비로그인 검색이 매번 Gemini 임베딩 호출, 글 등록·업로드 URL 발급 무제한, 목록 `size` 상한 없음 | 코드 |
+| 알람 | CloudWatch 알람 0개 | `aws cloudwatch describe-alarms` |
+
+참고로 FE 레포 `docs/plans/2026-09-25-lighthouse-perf.md`는 "로그인 rate limit 없음"이라고 적고
+있지만, 그 뒤 인증 하드닝(2026-09-28)으로 로그인 실패 한도가 생겨 지금은 사실이 아니다. 계획
+문서는 append-only라 고치지 않고 여기서 정정해 둔다.
+
+[OWASP API Security Top 10 2023의 API4](https://api-security.owasp.org/editions/2023/en/0xa4-unrestricted-resource-consumption)는
+이 상태를 _"악용되면 자원 고갈로 인한 서비스 거부가 생기고, 인프라 운영 비용 증가로도
+이어질 수 있다"_ (번역)고 설명한다. 서버리스는 쓴 만큼 과금되므로 같은 공격이 장애가 아니라
+요금으로 나타날 수도 있다 — Kelly 외([arXiv:2104.08031](https://arxiv.org/abs/2104.08031))는
+이를 "Denial of Wallet"이라 부른다.
+
+## 5. 구조
+
+### 5-1. 왜 여러 겹인가
+
+AWS WAF 문서는 rate-based rule의 한계를 직접 밝힌다.
+
+> AWS WAF의 속도 제한은 (...) 정밀한 요청 속도 제한을 위한 것이 아니다. (...) 보통 이 지연은
+> 30초 미만이다. (번역)
+>
+> — AWS WAF Developer Guide, https://docs.aws.amazon.com/waf/latest/developerguide/waf-rule-statement-type-rate-based-caveats.html
+
+그래서 **굵은 차단은 엣지(WAF)**, **세밀한 한도는 앱**에서 건다. WAF는 IP만 보지만, 글 등록처럼
+"이 회원이 시간당 몇 번"은 로그인 정보를 아는 앱만 셀 수 있다.
+
+| 대안 | 채택 | 이유 |
+|---|---|---|
+| WAF만 | ✗ | 회원 단위 한도를 못 건다. 탐지까지 지연이 있다 |
+| 앱 limiter만 | ✗ | 요청이 이미 Lambda를 깨운 뒤라 Lambda 10칸과 DB가 그대로 소모된다 |
+| CloudFront Pro 플랜($15/월) | ✗ | 429 응답·헤더 기반 규칙이 가능해지지만, 지금 트래픽 규모에 비해 비용이 크다 |
+| **WAF + 앱 + 알람 (다층)** | ✓ | 추가 비용 없이 각 층이 다른 공격 형태를 맡는다 |
+
+### 5-2. 앱 limiter를 새로 들이지 않은 이유
+
+Bucket4j 같은 라이브러리나 인메모리 카운터는 쓰지 않았다. Lambda는 실행 환경을 여러 개 띄우고
+수 시간마다 교체하므로([Lambda 실행 환경](https://docs.aws.amazon.com/lambda/latest/dg/lambda-runtime-environment.html))
+인메모리 카운터는 환경마다 따로 세져 의미가 없다. 공유 저장소가 필요한데, 인증 limiter가 이미
+Postgres 카운터(`RateLimitService`)를 쓰고 있어 그대로 확장했다.
+
+### 5-3. 확인과 기록을 한 번에 (consume)
+
+예전 방식(`checkNotExceeded` → `recordHit`)은 "읽고 → 비교하고 → 기록"이 따로라, 같은 순간에
+들어온 요청 10개가 모두 "아직 4회"를 읽고 통과할 수 있었다. `consume`은 **먼저 기록(upsert)하고
+같은 트랜잭션에서 다시 읽는다**. Postgres는 upsert한 행을 커밋할 때까지 잠그므로 병렬 요청은
+앞 요청이 끝날 때까지 줄을 서고, 각자 정확한 누적값을 본다. 한도를 넘어 예외가 나면 그 트랜잭션의
+기록은 롤백된다 — 카운터는 한도에 머물러 계속 막는다.
+
+로그인은 예외다. "실패만 센다"는 규칙이라 성공할지 모르는 시점에 미리 기록할 수 없어 옛 방식을
+유지한다. 남는 병렬 우회 위험은 WAF IP 제한이 받는다.
+
+### 5-4. 검색은 막지 않고 강등
+
+검색은 비로그인 사용자도 쓰는 핵심 기능이라 429로 막으면 사이트가 고장 난 것처럼 보인다.
+Google SRE 책은 과부하 대응으로 기능을 낮춰 응답하는 방법(graceful degradation)을 든다
+([Addressing Cascading Failures](https://sre.google/sre-book/addressing-cascading-failures/)).
+한도를 넘은 IP의 검색은 Gemini 임베딩만 건너뛰고 키워드 검색 결과를 그대로 돌려준다 — Gemini
+장애 때 이미 쓰던 폴백 경로와 같다.
+
+### 5-5. 한도를 컨트롤러에 둔 이유
+
+`PostService.createPost`는 RSS 봇(`FeedItemProcessor`)도 직접 부른다. 서비스에 한도를 걸면 봇이
+회원 한도에 걸릴 수 있어, 사용자 요청 경로인 컨트롤러에서만 건다. 컨트롤러는 트랜잭션 밖이라
+`consume`이 자기 트랜잭션으로 짧게 끝나고, 크롤링(수십 초) 동안 카운터 행을 잠그지 않는다.
+
+## 6. 데이터 모델
+
+새 테이블은 없다. 기존 `auth_rate_limits`(정본 DDL:
+[`src/main/resources/sql/create_auth_rate_limits.sql`](../src/main/resources/sql/create_auth_rate_limits.sql))에
+버킷 키 접두사만 늘었다.
+
+| 버킷 키 | 단위 | 쓰는 곳 |
+|---|---|---|
+| `post-create:member:<회원ID>` | 회원 | 글 등록 |
+| `upload:member:<회원ID>` | 회원 | 업로드 URL 발급 |
+| `search-embed:ip:<IP>` | IP | 검색 임베딩 |
+
+옛 윈도 행은 정리하지 않는 기존 정책 그대로다. 검색 버킷은 검색한 IP 수 × 10분 윈도 수만큼 행이
+늘어난다 — 행이 많아지면 정리 배치를 검토한다(11장).
+
+## 7. 운영 파라미터
+
+### 7-1. 앱 (코드 상수, 바꾸면 재배포 필요)
+
+| 대상 | 한도 | 위치 |
+|---|---|---|
+| 글 등록 | 회원당 1시간 20회 | `domain/post/PostController.kt:29-30` |
+| 검색 임베딩 | IP당 10분 60회 (초과 시 키워드 검색으로 강등) | `domain/post/PostController.kt:34-35` |
+| 업로드 URL 발급 | 회원당 1시간 30회 | `domain/upload/UploadController.kt:25-26` |
+| 목록 `size` | 최대 50 (글 목록·북마크 폴더 글·내 댓글) | `global/common/Paging.kt:12` |
+| 로그인 실패 | 이메일당 15분 5회, IP당 15분 20회 | `domain/auth/AuthService.kt:35-41` |
+| 가입 | IP당 1시간 5회 | `domain/auth/AuthService.kt:45-46` |
+| 인증메일 재발송 | 이메일당 1시간 3회, IP당 1시간 10회 | `domain/auth/AuthService.kt:49-52` |
+| 비밀번호 재설정 요청 | 이메일당 1시간 3회, IP당 1시간 10회 | `domain/auth/PasswordResetService.kt:36-39` |
+
+(경로는 `src/main/kotlin/com/example/linksphere/` 기준)
+
+글 등록·업로드·검색의 값은 2026-10-02에 정한 초안이다. 실제 사용 패턴을 본 적이 없어 넉넉하게
+잡았다 — 정상 사용자가 걸린다는 신호(429 로그)가 보이면 올린다.
+
+### 7-2. 엣지·알람 (레포 밖, AWS 콘솔에서 관리)
+
+| 항목 | 값 | 위치 |
+|---|---|---|
+| Lambda 계정 동시 실행 | 10 (신규 계정 한도, 사용량에 따라 AWS가 자동 상향) | AWS 계정, 2026-10-02 실측 |
+| Hikari 풀 | 인스턴스당 5 → 최대 10×5=50 DB 연결 | `src/main/resources/application.yml:17` |
+| WAF rate-based rule | 8-1 런북 참고 (Count로 관찰 후 Block) | WAF 콘솔 `CreatedByCloudFront-bcd729fb` |
+| CloudWatch 알람 | 8-2 런북 참고 | CloudWatch 콘솔 (ap-northeast-1) |
+| AWS Budgets | 8-3 런북 참고 | Billing 콘솔 |
+
+## 8. 코드 지도와 자주 하는 수정
+
+| 순서도 단계 | 파일 |
+|---|---|
+| 한도 계산 (`consume`·`tryConsume`·`checkNotExceeded`) | `global/common/RateLimitService.kt` |
+| 카운터 upsert·재조회 | `domain/auth/AuthRateLimitRepository.kt` (`incrementHit`, `findHitCount`) |
+| 429 응답 + `Retry-After` | `global/exception/GlobalExceptionHandler.kt` (`handleRateLimitExceededException`) |
+| 실제 요청자 IP | `global/common/ClientIpResolver.kt` |
+| size 상한 | `global/common/Paging.kt` |
+
+| 하고 싶은 것 | 방법 | 재배포 |
+|---|---|---|
+| 한도 값 바꾸기 | 7-1 표의 상수 수정 | 필요 |
+| 새 엔드포인트에 한도 걸기 | 컨트롤러에 `RateLimitService`를 주입하고 `consume("<기능>:member:$userId", LIMIT, WINDOW)` 호출. 막지 않고 강등하려면 `tryConsume` | 필요 |
+| 긴급 차단 | WAF rate rule 한도를 낮추거나 IP 차단 규칙 추가(규칙 수 5개 한도 주의) | 불필요 |
+
+### 8-1. 런북: WAF rate-based rule
+
+1. AWS 콘솔 → WAF & Shield → Web ACLs → 리전 **Global (CloudFront)** → `CreatedByCloudFront-bcd729fb`
+2. Rules → Add rules → Add my own rules → Rule type **Rate-based rule**
+   - 이름 `RateLimit-PerIP`, 평가 창 5분, 한도 **1000**(초안), 집계 키 **Source IP**
+   - Action **Count** (처음 1주는 차단하지 않고 세기만 한다)
+3. 우선순위는 기존 관리형 규칙 3개 **뒤**(4번째)로 둔다
+4. 1주 뒤 CloudWatch → Metrics → WAFV2 → `CountedRequests`(Rule=`RateLimit-PerIP`)와 Web ACL의
+   Sampled requests를 본다. 정상 사용자가 걸린 흔적이 없으면 Action을 **Block**으로 바꾼다
+5. 확인: `aws wafv2 get-web-acl --scope CLOUDFRONT --region us-east-1 --name CreatedByCloudFront-bcd729fb --id 16fc99ed-1f67-4dec-9951-04806ce95699`
+
+Free 플랜 제약([CloudFront flat-rate 플랜 문서](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/flat-rate-pricing-plan.html)):
+WAF 규칙은 관리형·커스텀 합쳐 5개까지이고(지금 3개 → 추가 후 4개), 차단 응답 코드를 바꿀 수 없어
+WAF 차단은 429가 아니라 **403**으로 나간다. FE는 이를 `EDGE_BLOCKED`로 구분한다. 특정 경로만
+더 엄격하게 거는 scope-down이 Free 플랜에서 되는지는 확인하지 못했다(미확인).
+
+### 8-2. 런북: CloudWatch 알람
+
+1. SNS 주제 하나(예: `link-sphere-alerts`)를 만들고 운영자 이메일을 구독시킨 뒤 메일에서 승인한다
+2. CloudWatch(ap-northeast-1) → Alarms → Create alarm:
+
+| 알람 | 지표 | 조건 | 의미 |
+|---|---|---|---|
+| `link-sphere-api-throttles` | Lambda `Throttles` (FunctionName=link-sphere-api), Sum | 5분 동안 ≥ 1 | 동시 실행 10칸이 다 찼다 — 한도 상향 요청을 검토할 신호 |
+| `link-sphere-api-errors` | Lambda `Errors`, Sum | 5분 동안 ≥ 5 | 장애 또는 공격 |
+
+Lambda 문서에 따르면 throttle된 요청은 `Invocations`에도 `Errors`에도 세지 않는다
+([Lambda 지표](https://docs.aws.amazon.com/lambda/latest/dg/monitoring-metrics-types.html)) — 그래서
+`Throttles`를 따로 봐야 한다.
+
+### 8-3. 런북: AWS Budgets
+
+Billing → Budgets → Create budget → Cost budget, 월 $10(예시) → 알림 2개: 실제 비용 80%, 예측 비용
+100%, 운영자 이메일.
+
+Budgets는 차단 장치가 아니다. AWS 문서는 _"알림을 받기 전에 임계값을 넘는 비용이 발생할 수
+있다"_ (번역,
+[AWS Budgets](https://docs.aws.amazon.com/cost-management/latest/userguide/budgets-managing-costs.html))고
+밝힌다 — 늦게 오는 경보로만 생각한다.
+
+## 9. 검증 결과
+
+- 단위 테스트: `RateLimitServiceTest`(consume·tryConsume 경계값, Retry-After 범위),
+  `PostServiceTest`(강등 시 Gemini 미호출, size 100000 → 50), `AuthServiceTest`·`PasswordResetServiceTest`
+  (consume 전환) 통과
+- 실제 DB 동작: 배포 후 확인 예정(로컬 Postgres가 없어 배포 전에는 mock 테스트만 했다)
+
+## 10. 시행착오
+
+아래 두 가지는 배포 후 겪은 버그가 아니라 설계 중에 발견하고 피한 함정이다.
+
+- 처음엔 `INSERT ... RETURNING hit_count` 한 문장으로 원자화하려 했다. 레포에 선례가 없고 DB 통합
+  테스트가 없어 검증이 어려워, 기존 `incrementHit` 뒤에 같은 트랜잭션에서 다시 읽는 방식으로 바꿨다.
+  다시 읽을 때 엔티티 조회(`findByBucketKeyAndWindowStart`)를 쓰면, 같은 트랜잭션에서 그 행을 먼저
+  읽어 둔 적이 있을 때 영속성 컨텍스트가 옛 값을 돌려준다. 그래서 숫자만 읽는 native 쿼리
+  `findHitCount`를 따로 만들었다.
+- `getAllPosts`는 `readOnly` 트랜잭션이라 그 안에서 카운터를 쓰면 Postgres가 쓰기를 거부한다.
+  검색 카운터를 컨트롤러(트랜잭션 밖)에서 세고 결과만 서비스에 넘기는 구조가 된 이유다.
+
+## 11. 남은 것
+
+- 북마크 폴더 내 검색(`BookmarkFolderService`)도 Gemini 임베딩을 부르지만 로그인 전용이라 이번엔
+  한도를 걸지 않았다
+- 댓글·좋아요·북마크 회원별 한도 (WAF IP 제한으로 충분하다고 보고 보류)
+- Gemini 서킷 브레이커, SQS/DLQ 전환
+- `auth_rate_limits` 옛 윈도 행 정리 배치 (검색 버킷 행이 많아지면)
+- WAF·CloudFront·Lambda 설정의 코드화(IaC) — 지금은 콘솔 수동이라 레포와 어긋날 수 있다
+
+## 12. 용어 사전
+
+| 용어 | 뜻 |
+|---|---|
+| rate-based rule | 집계 키(여기선 IP)별로 일정 시간 동안 요청 수를 세다가 한도를 넘으면 차단하는 WAF 규칙 |
+| 고정 윈도 | 시간을 1시간·10분 같은 칸으로 자르고 칸마다 따로 세는 방식. 칸이 바뀌면 0부터 다시 센다 |
+| 버킷 키 | 무엇을 단위로 세는지 나타내는 문자열(`<기능>:<단위>:<값>`) |
+| consume / tryConsume | 기록과 확인을 한 번에 하는 `RateLimitService` 메서드. 초과 시 전자는 429, 후자는 false |
+| 강등 (graceful degradation) | 막는 대신 비싼 부분을 빼고 응답하는 것 |
+| `Retry-After` | 몇 초 뒤 다시 시도하라는 HTTP 응답 헤더([RFC 9110 §10.2.3](https://www.rfc-editor.org/rfc/rfc9110#field.retry-after)) |
+| Denial of Wallet | 서비스를 멈추는 대신 사용량 과금을 늘려 비용 피해를 주는 공격 |
+
+## 13. 관련 문서
+
+- [`DEPLOY.md`](DEPLOY.md) — CloudFront·Function URL·IP 헤더 구성
+- [`AI-ASYNC-PROCESSING.md`](AI-ASYNC-PROCESSING.md) — 글 등록 후 AI 처리 흐름(글 등록 한도의 배경)
+- [`plans/2026-10-02-traffic-management.md`](plans/2026-10-02-traffic-management.md) — 이 작업의 계획
+- FE 레포 `docs/DEPLOY.md` "CloudFront WAF (수동 관리)" — WAF 규칙 목록의 FE 쪽 기록

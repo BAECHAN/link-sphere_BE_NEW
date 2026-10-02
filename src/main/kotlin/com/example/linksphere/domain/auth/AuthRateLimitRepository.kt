@@ -31,4 +31,13 @@ interface AuthRateLimitRepository : JpaRepository<TableAuthRateLimit, AuthRateLi
     fun incrementHit(@Param("bucketKey") bucketKey: String?, @Param("windowStart") windowStart: Instant?)
 
     fun findByBucketKeyAndWindowStart(bucketKey: String?, windowStart: Instant?): TableAuthRateLimit?
+
+    // RateLimitService.consume 전용 - incrementHit 직후 같은 트랜잭션에서 읽는다. 엔티티가 아니라
+    // 숫자만 돌려받는 이유: 같은 트랜잭션에서 이 행의 엔티티를 먼저 읽어 둔 적이 있으면 JPQL 조회는
+    // 영속성 컨텍스트의 옛 인스턴스를 그대로 돌려줘 방금 올린 값이 안 보인다(native 스칼라는 무관).
+    @Query(
+        value = "SELECT hit_count FROM auth_rate_limits WHERE bucket_key = :bucketKey AND window_start = :windowStart",
+        nativeQuery = true,
+    )
+    fun findHitCount(@Param("bucketKey") bucketKey: String?, @Param("windowStart") windowStart: Instant?): Int?
 }

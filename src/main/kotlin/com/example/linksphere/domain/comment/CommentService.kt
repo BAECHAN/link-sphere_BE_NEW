@@ -4,13 +4,13 @@ import com.example.linksphere.domain.interaction.CommentReactionRepository
 import com.example.linksphere.domain.member.MemberRepository
 import com.example.linksphere.domain.member.TableMember
 import com.example.linksphere.domain.post.PostRepository
+import com.example.linksphere.global.common.Paging
 import com.example.linksphere.global.common.SupabaseStorageService
 import com.example.linksphere.global.exception.EmailNotVerifiedException
 import com.example.linksphere.global.exception.ForbiddenException
 import com.example.linksphere.global.exception.InvalidInputException
 import com.example.linksphere.global.exception.PostNotFoundException
 import org.springframework.context.ApplicationEventPublisher
-import org.springframework.data.domain.PageRequest
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -148,7 +148,7 @@ class CommentService(
 
     @Transactional(readOnly = true)
     fun getMyComments(userId: UUID, page: Int, size: Int): MyCommentPageResponse {
-        val pageable = PageRequest.of(page, size)
+        val pageable = Paging.pageRequest(page, size)
         return MyCommentPageResponse.from(commentRepository.findMyComments(userId, pageable))
     }
 

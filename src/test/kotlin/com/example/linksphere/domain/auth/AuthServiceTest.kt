@@ -184,7 +184,7 @@ class AuthServiceTest {
     }
 
     @Test
-    fun `signup은 IP 버킷 한도를 확인한 뒤 히트를 기록하고 가입을 진행한다`() {
+    fun `signup은 IP 버킷 한도를 소비(기록+확인)한 뒤 가입을 진행한다`() {
         val request = SignupRequest("new@example.com", "password1!", "newuser")
         `when`(passwordEncoder.encode(request.password)).thenReturn("encoded")
         `when`(memberService.signup(request.copy(password = "encoded")))
@@ -192,8 +192,7 @@ class AuthServiceTest {
 
         authService.signup(request, "203.0.113.1")
 
-        verify(rateLimitService).checkNotExceeded("signup:ip:203.0.113.1", 5, Duration.ofHours(1))
-        verify(rateLimitService).recordHit("signup:ip:203.0.113.1", Duration.ofHours(1))
+        verify(rateLimitService).consume("signup:ip:203.0.113.1", 5, Duration.ofHours(1))
     }
 
     @Test
@@ -205,14 +204,13 @@ class AuthServiceTest {
 
         authService.signup(request, null)
 
-        verify(rateLimitService).checkNotExceeded(null, 5, Duration.ofHours(1))
-        verify(rateLimitService).recordHit(null, Duration.ofHours(1))
+        verify(rateLimitService).consume(null, 5, Duration.ofHours(1))
     }
 
     @Test
     fun `signup은 한도 초과 시 회원 가입 자체를 하지 않는다`() {
         val request = SignupRequest("new@example.com", "password1!", "newuser")
-        `when`(rateLimitService.checkNotExceeded("signup:ip:203.0.113.1", 5, Duration.ofHours(1)))
+        `when`(rateLimitService.consume("signup:ip:203.0.113.1", 5, Duration.ofHours(1)))
             .thenThrow(RateLimitExceededException("Too many requests, please try again later"))
 
         assertThrows(RateLimitExceededException::class.java) {

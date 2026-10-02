@@ -15,9 +15,19 @@ import java.time.Instant
  *
  * 만료된 옛 윈도 행은 정리하지 않는다 - 이 앱 규모에서 무한정 커질 걱정은 없고(윈도·버킷
  * 조합마다 한 행), 정리 배치를 새로 만드는 비용이 이득보다 크다고 판단했다.
+ *
+ * 두 가지 쓰는 법이 있다:
+ * - checkNotExceeded + recordHit: "실패만 센다"처럼 확인과 기록 사이에 조건이 끼는 경우(로그인).
+ *   확인과 기록이 분리돼 있어 병렬 요청이 한꺼번에 들어오면 한도를 넘겨 통과할 수 있다.
+ * - consume / tryConsume: 시도 자체를 세는 경우. 먼저 기록(upsert)하고 같은 트랜잭션에서 다시
+ *   읽는다 - Postgres가 upsert한 행을 커밋까지 잠가 병렬 요청이 차례로 줄을 서므로 위 경쟁이 없다.
  */
 @Service
 class RateLimitService(private val repository: AuthRateLimitRepository) {
+
+    companion object {
+        private const val EXCEEDED_MESSAGE = "Too many requests, please try again later"
+    }
 
     /** bucketKey가 null이면(IP를 특정할 수 없는 등) 아무 것도 하지 않고 통과시킨다. */
     @Transactional(readOnly = true)
@@ -27,7 +37,7 @@ class RateLimitService(private val repository: AuthRateLimitRepository) {
         val windowStart = floorToWindow(Instant.now(), window)
         val hitCount = repository.findByBucketKeyAndWindowStart(bucketKey, windowStart)?.hitCount ?: 0
         if (hitCount >= limit) {
-            throw RateLimitExceededException("Too many requests, please try again later")
+            throw RateLimitExceededException(EXCEEDED_MESSAGE, retryAfterSeconds(windowStart, window))
         }
     }
 
@@ -40,8 +50,42 @@ class RateLimitService(private val repository: AuthRateLimitRepository) {
         repository.incrementHit(bucketKey, windowStart)
     }
 
+    /** 1회 기록하고, 이번 기록으로 한도를 넘었으면 던진다. bucketKey가 null이면 통과시킨다. */
+    @Transactional
+    fun consume(bucketKey: String?, limit: Int, window: Duration) {
+        if (bucketKey == null) return
+
+        val windowStart = floorToWindow(Instant.now(), window)
+        if (incrementAndGet(bucketKey, windowStart) > limit) {
+            throw RateLimitExceededException(EXCEEDED_MESSAGE, retryAfterSeconds(windowStart, window))
+        }
+    }
+
+    /**
+     * consume과 같지만 던지지 않고 한도 안이면 true를 돌려준다 - 초과해도 요청을 막지 않고
+     * 비싼 부분만 건너뛰는(강등) 호출부용. bucketKey가 null이면 true.
+     */
+    @Transactional
+    fun tryConsume(bucketKey: String?, limit: Int, window: Duration): Boolean {
+        if (bucketKey == null) return true
+
+        val windowStart = floorToWindow(Instant.now(), window)
+        return incrementAndGet(bucketKey, windowStart) <= limit
+    }
+
+    private fun incrementAndGet(bucketKey: String, windowStart: Instant): Int {
+        repository.incrementHit(bucketKey, windowStart)
+        return repository.findHitCount(bucketKey, windowStart) ?: 0
+    }
+
     private fun floorToWindow(now: Instant, window: Duration): Instant {
         val windowSeconds = window.seconds
         return Instant.ofEpochSecond((now.epochSecond / windowSeconds) * windowSeconds)
+    }
+
+    // 고정 윈도라 이번 윈도가 끝나는 시점이 곧 다시 시도할 수 있는 시점이다.
+    private fun retryAfterSeconds(windowStart: Instant, window: Duration): Long {
+        val remaining = Duration.between(Instant.now(), windowStart.plus(window))
+        return remaining.seconds.coerceAtLeast(1)
     }
 }

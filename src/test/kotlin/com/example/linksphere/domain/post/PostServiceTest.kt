@@ -8,6 +8,7 @@ import com.example.linksphere.domain.interaction.BookmarkRepository
 import com.example.linksphere.domain.interaction.TableBookmarkFolder
 import com.example.linksphere.domain.member.MemberRepository
 import com.example.linksphere.domain.member.TableMember
+import com.example.linksphere.global.common.Paging
 import com.example.linksphere.global.exception.BookmarkFolderNotFoundException
 import com.example.linksphere.global.exception.EmailNotVerifiedException
 import com.example.linksphere.global.exception.ForbiddenException
@@ -29,6 +30,7 @@ import org.mockito.Mockito.verifyNoInteractions
 import org.mockito.Mockito.`when`
 import org.mockito.junit.jupiter.MockitoExtension
 import org.springframework.context.ApplicationEventPublisher
+import org.springframework.data.domain.PageImpl
 import java.util.Optional
 import java.util.UUID
 
@@ -596,5 +598,27 @@ class PostServiceTest {
 
         assertEquals("사용자가 직접 쓴 제목", savedPostCaptor.value.title)
         verify(urlMetadataExtractor, never()).extract(ArgumentMatchers.anyString())
+    }
+
+    @Test
+    fun `getAllPosts는 allowSemanticSearch=false면 검색어가 있어도 임베딩을 부르지 않고 키워드로만 조회한다`() {
+        val pageable = Paging.pageRequest(0, 10)
+        `when`(postRepository.findPosts(null, "spring boot", null, null, null, pageable, null))
+            .thenReturn(PageImpl(listOf(privatePost(UUID.randomUUID(), UUID.randomUUID())), pageable, 1))
+
+        postService.getAllPosts(null, "spring boot", null, null, 0, 10, null, allowSemanticSearch = false)
+
+        verifyNoInteractions(geminiService)
+    }
+
+    @Test
+    fun `getAllPosts는 size를 최대 페이지 크기로 잘라 조회한다`() {
+        val capped = Paging.pageRequest(0, Paging.MAX_PAGE_SIZE)
+        `when`(postRepository.findPosts(null, null, null, null, null, capped, null))
+            .thenReturn(PageImpl(emptyList(), capped, 0))
+
+        postService.getAllPosts(null, null, null, null, 0, 100_000, null)
+
+        verify(postRepository).findPosts(null, null, null, null, null, capped, null)
     }
 }

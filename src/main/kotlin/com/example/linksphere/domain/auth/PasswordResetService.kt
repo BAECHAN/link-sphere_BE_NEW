@@ -46,10 +46,8 @@ class PasswordResetService(
         val normalizedEmail = email.trim().lowercase()
         val emailBucket = "password-reset:${SecureToken.hash(normalizedEmail)}"
         val ipBucket = clientIp?.let { "password-reset:ip:$it" }
-        rateLimitService.checkNotExceeded(emailBucket, REQUEST_EMAIL_LIMIT, REQUEST_EMAIL_WINDOW)
-        rateLimitService.checkNotExceeded(ipBucket, REQUEST_IP_LIMIT, REQUEST_IP_WINDOW)
-        rateLimitService.recordHit(emailBucket, REQUEST_EMAIL_WINDOW)
-        rateLimitService.recordHit(ipBucket, REQUEST_IP_WINDOW)
+        rateLimitService.consume(emailBucket, REQUEST_EMAIL_LIMIT, REQUEST_EMAIL_WINDOW)
+        rateLimitService.consume(ipBucket, REQUEST_IP_LIMIT, REQUEST_IP_WINDOW)
 
         val member = memberRepository.findByEmail(normalizedEmail) ?: return
 

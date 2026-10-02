@@ -2,6 +2,7 @@ package com.example.linksphere.global.exception
 
 import com.example.linksphere.global.common.ErrorResponse
 import org.slf4j.LoggerFactory
+import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.ExceptionHandler
@@ -153,7 +154,9 @@ class GlobalExceptionHandler {
                 code = "RATE_LIMIT_EXCEEDED",
                 message = e.message ?: "Too many requests",
             )
-        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(response)
+        val builder = ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+        e.retryAfterSeconds?.let { builder.header(HttpHeaders.RETRY_AFTER, it.toString()) }
+        return builder.body(response)
     }
 
     // 메서드 파라미터(@RequestParam 등)에 직접 붙인 @Size 같은 제약 위반 - @Valid @RequestBody의
