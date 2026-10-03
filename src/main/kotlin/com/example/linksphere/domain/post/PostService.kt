@@ -34,6 +34,7 @@ class PostService(
     private val safeUrlValidator: SafeUrlValidator,
     private val geminiService: GeminiService,
     private val memberRepository: MemberRepository,
+    private val linkPreviewService: LinkPreviewService,
 ) {
 
     private val logger = LoggerFactory.getLogger(PostService::class.java)
@@ -49,7 +50,9 @@ class PostService(
 
         val url = request.url.trim()
         validateUrl(url)
-        val metadata = urlMetadataExtractor.extract(url)
+        // 작성 중 미리보기(10분 이내)가 있으면 그 결과를 그대로 쓴다 - 사용자가 본 미리보기와 저장되는
+        // 글이 같아지고 크롤링을 다시 하지 않는다. 없으면(미리보기 전 제출·만료·봇) 기존처럼 크롤링한다.
+        val metadata = linkPreviewService.findFresh(url) ?: urlMetadataExtractor.extract(url)
         // 크롤링이 실패하면 pageContent가 null이라 AI 분석이 통째로 스킵된다(아래 aiStatus=NONE).
         // fallbackContent는 어떤 @RequestBody DTO에도 없는 파라미터라 외부 사용자가 채울 수 없고,
         // 봇 경로(FeedItemProcessor)가 RSS 본문을 미리 크롤링해 넘겨줄 때만 대체된다.
@@ -224,7 +227,7 @@ class PostService(
         if (newUrl != null) validateUrl(newUrl)
 
         val recrawlUrl = newUrl ?: post.url.takeIf { titleCleared }
-        val metadata = recrawlUrl?.let { urlMetadataExtractor.extract(it) }
+        val metadata = recrawlUrl?.let { linkPreviewService.findFresh(it) ?: urlMetadataExtractor.extract(it) }
 
         // 제목 우선순위: 사용자가 직접 쓴 제목 > 재수집 제목 > 기존 제목.
         // 재수집 제목이 빈약하면 채택하지 않는다 - "- YouTube" 같은 껍데기 제목이 멀쩡한 기존
@@ -309,6 +312,24 @@ class PostService(
         // 댓글에 딸린 스토리지 이미지는 정리되지 않으므로 게시글이 지워지기 전에 먼저 정리한다.
         commentService.deleteImagesForPost(id)
         postRepository.delete(post)
+    }
+
+    /**
+     * 작성·수정 폼의 링크 미리보기. 등록과 같은 게이트(이메일 인증·URL 검증)를 먼저 통과해야 한다 -
+     * 미리보기에서 "이 주소를 찾을 수 없어요"를 미리 보여주려는 것이기도 하다. 크롤링 결과는
+     * LinkPreviewService가 10분 캐시해 등록 때 재사용한다(캐시 저장이 있어 쓰기 트랜잭션).
+     */
+    @Transactional
+    fun previewLink(userId: UUID, rawUrl: String): LinkPreviewResponse {
+        val member = memberRepository.findById(userId).orElseThrow { IllegalArgumentException("User not found") }
+        if (!member.emailVerified) {
+            throw EmailNotVerifiedException("Email verification required to preview a link")
+        }
+
+        val url = rawUrl.trim()
+        validateUrl(url)
+        val metadata = linkPreviewService.get(url)
+        return LinkPreviewResponse(url = url, title = metadata.title, description = metadata.description, ogImage = metadata.ogImage)
     }
 
     private fun validateUrl(url: String) = safeUrlValidator.validate(url)

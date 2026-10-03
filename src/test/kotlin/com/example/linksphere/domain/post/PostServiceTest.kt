@@ -63,6 +63,8 @@ class PostServiceTest {
 
     @Mock private lateinit var memberRepository: MemberRepository
 
+    @Mock private lateinit var linkPreviewService: LinkPreviewService
+
     @InjectMocks private lateinit var postService: PostService
 
     private fun privatePost(postId: UUID, ownerId: UUID) = TablePost(
@@ -620,5 +622,27 @@ class PostServiceTest {
         postService.getAllPosts(null, null, null, null, 0, 100_000, null)
 
         verify(postRepository).findPosts(null, null, null, null, null, capped, null)
+    }
+
+    @Test
+    fun `createPost는 10분 안에 미리 본 링크면 크롤링하지 않고 미리보기 결과로 저장한다`() {
+        val userId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val url = "https://example.com/previewed"
+        val savedPost = TablePost(id = postId, userId = userId, url = url, title = "미리 본 제목", isPrivate = false)
+
+        stubVerifiedMember(userId)
+        `when`(linkPreviewService.findFresh(url)).thenReturn(
+            UrlMetadata(title = "미리 본 제목", description = "설명", ogImage = "https://example.com/og.png", tags = listOf("example.com"), pageContent = null),
+        )
+        val savedPostCaptor = ArgumentCaptor.forClass(TablePost::class.java)
+        `when`(postRepository.save(savedPostCaptor.capture())).thenReturn(savedPost)
+        stubAssemblerResponse(postId)
+
+        postService.createPost(userId, PostCreateRequest(url = url))
+
+        assertEquals("미리 본 제목", savedPostCaptor.value.title)
+        assertEquals("https://example.com/og.png", savedPostCaptor.value.ogImage)
+        verifyNoInteractions(urlMetadataExtractor)
     }
 }

@@ -37,9 +37,12 @@ class PostController(
 
     @Operation(
         summary = "게시글 등록",
-        description = "URL 을 크롤링해 메타데이터를 추출하고 AI 요약을 비동기로 채운다. " +
+        description = "URL 을 크롤링해 메타데이터를 추출하고 AI 요약을 비동기로 채운다. 10분 안에 같은 URL을 " +
+            "GET /link-preview 로 미리 본 적이 있으면 크롤링 대신 그 결과를 쓴다. " +
             "HTTP 상태는 200 이고 본문 status 필드만 201 이다. " +
-            "실패: 400 INVALID_INPUT(URL 형식 오류) · 429 RATE_LIMIT_EXCEEDED(회원당 시간당 등록 한도 초과)",
+            "실패: 400 INVALID_URL · 400 URL_UNRESOLVABLE(도메인 없음) · 400 URL_NOT_ALLOWED(내부망) · " +
+            "403 EMAIL_NOT_VERIFIED · 404 FOLDER_NOT_FOUND · 403 FORBIDDEN(남의 폴더) · " +
+            "429 RATE_LIMIT_EXCEEDED(회원당 시간당 등록 한도 초과)",
     )
     @PostMapping
     fun createPost(
@@ -101,7 +104,9 @@ class PostController(
     @Operation(
         summary = "게시글 수정",
         description = "HTTP 상태는 200 이고 본문 status 필드만 201 이 아니라 그대로 200 이다. " +
-            "실패: 404 POST_NOT_FOUND · 403 FORBIDDEN(작성자 아님)",
+            "URL을 바꾸면 크롤링을 다시 한다(10분 안에 미리 본 URL이면 그 결과를 쓴다). " +
+            "실패: 404 POST_NOT_FOUND · 403 FORBIDDEN(작성자 아님) · " +
+            "400 INVALID_URL · 400 URL_UNRESOLVABLE · 400 URL_NOT_ALLOWED(URL을 바꾼 경우)",
     )
     @PatchMapping("/{id}")
     fun updatePost(

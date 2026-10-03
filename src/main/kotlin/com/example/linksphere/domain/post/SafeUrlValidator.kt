@@ -1,6 +1,6 @@
 package com.example.linksphere.domain.post
 
-import com.example.linksphere.global.exception.InvalidInputException
+import com.example.linksphere.global.exception.InvalidUrlException
 import org.springframework.stereotype.Component
 import java.net.InetAddress
 import java.net.URI
@@ -17,27 +17,27 @@ import java.net.URISyntaxException
 class SafeUrlValidator {
 
     fun validate(url: String) {
-        if (url.isBlank()) throw InvalidInputException("URL cannot be blank")
+        if (url.isBlank()) throw InvalidUrlException(InvalidUrlException.INVALID_URL, "URL cannot be blank")
 
         val uri =
             try {
                 URI(url)
             } catch (e: URISyntaxException) {
-                throw InvalidInputException("Invalid URL format: $url")
+                throw InvalidUrlException(InvalidUrlException.INVALID_URL, "Invalid URL format: $url")
             }
 
         if (uri.scheme !in listOf("http", "https")) {
-            throw InvalidInputException("URL must use http or https scheme")
+            throw InvalidUrlException(InvalidUrlException.INVALID_URL, "URL must use http or https scheme")
         }
 
         val host = uri.host
-        if (host.isNullOrBlank()) throw InvalidInputException("Invalid URL format: $url")
+        if (host.isNullOrBlank()) throw InvalidUrlException(InvalidUrlException.INVALID_URL, "Invalid URL format: $url")
 
         val addresses =
             try {
                 InetAddress.getAllByName(host)
             } catch (e: Exception) {
-                throw InvalidInputException("Cannot resolve host: $host")
+                throw InvalidUrlException(InvalidUrlException.URL_UNRESOLVABLE, "Cannot resolve host: $host")
             }
 
         val isPrivate =
@@ -48,6 +48,8 @@ class SafeUrlValidator {
                     it.isAnyLocalAddress ||
                     it.isMulticastAddress
             }
-        if (isPrivate) throw InvalidInputException("URL points to a private network address: $url")
+        if (isPrivate) {
+            throw InvalidUrlException(InvalidUrlException.URL_NOT_ALLOWED, "URL points to a private network address: $url")
+        }
     }
 }

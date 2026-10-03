@@ -43,6 +43,14 @@ data class PostUserInteractions(
     val bookmarkFolderIds: List<UUID> = emptyList(),
 )
 
+/** 작성 중 링크 미리보기 응답. 크롤링 본문(pageContent)은 AI 재료라 싣지 않는다. */
+data class LinkPreviewResponse(
+    val url: String,
+    val title: String,
+    val description: String?,
+    val ogImage: String?,
+)
+
 data class PostResponse(
     val id: UUID,
     val url: String,

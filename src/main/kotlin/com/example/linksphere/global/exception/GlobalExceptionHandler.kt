@@ -189,6 +189,18 @@ class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response)
     }
 
+    @ExceptionHandler(InvalidUrlException::class)
+    fun handleInvalidUrlException(e: InvalidUrlException): ResponseEntity<ErrorResponse> {
+        logger.warn("Invalid url ({}): {}", e.code, e.message)
+        val response =
+            ErrorResponse(
+                status = HttpStatus.BAD_REQUEST.value(),
+                code = e.code,
+                message = e.message ?: "Invalid URL",
+            )
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response)
+    }
+
     @ExceptionHandler(InvalidInputException::class)
     fun handleInvalidInputException(e: InvalidInputException): ResponseEntity<ErrorResponse> {
         logger.warn("Invalid input: {}", e.message)
