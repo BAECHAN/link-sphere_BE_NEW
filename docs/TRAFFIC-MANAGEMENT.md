@@ -213,8 +213,8 @@ Google SRE 책은 과부하 대응으로 기능을 낮춰 응답하는 방법(gr
 | CloudWatch 알람 (`Throttles`) | 8-2 런북 참고 | CloudWatch 콘솔 (ap-northeast-1) | 선택 · 무료(프리티어 알람 10개 안) |
 | AWS Budgets | 8-3 런북 참고 | Billing 콘솔 | 선택(우선순위 낮음) · 무료(알림만) |
 
-필요도는 2026-10-03 실측(9장)으로 판단했다. 콘솔 작업은 아직 하나도 적용되지 않았다
-(2026-10-03 기준 — 적용하면 이 문장을 고친다).
+필요도는 2026-10-03 실측(9장)으로 판단했다. 적용 상태(2026-10-03): WAF IP 제한은 **적용(Count)**,
+Throttles 알람·Budgets는 미적용(선택).
 
 ## 8. 코드 지도와 자주 하는 수정
 
@@ -238,17 +238,49 @@ Google SRE 책은 과부하 대응으로 기능을 낮춰 응답하는 방법(gr
 목록·상세 같은 공개 조회에는 앱 한도가 없어, 처음 보는 IP 하나가 몰아치면 Lambda 10칸이 차서
 사이트 전체가 429가 된다. 이걸 앱 앞에서 막는 장치는 이것뿐이다. 추가 비용 없음.
 
-1. AWS 콘솔 → WAF & Shield → Web ACLs → 리전 **Global (CloudFront)** → `CreatedByCloudFront-bcd729fb`
-2. Rules → Add rules → Add my own rules → Rule type **Rate-based rule**
-   - 이름 `RateLimit-PerIP`, 평가 창 5분, 한도 **1000**(초안), 집계 키 **Source IP**
-   - Action **Count** (처음 1주는 차단하지 않고 세기만 한다)
-3. 우선순위는 기존 관리형 규칙 3개 **뒤**(4번째)로 둔다
-4. 1주 뒤 CloudWatch → Metrics → WAFV2 → `CountedRequests`(Rule=`RateLimit-PerIP`)와 Web ACL의
-   Sampled requests를 본다. 정상 사용자가 걸린 흔적이 없으면 Action을 **Block**으로 바꾼다
-5. 확인: `aws wafv2 get-web-acl --scope CLOUDFRONT --region us-east-1 --name CreatedByCloudFront-bcd729fb --id 16fc99ed-1f67-4dec-9951-04806ce95699`
+**적용 상태**: 2026-10-03 적용 완료 — `RateLimit-PerIP`(우선순위 3, IP당 5분 1000회, **Count**).
+적용 직후 조회 결과 규칙 4개, `CountedRequests` 0건. 원래 설정 백업은 운영자 로컬
+`~/waf-backup-2026-10-03.json`(레포 밖)에 있다.
+
+**콘솔에서는 안 된다.** 이 Web ACL은 CloudFront Free 정액 플랜에 묶여 있어 WAF 콘솔에
+"Add my own rules and rule groups"가 보이지 않고, CloudFront 콘솔 Security 탭의 WAF 섹션에도
+Edit 버튼이 없었다(2026-10-03 확인). AWS 문서([Set up rate limiting](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/WAF-one-click-rate-limiting.html))는
+Security 탭 → Edit → Rate limiting 경로를 안내하지만 이 배포에서는 그 버튼이 없었다. 대신
+**`wafv2 update-web-acl` API는 동작한다**(2026-09-06 XSS 오버라이드, 2026-10-03 이 규칙 모두
+CLI로 적용). 이 레포의 `link-sphere-user` 자격 증명으로는 하지 않았다 — 운영자 관리자 자격
+증명으로 실행했다.
+
+**적용 절차 (관리자 자격 증명, 레포 밖 빈 폴더에서 한 줄씩)** — `update-web-acl`은 규칙 배열 전체를
+다시 보내야 하므로 현재 설정을 백업하고 거기에 덧붙인다.
+
+```bash
+# 1) 백업 (되돌릴 때 이 파일 사용)
+aws wafv2 get-web-acl --scope CLOUDFRONT --region us-east-1 --name CreatedByCloudFront-bcd729fb --id 16fc99ed-1f67-4dec-9951-04806ce95699 > webacl-backup.json
+
+# 2) 적용: 기존 규칙 + RateLimit-PerIP(Count). 중간 파일 없이 백업에서 바로 꺼낸다
+aws wafv2 update-web-acl --scope CLOUDFRONT --region us-east-1 --name CreatedByCloudFront-bcd729fb --id 16fc99ed-1f67-4dec-9951-04806ce95699 --lock-token "$(jq -r .LockToken webacl-backup.json)" --default-action "$(jq -c .WebACL.DefaultAction webacl-backup.json)" --visibility-config "$(jq -c .WebACL.VisibilityConfig webacl-backup.json)" --rules "$(jq -c '.WebACL.Rules + [{"Name":"RateLimit-PerIP","Priority":3,"Statement":{"RateBasedStatement":{"Limit":1000,"EvaluationWindowSec":300,"AggregateKeyType":"IP"}},"Action":{"Count":{}},"VisibilityConfig":{"SampledRequestsEnabled":true,"CloudWatchMetricsEnabled":true,"MetricName":"RateLimit-PerIP"}}]' webacl-backup.json)"
+
+# 3) 확인
+aws wafv2 get-web-acl --scope CLOUDFRONT --region us-east-1 --name CreatedByCloudFront-bcd729fb --id 16fc99ed-1f67-4dec-9951-04806ce95699 --query "WebACL.Rules[].[Priority,Name,keys(Action || OverrideAction)[0],Statement.RateBasedStatement.Limit]" --output text
+```
+
+- 여러 줄짜리 스크립트(heredoc)를 터미널에 붙여넣으면 괄호가 깨져 실패한 적이 있다 — 위처럼 한 줄
+  명령만 쓴다. 성공하면 `{"NextLockToken": ...}`가 나온다.
+- 결과 파일이 레포 안에 생기지 않게 레포 밖에서 실행한다(2026-10-03 FE 레포 루트에 생겨 수동 정리).
+- `WAFOptimisticLockException`이면 그사이 설정이 바뀐 것 — 1)부터 다시.
+
+**1주 뒤 Block 전환 (2026-10-10 무렵)**: CloudWatch(us-east-1) → WAFV2 → `CountedRequests`
+(Rule=`RateLimit-PerIP`)를 본다. 정상 사용자가 걸린 흔적이 없으면 위 2)와 같은 방식으로 이 규칙의
+`"Action":{"Count":{}}`를 `"Action":{"Block":{}}`로 바꿔 다시 보낸다(최신 백업 기준).
+
+**되돌리기**: 백업 파일의 원래 규칙 배열로 다시 보낸다(lock token은 최신 값으로).
+
+```bash
+aws wafv2 update-web-acl --scope CLOUDFRONT --region us-east-1 --name CreatedByCloudFront-bcd729fb --id 16fc99ed-1f67-4dec-9951-04806ce95699 --lock-token "$(aws wafv2 get-web-acl --scope CLOUDFRONT --region us-east-1 --name CreatedByCloudFront-bcd729fb --id 16fc99ed-1f67-4dec-9951-04806ce95699 --query LockToken --output text)" --default-action "$(jq -c .WebACL.DefaultAction webacl-backup.json)" --visibility-config "$(jq -c .WebACL.VisibilityConfig webacl-backup.json)" --rules "$(jq -c .WebACL.Rules webacl-backup.json)"
+```
 
 Free 플랜 제약([CloudFront flat-rate 플랜 문서](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/flat-rate-pricing-plan.html)):
-WAF 규칙은 관리형·커스텀 합쳐 5개까지이고(지금 3개 → 추가 후 4개), 차단 응답 코드를 바꿀 수 없어
+WAF 규칙은 관리형·커스텀 합쳐 5개까지이고(2026-10-03 기준 4개 사용), 차단 응답 코드를 바꿀 수 없어
 WAF 차단은 429가 아니라 **403**으로 나간다. FE는 이를 `EDGE_BLOCKED`로 구분한다. 특정 경로만
 더 엄격하게 거는 scope-down이 Free 플랜에서 되는지는 확인하지 못했다(미확인).
 
@@ -360,7 +392,7 @@ N=5·10·15로 8초 간격 실행(총 30건).
 
 ## 11. 남은 것
 
-- 콘솔 작업 적용: WAF IP 제한(필요), Throttles 알람·Budgets(선택) — 7-2 표
+- WAF `RateLimit-PerIP` Count → Block 전환(2026-10-10 무렵, 8-1). Throttles 알람·Budgets는 선택 — 7-2 표
 - Lambda 동시 실행 한도 상향 요청 검토 (Service Quotas, 무료) — 5-6, 9-2
 - 글 등록을 "빠른 저장 + 비동기 크롤링"으로 — 칸을 오래 잡는 유일한 요청 제거(5-6). 별도 계획
 - 비로그인 공개 조회 CloudFront 캐싱 — 인증 전달 방식 조사부터(5-6)
