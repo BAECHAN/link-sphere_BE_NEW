@@ -1,6 +1,6 @@
 # Link-Sphere BE — 게시글 AI 분석 비동기화 (2026-08-01)
 
-> 마지막 검토: 2026-09-29
+> 마지막 검토: 2026-10-03
 
 ## 1. 문제
 
@@ -38,6 +38,12 @@ Gemini 응답을 기다리는 도중 그대로 멈춰버릴 수 있었다. SSE(`
 하는데, 그 전제 자체가 깨진다.
 
 ## 2. 해결 방향 — Lambda self-invoke
+
+> **2026-10-03 추가**: 등록·수정의 크롤링은 이제 "캐시 우선"이다. 작성 중 링크 미리보기
+> (`GET /link-preview`, `LinkPreviewService`)가 크롤링 결과를 `link_previews` 테이블에 10분 보관하고,
+> `PostService.createPost`·`updatePost`는 그 결과가 있으면 크롤링하지 않고 그대로 쓴다. 캐시의
+> `page_content`가 아래 AI 이벤트의 본문이 된다 - 흐름(크롤링 결과 → PENDING/NONE → self-invoke)은
+> 그대로다. 계획: FE `docs/plans/2026-10-03-post-create-preview.md`.
 
 "같은 실행 환경 안에서 스레드만 백그라운드로 돌리기"가 아니라 **완전히 별도의
 Lambda 호출로 위임**하면 이 제약을 피할 수 있다.

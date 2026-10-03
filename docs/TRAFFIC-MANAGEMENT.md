@@ -178,6 +178,7 @@ Google SRE 책은 과부하 대응으로 기능을 낮춰 응답하는 방법(gr
 |---|---|---|
 | `post-create:member:<회원ID>` | 회원 | 글 등록 |
 | `upload:member:<회원ID>` | 회원 | 업로드 URL 발급 |
+| `link-preview:member:<회원ID>` | 회원 | 링크 미리보기(작성 중) |
 | `search-embed:ip:<IP>` | IP | 검색 임베딩 |
 
 옛 윈도 행은 정리하지 않는 기존 정책 그대로다. 검색 버킷은 검색한 IP 수 × 10분 윈도 수만큼 행이
@@ -192,6 +193,7 @@ Google SRE 책은 과부하 대응으로 기능을 낮춰 응답하는 방법(gr
 | 글 등록 | 회원당 1시간 20회 | `domain/post/PostController.kt:29-30` |
 | 검색 임베딩 | IP당 10분 60회 (초과 시 키워드 검색으로 강등) | `domain/post/PostController.kt:34-35` |
 | 업로드 URL 발급 | 회원당 1시간 30회 | `domain/upload/UploadController.kt:25-26` |
+| 링크 미리보기 | 회원당 1시간 60회 (URL 입력마다 1회 크롤링, 결과는 10분 캐시) | `domain/post/LinkPreviewController.kt:27-28` |
 | 목록 `size` | 최대 50 (글 목록·북마크 폴더 글·내 댓글) | `global/common/Paging.kt:12` |
 | 로그인 실패 | 이메일당 15분 5회, IP당 15분 20회 | `domain/auth/AuthService.kt:35-41` |
 | 가입 | IP당 1시간 5회 | `domain/auth/AuthService.kt:45-46` |

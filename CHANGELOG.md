@@ -11,6 +11,23 @@
 
 ### Added
 
+- `post` 작성 중 링크 미리보기 API(`GET /link-preview`)와 10분 캐시, URL 실패 원인별 에러 코드
+  <details><summary>배경·구현</summary>
+
+  FE가 글 등록 전에 URL의 제목·설명·썸네일을 미리 보여주고(Slack·LinkedIn 방식), 그 결과를 등록
+  때 재사용하도록 한다 - 사용자가 본 미리보기와 저장되는 글이 같아지고, 등록 때 크롤링(실측 중앙값
+  2.7초)을 다시 하지 않는다. 결과는 Lambda 칸끼리 공유되도록 `link_previews` 테이블에 둔다
+  (`sql/create_link_previews.sql`, **배포 전 수동 실행**). 등록·수정은 10분 이내 캐시가 있으면
+  크롤링 대신 그 결과를 쓴다. 미리보기는 회원당 시간당 60회로 제한한다. 또 URL 검증 실패를
+  `INVALID_INPUT` 하나에서 `INVALID_URL`·`URL_UNRESOLVABLE`(도메인 없음)·`URL_NOT_ALLOWED`(내부망)로
+  나눠, FE가 "도메인에 오타가 없는지 확인해주세요" 같은 고칠 수 있는 안내를 고를 수 있게 했다.
+  경로가 `/post/link-preview`가 아닌 이유는 `GET /post/*`가 비로그인에게 열려 있어서다.
+  (`LinkPreviewController.kt`·`LinkPreviewService.kt`·`TableLinkPreview.kt`(신규),
+  `InvalidUrlException.kt`(신규), `SafeUrlValidator.kt`, `PostService.kt`,
+  `GlobalExceptionHandler.kt`, 계획 FE `docs/plans/2026-10-03-post-create-preview.md`)
+
+  </details>
+
 - `post` 글 등록·업로드 URL 발급에 회원별 한도, 검색에 IP별 강등, 목록 size 상한 50
   <details><summary>배경·구현</summary>
 
