@@ -171,13 +171,13 @@ class MemberServiceTest {
     }
 
     @Test
-    fun `findByEmail normalizes lookup email so login is case-insensitive`() {
+    fun `findByEmailOrNull normalizes lookup email so login is case-insensitive`() {
         val member = TableMember(email = "test@example.com", password = "enc", nickname = "testuser")
         `when`(memberRepository.findByEmail("test@example.com")).thenReturn(member)
 
-        val result = memberService.findByEmail("  Test@Example.com  ")
+        val result = memberService.findByEmailOrNull("  Test@Example.com  ")
 
-        assertEquals("test@example.com", result.email)
+        assertEquals("test@example.com", result?.email)
         verify(memberRepository).findByEmail("test@example.com")
     }
 
