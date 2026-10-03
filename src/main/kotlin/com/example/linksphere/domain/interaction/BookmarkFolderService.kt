@@ -6,6 +6,7 @@ import com.example.linksphere.domain.post.PostPageResponse
 import com.example.linksphere.domain.post.PostRepository
 import com.example.linksphere.domain.post.PostResponseAssembler
 import com.example.linksphere.domain.post.PostSearchQuery
+import com.example.linksphere.global.common.Paging
 import com.example.linksphere.global.exception.BookmarkFolderNotFoundException
 import com.example.linksphere.global.exception.DuplicateFolderNameException
 import com.example.linksphere.global.exception.ForbiddenException
@@ -13,7 +14,6 @@ import com.example.linksphere.global.exception.InvalidInputException
 import com.example.linksphere.global.exception.PostNotFoundException
 import com.example.linksphere.infra.ai.GeminiService
 import org.slf4j.LoggerFactory
-import org.springframework.data.domain.PageRequest
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -210,7 +210,7 @@ class BookmarkFolderService(
                 }
             }
 
-        val pageable = PageRequest.of(page, size)
+        val pageable = Paging.pageRequest(page, size)
         val searchTokens = PostSearchQuery.tokenize(search)
         // 실패·타임아웃이면 null - findBookmarkedPosts가 키워드 전용으로 동작한다.
         val queryEmbedding = search?.takeIf { searchTokens.isNotEmpty() }?.let { geminiService.embedQuery(PostEmbeddingText.query(it)) }

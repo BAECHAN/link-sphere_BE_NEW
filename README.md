@@ -437,6 +437,7 @@ SnapStart 체크포인트 **이전**(`companion object init`)에 읽기 전용 �
 - [`docs/AI-ASYNC-PROCESSING.md`](docs/AI-ASYNC-PROCESSING.md) — 게시글 AI 분석을 비동기(Lambda self-invoke)로 뺀 이유와 구조
 - [`docs/CI-CHECK-GATE.md`](docs/CI-CHECK-GATE.md) — ktlint·테스트를 PR·배포 파이프라인의 실제 게이트로 정비한 과정
 - [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) — Lambda 콜드스타트 원인 분석과 최적화 근거
+- [`docs/TRAFFIC-MANAGEMENT.md`](docs/TRAFFIC-MANAGEMENT.md) — 트래픽 관리 다층 방어: WAF IP 제한·앱 엔드포인트별 한도·검색 강등·알람과 콘솔 런북
 - [`docs/ACCOUNT-DELETION.md`](docs/ACCOUNT-DELETION.md) — 회원탈퇴 14일 유예기간: 즉시 익명화 대신 신청→유예→로그인 복구/만료 익명화 2단계로 바꾼 이유와 구조
 
 **절차** — "이럴 땐 이렇게 한다"

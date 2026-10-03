@@ -11,6 +11,22 @@
 
 ### Added
 
+- `post` 글 등록·업로드 URL 발급에 회원별 한도, 검색에 IP별 강등, 목록 size 상한 50
+  <details><summary>배경·구현</summary>
+
+  트래픽 점검(2026-10-02) 결과 인증 외 엔드포인트에 한도가 전혀 없었다 - 비로그인 검색이
+  요청마다 Gemini 임베딩을 부르고, 글 등록(동기 크롤링+AI)·업로드 URL 발급은 무제한,
+  목록 API는 `size=100000`도 그대로 받았다. 기존 Postgres 카운터(`RateLimitService`)를
+  확장해 글 등록 회원당 1시간 20회·업로드 URL 회원당 1시간 30회(초과 시 429
+  `RATE_LIMIT_EXCEEDED`), 검색은 IP당 10분 60회를 넘으면 막지 않고 키워드 검색으로
+  강등한다. 한도는 RSS 봇이 영향받지 않도록 컨트롤러에만 건다. 429 응답에는
+  `Retry-After`(초)를 붙인다. 목록 3종(글·북마크 폴더 글·내 댓글)의 size는 50으로 자른다
+  (`Paging.kt`). WAF IP 제한·알람 콘솔 런북과 근거는 `docs/TRAFFIC-MANAGEMENT.md`.
+  (`PostController.kt`, `UploadController.kt`, `RateLimitService.kt`, `Paging.kt`(신규),
+  `GlobalExceptionHandler.kt`)
+
+  </details>
+
 - `auth` 탈퇴 유예 만료 계정을 정리하는 예약 작업(`AccountPurgeService`, `account-purge`) 신설
   <details><summary>배경·구현</summary>
 
@@ -220,6 +236,18 @@
   </details>
 
 ### Fixed
+
+- `auth` 가입·인증메일 재발송·비밀번호 재설정 레이트리밋을 병렬 요청으로 넘길 수 있던 문제
+  <details><summary>배경·구현</summary>
+
+  한도 확인(`checkNotExceeded`, 읽기 전용)과 기록(`recordHit`)이 분리돼 있어, 같은 순간에
+  들어온 요청들이 모두 "아직 한도 전"을 읽고 함께 통과할 수 있었다. 시도 자체를 세는 세 흐름을
+  `RateLimitService.consume`(먼저 upsert하고 같은 트랜잭션에서 `findHitCount`로 다시 읽음)으로
+  바꿨다 - Postgres가 upsert한 행을 커밋까지 잠가 병렬 요청이 차례로 처리된다. 실패만 세는
+  로그인은 구조상 옛 방식을 유지한다(`docs/TRAFFIC-MANAGEMENT.md` §5-3).
+  (`RateLimitService.kt`, `AuthRateLimitRepository.kt`, `AuthService.kt`, `PasswordResetService.kt`)
+
+  </details>
 
 - `auth` 익명화(퍼지) 완료된 계정에도 비밀번호 재설정이 허용되던 문제 수정
   <details><summary>배경·구현</summary>

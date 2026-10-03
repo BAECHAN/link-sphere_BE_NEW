@@ -6,6 +6,7 @@ import com.example.linksphere.domain.interaction.BookmarkFolderItemRepository
 import com.example.linksphere.domain.interaction.BookmarkFolderRepository
 import com.example.linksphere.domain.interaction.BookmarkRepository
 import com.example.linksphere.domain.member.MemberRepository
+import com.example.linksphere.global.common.Paging
 import com.example.linksphere.global.exception.BookmarkFolderNotFoundException
 import com.example.linksphere.global.exception.EmailNotVerifiedException
 import com.example.linksphere.global.exception.ForbiddenException
@@ -13,7 +14,6 @@ import com.example.linksphere.global.exception.PostNotFoundException
 import com.example.linksphere.infra.ai.GeminiService
 import org.slf4j.LoggerFactory
 import org.springframework.context.ApplicationEventPublisher
-import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.util.UUID
@@ -128,12 +128,17 @@ class PostService(
         page: Int,
         size: Int,
         currentUserId: UUID?,
+        allowSemanticSearch: Boolean = true,
     ): PostPageResponse {
-        val pageable = PageRequest.of(page, size)
+        val pageable = Paging.pageRequest(page, size)
         val searchTokens = PostSearchQuery.tokenize(search)
         // embedQuery는 실패·타임아웃이면 null을 돌려준다 - 그러면 findPosts가 키워드 전용으로
-        // 동작해 검색 자체가 Gemini 장애로 실패하는 일은 없다.
-        val queryEmbedding = search?.takeIf { searchTokens.isNotEmpty() }?.let { geminiService.embedQuery(PostEmbeddingText.query(it)) }
+        // 동작해 검색 자체가 Gemini 장애로 실패하는 일은 없다. allowSemanticSearch=false(호출부
+        // 레이트리밋 초과)도 같은 키워드 전용 경로로 강등한다.
+        val queryEmbedding =
+            search
+                ?.takeIf { allowSemanticSearch && searchTokens.isNotEmpty() }
+                ?.let { geminiService.embedQuery(PostEmbeddingText.query(it)) }
         val postPage = postRepository.findPosts(category, search, filter, nickname, currentUserId, pageable, queryEmbedding)
 
         // 검색 결과가 없으면 한/영 자판 미스매칭 보정 후보로 한 번 더 검색한다 (예: spdlqj -> 네이버).

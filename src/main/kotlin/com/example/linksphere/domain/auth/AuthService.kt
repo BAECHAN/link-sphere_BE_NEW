@@ -55,8 +55,7 @@ class AuthService(
     @Transactional
     fun signup(request: SignupRequest, clientIp: String?): AccountResponse {
         val ipBucket = clientIp?.let { "signup:ip:$it" }
-        rateLimitService.checkNotExceeded(ipBucket, SIGNUP_IP_LIMIT, SIGNUP_IP_WINDOW)
-        rateLimitService.recordHit(ipBucket, SIGNUP_IP_WINDOW)
+        rateLimitService.consume(ipBucket, SIGNUP_IP_LIMIT, SIGNUP_IP_WINDOW)
 
         val member =
             memberService.signup(
@@ -81,10 +80,8 @@ class AuthService(
         val normalizedEmail = email.trim().lowercase()
         val emailBucket = "email-verify:${SecureToken.hash(normalizedEmail)}"
         val ipBucket = clientIp?.let { "email-verify:ip:$it" }
-        rateLimitService.checkNotExceeded(emailBucket, EMAIL_VERIFY_EMAIL_LIMIT, EMAIL_VERIFY_EMAIL_WINDOW)
-        rateLimitService.checkNotExceeded(ipBucket, EMAIL_VERIFY_IP_LIMIT, EMAIL_VERIFY_IP_WINDOW)
-        rateLimitService.recordHit(emailBucket, EMAIL_VERIFY_EMAIL_WINDOW)
-        rateLimitService.recordHit(ipBucket, EMAIL_VERIFY_IP_WINDOW)
+        rateLimitService.consume(emailBucket, EMAIL_VERIFY_EMAIL_LIMIT, EMAIL_VERIFY_EMAIL_WINDOW)
+        rateLimitService.consume(ipBucket, EMAIL_VERIFY_IP_LIMIT, EMAIL_VERIFY_IP_WINDOW)
 
         val member =
             try {
