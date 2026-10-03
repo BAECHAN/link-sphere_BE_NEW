@@ -63,8 +63,11 @@ class MemberService(private val memberRepository: MemberRepository) {
         }
     }
 
-    fun findByEmail(email: String): TableMember = memberRepository.findByEmail(normalizeEmail(email))
-        ?: throw IllegalArgumentException("Member not found with email: $email")
+    // 없으면 예외 대신 null - 호출부(AuthService)가 트랜잭션 안에서 "회원 없음"을 정상 흐름으로
+    // 다룬다. 예외로 알리면 이 클래스의 @Transactional 경계를 지나며 호출부 트랜잭션이
+    // rollback-only로 표시돼, 호출부가 잡고 정상 종료해도 커밋 시점에
+    // UnexpectedRollbackException(500)이 난다(docs/TRAFFIC-MANAGEMENT.md 시행착오 참고).
+    fun findByEmailOrNull(email: String): TableMember? = memberRepository.findByEmail(normalizeEmail(email))
 
     // 이메일 대소문자·공백만 다른 계정이 별개로 생기는 것을 막는다 - Gmail/Outlook 등 주요
     // 서비스도 저장 전 소문자로 정규화한다 (RFC 5321은 local-part를 대소문자 구분하도록

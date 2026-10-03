@@ -465,6 +465,20 @@
 
 ### Security
 
+- `auth` 로그인 실패 한도가 실제로는 한 번도 세지지 않던 문제, 없는 이메일 재발송 500(가입 여부 노출)
+  <details><summary>배경·구현</summary>
+
+  레이트리밋 기록(`recordHit`)이 호출부 트랜잭션에 합류해 있어, 로그인 실패 직후 던지는
+  `InvalidCredentialsException`의 롤백에 기록까지 함께 지워졌다 - 운영에서 실패 로그인 7회가
+  모두 401로 통과했다. 기록 메서드(`recordHit`·`consume`·`tryConsume`)를 `REQUIRES_NEW`로
+  분리했다(`MemberSessionRepository.revokeFamily`와 같은 해법). 또 `MemberService.findByEmail`이
+  회원 없음을 예외로 알려 호출부 트랜잭션이 rollback-only가 되면서, 없는 이메일로 인증메일
+  재발송을 요청하면 `UnexpectedRollbackException`으로 500이 났다(있는 이메일은 200 - 가입 여부
+  노출). 예외 대신 null을 돌려주는 `findByEmailOrNull`로 바꿨다. 상세는
+  `docs/TRAFFIC-MANAGEMENT.md` 10장. (`RateLimitService.kt`, `MemberService.kt`, `AuthService.kt`)
+
+  </details>
+
 - `fcm` 댓글·답글 푸시를 로그인 세션 생명주기에 바인딩, 알림 문구에서 닉네임·본문 제거
   <details><summary>배경·구현</summary>
 

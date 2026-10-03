@@ -83,12 +83,7 @@ class AuthService(
         rateLimitService.consume(emailBucket, EMAIL_VERIFY_EMAIL_LIMIT, EMAIL_VERIFY_EMAIL_WINDOW)
         rateLimitService.consume(ipBucket, EMAIL_VERIFY_IP_LIMIT, EMAIL_VERIFY_IP_WINDOW)
 
-        val member =
-            try {
-                memberService.findByEmail(normalizedEmail)
-            } catch (e: IllegalArgumentException) {
-                return
-            }
+        val member = memberService.findByEmailOrNull(normalizedEmail) ?: return
         if (member.emailVerified) return
 
         sendVerificationEmail(member)
@@ -135,13 +130,11 @@ class AuthService(
         rateLimitService.checkNotExceeded(emailBucket, LOGIN_FAIL_EMAIL_LIMIT, LOGIN_FAIL_EMAIL_WINDOW)
         rateLimitService.checkNotExceeded(ipBucket, LOGIN_FAIL_IP_LIMIT, LOGIN_FAIL_IP_WINDOW)
 
-        val member =
-            try {
-                memberService.findByEmail(request.email)
-            } catch (e: IllegalArgumentException) {
-                recordLoginFailure(emailBucket, ipBucket)
-                throw InvalidCredentialsException("Invalid email or password")
-            }
+        val member = memberService.findByEmailOrNull(request.email)
+        if (member == null) {
+            recordLoginFailure(emailBucket, ipBucket)
+            throw InvalidCredentialsException("Invalid email or password")
+        }
 
         if (!passwordEncoder.matches(request.password, member.password)) {
             recordLoginFailure(emailBucket, ipBucket)

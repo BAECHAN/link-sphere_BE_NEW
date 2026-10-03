@@ -66,7 +66,7 @@ class AuthServiceTest {
     @Test
     fun `login은 시도 전에 이메일·IP 두 버킷 모두 한도 확인을 거친다`() {
         val request = LoginRequest("test@example.com", "wrongpassword")
-        `when`(memberService.findByEmail(request.email)).thenThrow(IllegalArgumentException("not found"))
+        `when`(memberService.findByEmailOrNull(request.email)).thenReturn(null)
 
         assertThrows(InvalidCredentialsException::class.java) {
             authService.login(request, "203.0.113.1")
@@ -92,7 +92,7 @@ class AuthServiceTest {
     @Test
     fun `login은 회원이 없으면 로그인 실패를 두 버킷 모두에 기록한다`() {
         val request = LoginRequest("test@example.com", "wrongpassword")
-        `when`(memberService.findByEmail(request.email)).thenThrow(IllegalArgumentException("not found"))
+        `when`(memberService.findByEmailOrNull(request.email)).thenReturn(null)
 
         assertThrows(InvalidCredentialsException::class.java) {
             authService.login(request, "203.0.113.1")
@@ -106,7 +106,7 @@ class AuthServiceTest {
     fun `login은 비밀번호가 틀리면 로그인 실패를 기록한다`() {
         val request = LoginRequest("test@example.com", "wrongpassword")
         val member = TableMember(id = UUID.randomUUID(), email = request.email, password = "encoded")
-        `when`(memberService.findByEmail(request.email)).thenReturn(member)
+        `when`(memberService.findByEmailOrNull(request.email)).thenReturn(member)
         `when`(passwordEncoder.matches(request.password, member.password)).thenReturn(false)
 
         assertThrows(InvalidCredentialsException::class.java) {
@@ -120,7 +120,7 @@ class AuthServiceTest {
     @Test
     fun `login은 clientIp가 null이면 IP 버킷을 건드리지 않는다(RateLimitService의 null 무시에 위임)`() {
         val request = LoginRequest("test@example.com", "wrongpassword")
-        `when`(memberService.findByEmail(request.email)).thenThrow(IllegalArgumentException("not found"))
+        `when`(memberService.findByEmailOrNull(request.email)).thenReturn(null)
 
         assertThrows(InvalidCredentialsException::class.java) {
             authService.login(request, null)
@@ -135,7 +135,7 @@ class AuthServiceTest {
         val request = LoginRequest("test@example.com", "password1!")
         val memberId = UUID.randomUUID()
         val member = TableMember(id = memberId, email = request.email, password = "encoded")
-        `when`(memberService.findByEmail(request.email)).thenReturn(member)
+        `when`(memberService.findByEmailOrNull(request.email)).thenReturn(member)
         `when`(passwordEncoder.matches(request.password, member.password)).thenReturn(true)
         `when`(memberSessionService.createSession(memberId))
             .thenReturn(IssuedSession("access", "refresh", 604800L))
@@ -154,7 +154,7 @@ class AuthServiceTest {
         val request = LoginRequest("test@example.com", "password1!")
         val memberId = UUID.randomUUID()
         val member = TableMember(id = memberId, email = request.email, password = "encoded", deletionRequestedAt = Instant.now())
-        `when`(memberService.findByEmail(request.email)).thenReturn(member)
+        `when`(memberService.findByEmailOrNull(request.email)).thenReturn(member)
         `when`(passwordEncoder.matches(request.password, member.password)).thenReturn(true)
         `when`(memberService.cancelPendingDeletion(memberId)).thenReturn(true)
         `when`(memberSessionService.createSession(memberId))
@@ -171,7 +171,7 @@ class AuthServiceTest {
         val request = LoginRequest("test@example.com", "password1!")
         val memberId = UUID.randomUUID()
         val member = TableMember(id = memberId, email = request.email, password = "encoded", deletionRequestedAt = Instant.now())
-        `when`(memberService.findByEmail(request.email)).thenReturn(member)
+        `when`(memberService.findByEmailOrNull(request.email)).thenReturn(member)
         `when`(passwordEncoder.matches(request.password, member.password)).thenReturn(true)
         `when`(memberService.cancelPendingDeletion(memberId)).thenReturn(false)
 
@@ -282,7 +282,7 @@ class AuthServiceTest {
 
     @Test
     fun `requestEmailVerification은 존재하지 않는 이메일이어도 조용히 끝난다`() {
-        `when`(memberService.findByEmail("unknown@example.com")).thenThrow(IllegalArgumentException("not found"))
+        `when`(memberService.findByEmailOrNull("unknown@example.com")).thenReturn(null)
 
         authService.requestEmailVerification("unknown@example.com", "203.0.113.1")
 
@@ -292,7 +292,7 @@ class AuthServiceTest {
     @Test
     fun `requestEmailVerification은 이미 인증된 회원이면 메일을 보내지 않는다`() {
         val member = TableMember(id = UUID.randomUUID(), email = "test@example.com", password = "enc", emailVerified = true)
-        `when`(memberService.findByEmail("test@example.com")).thenReturn(member)
+        `when`(memberService.findByEmailOrNull("test@example.com")).thenReturn(member)
 
         authService.requestEmailVerification("test@example.com", "203.0.113.1")
 
@@ -302,7 +302,7 @@ class AuthServiceTest {
     @Test
     fun `requestEmailVerification은 미인증 회원이면 토큰을 저장하고 메일을 보낸다`() {
         val member = TableMember(id = UUID.randomUUID(), email = "test@example.com", password = "enc", emailVerified = false)
-        `when`(memberService.findByEmail("test@example.com")).thenReturn(member)
+        `when`(memberService.findByEmailOrNull("test@example.com")).thenReturn(member)
 
         authService.requestEmailVerification("test@example.com", "203.0.113.1")
 
