@@ -136,6 +136,38 @@ Google SRE 책은 과부하 대응으로 기능을 낮춰 응답하는 방법(gr
 회원 한도에 걸릴 수 있어, 사용자 요청 경로인 컨트롤러에서만 건다. `consume`은 자기 트랜잭션으로
 짧게 끝나므로 크롤링(수십 초) 동안 카운터 행을 잠그지 않는다.
 
+### 5-6. 동시 처리 한계는 Spring 설정이 아니라 Lambda 칸 수가 정한다
+
+일반 서버(EC2, 예전 App Runner)라면 Spring Boot의 `server.tomcat.threads.max`(기본 200)가 서버 한
+대의 동시 처리 수를 정한다. 이 레포의 Lambda에는 **Tomcat이 없다** — SnapStart 체크포인트 때문에
+소켓을 열 수 없어 `LambdaHandler`가 `DispatcherServlet`을 MockMvc로 직접 호출한다
+([`DEPLOY.md`](DEPLOY.md) "MockMvc 방식을 사용하는 이유"). 그리고 Lambda는 실행 환경(이하 "칸")
+하나에 요청을 한 번에 1건만 넣는다.
+
+```
+일반 서버                                   이 레포의 Lambda
+┌────────── 서버 1대 ──────────┐            ┌ 칸1 ┐ ┌ 칸2 ┐ ... ┌ 칸10 ┐
+│ Tomcat 스레드 200개          │            │요청1│ │요청1│     │요청1 │
+│ → threads.max로 동시 처리 조절│            └─────┘ └─────┘     └──────┘
+└──────────────────────────────┘            동시 처리 수 = 칸 수(AWS 계정 한도 10)
+```
+
+그래서 Tomcat 스레드·`@Async` 풀(`AsyncConfig`)·Hikari 풀을 늘려도 칸당 1건은 바뀌지 않는다
+(Hikari 풀 5도 실제로는 칸마다 1개 남짓만 쓴다).
+
+```
+동시 처리 한계 = 칸 수(AWS 계정 설정)  ÷  요청 1건이 칸을 잡는 시간(코드가 결정)
+```
+
+- **칸 수**는 코드로 못 바꾼다 — Service Quotas 상향 요청(무료, 승인은 AWS 판단)이 필요하다.
+- **칸을 잡는 시간**이 코드의 몫이다. 조회는 0.3초 안팎이라 문제가 없고, 칸을 오래 잡는 건 사실상
+  글 등록(동기 크롤링, 수 초~수십 초) 하나다(9장 실측).
+- 코드 쪽 대책 후보: ① 글 등록을 "빠른 저장 + 비동기 크롤링"으로 바꾸기(효과 가장 큼),
+  ② 비로그인 공개 조회를 CloudFront에서 캐싱해 Lambda까지 안 오게 하기(로그인 응답엔 본인
+  좋아요·북마크 여부가 들어가 캐싱하면 안 됨 — 인증 전달 방식 조사가 먼저), ③ 외부 호출
+  타임아웃 줄이기. 콜드 스타트(새 칸에 1.5~5초)를 더 줄이는 건 유료 Provisioned Concurrency
+  영역이다.
+
 ## 6. 데이터 모델
 
 새 테이블은 없다. 기존 `auth_rate_limits`(정본 DDL:
@@ -173,13 +205,16 @@ Google SRE 책은 과부하 대응으로 기능을 낮춰 응답하는 방법(gr
 
 ### 7-2. 엣지·알람 (레포 밖, AWS 콘솔에서 관리)
 
-| 항목 | 값 | 위치 |
-|---|---|---|
-| Lambda 계정 동시 실행 | 10 (신규 계정 한도, 사용량에 따라 AWS가 자동 상향) | AWS 계정, 2026-10-02 실측 |
-| Hikari 풀 | 인스턴스당 5 → 최대 10×5=50 DB 연결 | `src/main/resources/application.yml:17` |
-| WAF rate-based rule | 8-1 런북 참고 (Count로 관찰 후 Block) | WAF 콘솔 `CreatedByCloudFront-bcd729fb` |
-| CloudWatch 알람 | 8-2 런북 참고 | CloudWatch 콘솔 (ap-northeast-1) |
-| AWS Budgets | 8-3 런북 참고 | Billing 콘솔 |
+| 항목 | 값 | 위치 | 필요도 · 비용 |
+|---|---|---|---|
+| Lambda 계정 동시 실행 | 10 (신규 계정 한도, 사용량에 따라 AWS가 자동 상향) | AWS 계정, 2026-10-02 실측 | — |
+| Hikari 풀 | 인스턴스당 5 → 최대 10×5=50 DB 연결 | `src/main/resources/application.yml:17` | — |
+| WAF rate-based rule | 8-1 런북 참고 (Count로 관찰 후 Block) | WAF 콘솔 `CreatedByCloudFront-bcd729fb` | **필요** · 추가 비용 없음(Free 플랜 규칙 5개 안) |
+| CloudWatch 알람 (`Throttles`) | 8-2 런북 참고 | CloudWatch 콘솔 (ap-northeast-1) | 선택 · 무료(프리티어 알람 10개 안) |
+| AWS Budgets | 8-3 런북 참고 | Billing 콘솔 | 선택(우선순위 낮음) · 무료(알림만) |
+
+필요도는 2026-10-03 실측(9장)으로 판단했다. 콘솔 작업은 아직 하나도 적용되지 않았다
+(2026-10-03 기준 — 적용하면 이 문장을 고친다).
 
 ## 8. 코드 지도와 자주 하는 수정
 
@@ -198,6 +233,10 @@ Google SRE 책은 과부하 대응으로 기능을 낮춰 응답하는 방법(gr
 | 긴급 차단 | WAF rate rule 한도를 낮추거나 IP 차단 규칙 추가(규칙 수 5개 한도 주의) | 불필요 |
 
 ### 8-1. 런북: WAF rate-based rule
+
+**왜 필요한가**: WAF는 이미 하루 800~1,800건을 알려진 악성 IP·공격 패턴으로 차단 중이다(9장).
+목록·상세 같은 공개 조회에는 앱 한도가 없어, 처음 보는 IP 하나가 몰아치면 Lambda 10칸이 차서
+사이트 전체가 429가 된다. 이걸 앱 앞에서 막는 장치는 이것뿐이다. 추가 비용 없음.
 
 1. AWS 콘솔 → WAF & Shield → Web ACLs → 리전 **Global (CloudFront)** → `CreatedByCloudFront-bcd729fb`
 2. Rules → Add rules → Add my own rules → Rule type **Rate-based rule**
@@ -221,13 +260,27 @@ WAF 차단은 429가 아니라 **403**으로 나간다. FE는 이를 `EDGE_BLOCK
 | 알람 | 지표 | 조건 | 의미 |
 |---|---|---|---|
 | `link-sphere-api-throttles` | Lambda `Throttles` (FunctionName=link-sphere-api), Sum | 5분 동안 ≥ 1 | 동시 실행 10칸이 다 찼다 — 한도 상향 요청을 검토할 신호 |
-| `link-sphere-api-errors` | Lambda `Errors`, Sum | 5분 동안 ≥ 5 | 장애 또는 공격 |
+
+누락된 데이터 처리는 "양호로 처리"로 둔다(요청 없는 시간대에 경보 상태가 되지 않게).
+
+**Lambda `Errors` 알람은 만들지 않는다.** 이 지표는 함수 자체가 실패한 경우만 센다 — Spring은
+500도 정상 HTTP 응답으로 돌려주므로 세지지 않는다. 실제로 2026-10-03 실측 중 500이 4건 났는데도
+30일 내내 `Errors`는 0이었다. 앱 500을 잡으려면 로그 기반 지표(metric filter)가 따로 필요하다.
+
+비용: CloudWatch 표준 알람은 지표 10개까지 무료이고 넘으면 개당 월 $0.10이다
+([CloudWatch 가격](https://aws.amazon.com/cloudwatch/pricing/)). SNS 이메일의 무료 한도는 가격
+페이지에서 숫자를 확인하지 못했다(미확인) — 알람 메일은 문제 시에만 오므로 실질 비용은 0에 가깝다.
 
 Lambda 문서에 따르면 throttle된 요청은 `Invocations`에도 `Errors`에도 세지 않는다
 ([Lambda 지표](https://docs.aws.amazon.com/lambda/latest/dg/monitoring-metrics-types.html)) — 그래서
 `Throttles`를 따로 봐야 한다.
 
 ### 8-3. 런북: AWS Budgets
+
+비용: 알림만 쓰면 무료다 — _"예산을 모니터링하고 알림을 받는 것은 무료다"_ (번역,
+[AWS Budgets 가격](https://aws.amazon.com/aws-cost-management/aws-budgets/pricing/)). 자동 조치(budget
+action)와 리포트는 유료라 쓰지 않는다. 우선순위는 낮다 — 9월 요금이 약 $4.6이고 Lambda는 무료
+한도 안($0)이며, WAF IP 제한을 넣으면 요금 폭증 시나리오 자체가 거의 막힌다.
 
 Billing → Budgets → Create budget → Cost budget, 월 $10(예시) → 알림 2개: 실제 비용 80%, 예측 비용
 100%, 운영자 이메일.
@@ -242,7 +295,36 @@ Budgets는 차단 장치가 아니다. AWS 문서는 _"알림을 받기 전에 �
 - 단위 테스트: `RateLimitServiceTest`(consume·tryConsume 경계값, Retry-After 범위),
   `PostServiceTest`(강등 시 Gemini 미호출, size 100000 → 50), `AuthServiceTest`·`PasswordResetServiceTest`
   (consume 전환) 통과
-- 실제 DB 동작: 배포 후 확인 예정(로컬 Postgres가 없어 배포 전에는 mock 테스트만 했다)
+- 실제 DB 동작(운영, 2026-10-03, 없는 이메일로 curl — 본문 해시 헤더 `x-amz-content-sha256` 필수)
+  - `GET /api/post?size=100000` → 전체 231건 중 50건 응답
+  - 비밀번호 재설정 요청 4회 → 200 ×3, 429 ×1 + `Retry-After: 915`
+  - (BE #62 배포 후) 로그인 실패 7회 → 401 ×5, 429 ×2 / 인증메일 재발송 4회 → 200 ×3, 429 ×1
+
+### 9-1. 트래픽 실측 (2026-09-03 ~ 10-03, CloudWatch 읽기 전용 조회)
+
+| 지표 | 값 |
+|---|---|
+| Lambda 호출 | 하루 144~4,276회. 바닥선 약 300회는 5분 워밍 핑(하루 288회) |
+| 동시 실행 최대 | 대부분 2~6. 2026-09-08 12:50(KST)에 한 번 10, 그때 Throttles 3건(원인 미확인) |
+| Lambda `Errors` | 30일 내내 0 (앱 500은 세지 않는다 — 8-2) |
+| Duration | 평균 약 0.12초, 최대 45.6초 |
+| WAF 차단 | 2026-09-29부터 하루 800~1,800건. 대부분 IP 평판 규칙, Common 규칙 하루 240~510건 |
+| 9월 AWS 요금 | 약 $4.6 (도메인 $3, Route 53 $0.5, Secrets Manager $0.4, S3 $0.3 등). Lambda $0 |
+
+### 9-2. 동시 요청 실측 (운영, 2026-10-03 11:20 KST, `GET /api/post?page=0&size=10`)
+
+직접 측정. 방법: `seq N | xargs -P N -I{} curl -s -o /dev/null -w "%{http_code} %{time_total}\n" <URL>`을
+N=5·10·15로 8초 간격 실행(총 30건).
+
+| 동시 요청 | 결과 | 응답 시간 |
+|---|---|---|
+| 5 | 200 ×5 | 0.56초 / 1.7~1.8초 ×3 / 5.4초 ×1 |
+| 10 | 200 ×10 | 0.29~0.44초 ×7 / 1.7~2.0초 ×3 |
+| 15 | 200 ×10, **429 ×5** | 429는 0.17초에 즉시 거절, 200은 0.27~1.0초 |
+
+- 한도는 정확히 10이다. 넘친 요청은 앱까지 가지 않고 Lambda 입구에서 즉시 429가 된다.
+- 새 칸을 띄우면(콜드 스타트) 1.5~5초가 더 걸린다. 이미 떠 있는 칸은 0.3초 안팎.
+- DB는 동시 10건에서 병목이 아니었다(떠 있는 칸 7개가 동시에 0.3~0.4초).
 
 ## 10. 시행착오
 
@@ -278,6 +360,10 @@ Budgets는 차단 장치가 아니다. AWS 문서는 _"알림을 받기 전에 �
 
 ## 11. 남은 것
 
+- 콘솔 작업 적용: WAF IP 제한(필요), Throttles 알람·Budgets(선택) — 7-2 표
+- Lambda 동시 실행 한도 상향 요청 검토 (Service Quotas, 무료) — 5-6, 9-2
+- 글 등록을 "빠른 저장 + 비동기 크롤링"으로 — 칸을 오래 잡는 유일한 요청 제거(5-6). 별도 계획
+- 비로그인 공개 조회 CloudFront 캐싱 — 인증 전달 방식 조사부터(5-6)
 - 북마크 폴더 내 검색(`BookmarkFolderService`)도 Gemini 임베딩을 부르지만 로그인 전용이라 이번엔
   한도를 걸지 않았다
 - 댓글·좋아요·북마크 회원별 한도 (WAF IP 제한으로 충분하다고 보고 보류)
@@ -295,6 +381,8 @@ Budgets는 차단 장치가 아니다. AWS 문서는 _"알림을 받기 전에 �
 | consume / tryConsume | 기록과 확인을 한 번에 하는 `RateLimitService` 메서드. 초과 시 전자는 429, 후자는 false |
 | 강등 (graceful degradation) | 막는 대신 비싼 부분을 빼고 응답하는 것 |
 | `Retry-After` | 몇 초 뒤 다시 시도하라는 HTTP 응답 헤더([RFC 9110 §10.2.3](https://www.rfc-editor.org/rfc/rfc9110#field.retry-after)) |
+| 칸 (실행 환경) | Lambda가 요청을 처리하려고 띄우는 독립된 실행 단위. 한 번에 요청 1건만 처리하고, 계정 한도(10)만큼만 동시에 뜬다 |
+| 콜드 스타트 | 새 칸을 띄울 때 드는 준비 시간. SnapStart로 줄였지만 실측 1.5~5초 |
 | Denial of Wallet | 서비스를 멈추는 대신 사용량 과금을 늘려 비용 피해를 주는 공격 |
 
 ## 13. 관련 문서
