@@ -1,6 +1,7 @@
 package com.example.linksphere.domain.upload
 
 import com.example.linksphere.global.common.SupabaseStorageService
+import com.example.linksphere.global.exception.UnsupportedImageTypeException
 import org.springframework.stereotype.Service
 
 @Service
@@ -17,7 +18,7 @@ class UploadService(
     fun createSignedUploadUrl(request: UploadUrlRequest): UploadUrlResponse {
         val sanitizedExtension = request.fileExtension.lowercase()
         if (sanitizedExtension !in ALLOWED_EXTENSIONS) {
-            throw IllegalArgumentException("Invalid file extension")
+            throw UnsupportedImageTypeException(sanitizedExtension)
         }
 
         val signed = supabaseStorageService.createSignedUploadUrl(sanitizedExtension)

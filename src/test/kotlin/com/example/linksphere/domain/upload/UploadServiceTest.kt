@@ -1,6 +1,7 @@
 package com.example.linksphere.domain.upload
 
 import com.example.linksphere.global.common.SupabaseStorageService
+import com.example.linksphere.global.exception.UnsupportedImageTypeException
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
@@ -41,7 +42,7 @@ class UploadServiceTest {
 
     @Test
     fun `createSignedUploadUrl throws when extension has no alphanumeric characters`() {
-        assertThrows(IllegalArgumentException::class.java) {
+        assertThrows(UnsupportedImageTypeException::class.java) {
             uploadService.createSignedUploadUrl(UploadUrlRequest("../.."))
         }
         org.mockito.Mockito.verifyNoInteractions(supabaseStorageService)
@@ -51,7 +52,7 @@ class UploadServiceTest {
     fun `createSignedUploadUrl rejects path-traversal-like input instead of sanitizing it`() {
         // 예전엔 영숫자만 걸러내 "../../png" 같은 입력도 "png"로 정제해 통과시켰다. 이제는 허용
         // 목록과 정확히 일치해야만 통과한다 - 정제해서 살리는 대신 통째로 거부한다.
-        assertThrows(IllegalArgumentException::class.java) {
+        assertThrows(UnsupportedImageTypeException::class.java) {
             uploadService.createSignedUploadUrl(UploadUrlRequest("../../png"))
         }
         org.mockito.Mockito.verifyNoInteractions(supabaseStorageService)
@@ -59,7 +60,7 @@ class UploadServiceTest {
 
     @Test
     fun `createSignedUploadUrl rejects non-image extensions`() {
-        assertThrows(IllegalArgumentException::class.java) {
+        assertThrows(UnsupportedImageTypeException::class.java) {
             uploadService.createSignedUploadUrl(UploadUrlRequest("exe"))
         }
         org.mockito.Mockito.verifyNoInteractions(supabaseStorageService)

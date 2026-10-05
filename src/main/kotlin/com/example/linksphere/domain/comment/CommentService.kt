@@ -6,6 +6,8 @@ import com.example.linksphere.domain.member.TableMember
 import com.example.linksphere.domain.post.PostRepository
 import com.example.linksphere.global.common.Paging
 import com.example.linksphere.global.common.SupabaseStorageService
+import com.example.linksphere.global.exception.CommentDeletedException
+import com.example.linksphere.global.exception.CommentNotFoundException
 import com.example.linksphere.global.exception.EmailNotVerifiedException
 import com.example.linksphere.global.exception.ForbiddenException
 import com.example.linksphere.global.exception.InvalidInputException
@@ -176,9 +178,7 @@ class CommentService(
         if (parentId != null) {
             val parentComment =
                 commentRepository.findByIdOrNull(parentId)
-                    ?: throw IllegalArgumentException(
-                        "Parent comment not found",
-                    )
+                    ?: throw CommentNotFoundException(parentId)
             if (parentComment.parentId != null) {
                 throw IllegalArgumentException(
                     "Reply to reply is not allowed (Max Depth 1)",
@@ -245,7 +245,7 @@ class CommentService(
 
         val parent =
             commentRepository.findByIdOrNull(parentId)
-                ?: throw IllegalArgumentException("Parent comment not found")
+                ?: throw CommentNotFoundException(parentId)
 
         // Depth Check (Max Depth 1)
         if (parent.parentId != null) {
@@ -292,7 +292,7 @@ class CommentService(
     fun deleteComment(commentId: UUID, userId: UUID) {
         val comment =
             commentRepository.findByIdOrNull(commentId)
-                ?: throw IllegalArgumentException("Comment not found")
+                ?: throw CommentNotFoundException(commentId)
 
         if (comment.userId != userId) {
             throw ForbiddenException("Not authorized to delete this comment")
@@ -386,14 +386,14 @@ class CommentService(
 
         val comment =
             commentRepository.findByIdOrNull(commentId)
-                ?: throw IllegalArgumentException("Comment not found")
+                ?: throw CommentNotFoundException(commentId)
 
         if (comment.userId != userId) {
             throw ForbiddenException("Not authorized to update this comment")
         }
 
         if (comment.isDeleted) {
-            throw IllegalStateException("Cannot update a deleted comment")
+            throw CommentDeletedException(commentId)
         }
 
         val previousImageUrls = extractManagedImageUrls(comment.content)

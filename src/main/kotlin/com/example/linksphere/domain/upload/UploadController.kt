@@ -29,8 +29,7 @@ class UploadController(
     @Operation(
         summary = "이미지 업로드용 서명 URL 발급",
         description = "Supabase Storage 서명 URL 을 발급한다(실제 업로드는 클라이언트가 이 URL로 직접 한다). " +
-            "허용 확장자가 아니면 400 이 아니라 404 NOT_FOUND 로 응답한다(IllegalArgumentException 공통 매핑). " +
-            "실패: 404 NOT_FOUND(허용되지 않은 확장자) · 429 RATE_LIMIT_EXCEEDED(회원당 시간당 발급 한도 초과)",
+            "실패: 400 UNSUPPORTED_IMAGE_TYPE(허용되지 않은 확장자) · 429 RATE_LIMIT_EXCEEDED(회원당 시간당 발급 한도 초과)",
     )
     @PostMapping("/upload/signed-url")
     fun createSignedUploadUrl(
