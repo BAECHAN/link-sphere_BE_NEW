@@ -50,4 +50,19 @@ interface CommentRepository : JpaRepository<TableComment, UUID> {
     // 고아 이미지 정리 도구(OrphanImageCleanupRunner)용 — 위와 같은 이유로 스칼라 프로젝션을 쓴다.
     @Query("SELECT c.content FROM TableComment c")
     fun findAllContent(): List<String>
+
+    // 이미지를 지우기 직전에 "다른 댓글이 아직 본문에 이 URL을 쓰는가"를 확인한다(CommentService
+    // 삭제 경로). pattern은 호출부가 '!'로 이스케이프한 LIKE 패턴이다. 지우는 댓글 자신은 제외한다.
+    @Query(
+        "SELECT CASE WHEN COUNT(c) > 0 THEN true ELSE false END FROM TableComment c " +
+            "WHERE c.id <> :excludedId AND c.content LIKE :pattern ESCAPE '!'",
+    )
+    fun existsOtherCommentContaining(@Param("pattern") pattern: String, @Param("excludedId") excludedId: UUID): Boolean
+
+    // 위와 같지만 게시글 삭제용 - 그 게시글의 댓글은 함께 지워지므로 전부 제외한다.
+    @Query(
+        "SELECT CASE WHEN COUNT(c) > 0 THEN true ELSE false END FROM TableComment c " +
+            "WHERE c.postId <> :postId AND c.content LIKE :pattern ESCAPE '!'",
+    )
+    fun existsCommentOutsidePostContaining(@Param("pattern") pattern: String, @Param("postId") postId: UUID): Boolean
 }
