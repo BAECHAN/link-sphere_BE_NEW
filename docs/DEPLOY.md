@@ -635,6 +635,57 @@ aws events put-targets \
   0에 가깝게 유지되는지 주기적으로 확인한다(0이 아니면 타겟이 안 돌고 있거나
   실패가 누적되는 신호).
 
+### 11. 고아 이미지 정리 (기존 EventBridge 룰에 타겟 추가) — 타겟 등록 전
+
+`OrphanImageGcService`가 아무도 쓰지 않는 업로드 이미지(버킷 객체 중 댓글 본문·회원 아바타
+어디에도 없는 것)를 업로드 24시간 뒤부터 지운다. 업로드는 클라이언트가 Supabase에 직접 하므로,
+업로드는 성공했는데 저장이 실패하거나 커밋 후 스토리지 삭제가 실패한 파일은 이 정리가 최종적으로
+회수한다. Supabase Storage에는 현재 객체를 자동 만료하는 규칙이 없어 직접 정리한다(근거·대안
+비교는 `docs/plans/2026-10-05-image-upload-lifecycle.md`). 10장과 같은 이유로 새 룰 없이
+`link-sphere-feed-crawl` 룰(4일마다)에 타겟만 추가한다 - 권한도 그대로 재사용된다.
+
+안전장치(코드 상수, `OrphanImageGcService.kt` companion):
+
+| 파라미터 | 값 | 이유 |
+| --- | --- | --- |
+| `MIN_AGE` | 24시간 | 업로드는 제출 직전에 일어나고 서명 업로드 URL은 2시간 유효 - 진행 중인 제출을 건드리지 않는다 |
+| `MAX_DELETE_PER_RUN` | 500 | 판정 버그가 있어도 한 번에 지우는 양을 제한한다 |
+| 마감 | 90초 | `AccountPurgeService`와 같다. 남은 후보는 다음 실행으로 미룬다 |
+| 안전 중단 | 참조 0건인데 후보가 있으면 삭제 안 함 | DB 조회 이상이 대량 삭제로 번지는 것을 막는다 |
+
+적용 순서:
+
+1. 코드가 `prod`로 배포되고 5회 연속 invoke 게이트를 통과한 뒤,
+2. **dry-run**으로 한 번 실행해 후보를 확인한다(삭제하지 않고 로그에 요약과 후보 20개만 남긴다):
+   ```bash
+   echo '{"linksphereJob":"orphan-image-gc","dryRun":true}' > /tmp/orphan-gc-event.json
+   aws lambda invoke --function-name link-sphere-api:prod --log-type Tail \
+     --payload fileb:///tmp/orphan-gc-event.json /tmp/out.json \
+     --query 'LogResult' --output text | base64 -d
+   ```
+   로그의 `[OrphanImageGc] 완료 - dryRun=true, 전체=N, 참조=N, 후보=N` 요약과 후보 URL 몇 개를
+   DB(`comments.content`·`members.image`·`posts`)에서 찾아 정말 안 쓰이는지 대조한다. 2026-10-05
+   로컬 dry-run 실측은 전체 76, 참조 31, 후보 45였고, 후보 45개 모두 댓글·회원·게시글 어디에서도
+   참조되지 않음을 읽기 전용 SQL로 확인했다.
+3. 확인되면 같은 명령에서 `"dryRun":true`를 빼고 한 번 실행한 뒤, 다시 dry-run해 후보가 0인지 본다.
+4. 타겟을 추가한다:
+   ```bash
+   aws events put-targets \
+     --rule link-sphere-feed-crawl \
+     --region ap-northeast-1 \
+     --targets '[{
+       "Id": "orphan-image-gc",
+       "Arn": "arn:aws:lambda:ap-northeast-1:ACCOUNT_ID:function:link-sphere-api:prod",
+       "Input": "{\"linksphereJob\":\"orphan-image-gc\"}"
+     }]'
+   ```
+   `aws events list-targets-by-rule --rule link-sphere-feed-crawl --region ap-northeast-1`로
+   `feed-crawl`·`account-purge`·`orphan-image-gc` 세 타겟이 다 남아있는지 확인한다.
+
+- 스토리지 삭제 실패는 `SupabaseStorageService.deleteObjectsByPublicUrls`가 로그만 남기므로,
+  다음 실행에서 같은 파일이 다시 후보로 잡혀 재시도된다(별도 재처리 코드 없음).
+- 로컬에서 같은 판정을 미리 보려면 `tools/OrphanImageCleanupRunner.kt` 머리말의 명령을 쓴다.
+
 ---
 
 ## GitHub 설정
