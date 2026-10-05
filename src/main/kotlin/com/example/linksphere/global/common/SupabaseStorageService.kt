@@ -1,5 +1,6 @@
 package com.example.linksphere.global.common
 
+import com.fasterxml.jackson.annotation.JsonProperty
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.HttpEntity
@@ -8,6 +9,8 @@ import org.springframework.http.HttpMethod
 import org.springframework.http.MediaType
 import org.springframework.stereotype.Service
 import org.springframework.web.client.RestTemplate
+import java.time.Instant
+import java.time.OffsetDateTime
 import java.util.UUID
 
 @Service
@@ -24,7 +27,13 @@ class SupabaseStorageService(
 
     private data class SignUploadUrlApiResponse(val url: String, val token: String)
 
-    private data class StorageObjectApiResponse(val name: String)
+    /** 버킷 객체 하나. createdAt은 폴더 같은 가상 항목이면 비어 있다. */
+    data class StoredObject(val publicUrl: String, val createdAt: Instant?)
+
+    private data class StorageObjectApiResponse(
+        val name: String,
+        @JsonProperty("created_at") val createdAt: String? = null,
+    )
 
     /**
      * 클라이언트가 이 스토리지로 직접 업로드할 수 있는 서명된 URL을 발급한다.
@@ -101,10 +110,10 @@ class SupabaseStorageService(
     }
 
     /**
-     * 버킷에 있는 모든 객체의 공개 URL을 페이지네이션을 따라가며 전부 모은다.
-     * 고아 이미지 정리 도구(OrphanImageCleanupRunner) 전용 — 일반 요청 경로에서는 쓰지 않는다.
+     * 버킷에 있는 모든 객체의 공개 URL과 생성 시각을 페이지네이션을 따라가며 전부 모은다.
+     * 고아 이미지 정리(OrphanImageGcService) 전용 — 일반 요청 경로에서는 쓰지 않는다.
      */
-    fun listAllObjectUrls(): List<String> {
+    fun listAllObjects(): List<StoredObject> {
         val listUrl = "$supabaseUrl/storage/v1/object/list/$bucketName"
         val headers = HttpHeaders()
         headers.set("Authorization", "Bearer $supabaseKey")
@@ -113,11 +122,14 @@ class SupabaseStorageService(
 
         val limit = 100
         var offset = 0
-        val names = mutableListOf<String>()
+        val objects = mutableListOf<StorageObjectApiResponse>()
 
         while (true) {
+            // prefix는 필수다 - 빠지면 400 "body must have required property 'prefix'"(2026-10-05 실측).
+            // 업로드 파일은 버킷 루트에 "<uuid>.<확장자>"로 놓이므로 빈 문자열(루트)로 연다.
             val body =
                 mapOf(
+                    "prefix" to "",
                     "limit" to limit,
                     "offset" to offset,
                     "sortBy" to mapOf("column" to "name", "order" to "asc"),
@@ -137,11 +149,14 @@ class SupabaseStorageService(
                     throw RuntimeException("Failed to list storage objects")
                 }
 
-            names += page.map { it.name }
+            objects += page
             if (page.size < limit) break
             offset += limit
         }
 
-        return names.map { "$publicUrlPrefix$it" }
+        return objects.map { StoredObject("$publicUrlPrefix${it.name}", it.createdAt?.let(::parseInstantOrNull)) }
     }
+
+    // Supabase는 created_at을 "...Z"나 "+00:00" 오프셋으로 준다 - 둘 다 받도록 OffsetDateTime으로 읽는다.
+    private fun parseInstantOrNull(value: String): Instant? = runCatching { OffsetDateTime.parse(value).toInstant() }.getOrNull()
 }

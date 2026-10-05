@@ -11,6 +11,22 @@
 
 ### Added
 
+- `upload` 아무도 쓰지 않는 업로드 이미지를 4일마다 자동 정리(업로드 24시간 경과분만)
+  <details><summary>배경·구현</summary>
+
+  업로드는 클라이언트가 Supabase에 직접 해서, 업로드는 성공했는데 댓글·프로필 저장이 실패하거나
+  커밋 후 스토리지 삭제가 실패한 파일이 그대로 남았다. 회수 수단은 로컬에서 손으로 돌리는
+  `OrphanImageCleanupRunner`뿐이었고, 그마저 Supabase 목록 API의 필수 `prefix`가 빠져 400으로
+  실패하고 있었다(2026-10-05 실측). 판정을 `OrphanImageGcService`로 옮겨 Lambda
+  (`linksphereJob: "orphan-image-gc"`)와 로컬 도구가 함께 쓰게 했다. 업로드 24시간 경과만 대상,
+  한 번에 최대 500개, 90초 마감, 참조 0건이면 중단한다. 로컬 dry-run 실측은 전체 76·참조 31·후보
+  45였고, 후보 45개 모두 어디에서도 참조되지 않음을 읽기 전용 SQL로 확인했다. EventBridge 타겟
+  등록은 `docs/DEPLOY.md` 11장 절차대로 dry-run 확인 뒤에 한다. (`OrphanImageGcService.kt`(신규),
+  `SupabaseStorageService.kt`, `LambdaHandler.kt`, `OrphanImageCleanupRunner.kt`,
+  계획 `docs/plans/2026-10-05-image-upload-lifecycle.md`)
+
+  </details>
+
 - `post` 작성 중 링크 미리보기 API(`GET /link-preview`)와 10분 캐시, URL 실패 원인별 에러 코드
   <details><summary>배경·구현</summary>
 

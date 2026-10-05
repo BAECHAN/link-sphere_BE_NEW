@@ -9,6 +9,7 @@ import com.example.linksphere.domain.feed.FeedCrawlService
 import com.example.linksphere.domain.feed.FeedItemJobEvent
 import com.example.linksphere.domain.post.PostAIService
 import com.example.linksphere.domain.post.PostCreatedEvent
+import com.example.linksphere.domain.upload.OrphanImageGcService
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import jakarta.servlet.http.Cookie
@@ -144,6 +145,10 @@ class LambdaHandler : RequestStreamHandler {
             }
             "account-purge" -> {
                 handleAccountPurgeJob(output)
+                return
+            }
+            "orphan-image-gc" -> {
+                handleOrphanImageGcJob(event, output)
                 return
             }
         }
@@ -317,6 +322,18 @@ class LambdaHandler : RequestStreamHandler {
     private fun handleAccountPurgeJob(output: OutputStream) {
         val accountPurgeService = applicationContext.getBean(AccountPurgeService::class.java)
         accountPurgeService.purgeExpired()
+        mapper.writeValue(output, mapOf("statusCode" to 200, "body" to "ok"))
+    }
+
+    // EventBridge cron(4일마다, link-sphere-feed-crawl 룰을 공유)이 호출하는 고아 이미지 정리.
+    // 수동 확인용으로 {"linksphereJob":"orphan-image-gc","dryRun":true}를 보내면 지우지 않고
+    // 로그에 요약과 후보 일부만 남긴다(docs/DEPLOY.md 11장).
+    private fun handleOrphanImageGcJob(event: JsonNode, output: OutputStream) {
+        val dryRun = event.get("dryRun")?.asBoolean() ?: false
+        val summary = applicationContext.getBean(OrphanImageGcService::class.java).collect(dryRun)
+        if (dryRun) {
+            summary.candidates.take(20).forEach { logger.info("[OrphanImageGc] 후보 $it") }
+        }
         mapper.writeValue(output, mapOf("statusCode" to 200, "body" to "ok"))
     }
 }
