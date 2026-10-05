@@ -635,7 +635,15 @@ aws events put-targets \
   0에 가깝게 유지되는지 주기적으로 확인한다(0이 아니면 타겟이 안 돌고 있거나
   실패가 누적되는 신호).
 
-### 11. 고아 이미지 정리 (기존 EventBridge 룰에 타겟 추가) — 타겟 등록 전
+### 11. 고아 이미지 정리 (기존 EventBridge 룰에 타겟 추가) — 적용 완료 (2026-10-05)
+
+적용 결과(2026-10-05, BE #67 배포 후 아래 절차 그대로):
+
+- 운영 dry-run: `전체=76, 참조=31, 후보=45` - 로컬 dry-run과 같았다.
+- 실삭제: `삭제요청=45`, CloudWatch에 `Failed to delete storage objects` 0건.
+- 재 dry-run: `전체=31, 참조=31, 후보=0`.
+- `put-targets` 후 `list-targets-by-rule`에 `account-purge`·`feed-crawl`·`orphan-image-gc` 세 타겟이
+  조회됨. 다음 정기 실행에서 `[OrphanImageGc]` 로그가 찍히는지는 아직 확인하지 않았다.
 
 `OrphanImageGcService`가 아무도 쓰지 않는 업로드 이미지(버킷 객체 중 댓글 본문·회원 아바타
 어디에도 없는 것)를 업로드 24시간 뒤부터 지운다. 업로드는 클라이언트가 Supabase에 직접 하므로,
