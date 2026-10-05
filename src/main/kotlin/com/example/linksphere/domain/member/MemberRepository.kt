@@ -17,6 +17,9 @@ interface MemberRepository : JpaRepository<TableMember, UUID> {
     @Query("SELECT m.image FROM TableMember m WHERE m.image IS NOT NULL")
     fun findAllImageUrls(): List<String>
 
+    // 댓글 이미지를 지우기 직전에 이 URL을 누군가 아바타로 쓰는지 확인한다(CommentService 삭제 경로)
+    fun existsByImage(image: String): Boolean
+
     // RSS 피드 자동 수집 봇 계정 조회. 파생 쿼리(findFirstByIsBotTrue)는 "Is" 접두어가
     // 프로퍼티명(isBot)과 겹쳐 파싱이 모호해질 수 있어 명시적 @Query를 쓴다.
     @Query("SELECT m FROM TableMember m WHERE m.isBot = true")

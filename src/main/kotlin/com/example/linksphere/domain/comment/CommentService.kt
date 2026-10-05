@@ -29,6 +29,8 @@ private const val DELETED_MEMBER_NICKNAME = "탈퇴한 사용자"
 
 private val URL_REGEX = Regex("""https?://\S+""")
 
+private val LIKE_SPECIAL_CHARS = Regex("[!%_]")
+
 @Service
 class CommentService(
     private val commentRepository: CommentRepository,
@@ -296,7 +298,7 @@ class CommentService(
             throw ForbiddenException("Not authorized to delete this comment")
         }
 
-        val imageUrls = extractManagedImageUrls(comment.content)
+        val imageUrls = extractManagedImageUrls(comment.content).filterNot { isReferencedOutsideComment(it, commentId) }
 
         // 톰스톤은 comments row가 살아남아 FK 캐스케이드가 발동하지 않으므로 명시 삭제가 유일한 수단이다.
         // 하드 삭제 경로에서는 comment_reactions FK ON DELETE CASCADE 가 백스톱으로 남는다.
@@ -336,6 +338,8 @@ class CommentService(
     fun deleteImagesForPost(postId: UUID) {
         val contents = commentRepository.findAllContentByPostId(postId)
         val imageUrls = contents.flatMap { extractManagedImageUrls(it) }
+            .distinct()
+            .filterNot { isReferencedOutsidePost(it, postId) }
         if (imageUrls.isNotEmpty()) {
             TransactionSynchronizationManager.registerSynchronization(
                 object : TransactionSynchronization {
@@ -351,6 +355,17 @@ class CommentService(
         .map { it.value }
         .filter { supabaseStorageService.isManagedUrl(it) }
         .toList()
+
+    // 삭제 경로는 본문에 든 우리 버킷 URL을 지우지만, 그 파일을 누가 올렸는지는 모른다. 그래서 남의
+    // 이미지 URL을 내 댓글에 붙여넣고 그 댓글을 지우거나 고치면 원래 주인의 파일까지 지워졌다. 다른
+    // 댓글 본문이나 회원 아바타가 아직 쓰는 URL은 지우지 않는다(남은 파일은 OrphanImageCleanupRunner
+    // 같은 참조 스캔이 아무도 안 쓰게 됐을 때 회수한다).
+    private fun isReferencedOutsideComment(url: String, commentId: UUID): Boolean = commentRepository.existsOtherCommentContaining(containsPattern(url), commentId) || memberRepository.existsByImage(url)
+
+    private fun isReferencedOutsidePost(url: String, postId: UUID): Boolean = commentRepository.existsCommentOutsidePostContaining(containsPattern(url), postId) || memberRepository.existsByImage(url)
+
+    // LIKE 와일드카드(%, _)와 이스케이프 문자(!)를 리터럴로 바꾼다 - 저장소 쿼리의 ESCAPE '!'와 짝이다.
+    private fun containsPattern(url: String): String = "%" + url.replace(LIKE_SPECIAL_CHARS) { "!${it.value}" } + "%"
 
     @Transactional
     fun updateComment(
@@ -397,7 +412,8 @@ class CommentService(
         // 트랜잭션이 롤백되는데, 여기서 바로 지우면 DB엔 옛 URL이 남고 파일은 이미 사라진
         // 상태가 되어 깨진 이미지가 된다. 본문 텍스트에 직접 써둔 URL은 새 content에도
         // 남으므로 차집합에서 빠져 보존된다.
-        val removedImageUrls = previousImageUrls - extractManagedImageUrls(finalContent).toSet()
+        val removedImageUrls = (previousImageUrls - extractManagedImageUrls(finalContent).toSet())
+            .filterNot { isReferencedOutsideComment(it, commentId) }
         if (removedImageUrls.isNotEmpty()) {
             TransactionSynchronizationManager.registerSynchronization(
                 object : TransactionSynchronization {

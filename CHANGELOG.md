@@ -482,6 +482,19 @@
 
 ### Security
 
+- `comment` 남의 이미지 URL을 붙여넣은 댓글을 지우면 원래 주인의 이미지 파일까지 지워지던 문제
+  <details><summary>배경·구현</summary>
+
+  댓글 삭제·수정, 게시글 삭제는 본문에 든 우리 버킷 URL을 커밋 후 스토리지에서 지우는데, 그
+  파일을 누가 올렸는지는 확인하지 않았다. 그래서 남의 댓글 이미지나 아바타 URL을 내 댓글에
+  붙여넣고 그 댓글을 지우거나 고치면 원래 주인의 파일이 지워졌다. 지우기 직전에 다른 댓글
+  본문(지우는 댓글·게시글 제외)이나 회원 아바타가 아직 쓰는 URL은 빼도록 했다. 남은 파일은 아무도
+  안 쓰게 되면 참조 스캔 정리(`OrphanImageCleanupRunner`)가 회수한다. 업로더 기록으로 "내 파일만
+  내가 지운다"를 정확히 하는 건 후속 작업이다(`docs/plans/2026-10-05-image-upload-lifecycle.md`).
+  (`CommentService.kt`, `CommentRepository.kt`, `MemberRepository.kt`)
+
+  </details>
+
 - `auth` 로그인 실패 한도가 실제로는 한 번도 세지지 않던 문제, 없는 이메일 재발송 500(가입 여부 노출)
   <details><summary>배경·구현</summary>
 

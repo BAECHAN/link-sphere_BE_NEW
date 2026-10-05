@@ -347,6 +347,103 @@ class CommentServiceTest {
     }
 
     @Test
+    fun `deleteComment 는 다른 댓글 본문이 아직 쓰는 이미지를 지우지 않는다`() {
+        val userId = UUID.randomUUID()
+        val commentId = UUID.randomUUID()
+        val (pastedUrl, ownUrl) = imageUrls(2)
+        // pastedUrl은 남의 댓글 이미지를 붙여넣은 것 - 이 댓글을 지워도 원래 댓글이 계속 쓴다.
+        val comment = TableComment(id = commentId, postId = UUID.randomUUID(), userId = userId, content = "$pastedUrl\n$ownUrl")
+
+        `when`(commentRepository.findById(commentId)).thenReturn(Optional.of(comment))
+        `when`(commentRepository.existsByParentId(commentId)).thenReturn(false)
+        `when`(supabaseStorageService.isManagedUrl(pastedUrl)).thenReturn(true)
+        `when`(supabaseStorageService.isManagedUrl(ownUrl)).thenReturn(true)
+        `when`(commentRepository.existsOtherCommentContaining("%$pastedUrl%", commentId)).thenReturn(true)
+
+        TransactionSynchronizationManager.initSynchronization()
+        try {
+            commentService.deleteComment(commentId, userId)
+            TransactionSynchronizationManager.getSynchronizations().forEach { it.afterCommit() }
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization()
+        }
+
+        @Suppress("UNCHECKED_CAST")
+        val captor = ArgumentCaptor.forClass(Collection::class.java) as ArgumentCaptor<Collection<String>>
+        verify(supabaseStorageService).deleteObjectsByPublicUrls(captureValue(captor))
+        assertEquals(setOf(ownUrl), captor.value.toSet())
+    }
+
+    @Test
+    fun `deleteComment 는 누군가 아바타로 쓰는 이미지를 지우지 않는다`() {
+        val userId = UUID.randomUUID()
+        val commentId = UUID.randomUUID()
+        val (avatarUrl) = imageUrls(1)
+        val comment = TableComment(id = commentId, postId = UUID.randomUUID(), userId = userId, content = "내용\n\n$avatarUrl")
+
+        `when`(commentRepository.findById(commentId)).thenReturn(Optional.of(comment))
+        `when`(commentRepository.existsByParentId(commentId)).thenReturn(false)
+        `when`(supabaseStorageService.isManagedUrl(avatarUrl)).thenReturn(true)
+        `when`(memberRepository.existsByImage(avatarUrl)).thenReturn(true)
+
+        TransactionSynchronizationManager.initSynchronization()
+        try {
+            commentService.deleteComment(commentId, userId)
+            assertTrue(TransactionSynchronizationManager.getSynchronizations().isEmpty())
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization()
+        }
+    }
+
+    @Test
+    fun `deleteComment 는 참조 확인 패턴에서 LIKE 와일드카드를 이스케이프한다`() {
+        val userId = UUID.randomUUID()
+        val commentId = UUID.randomUUID()
+        val url = "https://xyz.supabase.co/storage/v1/object/public/comment_images/a%b!c.png"
+        val comment = TableComment(id = commentId, postId = UUID.randomUUID(), userId = userId, content = url)
+
+        `when`(commentRepository.findById(commentId)).thenReturn(Optional.of(comment))
+        `when`(commentRepository.existsByParentId(commentId)).thenReturn(false)
+        `when`(supabaseStorageService.isManagedUrl(url)).thenReturn(true)
+
+        TransactionSynchronizationManager.initSynchronization()
+        try {
+            commentService.deleteComment(commentId, userId)
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization()
+        }
+
+        verify(commentRepository).existsOtherCommentContaining(
+            "%https://xyz.supabase.co/storage/v1/object/public/comment!_images/a!%b!!c.png%",
+            commentId,
+        )
+    }
+
+    @Test
+    fun `deleteImagesForPost 는 다른 게시글 댓글이 쓰는 이미지를 지우지 않는다`() {
+        val postId = UUID.randomUUID()
+        val (sharedUrl, ownUrl) = imageUrls(2)
+
+        `when`(commentRepository.findAllContentByPostId(postId)).thenReturn(listOf("$sharedUrl\n$ownUrl", ownUrl))
+        `when`(supabaseStorageService.isManagedUrl(sharedUrl)).thenReturn(true)
+        `when`(supabaseStorageService.isManagedUrl(ownUrl)).thenReturn(true)
+        `when`(commentRepository.existsCommentOutsidePostContaining("%$sharedUrl%", postId)).thenReturn(true)
+
+        TransactionSynchronizationManager.initSynchronization()
+        try {
+            commentService.deleteImagesForPost(postId)
+            TransactionSynchronizationManager.getSynchronizations().forEach { it.afterCommit() }
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization()
+        }
+
+        @Suppress("UNCHECKED_CAST")
+        val captor = ArgumentCaptor.forClass(Collection::class.java) as ArgumentCaptor<Collection<String>>
+        verify(supabaseStorageService).deleteObjectsByPublicUrls(captureValue(captor))
+        assertEquals(listOf(ownUrl), captor.value.toList())
+    }
+
+    @Test
     fun `deleteImagesForPost 는 이미지가 없으면 정리 훅을 등록하지 않는다`() {
         val postId = UUID.randomUUID()
         `when`(commentRepository.findAllContentByPostId(postId)).thenReturn(listOf("내용"))
@@ -528,6 +625,29 @@ class CommentServiceTest {
         val captor = ArgumentCaptor.forClass(Collection::class.java) as ArgumentCaptor<Collection<String>>
         verify(supabaseStorageService).deleteObjectsByPublicUrls(captureValue(captor))
         assertEquals(setOf(removedUrl1, removedUrl2), captor.value.toSet())
+    }
+
+    @Test
+    fun `updateComment 는 본문에서 뺀 이미지라도 다른 댓글이 아직 쓰면 지우지 않는다`() {
+        val userId = UUID.randomUUID()
+        val commentId = UUID.randomUUID()
+        val (pastedUrl) = imageUrls(1)
+        val comment = TableComment(id = commentId, postId = UUID.randomUUID(), userId = userId, content = "내용\n\n$pastedUrl")
+        val member = TableMember(id = userId, email = "a@a.com", password = "pw", nickname = "tester", emailVerified = true)
+
+        `when`(commentRepository.findById(commentId)).thenReturn(Optional.of(comment))
+        `when`(commentRepository.save(comment)).thenReturn(comment)
+        `when`(memberRepository.findById(userId)).thenReturn(Optional.of(member))
+        `when`(supabaseStorageService.isManagedUrl(pastedUrl)).thenReturn(true)
+        `when`(commentRepository.existsOtherCommentContaining("%$pastedUrl%", commentId)).thenReturn(true)
+
+        TransactionSynchronizationManager.initSynchronization()
+        try {
+            commentService.updateComment(commentId, userId, "내용", null)
+            assertTrue(TransactionSynchronizationManager.getSynchronizations().isEmpty())
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization()
+        }
     }
 
     @Test
