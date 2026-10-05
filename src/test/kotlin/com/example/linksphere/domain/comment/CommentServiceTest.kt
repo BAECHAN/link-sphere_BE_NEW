@@ -7,6 +7,8 @@ import com.example.linksphere.domain.member.TableMember
 import com.example.linksphere.domain.post.PostRepository
 import com.example.linksphere.domain.post.TablePost
 import com.example.linksphere.global.common.SupabaseStorageService
+import com.example.linksphere.global.exception.CommentDeletedException
+import com.example.linksphere.global.exception.CommentNotFoundException
 import com.example.linksphere.global.exception.EmailNotVerifiedException
 import com.example.linksphere.global.exception.ForbiddenException
 import com.example.linksphere.global.exception.InvalidInputException
@@ -543,6 +545,50 @@ class CommentServiceTest {
             commentService.updateComment(UUID.randomUUID(), UUID.randomUUID(), contentOfBytes(6_003), null)
         }
         verifyNoInteractions(commentRepository)
+    }
+
+    @Test
+    fun `updateComment 는 이미 삭제된 댓글이면 CommentDeletedException(409)을 던진다`() {
+        val userId = UUID.randomUUID()
+        val commentId = UUID.randomUUID()
+        val comment = TableComment(id = commentId, postId = UUID.randomUUID(), userId = userId, content = "삭제된 댓글입니다.")
+        comment.isDeleted = true
+
+        `when`(commentRepository.findById(commentId)).thenReturn(Optional.of(comment))
+
+        assertThrows(CommentDeletedException::class.java) {
+            commentService.updateComment(commentId, userId, "수정 내용", null)
+        }
+    }
+
+    @Test
+    fun `createReply 는 부모 댓글이 없으면 CommentNotFoundException을 던진다`() {
+        val parentId = UUID.randomUUID()
+        `when`(commentRepository.findById(parentId)).thenReturn(Optional.empty())
+
+        assertThrows(CommentNotFoundException::class.java) {
+            commentService.createReply(parentId, UUID.randomUUID(), "답글 내용", null)
+        }
+    }
+
+    @Test
+    fun `updateComment 는 댓글이 없으면 CommentNotFoundException을 던진다`() {
+        val commentId = UUID.randomUUID()
+        `when`(commentRepository.findById(commentId)).thenReturn(Optional.empty())
+
+        assertThrows(CommentNotFoundException::class.java) {
+            commentService.updateComment(commentId, UUID.randomUUID(), "수정 내용", null)
+        }
+    }
+
+    @Test
+    fun `deleteComment 는 댓글이 없으면 CommentNotFoundException을 던진다`() {
+        val commentId = UUID.randomUUID()
+        `when`(commentRepository.findById(commentId)).thenReturn(Optional.empty())
+
+        assertThrows(CommentNotFoundException::class.java) {
+            commentService.deleteComment(commentId, UUID.randomUUID())
+        }
     }
 
     @Test

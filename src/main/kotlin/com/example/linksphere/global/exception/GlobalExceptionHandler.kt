@@ -24,6 +24,39 @@ class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response)
     }
 
+    @ExceptionHandler(CommentNotFoundException::class)
+    fun handleCommentNotFoundException(e: CommentNotFoundException): ResponseEntity<ErrorResponse> {
+        val response =
+            ErrorResponse(
+                status = HttpStatus.NOT_FOUND.value(),
+                code = "COMMENT_NOT_FOUND",
+                message = e.message ?: "Comment not found",
+            )
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response)
+    }
+
+    @ExceptionHandler(CommentDeletedException::class)
+    fun handleCommentDeletedException(e: CommentDeletedException): ResponseEntity<ErrorResponse> {
+        val response =
+            ErrorResponse(
+                status = HttpStatus.CONFLICT.value(),
+                code = "COMMENT_DELETED",
+                message = e.message ?: "Comment was deleted",
+            )
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(response)
+    }
+
+    @ExceptionHandler(UnsupportedImageTypeException::class)
+    fun handleUnsupportedImageTypeException(e: UnsupportedImageTypeException): ResponseEntity<ErrorResponse> {
+        val response =
+            ErrorResponse(
+                status = HttpStatus.BAD_REQUEST.value(),
+                code = "UNSUPPORTED_IMAGE_TYPE",
+                message = e.message ?: "Unsupported image type",
+            )
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response)
+    }
+
     @ExceptionHandler(ForbiddenException::class)
     fun handleForbiddenException(e: ForbiddenException): ResponseEntity<ErrorResponse> {
         val response =

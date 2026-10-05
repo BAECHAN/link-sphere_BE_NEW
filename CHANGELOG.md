@@ -216,6 +216,20 @@
 
 ### Changed
 
+- `upload`·`comment` 업로드 확장자 거부·댓글 없음·삭제된 댓글 수정에 원인별 에러 코드
+  <details><summary>배경·구현</summary>
+
+  FE가 업로드·댓글 실패를 원인별로 안내하려면 code가 필요한데, 세 경우 모두 원인을 알 수 없는
+  응답이었다. 허용 목록 밖 확장자는 `IllegalArgumentException` 공통 매핑 때문에 404 `NOT_FOUND`로
+  나가 "서버 오류"로 보였고, 부모·대상 댓글 없음도 범용 `NOT_FOUND`라 "글이 삭제됨"과 구분되지
+  않았고, 이미 삭제된 댓글 수정은 `IllegalStateException`이라 500이었다. 각각 400
+  `UNSUPPORTED_IMAGE_TYPE`, 404 `COMMENT_NOT_FOUND`, 409 `COMMENT_DELETED`로 바꿨다. FE는 모르는
+  code를 기본 안내로 처리하므로 이 BE를 먼저 배포해도 깨지지 않는다. (`UnsupportedImageTypeException.kt`·
+  `CommentNotFoundException.kt`·`CommentDeletedException.kt`(신규), `GlobalExceptionHandler.kt`,
+  `UploadService.kt`, `CommentService.kt`, 계획 `docs/plans/2026-10-05-image-upload-lifecycle.md`)
+
+  </details>
+
 - `auth` 회원탈퇴(`DELETE /auth/account`)에 14일 유예기간 도입 - 로그인하면 자동 복구
   <details><summary>배경·구현</summary>
 
