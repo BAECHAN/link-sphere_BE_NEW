@@ -6,7 +6,7 @@
 >
 > **읽고 나면**: 요청 한도 값을 바꾸거나 새 엔드포인트에 한도를 걸 수 있고, WAF·알람 콘솔 작업을 이 문서만 보고 할 수 있다
 >
-> **마지막 검토**: 2026-10-03
+> **마지막 검토**: 2026-10-11
 
 ## 1. 쉬운 설명
 
@@ -120,7 +120,8 @@ Postgres 카운터(`RateLimitService`)를 쓰고 있어 그대로 확장했다.
 않았다(10장).
 
 로그인은 예외다. "실패만 센다"는 규칙이라 성공할지 모르는 시점에 미리 기록할 수 없어 옛 방식을
-유지한다. 남는 병렬 우회 위험은 WAF IP 제한이 받는다.
+유지한다. 남는 병렬 우회 위험은 WAF IP 제한이 IP당 5분 1000회 넘게, 몇 분 이상 이어지는 경우만
+받는다 — 그보다 작은 병렬 우회는 남는다(8-1 "막는 범위").
 
 ### 5-4. 검색은 막지 않고 강등
 
@@ -211,12 +212,12 @@ Google SRE 책은 과부하 대응으로 기능을 낮춰 응답하는 방법(gr
 |---|---|---|---|
 | Lambda 계정 동시 실행 | 10 (신규 계정 한도, 사용량에 따라 AWS가 자동 상향) | AWS 계정, 2026-10-02 실측 | — |
 | Hikari 풀 | 인스턴스당 5 → 최대 10×5=50 DB 연결 | `src/main/resources/application.yml:17` | — |
-| WAF rate-based rule | 8-1 런북 참고 (Count로 관찰 후 Block) | WAF 콘솔 `CreatedByCloudFront-bcd729fb` | **필요** · 추가 비용 없음(Free 플랜 규칙 5개 안) |
+| WAF rate-based rule | IP당 5분 1000회, **Block** (8-1 런북) | WAF Web ACL `CreatedByCloudFront-bcd729fb` (CLI로만 수정 가능, 8-1) | 권장 · 추가 비용 없음(Free 플랜 규칙 5개 안). 막는 범위가 좁다 — 8-1 |
 | CloudWatch 알람 (`Throttles`) | 8-2 런북 참고 | CloudWatch 콘솔 (ap-northeast-1) | 선택 · 무료(프리티어 알람 10개 안) |
 | AWS Budgets | 8-3 런북 참고 | Billing 콘솔 | 선택(우선순위 낮음) · 무료(알림만) |
 
-필요도는 2026-10-03 실측(9장)으로 판단했다. 적용 상태(2026-10-03): WAF IP 제한은 **적용(Count)**,
-Throttles 알람·Budgets는 미적용(선택).
+필요도는 2026-10-03 실측(9장)으로 판단했다. 적용 상태(2026-10-11): WAF IP 제한은 **적용(Block)** —
+2026-10-03 Count로 넣고 1주 관찰 뒤 2026-10-11 Block으로 전환. Throttles 알람·Budgets는 미적용(선택).
 
 ## 8. 코드 지도와 자주 하는 수정
 
@@ -236,13 +237,29 @@ Throttles 알람·Budgets는 미적용(선택).
 
 ### 8-1. 런북: WAF rate-based rule
 
-**왜 필요한가**: WAF는 이미 하루 800~1,800건을 알려진 악성 IP·공격 패턴으로 차단 중이다(9장).
-목록·상세 같은 공개 조회에는 앱 한도가 없어, 처음 보는 IP 하나가 몰아치면 Lambda 10칸이 차서
-사이트 전체가 429가 된다. 이걸 앱 앞에서 막는 장치는 이것뿐이다. 추가 비용 없음.
+**왜 두는가**: WAF는 이미 하루 800~1,800건을 알려진 악성 IP·공격 패턴으로 차단 중이다(9장).
+목록·상세 같은 공개 조회에는 앱 한도가 없어, 처음 보는 IP 하나가 계속 몰아치면 Lambda 10칸이 차서
+사이트 전체가 429가 될 수 있다. 이 규칙은 그중 **한 IP가 몇 분 이상 계속 몰아치는 경우만** 앱 앞에서
+막는 보험이다. 추가 비용 없음.
 
-**적용 상태**: 2026-10-03 적용 완료 — `RateLimit-PerIP`(우선순위 3, IP당 5분 1000회, **Count**).
-적용 직후 조회 결과 규칙 4개, `CountedRequests` 0건. 원래 설정 백업은 운영자 로컬
-`~/waf-backup-2026-10-03.json`(레포 밖)에 있다.
+**막는 범위** (2026-10-11 정정 — 2026-10-03에는 "이걸 앱 앞에서 막는 장치는 이것뿐"이라고 적었지만,
+아래처럼 막는 범위가 좁다). 5-1에 인용한 AWS 문서대로 이 규칙은 감지까지 보통 30초 안팎이 걸리고,
+IP별로 센다.
+
+| 상황 | 막나 |
+|---|---|
+| 9-2 실측처럼 동시 15건이 한꺼번에 | 못 막는다 — 1000회에 한참 못 미친다 |
+| 한 IP가 수십 초만 몰아침 | 못 막는다 — 감지 전에 끝난다 |
+| 한 IP가 몇 분 이상 계속 몰아침 | **막는다** — 감지 뒤 그 IP의 추가 요청을 403으로 거절 |
+| 여러 IP로 나눠 몰아침 | 못 막는다 — IP별로 센다 |
+
+9-2의 "짧은 몰림 → 429"를 실제로 줄이는 건 이 규칙이 아니라 Lambda 동시 실행 한도 상향과 글 등록
+비동기화(5-6, 11장)다.
+
+**적용 상태**: `RateLimit-PerIP`(우선순위 3, IP당 5분 1000회, **Block**). 2026-10-03 Count로 넣고,
+1주 관찰(9-3) 뒤 2026-10-11 Block으로 바꿨다. 백업은 운영자 로컬(레포 밖)에 있다 —
+`~/waf-backup-2026-10-03.json`(이 규칙 추가 전), `~/waf-2026-10-11/webacl-backup.json`(Block 전환 직전,
+이 규칙이 Count인 상태).
 
 **콘솔에서는 안 된다.** 이 Web ACL은 CloudFront Free 정액 플랜에 묶여 있어 WAF 콘솔에
 "Add my own rules and rule groups"가 보이지 않고, CloudFront 콘솔 Security 탭의 WAF 섹션에도
@@ -271,9 +288,17 @@ aws wafv2 get-web-acl --scope CLOUDFRONT --region us-east-1 --name CreatedByClou
 - 결과 파일이 레포 안에 생기지 않게 레포 밖에서 실행한다(2026-10-03 FE 레포 루트에 생겨 수동 정리).
 - `WAFOptimisticLockException`이면 그사이 설정이 바뀐 것 — 1)부터 다시.
 
-**1주 뒤 Block 전환 (2026-10-10 무렵)**: CloudWatch(us-east-1) → WAFV2 → `CountedRequests`
-(Rule=`RateLimit-PerIP`)를 본다. 정상 사용자가 걸린 흔적이 없으면 위 2)와 같은 방식으로 이 규칙의
-`"Action":{"Count":{}}`를 `"Action":{"Block":{}}`로 바꿔 다시 보낸다(최신 백업 기준).
+**Block 전환 (2026-10-11 완료)**: CloudWatch(us-east-1) → WAFV2 → `CountedRequests`
+(Rule=`RateLimit-PerIP`)가 1주 동안 0건이라 정상 사용자가 걸린 흔적이 없었다(9-3). 위 1)로 새로 백업한 뒤
+이 규칙의 `Action`만 바꿔 다시 보냈다. 다른 규칙은 그대로 둔다.
+
+```bash
+aws wafv2 update-web-acl --scope CLOUDFRONT --region us-east-1 --name CreatedByCloudFront-bcd729fb --id 16fc99ed-1f67-4dec-9951-04806ce95699 --lock-token "$(jq -r .LockToken webacl-backup.json)" --default-action "$(jq -c .WebACL.DefaultAction webacl-backup.json)" --visibility-config "$(jq -c .WebACL.VisibilityConfig webacl-backup.json)" --rules "$(jq -c '.WebACL.Rules | map(if .Name=="RateLimit-PerIP" then .Action={"Block":{}} else . end)' webacl-backup.json)"
+```
+
+Count로 되돌리려면 같은 명령에서 `{"Block":{}}`를 `{"Count":{}}`로 바꾼다. 한도 값만 바꿀 때도 같은 방식으로
+`.Statement.RateBasedStatement.Limit`만 고친다 — AWS 문서는 설정을 바꾸면 그 규칙의 집계가 초기화돼 최대
+1분 동안 제한이 멈출 수 있다고 쓴다([Rate-based rule caveats](https://docs.aws.amazon.com/waf/latest/developerguide/waf-rule-statement-type-rate-based-caveats.html)).
 
 **되돌리기**: 백업 파일의 원래 규칙 배열로 다시 보낸다(lock token은 최신 값으로).
 
@@ -314,7 +339,8 @@ Lambda 문서에 따르면 throttle된 요청은 `Invocations`에도 `Errors`에
 비용: 알림만 쓰면 무료다 — _"예산을 모니터링하고 알림을 받는 것은 무료다"_ (번역,
 [AWS Budgets 가격](https://aws.amazon.com/aws-cost-management/aws-budgets/pricing/)). 자동 조치(budget
 action)와 리포트는 유료라 쓰지 않는다. 우선순위는 낮다 — 9월 요금이 약 $4.6이고 Lambda는 무료
-한도 안($0)이며, WAF IP 제한을 넣으면 요금 폭증 시나리오 자체가 거의 막힌다.
+한도 안($0)이며, WAF IP 제한(Block)이 한 IP가 계속 몰아치는 요금 폭증은 막는다(여러 IP로 나눈 경우는
+못 막는다 — 8-1 "막는 범위").
 
 Billing → Budgets → Create budget → Cost budget, 월 $10(예시) → 알림 2개: 실제 비용 80%, 예측 비용
 100%, 운영자 이메일.
@@ -360,6 +386,30 @@ N=5·10·15로 8초 간격 실행(총 30건).
 - 새 칸을 띄우면(콜드 스타트) 1.5~5초가 더 걸린다. 이미 떠 있는 칸은 0.3초 안팎.
 - DB는 동시 10건에서 병목이 아니었다(떠 있는 칸 7개가 동시에 0.3~0.4초).
 
+### 9-3. WAF Count 관찰 (2026-10-03 13:00 ~ 10-11 11:35 KST)
+
+직접 측정. 방법: `aws cloudwatch get-metric-statistics --region us-east-1 --namespace AWS/WAFV2`에
+`Name=WebACL,Value=CreatedByCloudFront-bcd729fb`와 `Name=Rule,Value=<규칙>`을 주고 5분(`--period 300`)
+합계를 받았다(데이터포인트 1,440개 제한 때문에 기간을 둘로 나눠 조회). Lambda 지표는 ap-northeast-1
+`AWS/Lambda`, `FunctionName=link-sphere-api`.
+
+| 지표 | 값 |
+|---|---|
+| `CountedRequests` (Rule=`RateLimit-PerIP`) | **0건** — `list-metrics`에도 이 지표가 없다(한 번도 기록된 적 없음) |
+| `AllowedRequests` (Rule=ALL) | 총 13,100건. **사이트 전체 5분 최대 544건**(10-03 18:20) — IP 하나가 1000을 넘을 수 없었다 |
+| `BlockedRequests` (Rule=ALL) | 총 8,122건. 10-08 22:50에 5분 2,280건 급증 — 전부 Common 규칙의 `NoUserAgent_Header`(User-Agent 없는 요청) |
+| Lambda 동시 실행 최대 / Throttles | 7(10-08) / 0건 |
+
+- 우리 쪽 요청이 걸릴 위험도 확인했다. FE Lighthouse CI는 화면을 localhost 프리뷰로 띄우고 API만
+  운영으로 보낸다(4개 URL × 5회, FE `lighthouserc.cjs`). FE e2e는 `page.route()` 모킹이라 운영에 요청을
+  보내지 않는다.
+- 10-08 급증은 우선순위 1(Common)에서 이미 막혀 이 규칙(우선순위 3)까지 오지 않았다. WAF는 Block
+  같은 종료 동작이 나오면 나머지 규칙을 평가하지 않는다([Rule actions](https://docs.aws.amazon.com/waf/latest/developerguide/waf-rule-action.html)).
+  초당 약 7.6건이라 전부 API로 갔더라도 조회 0.3초 기준 칸 2~3개 정도였을 것으로 추정한다. 지표에
+  경로가 없어 API로 간 요청인지도 알 수 없다.
+- 결론: 0건은 "Block으로 바꿔도 정상 사용자가 막히지 않는다"는 근거이지, 이 규칙이 필요하다는 근거는
+  아니다. 비용 0·오탐 0·한 줄로 되돌릴 수 있어 보험으로 Block을 택했다(8-1 "막는 범위").
+
 ## 10. 시행착오
 
 아래 두 가지는 배포 후 겪은 버그가 아니라 설계 중에 발견하고 피한 함정이다.
@@ -394,7 +444,10 @@ N=5·10·15로 8초 간격 실행(총 30건).
 
 ## 11. 남은 것
 
-- WAF `RateLimit-PerIP` Count → Block 전환(2026-10-10 무렵, 8-1). Throttles 알람·Budgets는 선택 — 7-2 표
+- Throttles 알람·Budgets는 선택 — 7-2 표
+- WAF 차단(403)을 받은 사용자에게 FE는 "내용이 너무 길거나 허용되지 않는 문자"라는 안내를 띄운다
+  (FE `src/shared/config/texts.ts`의 `edgeBlocked`). `RateLimit-PerIP`에 걸린 경우엔 원인 설명이 틀린다 —
+  FE가 두 경우를 구분할 수 없으므로 문구를 둘 다 포괄하게 고칠지 검토(2026-10-11 기준 미정)
 - Lambda 동시 실행 한도 상향 요청 검토 (Service Quotas, 무료) — 5-6, 9-2
 - 글 등록을 "빠른 저장 + 비동기 크롤링"으로 — 칸을 오래 잡는 유일한 요청 제거(5-6). 별도 계획
 - 비로그인 공개 조회 CloudFront 캐싱 — 인증 전달 방식 조사부터(5-6)
@@ -409,7 +462,9 @@ N=5·10·15로 8초 간격 실행(총 30건).
 
 | 용어 | 뜻 |
 |---|---|
-| rate-based rule | 집계 키(여기선 IP)별로 일정 시간 동안 요청 수를 세다가 한도를 넘으면 차단하는 WAF 규칙 |
+| rate-based rule | 집계 키(여기선 IP)별로 일정 시간 동안 요청 수를 세다가 한도를 넘으면 정해 둔 동작(Count·Block)을 적용하는 WAF 규칙 |
+| Count / Block (WAF 규칙 동작) | 규칙에 걸린 요청을 어떻게 할지. Count는 세기만 하고 통과시켜 다음 규칙으로 넘긴다. Block은 403으로 거절하고 거기서 평가를 끝낸다([Rule actions](https://docs.aws.amazon.com/waf/latest/developerguide/waf-rule-action.html)). 새 규칙을 시험하거나 오탐 규칙을 무력화할 때 Count를 쓴다 |
+| Common (`AWSManagedRulesCommonRuleSet`) | AWS가 관리하는 일반 공격 패턴 규칙 묶음(XSS, 경로 조작, User-Agent 없음, 본문 크기 등). 규칙 "동작"이 아니라 "무엇을 검사하나"에 해당하는 이름이다 |
 | 고정 윈도 | 시간을 1시간·10분 같은 칸으로 자르고 칸마다 따로 세는 방식. 칸이 바뀌면 0부터 다시 센다 |
 | 버킷 키 | 무엇을 단위로 세는지 나타내는 문자열(`<기능>:<단위>:<값>`) |
 | consume / tryConsume | 기록과 확인을 한 번에 하는 `RateLimitService` 메서드. 초과 시 전자는 429, 후자는 false |
