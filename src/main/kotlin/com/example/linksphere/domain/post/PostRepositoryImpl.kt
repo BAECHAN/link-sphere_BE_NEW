@@ -89,7 +89,7 @@ class PostRepositoryImpl : PostRepositoryCustom {
                     .toList()
             query.orderBy(orders)
         } else {
-            query.orderBy(cb.desc(root.get<Any>("createdAt")))
+            query.orderBy(cb.desc(root.get<Any>("createdAt")), cb.desc(root.get<Any>("id")))
         }
 
         val resultList =
