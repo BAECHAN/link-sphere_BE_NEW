@@ -29,7 +29,7 @@ interface CommentRepository : JpaRepository<TableComment, UUID> {
         value = "SELECT c FROM TableComment c JOIN FETCH c.post p " +
             "WHERE c.userId = :userId AND c.isDeleted = false " +
             "AND (p.isPrivate = false OR p.userId = :userId) " +
-            "ORDER BY c.createdAt DESC",
+            "ORDER BY c.createdAt DESC, c.id DESC",
         countQuery = "SELECT COUNT(c) FROM TableComment c JOIN c.post p " +
             "WHERE c.userId = :userId AND c.isDeleted = false " +
             "AND (p.isPrivate = false OR p.userId = :userId)",

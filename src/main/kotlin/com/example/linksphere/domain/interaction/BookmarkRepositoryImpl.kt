@@ -83,10 +83,11 @@ class BookmarkRepositoryImpl : BookmarkRepositoryCustom {
                 listOf(
                     cb.desc(PostSearchQuery.relevanceScore(cb, postJoin, searchTokens, semanticMatches)),
                     cb.desc(bookmarkRoot.get<Any>("createdAt")),
+                    cb.desc(bookmarkRoot.get<Any>("postId")),
                 )
             } else {
                 when (sort) {
-                    "oldest" -> listOf(cb.asc(bookmarkRoot.get<Any>("createdAt")))
+                    "oldest" -> listOf(cb.asc(bookmarkRoot.get<Any>("createdAt")), cb.asc(bookmarkRoot.get<Any>("postId")))
                     "title" -> listOf(cb.asc(postJoin.get<Any>("title")))
                     "views" -> listOf(cb.desc(postJoin.get<Any>("viewCount")))
                     "viewed" -> {
@@ -103,11 +104,13 @@ class BookmarkRepositoryImpl : BookmarkRepositoryCustom {
                             // 한 번도 안 본 글은 NULL → 아주 오래된 값으로 치환해 DESC 정렬 시 맨 뒤로 밀린다
                             cb.desc(cb.coalesce(viewedAtSub, LocalDateTime.of(1970, 1, 1, 0, 0))),
                             // 미열람 글끼리는 전부 동점(위 값이 똑같음)이라 DB가 순서를 보장하지
-                            // 않는다 — 2차 정렬로 안정시킨다("latest"와 동일 기준: 최근 북마크순)
+                            // 않는다 — 2차 정렬로 안정시킨다("latest"와 동일 기준: 최근 북마크순).
+                            // createdAt도 동점이면 postId로 최종 결정 — 복합 PK라 단일 id 없음
                             cb.desc(bookmarkRoot.get<Any>("createdAt")),
+                            cb.desc(bookmarkRoot.get<Any>("postId")),
                         )
                     }
-                    else -> listOf(cb.desc(bookmarkRoot.get<Any>("createdAt"))) // "latest" default
+                    else -> listOf(cb.desc(bookmarkRoot.get<Any>("createdAt")), cb.desc(bookmarkRoot.get<Any>("postId"))) // "latest" default
                 }
             }
         query.orderBy(orders)
