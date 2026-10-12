@@ -322,7 +322,9 @@ aws wafv2 update-web-acl --scope CLOUDFRONT --region us-east-1 --name CreatedByC
 
 Free 플랜 제약([CloudFront flat-rate 플랜 문서](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/flat-rate-pricing-plan.html)):
 WAF 규칙은 관리형·커스텀 합쳐 5개까지이고(2026-10-03 기준 4개 사용), 차단 응답 코드를 바꿀 수 없어
-WAF 차단은 429가 아니라 **403**으로 나간다. FE는 이를 `EDGE_BLOCKED`로 구분한다. 특정 경로만
+WAF 차단은 429가 아니라 **403**으로 나간다. FE는 이를 `EDGE_BLOCKED`로 구분한다. 내용 검사 룰과 이
+규칙 중 어디에 걸렸는지는 구분할 수 없어, FE 안내 문구(`src/shared/config/texts.ts`의 `edgeBlocked`)는
+"내용이 너무 길거나 허용되지 않는 문자"와 "짧은 시간에 많은 요청"을 함께 안내한다(2026-10-12, FE #336). 특정 경로만
 더 엄격하게 거는 scope-down이 Free 플랜에서 되는지는 확인하지 못했다(미확인).
 
 ### 8-2. 런북: CloudWatch 알람
@@ -484,9 +486,6 @@ CloudFront 보안 대시보드에서 10-02부터 차단이 늘고 국가가 다�
 - Throttles 알람·Budgets는 선택 — 7-2 표
 - WAF 요청 로깅은 꺼둠(2026-10-12) — Free 플랜에서 켜지는지·비용은 미확인. 다음에 차단 급증을 IP로
   가려야 할 때 켜 보고 결과를 7-2에 적는다
-- WAF 차단(403)을 받은 사용자에게 FE는 "내용이 너무 길거나 허용되지 않는 문자"라는 안내를 띄운다
-  (FE `src/shared/config/texts.ts`의 `edgeBlocked`). `RateLimit-PerIP`에 걸린 경우엔 원인 설명이 틀린다 —
-  FE가 두 경우를 구분할 수 없으므로 문구를 둘 다 포괄하게 고칠지 검토(2026-10-11 기준 미정)
 - Lambda 동시 실행 한도 상향 요청 검토 (Service Quotas, 무료) — 5-6, 9-2
 - 글 등록을 "빠른 저장 + 비동기 크롤링"으로 — 칸을 오래 잡는 유일한 요청 제거(5-6). 별도 계획
 - 비로그인 공개 조회 CloudFront 캐싱 — 인증 전달 방식 조사부터(5-6)
