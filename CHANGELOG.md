@@ -284,6 +284,34 @@
 
 ### Fixed
 
+- `auth` 여러 탭이 거의 동시에 토큰을 갱신하면 모든 탭이 로그아웃되던 문제(10초 유예)
+  <details><summary>배경·구현</summary>
+
+  새 탭을 연달아 열거나 탭이 한꺼번에 복원되면 같은 refresh 쿠키로 갱신 요청이 겹친다. 조건부
+  UPDATE에서 진 쪽을 "탈취 토큰 재사용"과 구분하지 못해 계열 전체를 폐기했고, 그 브라우저의 모든
+  탭이 로그인 화면으로 이동했다. 이제 소비에 진 행이 회전된 지 10초 안이고 계열이 살아있으면 같은
+  계열로 새 토큰 쌍을 하나 더 발급한다(Supabase reuse interval 기본값, Okta grace period 기본
+  30초와 같은 방식). 판정은 처음 읽은 엔티티가 아니라 DB에서 다시 읽은 `revoked_at`으로 한다.
+  감수하는 것: 정상 회전 직후 10초 안에 탈취된 직전 토큰이 쓰이면 계열이 두 갈래가 되어 재사용
+  탐지 없이 절대 수명(최대 7일)까지 갈 수 있다 - 로그아웃·전체 로그아웃·비밀번호 변경은 두 갈래를
+  모두 끊는다. 유예 발급은 INFO, 재사용 탐지는 WARN 로그(`[MemberSession]`)로 남는다. 스키마 변경
+  없음. (`MemberSessionService.kt`, `MemberSessionRepository.kt`, `TableMemberSession.kt`,
+  `AuthController.kt`(API 설명), 계획 `docs/plans/2026-10-12-refresh-reuse-leeway.md`)
+
+  </details>
+
+- `auth` 로그아웃해도 같은 로그인의 다른 세션 행이 살아 푸시 알림 등이 유지될 수 있던 문제
+  <details><summary>배경·구현</summary>
+
+  로그아웃(이 기기만)이 쿠키가 가리키는 행 하나만 폐기했고, 그 행이 이미 회전된 행이면(회전 응답을
+  못 받은 브라우저) 아무것도 하지 않았다. 그러면 같은 계열의 살아있는 행 때문에 FCM이 그 계열을
+  살아있다고 보고 로그아웃한 기기로 푸시를 계속 보낼 수 있었다(최대 7일). 위 10초 유예로 한 계열에
+  활성 행이 둘 이상 생길 수 있어 더 중요해졌다. 이제 로그아웃은 그 계열 전체를 폐기한다 - 같은
+  브라우저의 로그인 하나라 다른 기기에는 영향이 없다. (`MemberSessionService.revokeByRefreshToken`,
+  `MemberSessionRepository.revokeActiveInFamily`)
+
+  </details>
+
 - `auth` 가입·인증메일 재발송·비밀번호 재설정 레이트리밋을 병렬 요청으로 넘길 수 있던 문제
   <details><summary>배경·구현</summary>
 

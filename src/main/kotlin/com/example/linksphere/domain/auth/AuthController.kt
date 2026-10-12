@@ -73,7 +73,8 @@ class AuthController(
     @Operation(
         summary = "액세스 토큰 갱신",
         description = "요청 본문이 아니라 refreshToken 쿠키를 읽는다. 성공 시 쿠키도 새로 발급된다(회전 - 이전 " +
-            "refresh는 그 순간 폐기되고 재사용하면 같은 로그인에서 나온 세션 전체가 폐기된다). " +
+            "refresh는 그 순간 폐기되고 재사용하면 같은 로그인에서 나온 세션 전체가 폐기된다. 단 회전 후 10초 " +
+            "안의 재사용은 여러 탭의 동시 갱신으로 보고 같은 로그인으로 새 토큰을 하나 더 발급한다). " +
             "실패: 401 MISSING_REFRESH_TOKEN(쿠키 없음) · 401 INVALID_REFRESH_TOKEN(만료·위조·이미 소비됨)",
     )
     @SecurityRequirements
@@ -88,8 +89,8 @@ class AuthController(
 
     @Operation(
         summary = "로그아웃 (이 기기만)",
-        description = "refreshToken 쿠키를 maxAge=0 으로 덮어써 만료시키고, 그 쿠키가 가리키던 세션도 " +
-            "서버에서 즉시 폐기한다(다른 기기의 세션은 그대로 유지). 쿠키가 없거나 이미 무효해도 200을 반환한다.",
+        description = "refreshToken 쿠키를 maxAge=0 으로 덮어써 만료시키고, 그 쿠키가 속한 로그인의 세션 " +
+            "전체를 서버에서 즉시 폐기한다(다른 기기의 세션은 그대로 유지). 쿠키가 없거나 이미 무효해도 200을 반환한다.",
     )
     @SecurityRequirements
     @PostMapping("/logout")

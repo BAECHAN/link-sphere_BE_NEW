@@ -2,6 +2,7 @@ package com.example.linksphere.domain.auth
 
 import com.example.linksphere.global.common.SecureToken
 import com.example.linksphere.global.exception.InvalidTokenException
+import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Duration
@@ -34,10 +35,17 @@ sealed interface AccessTokenCheck {
 @Service
 @Transactional(readOnly = true)
 class MemberSessionService(private val memberSessionRepository: MemberSessionRepository) {
+    private val logger = LoggerFactory.getLogger(MemberSessionService::class.java)
 
     companion object {
         private val ACCESS_TOKEN_VALIDITY = Duration.ofHours(1)
         private val REFRESH_TOKEN_VALIDITY = Duration.ofDays(7)
+
+        // 방금 회전된 refresh가 이 시간 안에 다시 오면 재사용 탐지 대신 새 토큰 쌍을 준다 -
+        // 같은 브라우저의 여러 탭이 같은 refresh 쿠키를 거의 동시에 제시하는 경우(새 탭 여러 개를
+        // 연달아 열기 등). 10초는 Supabase Auth의 reuse interval 기본값이다(Okta grace period
+        // 기본 30초, Auth0 leeway 기본 꺼짐 - docs/plans/2026-10-12-refresh-reuse-leeway.md).
+        private val REUSE_LEEWAY = Duration.ofSeconds(10)
 
         // 세 실패 경로(못 찾음·만료·재사용의심) 모두 같은 메시지를 쓴다 - "재사용 탐지됨"처럼
         // 구체적인 사유를 노출하면 탈취한 쪽에게 "들켰다"는 신호를 주게 된다(PR #42 리뷰에서
@@ -75,11 +83,18 @@ class MemberSessionService(private val memberSessionRepository: MemberSessionRep
      *
      * consumeRefreshIfActive의 "WHERE revoked_at IS NULL" 조건부 UPDATE로 소비 여부를
      * 원자적으로 확정한다(리포지토리 주석 참고) - 동시에 들어온 두 요청 중 하나만 이길 수
-     * 있다. 지면(0행), 그 원인이 "이미 정상적으로 소비된 토큰의 재사용(탈취 의심)"이든
-     * "거의 동시에 들어온 정상 요청과의 경합"이든 구분할 안전한 방법이 없으므로 둘 다 같은
-     * 계열 전체를 폐기한다 - 이 앱 규모에서 두 탭이 정말 같은 순간에 refresh를 보내는
-     * 경우는 드물고, 그 드문 경우 두 탭 다 로그아웃되고 다시 로그인하면 된다는 것이
-     * 재사용 탐지를 우회당하는 것보다 안전하다는 판단이다.
+     * 있다. 지면(0행), 그 행이 회전으로 소비된 지 REUSE_LEEWAY 안이고 계열이 아직 살아있으면
+     * "거의 동시에 들어온 정상 요청과의 경합"으로 보고 같은 계열로 새 토큰 쌍을 하나 더 준다.
+     * 그 밖이면 "이미 소비된 토큰의 재사용(탈취 의심)"으로 보고 계열 전체를 폐기한다.
+     *
+     * "최근 revoke + 계열 생존"이 곧 "방금 회전됨"인 이유: 로그아웃·전체 로그아웃·비밀번호
+     * 변경·재사용 탐지는 모두 계열(또는 회원) 단위로 폐기하므로, 계열을 살려둔 채 행 하나만
+     * revoke하는 경로는 회전뿐이다(revokeByRefreshToken 참고).
+     *
+     * 감수하는 것: 정상 회전 직후 유예 안에 탈취된 직전 토큰이 쓰이면 계열이 두 갈래가 되고,
+     * 이후 양쪽 다 자기 최신 토큰만 쓰므로 재사용 탐지 없이 절대 수명까지 갈 수 있다 -
+     * Okta·Auth0·Supabase의 유예도 같은 성질이다. 로그아웃(계열)·전체 로그아웃·비밀번호
+     * 변경은 두 갈래를 모두 끊는다.
      */
     @Transactional
     fun rotate(rawRefreshToken: String): IssuedSession {
@@ -94,10 +109,38 @@ class MemberSessionService(private val memberSessionRepository: MemberSessionRep
 
         val consumed = memberSessionRepository.consumeRefreshIfActive(current.id, now)
         if (consumed == 0) {
-            memberSessionRepository.revokeFamily(current.familyId, now)
-            throw InvalidTokenException(INVALID_REFRESH_MESSAGE)
+            // 판정은 읽기만 한다 - 아래 revokeFamily는 REQUIRES_NEW라, 이 트랜잭션이 같은 행에
+            // 쓰기 락을 쥔 채 부르면 DB가 감지하지 못하는 교착이 된다.
+            val revokedAt = memberSessionRepository.findRevokedAtById(current.id)
+            if (revokedAt == null || !isReuseWithinLeeway(revokedAt, current.familyId, now)) {
+                logger.warn(
+                    "[MemberSession] refresh 재사용 탐지 - 계열 폐기(familyId=${current.familyId}, " +
+                        "sinceRevokeMs=${revokedAt?.let { Duration.between(it, now).toMillis() }})",
+                )
+                memberSessionRepository.revokeFamily(current.familyId, now)
+                throw InvalidTokenException(INVALID_REFRESH_MESSAGE)
+            }
+
+            logger.info(
+                "[MemberSession] refresh 유예 안 재사용 - 같은 계열로 발급(familyId=${current.familyId}, " +
+                    "sinceRevokeMs=${Duration.between(revokedAt, now).toMillis()})",
+            )
         }
 
+        return issueInFamily(current, now)
+    }
+
+    // 한쪽 경계만 본다 - 진 요청의 now는 락 대기 전에 찍히고 Lambda 인스턴스 간 시계 오차도 있어
+    // revokedAt이 now보다 미래일 수 있다.
+    private fun isReuseWithinLeeway(revokedAt: Instant, familyId: UUID, now: Instant): Boolean {
+        if (revokedAt.isBefore(now.minus(REUSE_LEEWAY))) {
+            return false
+        }
+        return memberSessionRepository.countActiveInFamily(familyId, now) > 0
+    }
+
+    /** current와 같은 회전 계열로 새 토큰 쌍을 발급한다(정상 회전·유예 발급 공용). */
+    private fun issueInFamily(current: TableMemberSession, now: Instant): IssuedSession {
         val rawAccess = SecureToken.generate()
         val rawRefresh = SecureToken.generate()
         memberSessionRepository.save(
@@ -115,15 +158,18 @@ class MemberSessionService(private val memberSessionRepository: MemberSessionRep
         return IssuedSession(rawAccess, rawRefresh, remainingSeconds)
     }
 
-    /** 로그아웃(이 기기만). 쿠키가 없거나 이미 알 수 없는 값이어도 조용히 넘어간다. */
+    /**
+     * 로그아웃(이 기기만). 쿠키가 없거나 이미 알 수 없는 값이어도 조용히 넘어간다.
+     *
+     * 쿠키가 가리키는 행 하나가 아니라 그 계열(= 이 브라우저의 로그인) 전체를 폐기한다 - 회전
+     * 유예로 한 계열에 활성 행이 둘 이상일 수 있고, 회전 응답을 못 받은 브라우저는 이미 회전된
+     * 행을 가리키는 쿠키로 로그아웃할 수 있다. 다른 기기는 계열이 달라 영향이 없다.
+     */
     @Transactional
     fun revokeByRefreshToken(rawRefreshToken: String?) {
         if (rawRefreshToken.isNullOrBlank()) return
         val session = memberSessionRepository.findByRefreshTokenHash(SecureToken.hash(rawRefreshToken)) ?: return
-        if (session.revokedAt == null) {
-            session.revokedAt = Instant.now()
-            memberSessionRepository.save(session)
-        }
+        memberSessionRepository.revokeActiveInFamily(session.familyId, Instant.now())
     }
 
     /** 로그아웃(전체 기기)·비밀번호변경·회원탈퇴에서 그 회원의 모든 세션을 끊을 때 쓴다. */
