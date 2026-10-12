@@ -8,10 +8,13 @@ import com.example.linksphere.global.exception.BookmarkFolderNotFoundException
 import com.example.linksphere.global.exception.ForbiddenException
 import com.example.linksphere.global.exception.InvalidInputException
 import com.example.linksphere.global.exception.PostNotFoundException
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
+import org.mockito.ArgumentMatchers.any
 import org.mockito.InjectMocks
 import org.mockito.Mock
 import org.mockito.Mockito.never
@@ -63,6 +66,43 @@ class InteractionServiceTest {
         assertThrows(PostNotFoundException::class.java) {
             interactionService.togglePostLike(postId, userId)
         }
+    }
+
+    @Test
+    fun `togglePostLike 는 좋아요 추가 시 isLiked=true 와 likeCount 를 반환한다`() {
+        val ownerId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val post = TablePost(id = postId, userId = ownerId, url = "https://example.com", title = "제목", isPrivate = false)
+
+        `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
+        `when`(postReactionRepository.existsByUserIdAndPostId(ownerId, postId)).thenReturn(false)
+        `when`(postReactionRepository.save(any(TablePostReaction::class.java))).thenReturn(TablePostReaction(userId = ownerId, postId = postId))
+        `when`(postReactionRepository.countByPostId(postId)).thenReturn(5L)
+
+        val result = interactionService.togglePostLike(postId, ownerId)
+
+        assertTrue(result.isLiked)
+        assertEquals(5, result.likeCount)
+        verify(postReactionRepository).save(any(TablePostReaction::class.java))
+        verify(postReactionRepository).countByPostId(postId)
+    }
+
+    @Test
+    fun `togglePostLike 는 좋아요 취소 시 isLiked=false 와 감소된 likeCount 를 반환한다`() {
+        val ownerId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val post = TablePost(id = postId, userId = ownerId, url = "https://example.com", title = "제목", isPrivate = false)
+
+        `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
+        `when`(postReactionRepository.existsByUserIdAndPostId(ownerId, postId)).thenReturn(true)
+        `when`(postReactionRepository.countByPostId(postId)).thenReturn(3L)
+
+        val result = interactionService.togglePostLike(postId, ownerId)
+
+        assertFalse(result.isLiked)
+        assertEquals(3, result.likeCount)
+        verify(postReactionRepository).deleteByUserIdAndPostId(ownerId, postId)
+        verify(postReactionRepository).countByPostId(postId)
     }
 
     @Test
