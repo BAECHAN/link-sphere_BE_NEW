@@ -1,6 +1,7 @@
 package com.example.linksphere.domain.interaction
 
 import com.example.linksphere.domain.comment.CommentRepository
+import com.example.linksphere.domain.post.PostLikeResponse
 import com.example.linksphere.domain.post.PostRepository
 import com.example.linksphere.global.exception.BookmarkFolderNotFoundException
 import com.example.linksphere.global.exception.ForbiddenException
@@ -22,17 +23,21 @@ class InteractionService(
     private val bookmarkFolderItemRepository: BookmarkFolderItemRepository,
 ) {
     @Transactional
-    fun togglePostLike(postId: UUID, userId: UUID): Boolean {
+    fun togglePostLike(postId: UUID, userId: UUID): PostLikeResponse {
         assertPostVisible(postId, userId)
 
         val exists = postReactionRepository.existsByUserIdAndPostId(userId, postId)
-        return if (exists) {
+        val isLiked = if (exists) {
             postReactionRepository.deleteByUserIdAndPostId(userId, postId)
             false
         } else {
             postReactionRepository.save(TablePostReaction(userId = userId, postId = postId))
             true
         }
+
+        // 동일 트랜잭션 내 COUNT — insert/delete가 반영된 정확값
+        val likeCount = postReactionRepository.countByPostId(postId).toInt()
+        return PostLikeResponse(isLiked = isLiked, likeCount = likeCount)
     }
 
     @Transactional

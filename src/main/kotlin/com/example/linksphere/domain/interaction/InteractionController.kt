@@ -1,5 +1,6 @@
 package com.example.linksphere.domain.interaction
 
+import com.example.linksphere.domain.post.PostLikeResponse
 import com.example.linksphere.global.common.ApiResponse
 import com.example.linksphere.global.common.getUserId
 import io.swagger.v3.oas.annotations.Operation
@@ -17,17 +18,16 @@ class InteractionController(
 
     @Operation(
         summary = "게시글 좋아요 토글",
-        description = "이미 눌렀으면 취소된다. data 는 {\"isLiked\": true|false} 한 쌍이다(스키마에는 " +
-            "additionalProperties 로만 나타난다). 실패: 404 POST_NOT_FOUND",
+        description = "이미 눌렀으면 취소된다. data 는 {\"isLiked\": true|false, \"likeCount\": 12} 형태다. 실패: 404 POST_NOT_FOUND",
     )
     @PostMapping("/post/{postId}/like")
     fun likePost(
         @PathVariable postId: UUID,
         authentication: Authentication?,
-    ): ApiResponse<Map<String, Boolean>> {
+    ): ApiResponse<PostLikeResponse> {
         val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
-        val isLiked = interactionService.togglePostLike(postId, userId)
-        return ApiResponse(200, if (isLiked) "좋아요 성공" else "좋아요 취소 성공", mapOf("isLiked" to isLiked))
+        val result = interactionService.togglePostLike(postId, userId)
+        return ApiResponse(200, if (result.isLiked) "좋아요 성공" else "좋아요 취소 성공", result)
     }
 
     @Operation(

@@ -37,6 +37,11 @@ data class PostStats(
     val bookmarkCount: Int,
 )
 
+data class PostLikeResponse(
+    val isLiked: Boolean,
+    val likeCount: Int,
+)
+
 data class PostUserInteractions(
     val isLiked: Boolean,
     val isBookmarked: Boolean,
