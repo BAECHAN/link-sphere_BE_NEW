@@ -6,7 +6,7 @@
 >
 > **읽고 나면**: 요청 한도 값을 바꾸거나 새 엔드포인트에 한도를 걸 수 있고, WAF·알람 콘솔 작업을 이 문서만 보고 할 수 있다
 >
-> **마지막 검토**: 2026-10-11
+> **마지막 검토**: 2026-10-12
 
 ## 1. 쉬운 설명
 
@@ -213,11 +213,24 @@ Google SRE 책은 과부하 대응으로 기능을 낮춰 응답하는 방법(gr
 | Lambda 계정 동시 실행 | 10 (신규 계정 한도, 사용량에 따라 AWS가 자동 상향) | AWS 계정, 2026-10-02 실측 | — |
 | Hikari 풀 | 인스턴스당 5 → 최대 10×5=50 DB 연결 | `src/main/resources/application.yml:17` | — |
 | WAF rate-based rule | IP당 5분 1000회, **Block** (8-1 런북) | WAF Web ACL `CreatedByCloudFront-bcd729fb` (CLI로만 수정 가능, 8-1) | 권장 · 추가 비용 없음(Free 플랜 규칙 5개 안). 막는 범위가 좁다 — 8-1 |
+| WAF 요청 로깅 | **꺼짐** (`get-logging-configuration`이 `WAFNonexistentItemException`) | 같은 Web ACL의 로깅 설정 | 선택 · 비용 미확인 — 아래 |
 | CloudWatch 알람 (`Throttles`) | 8-2 런북 참고 | CloudWatch 콘솔 (ap-northeast-1) | 선택 · 무료(프리티어 알람 10개 안) |
 | AWS Budgets | 8-3 런북 참고 | Billing 콘솔 | 선택(우선순위 낮음) · 무료(알림만) |
 
 필요도는 2026-10-03 실측(9장)으로 판단했다. 적용 상태(2026-10-11): WAF IP 제한은 **적용(Block)** —
 2026-10-03 Count로 넣고 1주 관찰 뒤 2026-10-11 Block으로 전환. Throttles 알람·Budgets는 미적용(선택).
+
+**WAF 요청 로깅은 꺼둔 채로 둔다(2026-10-12 결정).** 로깅은 막는 기능이 아니라 기록하는 기능이라
+꺼져 있어도 방어는 그대로다. 잃는 건 차단 급증을 봤을 때 IP·경로를 바로 확인하는 능력뿐이고, 그건
+지표와 샘플 요청으로 대신 본다(8장 "차단 급증 원인 보기"). 비용은 확정하지 못했다:
+[CloudFront 정액 요금제 문서](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/flat-rate-pricing-plan.html)의
+기능표에서 "WAF request logs"는 Pro부터 체크돼 있고 이 계정의 Free 칸은 비어 있다 — Free에서 아예
+못 켜는지, 켜지되 종량제로 과금되는지는 문서만으로 알 수 없고 시도해 보지 않았다. 종량제라면
+CloudWatch Logs로 보낼 때 [CloudWatch 요금](https://aws.amazon.com/cloudwatch/pricing/)의 vended logs
+수집 단가(첫 구간 GB당 $0.50)가 붙는다. 켜야 할 때(스파이크 원인을 IP로 가려야 하는데 3시간이
+지났을 때 등)는 이름이 `aws-waf-logs-`로 시작하는 로그 그룹을 Web ACL과 같은 리전(us-east-1)에 만들고
+`aws wafv2 put-logging-configuration`으로 연결한다([WAF 로그를 CloudWatch Logs로 보내기](https://docs.aws.amazon.com/waf/latest/developerguide/logging-cw-logs.html)
+— 이름 규칙·리전·필요 권한). 성공하든 Free 플랜에 막히든 결과를 이 절에 적는다.
 
 ## 8. 코드 지도와 자주 하는 수정
 
@@ -234,6 +247,7 @@ Google SRE 책은 과부하 대응으로 기능을 낮춰 응답하는 방법(gr
 | 한도 값 바꾸기 | 7-1 표의 상수 수정 | 필요 |
 | 새 엔드포인트에 한도 걸기 | 컨트롤러에 `RateLimitService`를 주입하고 `consume("<기능>:member:$userId", LIMIT, WINDOW)` 호출. 막지 않고 강등하려면 `tryConsume` | 필요 |
 | 긴급 차단 | WAF rate rule 한도를 낮추거나 IP 차단 규칙 추가(규칙 수 5개 한도 주의) | 불필요 |
+| 차단 급증 원인 보기 (로깅 없이) | ① `AWS/WAFV2` `BlockedRequests`를 `ManagedRuleGroup`·`ManagedRuleGroupRule` 차원으로 나눠 어느 규칙인지 본다 ② `aws wafv2 get-sampled-requests --scope CLOUDFRONT --region us-east-1 --rule-metric-name <규칙 지표명>`으로 IP·국가·URI·User-Agent를 본다 — [최근 3시간 안만 조회되고 최대 500건](https://docs.aws.amazon.com/waf/latest/APIReference/API_GetSampledRequests.html)이라 급증을 보면 바로 조회한다 ③ Lambda `Invocations`·`Errors`(ap-northeast-1)로 앱까지 왔는지 본다 ④ 같은 시간에 우리 쪽 테스트(curl·Playwright로 운영 호출)가 있었는지 대조한다 — 9-4 | 불필요 |
 
 ### 8-1. 런북: WAF rate-based rule
 
@@ -410,6 +424,29 @@ N=5·10·15로 8초 간격 실행(총 30건).
 - 결론: 0건은 "Block으로 바꿔도 정상 사용자가 막히지 않는다"는 근거이지, 이 규칙이 필요하다는 근거는
   아니다. 비용 0·오탐 0·한 줄로 되돌릴 수 있어 보험으로 Block을 택했다(8-1 "막는 범위").
 
+### 9-4. 차단 급증 원인 확인 (2026-10-03, 10-12)
+
+CloudFront 보안 대시보드에서 10-02부터 차단이 늘고 국가가 다양한 걸 보고 확인했다. 직접 측정. 방법:
+8장 "차단 급증 원인 보기"의 ①③④, 인증서 발급 시각(`aws acm list-certificates --region us-east-1`).
+날짜별 합계는 10-02 행만 KST 기준이고 나머지는 CloudWatch 일 단위(UTC 자정 기준)다.
+
+| 확인한 것 | 결과 |
+|---|---|
+| 차단이 시작된 날 | 08-04~09-28은 09-06(40건)·09-11(10건)을 빼면 0건. 09-29부터 하루 수백~1,800건 |
+| 같은 날 일어난 일 | 09-29 13:49(KST) `linksphere.click` ACM 인증서 발급 — 그 전엔 `*.cloudfront.net` 주소뿐이었다 |
+| 10-02 차단 2,384건 (그날 WAF 평가 요청의 53%) | IP 평판 Reconnaissance 목록 1,815건(16시 한 시간에 1,009건), User-Agent 없음 424건, 취약 경로·LFI 129건. 같은 시간 우리 쪽 운영 호출 없음 → 외부 |
+| 10-02 22시~10-03 01시 Lambda 호출 급증 (시간당 최대 355회, 평소 12회) | 우리 Claude 세션의 Playwright 운영 테스트(FCM 푸시·CSP 확인). Lambda 로그의 FCM 토큰 등록 시각이 그 세션의 운영 호출 시각과 분 단위로 겹쳤다 |
+| 10-03 11시 Throttles 5건 | 9-2의 동시 요청 실측 |
+| 10-03~10-12 | 차단 하루 162~3,187건(10-08의 3,098건은 User-Agent 없음, 9-3), Lambda `Errors`·`Throttles` 0건 |
+
+- 차단이 인증서 발급 당일 시작된 건, 공개 인증서가 CT(Certificate Transparency) 로그에 올라가면 곧바로
+  스캔이 들어온다는 관찰과 맞는다. Pletinckx 외(UC Santa Barbara 등)의
+  [IEEE EuroS&P 2023 논문](https://sites.cs.ucsb.edu/~chris/research/doc/eurosnp23_certvuln.pdf)은 허니팟
+  실험에서 _"인증서를 CT 로그에 추가하면 항목을 공개한 지 불과 몇 초 만에 네트워크 탐침이 들어온다"_ (번역)고
+  보고했다. 우리 쪽은 로깅이 꺼져 있어 IP로 확인하지 못했고, 시간이 일치한다는 것만으로 본 추정이다.
+- 결론: 외부 스캔은 전부 WAF에서 막혔고 앱 에러는 없었다. Lambda 쪽 급증은 우리 테스트였다. 조치 없음 —
+  공개 도메인이면 계속 들어오는 배경 트래픽으로 본다.
+
 ## 10. 시행착오
 
 아래 두 가지는 배포 후 겪은 버그가 아니라 설계 중에 발견하고 피한 함정이다.
@@ -445,6 +482,8 @@ N=5·10·15로 8초 간격 실행(총 30건).
 ## 11. 남은 것
 
 - Throttles 알람·Budgets는 선택 — 7-2 표
+- WAF 요청 로깅은 꺼둠(2026-10-12) — Free 플랜에서 켜지는지·비용은 미확인. 다음에 차단 급증을 IP로
+  가려야 할 때 켜 보고 결과를 7-2에 적는다
 - WAF 차단(403)을 받은 사용자에게 FE는 "내용이 너무 길거나 허용되지 않는 문자"라는 안내를 띄운다
   (FE `src/shared/config/texts.ts`의 `edgeBlocked`). `RateLimit-PerIP`에 걸린 경우엔 원인 설명이 틀린다 —
   FE가 두 경우를 구분할 수 없으므로 문구를 둘 다 포괄하게 고칠지 검토(2026-10-11 기준 미정)
@@ -465,6 +504,9 @@ N=5·10·15로 8초 간격 실행(총 30건).
 | rate-based rule | 집계 키(여기선 IP)별로 일정 시간 동안 요청 수를 세다가 한도를 넘으면 정해 둔 동작(Count·Block)을 적용하는 WAF 규칙 |
 | Count / Block (WAF 규칙 동작) | 규칙에 걸린 요청을 어떻게 할지. Count는 세기만 하고 통과시켜 다음 규칙으로 넘긴다. Block은 403으로 거절하고 거기서 평가를 끝낸다([Rule actions](https://docs.aws.amazon.com/waf/latest/developerguide/waf-rule-action.html)). 새 규칙을 시험하거나 오탐 규칙을 무력화할 때 Count를 쓴다 |
 | Common (`AWSManagedRulesCommonRuleSet`) | AWS가 관리하는 일반 공격 패턴 규칙 묶음(XSS, 경로 조작, User-Agent 없음, 본문 크기 등). 규칙 "동작"이 아니라 "무엇을 검사하나"에 해당하는 이름이다 |
+| IP 평판 규칙 (`AWSManagedRulesAmazonIpReputationList`) | Amazon 내부 위협 정보로 만든 IP 목록으로 막는 규칙 묶음. 그중 `AWSManagedReconnaissanceList`는 _"AWS 리소스를 상대로 정찰(reconnaissance)을 하는 IP"_ (번역, [IP reputation rule groups](https://docs.aws.amazon.com/waf/latest/developerguide/aws-managed-rule-groups-ip-rep.html))를 막는다 — 9-4의 10-02 차단 대부분이 이것이다 |
+| 샘플 요청 (`get-sampled-requests`) | WAF가 규칙별로 무작위로 남겨 두는 요청 표본. 로깅이 꺼져 있어도 IP·국가·URI·헤더를 볼 수 있지만 최근 3시간치만 조회된다(8장) |
+| CT 로그 (Certificate Transparency) | 공개 TLS 인증서 발급 내역을 누구나 볼 수 있게 쌓아 두는 공개 로그. 스캐너가 이것으로 새 도메인을 찾는다(9-4) |
 | 고정 윈도 | 시간을 1시간·10분 같은 칸으로 자르고 칸마다 따로 세는 방식. 칸이 바뀌면 0부터 다시 센다 |
 | 버킷 키 | 무엇을 단위로 세는지 나타내는 문자열(`<기능>:<단위>:<값>`) |
 | consume / tryConsume | 기록과 확인을 한 번에 하는 `RateLimitService` 메서드. 초과 시 전자는 429, 후자는 false |
