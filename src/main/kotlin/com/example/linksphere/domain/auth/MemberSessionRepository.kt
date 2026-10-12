@@ -29,13 +29,28 @@ interface MemberSessionRepository : JpaRepository<TableMemberSession, UUID> {
     // 둘 다 "아직 안 revoke됐다"를 보고 둘 다 새 세션을 발급받는 레이스가 생긴다(재사용
     // 탐지를 그대로 우회당함, PR #42 리뷰에서 실측 확인). WHERE revoked_at IS NULL 조건이
     // 있는 이 UPDATE 자체가 "먼저 실행된 요청만 1행을 건드린다"는 DB 레벨 락 역할을 한다 -
-    // 영향받은 행 수(0 또는 1)로 승패를 가른다.
+    // 영향받은 행 수(0 또는 1)로 승패를 가른다. 진 쪽이 대기 후 0행을 받는 것은 PostgreSQL
+    // READ COMMITTED가 먼저 갱신한 쪽의 커밋을 기다렸다가 WHERE를 다시 평가하기 때문이다 -
+    // 격리 수준을 올리면 이 전제가 깨져 직렬화 오류(500)가 난다.
     @Modifying
     @Query("UPDATE TableMemberSession s SET s.revokedAt = :now WHERE s.id = :id AND s.revokedAt IS NULL AND s.refreshExpiresAt > :now")
     fun consumeRefreshIfActive(@Param("id") id: UUID?, @Param("now") now: Instant?): Int
 
-    // 재사용 탐지(MemberSessionService.rotate) 시 같은 회전 계열 전체를 폐기한다. 정상
-    // 흐름에선 계열당 활성 행이 하나뿐이지만, 방어적으로 "아직 안 지워진" 것 전부를 막는다.
+    // MemberSessionService.rotate가 소비에 졌을 때(0행) 그 행이 언제 revoke됐는지 DB에서 다시
+    // 읽는다. 엔티티로 다시 조회하면 안 된다 - 처음 읽은 엔티티는 이긴 쪽 커밋 전 값일 수 있고,
+    // 같은 영속성 컨텍스트에서 같은 id를 엔티티로 다시 찾으면 갱신 없이 그 인스턴스가 돌아온다.
+    // READ COMMITTED는 문장마다 새 스냅샷으로 시작하므로, 이 조회는 0행을 받은 시점에 이미 끝난
+    // 이긴 쪽의 커밋(revoked_at, 새 행)을 본다.
+    @Query("SELECT s.revokedAt FROM TableMemberSession s WHERE s.id = :id")
+    fun findRevokedAtById(@Param("id") id: UUID?): Instant?
+
+    // 계열이 아직 살아있는지(로그아웃·재사용 탐지·비밀번호 변경으로 폐기되지 않았는지) 본다.
+    @Query("SELECT COUNT(s) FROM TableMemberSession s WHERE s.familyId = :familyId AND s.revokedAt IS NULL AND s.refreshExpiresAt > :now")
+    fun countActiveInFamily(@Param("familyId") familyId: UUID?, @Param("now") now: Instant?): Long
+
+    // 재사용 탐지(MemberSessionService.rotate) 시 같은 회전 계열 전체를 폐기한다. 회전 유예로
+    // 한 계열에 활성 행이 둘 이상 생길 수 있어(여러 탭이 같은 refresh를 거의 동시에 제시),
+    // "아직 안 지워진" 것 전부를 막는다.
     //
     // REQUIRES_NEW인 이유: 호출부(rotate)는 이 폐기를 실행한 직후 InvalidTokenException을
     // 던져 요청을 401로 끝낸다. 같은 트랜잭션 안에서라면 그 RuntimeException 때문에
@@ -48,6 +63,13 @@ interface MemberSessionRepository : JpaRepository<TableMemberSession, UUID> {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     @Query("UPDATE TableMemberSession s SET s.revokedAt = :now WHERE s.familyId = :familyId AND s.revokedAt IS NULL")
     fun revokeFamily(@Param("familyId") familyId: UUID?, @Param("now") now: Instant?): Int
+
+    // 로그아웃(이 기기만)에서 쓴다. revokeFamily와 SQL은 같지만 독립 커밋이 필요 없어 일반
+    // 전파를 쓴다. 로그아웃이 행 하나가 아니라 계열을 폐기해야 "계열은 살리고 한 행만 revoke"하는
+    // 경로가 회전(consumeRefreshIfActive)뿐이게 된다 - rotate의 유예 판정이 이 불변식에 기댄다.
+    @Modifying
+    @Query("UPDATE TableMemberSession s SET s.revokedAt = :now WHERE s.familyId = :familyId AND s.revokedAt IS NULL")
+    fun revokeActiveInFamily(@Param("familyId") familyId: UUID?, @Param("now") now: Instant?): Int
 
     // 로그아웃(전체 기기)·비밀번호변경·회원탈퇴에서 쓴다. 대상 회원의 모든 세션을 한
     // 쿼리로 끊는다 - 행을 하나씩 불러와 save()하지 않는다(잠재적으로 여러 기기 분량).

@@ -14,7 +14,9 @@ import java.util.UUID
  *
  * family_id: 회전 계열 식별자. /auth/refresh는 이 행을 revoke하고 같은 family_id로 새
  * 행을 만든다(MemberSessionService.rotate). 이미 revoke된 refresh_token_hash가 다시
- * 제시되면(탈취 후 재사용 의심) 같은 family_id의 행을 전부 revoke한다.
+ * 제시되면(탈취 후 재사용 의심) 같은 family_id의 행을 전부 revoke한다 - 단 회전된 지 10초
+ * 안이고 계열이 살아있으면 여러 탭의 동시 갱신으로 보고 같은 계열로 새 행을 하나 더 만든다.
+ * 그래서 한 계열에 활성 행이 둘 이상일 수 있고, 로그아웃은 계열 단위로 폐기한다.
  */
 @Entity
 @Table(name = "member_sessions")

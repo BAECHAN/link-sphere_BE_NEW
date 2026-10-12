@@ -127,20 +127,22 @@ class MemberSessionServiceTest {
         assertNotEquals(0L, issued.refreshExpiresInSeconds)
         // revokeFamily는 호출되지 않는다 - 정상 회전이지 재사용/레이스가 아니다.
         verify(memberSessionRepository, never()).revokeFamily(any(), any())
+        // 유예 판정은 소비에 졌을 때만 한다.
+        verify(memberSessionRepository, never()).findRevokedAtById(any())
     }
 
     @Test
-    fun `rotate는 이미 소비된(또는 동시 요청에 진) refresh면 같은 계열 전체를 폐기하고 예외를 던진다`() {
+    fun `rotate는 회전된 지 유예(10초)가 지난 refresh가 다시 오면 같은 계열 전체를 폐기하고 예외를 던진다`() {
         val familyId = UUID.randomUUID()
-        val rawToken = "reused-or-raced-token"
+        val rawToken = "reused-token"
         val current = session(
             refreshTokenHash = SecureToken.hash(rawToken),
             familyId = familyId,
         )
         `when`(memberSessionRepository.findByRefreshTokenHash(SecureToken.hash(rawToken))).thenReturn(current)
-        // 0 = 조건부 UPDATE가 아무 행도 못 건드림 - 이미 revoke돼 있었거나(재사용) 동시에 온
-        // 다른 요청이 먼저 이겼거나(레이스), 둘 중 뭐든 안전하게 재사용으로 취급한다.
+        // 0 = 조건부 UPDATE가 아무 행도 못 건드림 - 이미 revoke돼 있었다.
         `when`(memberSessionRepository.consumeRefreshIfActive(any(), any())).thenReturn(0)
+        `when`(memberSessionRepository.findRevokedAtById(any())).thenReturn(Instant.now().minusSeconds(11))
 
         assertThrows(InvalidTokenException::class.java) {
             memberSessionService.rotate(rawToken)
@@ -150,8 +152,91 @@ class MemberSessionServiceTest {
         verify(memberSessionRepository).revokeFamily(familyCaptor.capture(), any())
         assertEquals(familyId, familyCaptor.value)
 
-        // 소비 실패로 끝나므로 새 세션은 저장되지 않는다.
+        // 소비 실패로 끝나므로 새 세션은 저장되지 않는다. 유예 밖이라 계열 생존 여부도 묻지 않는다.
         verify(memberSessionRepository, never()).save(any())
+        verify(memberSessionRepository, never()).countActiveInFamily(any(), any())
+    }
+
+    @Test
+    fun `rotate는 유예 안에 다시 온 refresh면(여러 탭 동시 갱신) 계열을 폐기하지 않고 같은 계열로 새 행을 만든다`() {
+        val familyId = UUID.randomUUID()
+        val memberId = UUID.randomUUID()
+        val refreshExpiresAt = Instant.now().plusSeconds(1000)
+        val rawToken = "raced-token"
+        // 처음 읽은 엔티티는 이긴 쪽 커밋 전 값이라 revokedAt이 null이다 - 판정은 이 값이 아니라
+        // DB에서 다시 읽은 값(findRevokedAtById)으로 해야 한다.
+        val current = session(
+            memberId = memberId,
+            refreshTokenHash = SecureToken.hash(rawToken),
+            refreshExpiresAt = refreshExpiresAt,
+            familyId = familyId,
+        )
+        `when`(memberSessionRepository.findByRefreshTokenHash(SecureToken.hash(rawToken))).thenReturn(current)
+        `when`(memberSessionRepository.consumeRefreshIfActive(any(), any())).thenReturn(0)
+        `when`(memberSessionRepository.findRevokedAtById(any())).thenReturn(Instant.now().minusSeconds(3))
+        `when`(memberSessionRepository.countActiveInFamily(any(), any())).thenReturn(1L)
+
+        val issued = memberSessionService.rotate(rawToken)
+
+        val newSessionCaptor = ArgumentCaptor.forClass(TableMemberSession::class.java)
+        verify(memberSessionRepository).save(newSessionCaptor.capture())
+        val newSession = newSessionCaptor.value
+
+        assertEquals(memberId, newSession.memberId)
+        assertEquals(familyId, newSession.familyId)
+        // 정상 회전과 같은 만료 규칙 - 절대 수명을 물려받고 access도 그 수명을 넘지 않는다.
+        assertEquals(refreshExpiresAt, newSession.refreshExpiresAt)
+        assertEquals(refreshExpiresAt, newSession.accessExpiresAt)
+        assertNotEquals(0L, issued.refreshExpiresInSeconds)
+        verify(memberSessionRepository, never()).revokeFamily(any(), any())
+    }
+
+    @Test
+    fun `rotate는 유예 안이어도 계열이 이미 폐기됐으면(로그아웃 등) 계열 폐기와 예외로 끝난다`() {
+        val rawToken = "token-after-logout"
+        val current = session(refreshTokenHash = SecureToken.hash(rawToken))
+        `when`(memberSessionRepository.findByRefreshTokenHash(SecureToken.hash(rawToken))).thenReturn(current)
+        `when`(memberSessionRepository.consumeRefreshIfActive(any(), any())).thenReturn(0)
+        `when`(memberSessionRepository.findRevokedAtById(any())).thenReturn(Instant.now().minusSeconds(3))
+        `when`(memberSessionRepository.countActiveInFamily(any(), any())).thenReturn(0L)
+
+        assertThrows(InvalidTokenException::class.java) {
+            memberSessionService.rotate(rawToken)
+        }
+
+        verify(memberSessionRepository).revokeFamily(any(), any())
+        verify(memberSessionRepository, never()).save(any())
+    }
+
+    @Test
+    fun `rotate는 소비에 졌는데 revokedAt이 비어 있으면 재사용으로 보고 계열을 폐기한다`() {
+        val rawToken = "unknown-state-token"
+        val current = session(refreshTokenHash = SecureToken.hash(rawToken))
+        `when`(memberSessionRepository.findByRefreshTokenHash(SecureToken.hash(rawToken))).thenReturn(current)
+        `when`(memberSessionRepository.consumeRefreshIfActive(any(), any())).thenReturn(0)
+        `when`(memberSessionRepository.findRevokedAtById(any())).thenReturn(null)
+
+        assertThrows(InvalidTokenException::class.java) {
+            memberSessionService.rotate(rawToken)
+        }
+
+        verify(memberSessionRepository).revokeFamily(any(), any())
+        verify(memberSessionRepository, never()).save(any())
+    }
+
+    @Test
+    fun `rotate는 revokedAt이 now보다 조금 미래여도(락 대기·서버 간 시계 오차) 유예로 본다`() {
+        val rawToken = "clock-skew-token"
+        val current = session(refreshTokenHash = SecureToken.hash(rawToken))
+        `when`(memberSessionRepository.findByRefreshTokenHash(SecureToken.hash(rawToken))).thenReturn(current)
+        `when`(memberSessionRepository.consumeRefreshIfActive(any(), any())).thenReturn(0)
+        `when`(memberSessionRepository.findRevokedAtById(any())).thenReturn(Instant.now().plusMillis(500))
+        `when`(memberSessionRepository.countActiveInFamily(any(), any())).thenReturn(1L)
+
+        memberSessionService.rotate(rawToken)
+
+        verify(memberSessionRepository).save(ArgumentCaptor.forClass(TableMemberSession::class.java).capture())
+        verify(memberSessionRepository, never()).revokeFamily(any(), any())
     }
 
     @Test
@@ -194,27 +279,39 @@ class MemberSessionServiceTest {
     }
 
     @Test
-    fun `revokeByRefreshToken은 찾으면 revokedAt을 채워 저장한다`() {
+    fun `revokeByRefreshToken은 찾으면 그 행 하나가 아니라 같은 계열 전체를 폐기한다`() {
+        // 회전 유예로 한 계열에 활성 행이 둘 이상일 수 있다 - 행 하나만 폐기하면 나머지 행의
+        // access(최대 1시간)와 FCM 생존 판정이 로그아웃 뒤에도 남는다.
         val rawToken = "some-token"
-        val target = session(refreshTokenHash = SecureToken.hash(rawToken))
+        val familyId = UUID.randomUUID()
+        val target = session(refreshTokenHash = SecureToken.hash(rawToken), familyId = familyId)
         `when`(memberSessionRepository.findByRefreshTokenHash(SecureToken.hash(rawToken))).thenReturn(target)
 
         memberSessionService.revokeByRefreshToken(rawToken)
 
-        assertNotEquals(null, target.revokedAt)
-        verify(memberSessionRepository).save(target)
+        val familyCaptor = ArgumentCaptor.forClass(UUID::class.java)
+        verify(memberSessionRepository).revokeActiveInFamily(familyCaptor.capture(), any())
+        assertEquals(familyId, familyCaptor.value)
+        verify(memberSessionRepository, never()).save(any())
+        verify(memberSessionRepository, never()).revokeFamily(any(), any())
     }
 
     @Test
-    fun `revokeByRefreshToken은 이미 revoke된 행이면 다시 저장하지 않는다`() {
+    fun `revokeByRefreshToken은 이미 revoke된 행이어도 같은 계열의 남은 활성 행을 폐기한다`() {
+        // 회전 응답을 못 받은 브라우저는 이미 회전된 행을 가리키는 쿠키로 로그아웃할 수 있다 -
+        // 그 행만 보고 멈추면 같은 계열의 살아있는 후속 행이 남는다.
         val rawToken = "some-token"
-        val alreadyRevoked = session(refreshTokenHash = SecureToken.hash(rawToken), revokedAt = Instant.now())
+        val familyId = UUID.randomUUID()
+        val alreadyRevoked =
+            session(refreshTokenHash = SecureToken.hash(rawToken), revokedAt = Instant.now(), familyId = familyId)
         `when`(memberSessionRepository.findByRefreshTokenHash(SecureToken.hash(rawToken))).thenReturn(alreadyRevoked)
 
         memberSessionService.revokeByRefreshToken(rawToken)
 
-        verify(memberSessionRepository).findByRefreshTokenHash(SecureToken.hash(rawToken))
-        verifyNoMoreInteractions(memberSessionRepository)
+        val familyCaptor = ArgumentCaptor.forClass(UUID::class.java)
+        verify(memberSessionRepository).revokeActiveInFamily(familyCaptor.capture(), any())
+        assertEquals(familyId, familyCaptor.value)
+        verify(memberSessionRepository, never()).save(any())
     }
 
     // ── revokeAllForMember (로그아웃 전체·비밀번호변경·탈퇴에서 사용) ──
