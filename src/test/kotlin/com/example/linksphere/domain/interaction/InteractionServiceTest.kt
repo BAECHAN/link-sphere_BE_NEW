@@ -14,7 +14,6 @@ import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
-import org.mockito.ArgumentMatchers.any
 import org.mockito.InjectMocks
 import org.mockito.Mock
 import org.mockito.Mockito.never
@@ -75,16 +74,33 @@ class InteractionServiceTest {
         val post = TablePost(id = postId, userId = ownerId, url = "https://example.com", title = "제목", isPrivate = false)
 
         `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
-        `when`(postReactionRepository.existsByUserIdAndPostId(ownerId, postId)).thenReturn(false)
-        `when`(postReactionRepository.save(any(TablePostReaction::class.java))).thenReturn(TablePostReaction(userId = ownerId, postId = postId))
+        `when`(postReactionRepository.deleteByUserIdAndPostId(ownerId, postId)).thenReturn(0)
         `when`(postReactionRepository.countByPostId(postId)).thenReturn(5L)
 
         val result = interactionService.togglePostLike(postId, ownerId)
 
         assertTrue(result.isLiked)
         assertEquals(5, result.likeCount)
-        verify(postReactionRepository).save(any(TablePostReaction::class.java))
+        verify(postReactionRepository).insertIgnoreConflict(ownerId, postId)
         verify(postReactionRepository).countByPostId(postId)
+    }
+
+    // 동시 요청이 먼저 좋아요를 넣어 insert가 0행이어도(ON CONFLICT DO NOTHING) 예외 없이 좋아요 상태를 돌려준다
+    @Test
+    fun `togglePostLike 는 동시 요청이 먼저 좋아요를 넣어 insert 가 0행이어도 isLiked=true 를 반환한다`() {
+        val ownerId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val post = TablePost(id = postId, userId = ownerId, url = "https://example.com", title = "제목", isPrivate = false)
+
+        `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
+        `when`(postReactionRepository.deleteByUserIdAndPostId(ownerId, postId)).thenReturn(0)
+        `when`(postReactionRepository.insertIgnoreConflict(ownerId, postId)).thenReturn(0)
+        `when`(postReactionRepository.countByPostId(postId)).thenReturn(5L)
+
+        val result = interactionService.togglePostLike(postId, ownerId)
+
+        assertTrue(result.isLiked)
+        assertEquals(5, result.likeCount)
     }
 
     @Test
@@ -94,14 +110,14 @@ class InteractionServiceTest {
         val post = TablePost(id = postId, userId = ownerId, url = "https://example.com", title = "제목", isPrivate = false)
 
         `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
-        `when`(postReactionRepository.existsByUserIdAndPostId(ownerId, postId)).thenReturn(true)
+        `when`(postReactionRepository.deleteByUserIdAndPostId(ownerId, postId)).thenReturn(1)
         `when`(postReactionRepository.countByPostId(postId)).thenReturn(3L)
 
         val result = interactionService.togglePostLike(postId, ownerId)
 
         assertFalse(result.isLiked)
         assertEquals(3, result.likeCount)
-        verify(postReactionRepository).deleteByUserIdAndPostId(ownerId, postId)
+        verify(postReactionRepository, never()).insertIgnoreConflict(ownerId, postId)
         verify(postReactionRepository).countByPostId(postId)
     }
 
@@ -137,7 +153,44 @@ class InteractionServiceTest {
         assertThrows(InvalidInputException::class.java) {
             interactionService.toggleCommentLike(commentId, ownerId)
         }
-        verify(commentReactionRepository, never()).existsByUserIdAndCommentId(ownerId, commentId)
+        verify(commentReactionRepository, never()).deleteByUserIdAndCommentId(ownerId, commentId)
+        verify(commentReactionRepository, never()).insertIgnoreConflict(ownerId, commentId)
+    }
+
+    @Test
+    fun `toggleCommentLike 는 지운 행이 없으면 좋아요를 추가하고 true 를 반환한다`() {
+        val ownerId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val commentId = UUID.randomUUID()
+        val post = TablePost(id = postId, userId = ownerId, url = "https://example.com", title = "제목", isPrivate = false)
+        val comment = TableComment(id = commentId, postId = postId, userId = ownerId, content = "내용")
+
+        `when`(commentRepository.findById(commentId)).thenReturn(Optional.of(comment))
+        `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
+        `when`(commentReactionRepository.deleteByUserIdAndCommentId(ownerId, commentId)).thenReturn(0)
+
+        val result = interactionService.toggleCommentLike(commentId, ownerId)
+
+        assertTrue(result)
+        verify(commentReactionRepository).insertIgnoreConflict(ownerId, commentId)
+    }
+
+    @Test
+    fun `toggleCommentLike 는 좋아요를 지웠으면 추가하지 않고 false 를 반환한다`() {
+        val ownerId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val commentId = UUID.randomUUID()
+        val post = TablePost(id = postId, userId = ownerId, url = "https://example.com", title = "제목", isPrivate = false)
+        val comment = TableComment(id = commentId, postId = postId, userId = ownerId, content = "내용")
+
+        `when`(commentRepository.findById(commentId)).thenReturn(Optional.of(comment))
+        `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
+        `when`(commentReactionRepository.deleteByUserIdAndCommentId(ownerId, commentId)).thenReturn(1)
+
+        val result = interactionService.toggleCommentLike(commentId, ownerId)
+
+        assertFalse(result)
+        verify(commentReactionRepository, never()).insertIgnoreConflict(ownerId, commentId)
     }
 
     @Test
@@ -179,11 +232,12 @@ class InteractionServiceTest {
         val post = TablePost(id = postId, userId = ownerId, url = "https://example.com", title = "제목", isPrivate = true)
 
         `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
-        `when`(bookmarkRepository.existsByUserIdAndPostId(ownerId, postId)).thenReturn(false)
+        `when`(bookmarkRepository.deleteByUserIdAndPostId(ownerId, postId)).thenReturn(0)
 
         val result = interactionService.toggleBookmark(postId, ownerId)
 
         assertTrue(result)
+        verify(bookmarkRepository).insertIgnoreConflict(ownerId, postId)
     }
 
     @Test
@@ -193,13 +247,14 @@ class InteractionServiceTest {
         val post = TablePost(id = postId, userId = ownerId, url = "https://example.com", title = "제목", isPrivate = false)
 
         `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
-        `when`(bookmarkRepository.existsByUserIdAndPostId(ownerId, postId)).thenReturn(true)
+        `when`(bookmarkRepository.deleteByUserIdAndPostId(ownerId, postId)).thenReturn(1)
 
         val result = interactionService.toggleBookmark(postId, ownerId)
 
         assertTrue(!result)
         verify(bookmarkFolderItemRepository).deleteByUserIdAndPostId(ownerId, postId)
         verify(bookmarkRepository).deleteByUserIdAndPostId(ownerId, postId)
+        verify(bookmarkRepository, never()).insertIgnoreConflict(ownerId, postId)
     }
 
     @Test

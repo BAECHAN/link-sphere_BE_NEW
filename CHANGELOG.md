@@ -284,6 +284,23 @@
 
 ### Fixed
 
+- `post` 좋아요·북마크를 연달아 눌러 요청이 겹치면 500이 나던 문제
+  <details><summary>배경·구현</summary>
+
+  2026-10-13 운영에서 좋아요를 연달아 누른 요청 두 개가 토큰 갱신 뒤 같은 순간에 재시도되어 두
+  Lambda에서 동시에 실행됐다. 둘 다 "좋아요 있음"을 보고 derived delete(엔티티를 읽어 지움)를
+  했고, 두 번째 삭제가 0행이 되자 Hibernate가 `StaleObjectStateException`을 던져 500이 됐다(같은
+  트랜잭션 안에서는 이 flush 예외를 잡고 계속할 수 없다 - `docs/AI-ASYNC-PROCESSING.md`). 게시글
+  좋아요·댓글 좋아요·북마크 토글을 "먼저 일괄 DELETE로 지워보고, 지운 행이 없으면
+  `INSERT … ON CONFLICT DO NOTHING`"으로 바꿔 어떤 순서로 겹쳐도 예외가 나지 않게 했다. 함께
+  `ConcurrencyFailureException`(낙관적·비관적 락 실패, 데드락)을 500 대신 409
+  `CONCURRENT_UPDATE`로 돌려주는 안전망을 추가했다 - 엔티티 단위 삭제가 남은 경로
+  (`batchDeleteBookmarks` 등)용이다. API 계약 변경 없음. (`InteractionService.kt`,
+  `PostReactionRepository.kt`, `CommentReactionRepository.kt`, `BookmarkRepository.kt`,
+  `GlobalExceptionHandler.kt`, 계획 `docs/plans/2026-10-13-like-concurrency.md`)
+
+  </details>
+
 - `auth` 여러 탭이 거의 동시에 토큰을 갱신하면 모든 탭이 로그아웃되던 문제(10초 유예)
   <details><summary>배경·구현</summary>
 

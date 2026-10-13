@@ -22,18 +22,24 @@ class InteractionService(
     private val bookmarkFolderRepository: BookmarkFolderRepository,
     private val bookmarkFolderItemRepository: BookmarkFolderItemRepository,
 ) {
+    /**
+     * 토글은 "먼저 지워보고, 지운 행이 없으면 추가"로 처리한다 — exists 조회 후 분기하면 같은 사용자의
+     * 동시 요청이 둘 다 같은 분기로 들어가 두 번째 삭제가 StaleObjectStateException(500)을 냈다
+     * (2026-10-13 운영). 일괄 DELETE는 이미 지워진 행에 0을 반환하고(READ COMMITTED에서 먼저 지운
+     * 쪽 커밋을 기다렸다가 행을 건너뛴다), insert는 ON CONFLICT DO NOTHING이라 어떤 순서로 겹쳐도
+     * 예외가 나지 않는다. 근거: docs/plans/2026-10-13-like-concurrency.md
+     */
     @Transactional
     fun togglePostLike(postId: UUID, userId: UUID): PostLikeResponse {
         assertPostVisible(postId, userId)
 
-        val exists = postReactionRepository.existsByUserIdAndPostId(userId, postId)
-        val isLiked = if (exists) {
-            postReactionRepository.deleteByUserIdAndPostId(userId, postId)
-            false
-        } else {
-            postReactionRepository.save(TablePostReaction(userId = userId, postId = postId))
-            true
+        val removed = postReactionRepository.deleteByUserIdAndPostId(userId, postId) > 0
+
+        if (!removed) {
+            postReactionRepository.insertIgnoreConflict(userId, postId)
         }
+
+        val isLiked = !removed
 
         // 동일 트랜잭션 내 COUNT — insert/delete가 반영된 정확값
         val likeCount = postReactionRepository.countByPostId(postId).toInt()
@@ -51,32 +57,32 @@ class InteractionService(
         // 404 대신 400이 나가면서 "그 댓글이 존재한다"는 사실이 새어나간다.
         if (comment.isDeleted) throw InvalidInputException("삭제된 댓글에는 좋아요를 누를 수 없습니다.")
 
-        val exists = commentReactionRepository.existsByUserIdAndCommentId(userId, commentId)
-        return if (exists) {
-            commentReactionRepository.deleteByUserIdAndCommentId(userId, commentId)
-            false
-        } else {
-            commentReactionRepository.save(TableCommentReaction(userId = userId, commentId = commentId))
-            true
+        // togglePostLike 와 같은 "먼저 지워보고 없으면 추가" 방식(동시 요청에도 예외 없음)
+        val removed = commentReactionRepository.deleteByUserIdAndCommentId(userId, commentId) > 0
+
+        if (!removed) {
+            commentReactionRepository.insertIgnoreConflict(userId, commentId)
         }
+
+        return !removed
     }
 
     @Transactional
     fun toggleBookmark(postId: UUID, userId: UUID): Boolean {
         assertPostVisible(postId, userId)
 
-        val exists = bookmarkRepository.existsByUserIdAndPostId(userId, postId)
-        return if (exists) {
-            // 소속 전부 삭제 — FK ON DELETE CASCADE 로도 처리되지만, 이 레포는 통합 테스트 하네스가
-            // 없어 캐스케이드를 단위 테스트로 증명할 수 없다. 명시적으로 먼저 지워 테스트 가능하게 하고,
-            // 캐스케이드는 백스톱으로 남겨둔다.
-            bookmarkFolderItemRepository.deleteByUserIdAndPostId(userId, postId)
-            bookmarkRepository.deleteByUserIdAndPostId(userId, postId)
-            false
-        } else {
-            bookmarkRepository.save(TableBookmark(userId, postId))
-            true
+        // togglePostLike 와 같은 "먼저 지워보고 없으면 추가" 방식(동시 요청에도 예외 없음).
+        // 소속 전부 삭제 — FK ON DELETE CASCADE 로도 처리되지만, 이 레포는 통합 테스트 하네스가
+        // 없어 캐스케이드를 단위 테스트로 증명할 수 없다. 명시적으로 먼저 지워 테스트 가능하게 하고,
+        // 캐스케이드는 백스톱으로 남겨둔다. 북마크가 없으면 소속도 없으므로 이 삭제는 0행으로 끝난다.
+        bookmarkFolderItemRepository.deleteByUserIdAndPostId(userId, postId)
+        val removed = bookmarkRepository.deleteByUserIdAndPostId(userId, postId) > 0
+
+        if (!removed) {
+            bookmarkRepository.insertIgnoreConflict(userId, postId)
         }
+
+        return !removed
     }
 
     /**

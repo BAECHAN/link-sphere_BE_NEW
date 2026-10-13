@@ -583,7 +583,7 @@ data class FolderResponse(
 | ---- | ------------- | --------- |
 | Controller | `domain/comment/CommentController.kt` | `ApiResponse` 래핑, 한글 메시지, `Authentication` 파라미터 주입, `@AuthenticationPrincipal` |
 | Service (CRUD) | `domain/comment/CommentService.kt` | `@Transactional`, fail-fast 검증, 배치 조회(N+1 방지), 권한 확인, 소프트 삭제 |
-| Service (Toggle) | `domain/interaction/InteractionService.kt` | `exists → delete/save → boolean` 반환 패턴, `when` 표현식 타입 분기 |
+| Service (Toggle) | `domain/interaction/InteractionService.kt` | 일괄 DELETE 먼저 → 0행이면 `insertIgnoreConflict`(동시 요청에도 예외 없음), `exists` 후 분기 금지 |
 | DTO | `domain/comment/CommentDTO.kt` | `data class`, nullable 명시, Request/Response 분리, 기본값(`= emptyList()`) |
 | Entity | `domain/comment/TableComment.kt` | UUID PK, `LAZY` loading, `insertable=false` FK, timestamp 자동화 |
 | 예외 핸들러 | `global/exception/GlobalExceptionHandler.kt` | `@ExceptionHandler` 등록, `ErrorResponse(status, code, message)` |

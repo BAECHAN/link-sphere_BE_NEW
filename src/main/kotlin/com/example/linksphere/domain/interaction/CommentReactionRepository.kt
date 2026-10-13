@@ -7,8 +7,19 @@ import org.springframework.data.repository.query.Param
 import java.util.UUID
 
 interface CommentReactionRepository : JpaRepository<TableCommentReaction, CommentReactionId> {
-    fun existsByUserIdAndCommentId(userId: UUID, commentId: UUID): Boolean
-    fun deleteByUserIdAndCommentId(userId: UUID, commentId: UUID)
+    // 일괄 DELETE — PostReactionRepository.deleteByUserIdAndPostId 와 같은 이유(동시 요청에도 예외 없음)
+    @Modifying
+    @Query("DELETE FROM TableCommentReaction r WHERE r.userId = :userId AND r.commentId = :commentId")
+    fun deleteByUserIdAndCommentId(@Param("userId") userId: UUID, @Param("commentId") commentId: UUID): Int
+
+    // 중복 요청/동시 탭에도 안전한 멱등 insert
+    @Modifying
+    @Query(
+        value = "INSERT INTO comment_reactions (user_id, comment_id, created_at) " +
+            "VALUES (:userId, :commentId, CURRENT_TIMESTAMP) ON CONFLICT DO NOTHING",
+        nativeQuery = true,
+    )
+    fun insertIgnoreConflict(@Param("userId") userId: UUID, @Param("commentId") commentId: UUID): Int
 
     // 회원탈퇴 시(AccountDeletionService) 그 회원의 댓글 좋아요를 전부 지운다.
     fun deleteByUserId(userId: UUID)
