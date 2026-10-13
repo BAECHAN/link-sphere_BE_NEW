@@ -303,6 +303,24 @@ class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(response)
     }
 
+    // 동시 요청끼리 부딪힌 경우 — 낙관적 락(엔티티로 지우려던 행을 다른 요청이 먼저 지움) · 비관적 락 ·
+    // 데드락 실패가 모두 ConcurrencyFailureException 하위다. 서버 결함이 아니라 재시도하면 풀리는
+    // 충돌이라 500 대신 409로 돌려준다. 좋아요·북마크 토글은 일괄 DELETE로 바꿔 더는 여기 오지 않고,
+    // 엔티티 단위 삭제가 남은 경로(batchDeleteBookmarks 등)의 안전망이다(docs/plans/2026-10-13-like-concurrency.md).
+    @ExceptionHandler(org.springframework.dao.ConcurrencyFailureException::class)
+    fun handleConcurrencyFailureException(
+        e: org.springframework.dao.ConcurrencyFailureException,
+    ): ResponseEntity<ErrorResponse> {
+        logger.warn("Concurrency failure: {}", e.mostSpecificCause.message)
+        val response =
+            ErrorResponse(
+                status = HttpStatus.CONFLICT.value(),
+                code = "CONCURRENT_UPDATE",
+                message = "다른 요청과 동시에 처리되어 실패했습니다. 다시 시도해 주세요.",
+            )
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(response)
+    }
+
     // 정적 리소스가 클래스패스에 없을 때(예: 운영에 번들되지 않는 Swagger UI 경로) - 이 핸들러가
     // 없으면 permitAll이라 401은 피해가고 handleException(500)으로 떨어져 "서버 에러"처럼 보인다.
     @ExceptionHandler(org.springframework.web.servlet.resource.NoResourceFoundException::class)

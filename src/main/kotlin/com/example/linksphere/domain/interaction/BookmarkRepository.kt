@@ -10,7 +10,11 @@ interface BookmarkRepository :
     JpaRepository<TableBookmark, BookmarkId>,
     BookmarkRepositoryCustom {
     fun existsByUserIdAndPostId(userId: UUID, postId: UUID): Boolean
-    fun deleteByUserIdAndPostId(userId: UUID, postId: UUID)
+
+    // 일괄 DELETE — PostReactionRepository.deleteByUserIdAndPostId 와 같은 이유(동시 요청에도 예외 없음)
+    @Modifying
+    @Query("DELETE FROM TableBookmark b WHERE b.userId = :userId AND b.postId = :postId")
+    fun deleteByUserIdAndPostId(@Param("userId") userId: UUID, @Param("postId") postId: UUID): Int
 
     // 회원탈퇴 시(AccountDeletionService) 그 회원의 북마크를 전부 지운다.
     fun deleteByUserId(userId: UUID)
