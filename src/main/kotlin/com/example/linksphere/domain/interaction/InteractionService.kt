@@ -113,6 +113,32 @@ class InteractionService(
     }
 
     /**
+     * 북마크 상태를 지정한다 — 토글과 달리 같은 요청을 여러 번·동시에 보내도 결과가 같다(멱등).
+     * 저장(true)은 북마크만 보장하고 이미 있는 폴더 소속은 건드리지 않는다(addBookmarkFolder와 같은 방식 —
+     * 낡은 화면이 다른 기기에서 정리한 분류를 지우지 않게). 그래서 응답에 서버의 실제 folderIds를 담는다.
+     * 해제(false)는 removeBookmarkFolder·clearBookmarkFolders처럼 공개 여부를 확인하지 않는다 — 응답에 수가
+     * 없어 새는 정보가 없고, 비공개로 바뀐 글의 북마크도 지울 수 있어야 한다.
+     * 근거: docs/plans/2026-10-13-bookmark-set-state.md
+     */
+    @Transactional
+    fun setBookmark(postId: UUID, userId: UUID, bookmarked: Boolean): BookmarkFoldersResponse {
+        if (!bookmarked) {
+            bookmarkFolderItemRepository.deleteByUserIdAndPostId(userId, postId)
+            bookmarkRepository.deleteByUserIdAndPostId(userId, postId)
+            return BookmarkFoldersResponse(postId = postId, isBookmarked = false, folderIds = emptyList())
+        }
+
+        assertPostVisible(postId, userId)
+        bookmarkRepository.insertIgnoreConflict(userId, postId)
+
+        return BookmarkFoldersResponse(
+            postId = postId,
+            isBookmarked = true,
+            folderIds = bookmarkFolderItemRepository.findFolderIdsByUserIdAndPostId(userId, postId),
+        )
+    }
+
+    /**
      * 폴더에 추가 — 북마크가 없으면 미분류로 자동 생성 후 소속을 추가한다.
      * "북마크 보장 + 소속 보장" 의미. 이미 그 폴더에 있어도 멱등하게 200.
      */

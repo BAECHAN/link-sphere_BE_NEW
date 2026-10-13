@@ -218,7 +218,9 @@ src/main/kotlin/com/example/linksphere/
 | `DELETE` | `/comment/{commentId}/like`            | 댓글 좋아요 취소 (멱등)                  | ✅   |
 | `POST`   | `/post/{postId}/like`                  | 게시글 좋아요 토글 (deprecated — PUT/DELETE 사용) | ✅   |
 | `POST`   | `/comment/{commentId}/like`            | 댓글 좋아요 토글 (deprecated — PUT/DELETE 사용)   | ✅   |
-| `POST`   | `/post/{postId}/bookmark`              | 게시글 북마크 토글 (해제 시 소속도 전부 삭제) | ✅   |
+| `PUT`    | `/post/{postId}/bookmark`              | 게시글 북마크 (멱등, 기존 폴더 소속은 유지) | ✅   |
+| `DELETE` | `/post/{postId}/bookmark`              | 게시글 북마크 해제 (멱등, 소속도 전부 삭제) | ✅   |
+| `POST`   | `/post/{postId}/bookmark`              | 게시글 북마크 토글 (deprecated — PUT/DELETE 사용) | ✅   |
 | `POST`   | `/bookmark/{postId}/folders/{folderId}` | 폴더에 추가 (북마크 없으면 자동 생성)    | ✅   |
 | `DELETE` | `/bookmark/{postId}/folders/{folderId}` | 그 폴더에서만 제거 (북마크는 유지)       | ✅   |
 | `DELETE` | `/bookmark/{postId}/folders`           | 폴더 소속 전체 해제 (→ 미분류)           | ✅   |

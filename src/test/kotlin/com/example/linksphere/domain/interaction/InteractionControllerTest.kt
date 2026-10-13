@@ -96,6 +96,26 @@ class InteractionControllerTest {
             .andExpect(jsonPath("$.data.isLiked").value(false))
     }
 
+    @Test
+    @WithMockUser(username = USER_ID)
+    fun `PUT·DELETE 게시글 북마크는 setBookmark 결과를 isBookmarked·folderIds 로 돌려준다`() {
+        val postId = UUID.randomUUID()
+        val folderId = UUID.randomUUID()
+        `when`(interactionService.setBookmark(postId, UUID.fromString(USER_ID), true))
+            .thenReturn(BookmarkFoldersResponse(postId = postId, isBookmarked = true, folderIds = listOf(folderId)))
+        `when`(interactionService.setBookmark(postId, UUID.fromString(USER_ID), false))
+            .thenReturn(BookmarkFoldersResponse(postId = postId, isBookmarked = false, folderIds = emptyList()))
+
+        mockMvc.perform(put("/post/$postId/bookmark").with(csrf()))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.data.isBookmarked").value(true))
+            .andExpect(jsonPath("$.data.folderIds[0]").value(folderId.toString()))
+        mockMvc.perform(delete("/post/$postId/bookmark").with(csrf()))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.data.isBookmarked").value(false))
+            .andExpect(jsonPath("$.data.folderIds").isEmpty)
+    }
+
     companion object {
         private const val USER_ID = "3fa85f64-5717-4562-b3fc-2c963f66afa6"
     }
