@@ -1,6 +1,6 @@
 # Link-Sphere BE — CI 검사 게이트 정비 (2026-09-03)
 
-> 마지막 검토: 2026-09-27
+> 마지막 검토: 2026-10-13
 
 ## 1. 쉬운 설명
 
@@ -82,7 +82,7 @@ Gradle 프로세스 안에서 컴파일 캐시를 공유하는 게 더 빠르고
 
 | 파라미터 | 값 | 실제 위치 |
 | --- | --- | --- |
-| PR CI 트리거 | `pull_request` → `main` | `.github/workflows/ci.yml` |
+| PR CI 트리거 | `pull_request`(base 브랜치 필터 없음 — 스택 PR도 트리거, 2026-10-13) | `.github/workflows/ci.yml` |
 | 동시 실행 제어 | 같은 브랜치 새 커밋 push 시 이전 실행 자동 취소 | `ci.yml`의 `concurrency: group: ci-${{ github.ref }}, cancel-in-progress: true` |
 | 체크아웃 깊이 | `fetch-depth: 0`(전체 히스토리) — 아래 "docs/plans 불변성 확인" 스텝이 `origin/${{ github.base_ref }}...HEAD` diff를 떠야 해서 얕은 클론(기본값 1)으로는 base 커밋을 못 찾는다 | `ci.yml`의 "Checkout source" 스텝 |
 | docs/plans 불변성 확인 | `docs/plans/*.md`가 커밋된 뒤 수정(M)됐는지 PR diff로 검사, 있으면 실패 | `ci.yml`의 "docs/plans 불변성 확인" 스텝 |
