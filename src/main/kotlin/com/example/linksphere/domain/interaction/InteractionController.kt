@@ -5,6 +5,7 @@ import com.example.linksphere.global.common.ApiResponse
 import com.example.linksphere.global.common.getUserId
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.tags.Tag
+import org.slf4j.LoggerFactory
 import org.springframework.security.core.Authentication
 import org.springframework.web.bind.annotation.*
 import java.util.UUID
@@ -16,9 +17,16 @@ class InteractionController(
     private val bookmarkFolderService: BookmarkFolderService,
 ) {
 
+    private val logger = LoggerFactory.getLogger(InteractionController::class.java)
+
+    // 토글은 같은 요청이 두 번 가면 상태가 두 번 뒤집힌다 — FE는 아래 PUT/DELETE(상태 지정)로 옮겼고,
+    // 화면을 이동하지 않은 탭의 옛 번들만 이 토글을 부른다. 호출 로그가 0건이 되면 제거한다
+    // (docs/plans/2026-10-13-like-concurrency.md).
     @Operation(
-        summary = "게시글 좋아요 토글",
-        description = "이미 눌렀으면 취소된다. data 는 {\"isLiked\": true|false, \"likeCount\": 12} 형태다. 실패: 404 POST_NOT_FOUND",
+        summary = "게시글 좋아요 토글 (deprecated)",
+        description = "PUT/DELETE /post/{postId}/like 를 쓴다. 이미 눌렀으면 취소된다. " +
+            "data 는 {\"isLiked\": true|false, \"likeCount\": 12} 형태다. 실패: 404 POST_NOT_FOUND",
+        deprecated = true,
     )
     @PostMapping("/post/{postId}/like")
     fun likePost(
@@ -26,14 +34,47 @@ class InteractionController(
         authentication: Authentication?,
     ): ApiResponse<PostLikeResponse> {
         val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
+        logger.info("deprecated like toggle called: post")
         val result = interactionService.togglePostLike(postId, userId)
         return ApiResponse(200, if (result.isLiked) "좋아요 성공" else "좋아요 취소 성공", result)
     }
 
     @Operation(
-        summary = "댓글 좋아요 토글",
-        description = "이미 눌렀으면 취소된다. data 는 {\"isLiked\": true|false} 한 쌍이다. " +
+        summary = "게시글 좋아요",
+        description = "이미 좋아요한 상태여도 200 이다(멱등). " +
+            "data 는 {\"isLiked\": true, \"likeCount\": 12} 형태다. 실패: 404 POST_NOT_FOUND",
+    )
+    @PutMapping("/post/{postId}/like")
+    fun putPostLike(
+        @PathVariable postId: UUID,
+        authentication: Authentication?,
+    ): ApiResponse<PostLikeResponse> {
+        val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
+        val result = interactionService.setPostLike(postId, userId, liked = true)
+        return ApiResponse(200, "좋아요 성공", result)
+    }
+
+    @Operation(
+        summary = "게시글 좋아요 취소",
+        description = "좋아요하지 않은 상태여도 200 이다(멱등). " +
+            "data 는 {\"isLiked\": false, \"likeCount\": 11} 형태다. 실패: 404 POST_NOT_FOUND",
+    )
+    @DeleteMapping("/post/{postId}/like")
+    fun deletePostLike(
+        @PathVariable postId: UUID,
+        authentication: Authentication?,
+    ): ApiResponse<PostLikeResponse> {
+        val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
+        val result = interactionService.setPostLike(postId, userId, liked = false)
+        return ApiResponse(200, "좋아요 취소 성공", result)
+    }
+
+    @Operation(
+        summary = "댓글 좋아요 토글 (deprecated)",
+        description = "PUT/DELETE /comment/{commentId}/like 를 쓴다. 이미 눌렀으면 취소된다. " +
+            "data 는 {\"isLiked\": true|false} 한 쌍이다. " +
             "실패: 404 POST_NOT_FOUND(글 없음·비공개) · 400 INVALID_INPUT(삭제된 댓글)",
+        deprecated = true,
     )
     @PostMapping("/comment/{commentId}/like")
     fun likeComment(
@@ -41,12 +82,43 @@ class InteractionController(
         authentication: Authentication?,
     ): ApiResponse<Map<String, Boolean>> {
         val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
+        logger.info("deprecated like toggle called: comment")
         val isLiked = interactionService.toggleCommentLike(commentId, userId)
         return ApiResponse(
             200,
             if (isLiked) "댓글 좋아요 성공" else "댓글 좋아요 취소 성공",
             mapOf("isLiked" to isLiked),
         )
+    }
+
+    @Operation(
+        summary = "댓글 좋아요",
+        description = "이미 좋아요한 상태여도 200 이다(멱등). data 는 {\"isLiked\": true} 다. " +
+            "실패: 404 POST_NOT_FOUND(글 없음·비공개) · 400 INVALID_INPUT(삭제된 댓글)",
+    )
+    @PutMapping("/comment/{commentId}/like")
+    fun putCommentLike(
+        @PathVariable commentId: UUID,
+        authentication: Authentication?,
+    ): ApiResponse<Map<String, Boolean>> {
+        val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
+        val isLiked = interactionService.setCommentLike(commentId, userId, liked = true)
+        return ApiResponse(200, "댓글 좋아요 성공", mapOf("isLiked" to isLiked))
+    }
+
+    @Operation(
+        summary = "댓글 좋아요 취소",
+        description = "좋아요하지 않은 상태여도 200 이다(멱등). data 는 {\"isLiked\": false} 다. " +
+            "실패: 404 POST_NOT_FOUND(글 없음·비공개) · 400 INVALID_INPUT(삭제된 댓글)",
+    )
+    @DeleteMapping("/comment/{commentId}/like")
+    fun deleteCommentLike(
+        @PathVariable commentId: UUID,
+        authentication: Authentication?,
+    ): ApiResponse<Map<String, Boolean>> {
+        val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
+        val isLiked = interactionService.setCommentLike(commentId, userId, liked = false)
+        return ApiResponse(200, "댓글 좋아요 취소 성공", mapOf("isLiked" to isLiked))
     }
 
     @Operation(

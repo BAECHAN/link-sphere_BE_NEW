@@ -122,6 +122,91 @@ class InteractionServiceTest {
     }
 
     @Test
+    fun `setPostLike(true) 는 지우지 않고 insertIgnoreConflict 만 하며 isLiked=true 를 반환한다`() {
+        val ownerId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val post = TablePost(id = postId, userId = ownerId, url = "https://example.com", title = "제목", isPrivate = false)
+
+        `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
+        `when`(postReactionRepository.countByPostId(postId)).thenReturn(7L)
+
+        val result = interactionService.setPostLike(postId, ownerId, liked = true)
+
+        assertTrue(result.isLiked)
+        assertEquals(7, result.likeCount)
+        verify(postReactionRepository).insertIgnoreConflict(ownerId, postId)
+        verify(postReactionRepository, never()).deleteByUserIdAndPostId(ownerId, postId)
+    }
+
+    @Test
+    fun `setPostLike(false) 는 추가하지 않고 일괄 삭제만 하며 isLiked=false 를 반환한다`() {
+        val ownerId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val post = TablePost(id = postId, userId = ownerId, url = "https://example.com", title = "제목", isPrivate = false)
+
+        `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
+        `when`(postReactionRepository.countByPostId(postId)).thenReturn(6L)
+
+        val result = interactionService.setPostLike(postId, ownerId, liked = false)
+
+        assertFalse(result.isLiked)
+        assertEquals(6, result.likeCount)
+        verify(postReactionRepository).deleteByUserIdAndPostId(ownerId, postId)
+        verify(postReactionRepository, never()).insertIgnoreConflict(ownerId, postId)
+    }
+
+    @Test
+    fun `setPostLike(false) 도 남의 비공개 글이면 PostNotFoundException`() {
+        val ownerId = UUID.randomUUID()
+        val otherUserId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val post = TablePost(id = postId, userId = ownerId, url = "https://example.com", title = "제목", isPrivate = true)
+
+        `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
+
+        assertThrows(PostNotFoundException::class.java) {
+            interactionService.setPostLike(postId, otherUserId, liked = false)
+        }
+        verify(postReactionRepository, never()).deleteByUserIdAndPostId(otherUserId, postId)
+    }
+
+    @Test
+    fun `setCommentLike 는 liked 에 따라 추가 또는 일괄 삭제만 한다`() {
+        val ownerId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val commentId = UUID.randomUUID()
+        val post = TablePost(id = postId, userId = ownerId, url = "https://example.com", title = "제목", isPrivate = false)
+        val comment = TableComment(id = commentId, postId = postId, userId = ownerId, content = "내용")
+
+        `when`(commentRepository.findById(commentId)).thenReturn(Optional.of(comment))
+        `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
+
+        assertTrue(interactionService.setCommentLike(commentId, ownerId, liked = true))
+        verify(commentReactionRepository).insertIgnoreConflict(ownerId, commentId)
+
+        assertFalse(interactionService.setCommentLike(commentId, ownerId, liked = false))
+        verify(commentReactionRepository).deleteByUserIdAndCommentId(ownerId, commentId)
+    }
+
+    @Test
+    fun `setCommentLike 는 삭제된 댓글이면 InvalidInputException`() {
+        val ownerId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val commentId = UUID.randomUUID()
+        val post = TablePost(id = postId, userId = ownerId, url = "https://example.com", title = "제목", isPrivate = false)
+        val comment =
+            TableComment(id = commentId, postId = postId, userId = ownerId, content = "삭제된 댓글입니다.", isDeleted = true)
+
+        `when`(commentRepository.findById(commentId)).thenReturn(Optional.of(comment))
+        `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
+
+        assertThrows(InvalidInputException::class.java) {
+            interactionService.setCommentLike(commentId, ownerId, liked = true)
+        }
+        verify(commentReactionRepository, never()).insertIgnoreConflict(ownerId, commentId)
+    }
+
+    @Test
     fun `toggleCommentLike throws PostNotFoundException when another user likes a comment on a private post`() {
         val ownerId = UUID.randomUUID()
         val otherUserId = UUID.randomUUID()

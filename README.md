@@ -212,8 +212,12 @@ src/main/kotlin/com/example/linksphere/
 
 | Method   | Endpoint                              | 설명                                     | 인증 |
 | -------- | -------------------------------------- | ---------------------------------------- | ---- |
-| `POST`   | `/post/{postId}/like`                  | 게시글 좋아요 토글                       | ✅   |
-| `POST`   | `/comment/{commentId}/like`            | 댓글 좋아요 토글                         | ✅   |
+| `PUT`    | `/post/{postId}/like`                  | 게시글 좋아요 (멱등)                     | ✅   |
+| `DELETE` | `/post/{postId}/like`                  | 게시글 좋아요 취소 (멱등)                | ✅   |
+| `PUT`    | `/comment/{commentId}/like`            | 댓글 좋아요 (멱등)                       | ✅   |
+| `DELETE` | `/comment/{commentId}/like`            | 댓글 좋아요 취소 (멱등)                  | ✅   |
+| `POST`   | `/post/{postId}/like`                  | 게시글 좋아요 토글 (deprecated — PUT/DELETE 사용) | ✅   |
+| `POST`   | `/comment/{commentId}/like`            | 댓글 좋아요 토글 (deprecated — PUT/DELETE 사용)   | ✅   |
 | `POST`   | `/post/{postId}/bookmark`              | 게시글 북마크 토글 (해제 시 소속도 전부 삭제) | ✅   |
 | `POST`   | `/bookmark/{postId}/folders/{folderId}` | 폴더에 추가 (북마크 없으면 자동 생성)    | ✅   |
 | `DELETE` | `/bookmark/{postId}/folders/{folderId}` | 그 폴더에서만 제거 (북마크는 유지)       | ✅   |
