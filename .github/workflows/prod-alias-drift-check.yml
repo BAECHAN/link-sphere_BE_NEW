@@ -27,7 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: AWS 자격증명 설정
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           # deploy.yml과 같은 역할을 OIDC로 맡는다(조회 권한 GetAlias·ListVersionsByFunction 포함).
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
