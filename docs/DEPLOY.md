@@ -121,9 +121,27 @@ Shadow JAR 플러그인의 `mergeServiceFiles()`는 `META-INF/services/**` 파�
 
 ## AWS 초기 설정 (최초 1회)
 
-### 1. IAM 사용자 생성 (GitHub Actions용)
+### 1. GitHub Actions용 IAM 역할 (OIDC)
 
-최소 권한 정책:
+`deploy.yml`·`prod-alias-drift-check.yml`은 IAM 사용자의 영구 키가 아니라, GitHub OIDC로 맡는 역할
+`link-sphere-be-deploy`로 AWS에 접근한다(2026-10-13 전환 — 그 전엔 `AWS_ACCESS_KEY_ID`/`SECRET` 시크릿).
+job마다 임시 자격증명을 받아 기본 1시간 뒤 만료되므로 교체할 키가 없다.
+
+- **신뢰 조건**: 제공자 `token.actions.githubusercontent.com`, `aud`=`sts.amazonaws.com`,
+  `sub`=`repo:BAECHAN/link-sphere_BE_NEW:ref:refs/heads/main` — 이 레포 main 브랜치의 job만(push·수동 실행·예약 실행
+  모두 해당). 다른 브랜치를 골라 수동 실행하면 역할을 못 맡아 실패한다.
+- **역할 ARN**: 레포 Secret `AWS_ROLE_ARN`.
+- **만든 방법**: 콘솔 CloudShell 스크립트로 OIDC 제공자와 FE·BE 역할을 함께 만들었다(스크립트 원문:
+  [`docs/plans/2026-10-13-github-oidc-aws.md`](./plans/2026-10-13-github-oidc-aws.md) 부록 A — 여러 번 실행해도
+  안전하니 권한을 바꿀 때 고쳐서 다시 돌린다). 로컬 IAM 사용자(`link-sphere-user`)에는 IAM 권한이 없어 콘솔에서 한다.
+- **전제 — 도쿄 리전 STS 활성화**: IAM → Account settings → Security Token Service (STS) → Endpoints에서
+  Asia Pacific (Tokyo)가 Active여야 한다. 꺼져 있으면 역할 맡기가 _"이 리전에서 STS가 활성화돼 있지 않다"_ (번역)
+  에러로 실패한다 — 2026-10-13 FE 첫 전환 때 실제로 이걸로 실패해 켰다. AWS 문서는 _"기본으로 켜진 리전은 임시
+  자격증명이 만들어지는 계정에서 그 리전의 STS 창구를 활성화해야 한다"_ (번역,
+  [Manage AWS STS in an AWS Region](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_temp_enable-regions.html))고
+  쓴다. IAM 사용자의 신원 조회(`aws sts get-caller-identity`)는 임시 자격증명을 만들지 않아 이 설정과 무관하게 된다.
+
+권한 정책(인라인 `deploy`):
 ```json
 {
   "Version": "2012-10-17",
@@ -143,9 +161,14 @@ Shadow JAR 플러그인의 `mergeServiceFiles()`는 `META-INF/services/**` 파�
         "lambda:GetAlias",
         "lambda:GetFunction",
         "lambda:GetFunctionConfiguration",
-        "lambda:InvokeFunction"
+        "lambda:InvokeFunction",
+        "lambda:GetFunctionUrlConfig",
+        "lambda:ListVersionsByFunction"
       ],
-      "Resource": "arn:aws:lambda:ap-northeast-1:*:function:link-sphere-api*"
+      "Resource": [
+        "arn:aws:lambda:ap-northeast-1:<계정 ID>:function:link-sphere-api",
+        "arn:aws:lambda:ap-northeast-1:<계정 ID>:function:link-sphere-api:*"
+      ]
     }
   ]
 }
@@ -153,10 +176,9 @@ Shadow JAR 플러그인의 `mergeServiceFiles()`는 `META-INF/services/**` 파�
 
 > ⚠️ **`lambda:InvokeFunction`은 2026-08-13 자동 승격 게이트 도입 시 추가됐다.**
 > 그 이전엔 CI가 발행만 하고 사람이 로컬 자격증명으로 직접 호출했기 때문에 이
-> 권한이 필요 없었다. 실제 IAM 정책이 이 문서보다 오래됐다면(이 권한 조회 자체가
-> `iam:List*` 권한 없이는 안 되므로 콘솔에서 직접 확인해야 한다) deploy.yml의
-> "새 버전 직접 연속 호출 검증" 스텝이 `AccessDenied`로 실패한다 — 이 경우 위
-> 정책에 `lambda:InvokeFunction`을 추가해야 한다.
+> 권한이 필요 없었다. `lambda:GetFunctionUrlConfig`(deploy.yml 마지막 "Function URL 출력"
+> 스텝)와 `lambda:ListVersionsByFunction`(prod-alias-drift-check.yml)은 옛 IAM 사용자 정책
+> 문서에서 빠져 있던 것을 OIDC 역할로 옮기면서 채웠다.
 
 ### 2. S3 버킷 생성
 
@@ -702,8 +724,7 @@ aws events put-targets \
 
 | Secret 이름 | 설명 |
 |-------------|------|
-| `AWS_ACCESS_KEY_ID` | IAM 사용자 액세스 키 |
-| `AWS_SECRET_ACCESS_KEY` | IAM 사용자 시크릿 키 |
+| `AWS_ROLE_ARN` | OIDC로 맡을 IAM 역할 ARN (위 "AWS 초기 설정" 1번) |
 | `FIREBASE_SERVICE_ACCOUNT_JSON` | Firebase 서비스 계정 JSON 전문 |
 
 ### Variables (평문 저장)

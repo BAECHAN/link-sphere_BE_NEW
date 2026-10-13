@@ -14,6 +14,7 @@ on:
 
 permissions:
   issues: write
+  id-token: write # AWS OIDC 인증(아래 AWS 자격증명 설정)에 필요하다.
 
 env:
   DRIFT_LABEL: deploy-drift
@@ -28,8 +29,8 @@ jobs:
       - name: AWS 자격증명 설정
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          # deploy.yml과 같은 역할을 OIDC로 맡는다(조회 권한 GetAlias·ListVersionsByFunction 포함).
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
 
       - name: prod alias vs 최신 발행 버전 비교
