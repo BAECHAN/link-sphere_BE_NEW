@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import org.mockito.InjectMocks
 import org.mockito.Mock
+import org.mockito.Mockito.inOrder
 import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
@@ -340,6 +341,57 @@ class InteractionServiceTest {
         verify(bookmarkFolderItemRepository).deleteByUserIdAndPostId(ownerId, postId)
         verify(bookmarkRepository).deleteByUserIdAndPostId(ownerId, postId)
         verify(bookmarkRepository, never()).insertIgnoreConflict(ownerId, postId)
+    }
+
+    @Test
+    fun `setBookmark(true) 는 북마크만 보장하고 기존 폴더 소속은 건드리지 않은 채 서버의 folderIds 를 돌려준다`() {
+        val ownerId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val folderId = UUID.randomUUID()
+        val post = TablePost(id = postId, userId = ownerId, url = "https://example.com", title = "제목", isPrivate = false)
+
+        `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
+        // 다른 기기에서 이미 폴더에 저장해 둔 상태(낡은 화면에서 "저장"을 누른 경우)
+        `when`(bookmarkFolderItemRepository.findFolderIdsByUserIdAndPostId(ownerId, postId)).thenReturn(listOf(folderId))
+
+        val result = interactionService.setBookmark(postId, ownerId, bookmarked = true)
+
+        assertTrue(result.isBookmarked)
+        assertEquals(listOf(folderId), result.folderIds)
+        verify(bookmarkRepository).insertIgnoreConflict(ownerId, postId)
+        verify(bookmarkRepository, never()).deleteByUserIdAndPostId(ownerId, postId)
+        verify(bookmarkFolderItemRepository, never()).deleteByUserIdAndPostId(ownerId, postId)
+    }
+
+    @Test
+    fun `setBookmark(true) 는 남의 비공개 글이면 PostNotFoundException`() {
+        val ownerId = UUID.randomUUID()
+        val otherUserId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val post = TablePost(id = postId, userId = ownerId, url = "https://example.com", title = "제목", isPrivate = true)
+
+        `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
+
+        assertThrows(PostNotFoundException::class.java) {
+            interactionService.setBookmark(postId, otherUserId, bookmarked = true)
+        }
+        verify(bookmarkRepository, never()).insertIgnoreConflict(otherUserId, postId)
+    }
+
+    @Test
+    fun `setBookmark(false) 는 공개 여부를 확인하지 않고 소속과 북마크만 지운다`() {
+        val userId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+
+        val result = interactionService.setBookmark(postId, userId, bookmarked = false)
+
+        assertFalse(result.isBookmarked)
+        assertTrue(result.folderIds.isEmpty())
+        val order = inOrder(bookmarkFolderItemRepository, bookmarkRepository)
+        order.verify(bookmarkFolderItemRepository).deleteByUserIdAndPostId(userId, postId)
+        order.verify(bookmarkRepository).deleteByUserIdAndPostId(userId, postId)
+        verify(bookmarkRepository, never()).insertIgnoreConflict(userId, postId)
+        verify(postRepository, never()).findById(postId)
     }
 
     @Test

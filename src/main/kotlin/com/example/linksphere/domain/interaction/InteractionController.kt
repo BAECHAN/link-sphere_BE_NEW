@@ -10,7 +10,7 @@ import org.springframework.security.core.Authentication
 import org.springframework.web.bind.annotation.*
 import java.util.UUID
 
-@Tag(name = "좋아요·북마크", description = "게시글·댓글 좋아요, 북마크 토글, 북마크-폴더 소속 관리")
+@Tag(name = "좋아요·북마크", description = "게시글·댓글 좋아요, 게시글 북마크, 북마크-폴더 소속 관리")
 @RestController
 class InteractionController(
     private val interactionService: InteractionService,
@@ -121,10 +121,12 @@ class InteractionController(
         return ApiResponse(200, "댓글 좋아요 취소 성공", mapOf("isLiked" to isLiked))
     }
 
+    // 좋아요 토글과 같은 이유로 deprecated — 호출 로그가 0건이 되면 제거한다(docs/plans/2026-10-13-bookmark-set-state.md).
     @Operation(
-        summary = "게시글 북마크 토글",
-        description = "이미 저장했으면 취소되고(모든 폴더 소속도 함께 삭제) 폴더 소속은 초기화된다. " +
+        summary = "게시글 북마크 토글 (deprecated)",
+        description = "PUT/DELETE /post/{postId}/bookmark 를 쓴다. 이미 저장했으면 취소된다(모든 폴더 소속도 함께 삭제). " +
             "data 는 {\"isBookmarked\": true|false} 한 쌍이다. 실패: 404 POST_NOT_FOUND",
+        deprecated = true,
     )
     @PostMapping("/post/{postId}/bookmark")
     fun bookmarkPost(
@@ -132,12 +134,43 @@ class InteractionController(
         authentication: Authentication?,
     ): ApiResponse<Map<String, Boolean>> {
         val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
+        logger.info("deprecated bookmark toggle called")
         val isBookmarked = interactionService.toggleBookmark(postId, userId)
         return ApiResponse(
             200,
             if (isBookmarked) "북마크 성공" else "북마크 취소 성공",
             mapOf("isBookmarked" to isBookmarked),
         )
+    }
+
+    @Operation(
+        summary = "게시글 북마크",
+        description = "이미 저장된 상태여도 200 이다(멱등). 북마크만 보장하고 기존 폴더 소속은 건드리지 않는다 — " +
+            "응답 folderIds 는 서버의 실제 소속이다. 실패: 404 POST_NOT_FOUND",
+    )
+    @PutMapping("/post/{postId}/bookmark")
+    fun putPostBookmark(
+        @PathVariable postId: UUID,
+        authentication: Authentication?,
+    ): ApiResponse<BookmarkFoldersResponse> {
+        val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
+        val result = interactionService.setBookmark(postId, userId, bookmarked = true)
+        return ApiResponse(200, "북마크 성공", result)
+    }
+
+    @Operation(
+        summary = "게시글 북마크 해제",
+        description = "저장 안 된 상태여도 200 이다(멱등). 모든 폴더 소속도 함께 삭제한다. " +
+            "낡은 화면에서도 누를 수 있도록 글 공개 여부는 확인하지 않는다",
+    )
+    @DeleteMapping("/post/{postId}/bookmark")
+    fun deletePostBookmark(
+        @PathVariable postId: UUID,
+        authentication: Authentication?,
+    ): ApiResponse<BookmarkFoldersResponse> {
+        val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
+        val result = interactionService.setBookmark(postId, userId, bookmarked = false)
+        return ApiResponse(200, "북마크 취소 성공", result)
     }
 
     @Operation(

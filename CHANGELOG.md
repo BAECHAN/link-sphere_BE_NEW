@@ -11,6 +11,21 @@
 
 ### Added
 
+- `bookmark` 게시글 북마크를 상태 지정형 `PUT`/`DELETE /post/{id}/bookmark`로 추가, 토글은 deprecated
+  <details><summary>배경·구현</summary>
+
+  토글은 서버가 "지금의 반대"를 정해, 다른 기기에서 이미 해제한 북마크를 낡은 화면에서 "제거"하면
+  오히려 되살아났다(좋아요와 같은 문제 — `docs/plans/2026-10-13-like-concurrency.md` 남은 것).
+  `PUT`은 북마크만 보장하고 기존 폴더 소속은 건드리지 않는다(`addBookmarkFolder`와 같은 방식 — 낡은
+  화면이 다른 기기에서 정리한 분류를 지우지 않게). 그래서 응답은 서버의 실제 소속을 담은 기존
+  `BookmarkFoldersResponse(postId, isBookmarked, folderIds)`다. `DELETE`는 소속과 북마크를 일괄
+  삭제하며, 폴더 제거·비우기처럼 글 공개 여부를 확인하지 않는다(응답에 수가 없어 새는 정보가 없다).
+  POST 토글은 옛 FE 탭을 위해 남기고 deprecated 표시와 `deprecated bookmark toggle called` INFO 로그를
+  단다 - 좋아요 토글과 함께 0건이 되면 제거한다. (`InteractionService.kt` `setBookmark`,
+  `InteractionController.kt`, 계획 `docs/plans/2026-10-13-bookmark-set-state.md`)
+
+  </details>
+
 - `post` 게시글·댓글 좋아요를 상태 지정형 `PUT`/`DELETE …/like`로 추가하고 POST 토글은 deprecated
   <details><summary>배경·구현</summary>
 
