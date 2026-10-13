@@ -231,6 +231,17 @@
 
 ### Changed
 
+- `post` 게시글 좋아요 토글 응답에 변경 후 좋아요 수(`likeCount`)를 함께 담음
+  <details><summary>배경·구현</summary>
+
+  응답이 `{ isLiked }`뿐이라 FE가 낙관적으로 ±1한 추정값을 그대로 써서, 여러 사람이 같은 글에
+  좋아요를 누르면 최대 3분(FE staleTime) 동안 실제 수와 어긋날 수 있었다. 토글 응답을
+  `{ isLiked, likeCount }`(`PostLikeResponse`)로 바꾸고, 수는 같은 트랜잭션에서 `countByPostId`로
+  센다. 필드가 늘어나기만 해서 옛 FE도 그대로 동작한다. (`PostDTO.kt`, `InteractionService.kt`,
+  `InteractionController.kt`, [PR #74](https://github.com/BAECHAN/link-sphere_BE_NEW/pull/74))
+
+  </details>
+
 - `upload`·`comment` 업로드 확장자 거부·댓글 없음·삭제된 댓글 수정에 원인별 에러 코드
   <details><summary>배경·구현</summary>
 
