@@ -12,6 +12,12 @@ on:
       - ".github/workflows/deploy.yml"
   workflow_dispatch:
 
+# id-token: write는 AWS OIDC 인증(7번 스텝)에 필요하다. 블록을 두면 나머지 권한은 꺼지므로
+# 체크아웃에 필요한 contents: read를 함께 둔다(이 워크플로는 GITHUB_TOKEN을 따로 쓰지 않는다).
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -80,15 +86,15 @@ jobs:
           echo "JAR_PATH=$JAR_PATH" >> "$GITHUB_ENV"
 
       # ─────────────────────────────────────────────
-      # 7. AWS 자격증명 설정
-      #    GitHub Secrets: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+      # 7. AWS 자격증명 설정 — 영구 키 대신 GitHub OIDC로 역할을 맡아
+      #    이 job 동안만 쓰는 임시 자격증명을 받는다(main 브랜치 job만, docs/DEPLOY.md "AWS 초기 설정")
+      #    GitHub Secrets: AWS_ROLE_ARN
       #    GitHub Variables: AWS_REGION
       # ─────────────────────────────────────────────
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
 
       # ─────────────────────────────────────────────
