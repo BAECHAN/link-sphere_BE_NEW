@@ -310,6 +310,26 @@
 
 ### Fixed
 
+- `bookmark`·`fcm`·`member` 동시 요청이 같은 행을 지우면 실패하던 나머지 삭제 경로
+  <details><summary>배경·구현</summary>
+
+  좋아요 토글을 고친 뒤에도 derived delete(엔티티를 읽어 하나씩 지움)와 `deleteAll`이 남아, 다른
+  요청이 먼저 지운 행을 다시 지우면 Hibernate가 `StaleObjectStateException`을 냈다. 북마크 일괄
+  삭제는 단건 해제·글 삭제와 겹치면 묶음 전체가 409로 실패했고, 로그아웃 FCM 토큰 삭제는 여러 탭에서
+  겹치면 409가 났다(읽은 사이 토큰이 다른 유저에게 넘어가면 그 유저 토큰을 지울 수도 있었다). 알림
+  작업의 만료 토큰 정리는 HTTP 밖이라 안전망도 없이 작업 전체가 롤백돼 Lambda 재시도로 알림이 중복
+  발송될 수 있었고, 회원 영구 삭제는 다른 사용자의 글 삭제 cascade와 겹치면 롤백돼 다음 주기로
+  밀렸다. 이 메서드들을 모두 `@Modifying @Query` 일괄 DELETE로 바꿨다(0행이어도 예외 없음). 북마크
+  일괄 삭제는 이제 실제로 지운 개수를 돌려준다(Swagger 설명과 일치). 다시 들어오지 않도록
+  ArchUnit 규칙(`RepositoryDeleteRulesTest`)이 리포지토리의 `delete…By`/`remove…By` 메서드에
+  `@Modifying @Query`가 없으면 실패한다. 글·댓글·폴더 단건 삭제(`delete(entity)`)는 그대로 두고 409
+  안전망에 맡긴다 — 글은 `@ManyToMany` 연결 테이블이 있어 실 DB 테스트 없이 일괄 DELETE로 바꾸기
+  위험하다. (`BookmarkRepository.kt`, `BookmarkFolderRepository.kt`, `PostReactionRepository.kt`,
+  `CommentReactionRepository.kt`, `PostViewRepository.kt`, `FcmTokenRepository.kt`,
+  `BookmarkFolderService.kt`, `RepositoryDeleteRulesTest.kt`(신규))
+
+  </details>
+
 - `post` 좋아요·북마크를 연달아 눌러 요청이 겹치면 500이 나던 문제
   <details><summary>배경·구현</summary>
 

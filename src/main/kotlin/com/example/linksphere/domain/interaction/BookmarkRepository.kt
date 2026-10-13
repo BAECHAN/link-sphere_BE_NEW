@@ -16,8 +16,15 @@ interface BookmarkRepository :
     @Query("DELETE FROM TableBookmark b WHERE b.userId = :userId AND b.postId = :postId")
     fun deleteByUserIdAndPostId(@Param("userId") userId: UUID, @Param("postId") postId: UUID): Int
 
+    // 다중 선택 일괄 삭제(BookmarkFolderService.batchDeleteBookmarks) — 실제로 지운 개수를 돌려준다
+    @Modifying
+    @Query("DELETE FROM TableBookmark b WHERE b.userId = :userId AND b.postId IN :postIds")
+    fun deleteByUserIdAndPostIdIn(@Param("userId") userId: UUID, @Param("postIds") postIds: List<UUID>): Int
+
     // 회원탈퇴 시(AccountDeletionService) 그 회원의 북마크를 전부 지운다.
-    fun deleteByUserId(userId: UUID)
+    @Modifying
+    @Query("DELETE FROM TableBookmark b WHERE b.userId = :userId")
+    fun deleteByUserId(@Param("userId") userId: UUID): Int
     fun countByPostId(postId: UUID): Long
     fun findAllByPostIdIn(postIds: List<UUID>): List<TableBookmark>
     fun findAllByUserIdAndPostIdIn(userId: UUID, postIds: List<UUID>): List<TableBookmark>

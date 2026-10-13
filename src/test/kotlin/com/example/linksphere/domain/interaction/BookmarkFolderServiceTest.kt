@@ -397,20 +397,19 @@ class BookmarkFolderServiceTest {
     // ── batchDeleteBookmarks ─────────────────────────────────────
 
     @Test
-    fun `batchDeleteBookmarks 는 소속도 함께 삭제한다`() {
+    fun `batchDeleteBookmarks 는 소속도 함께 일괄 삭제하고 실제로 지운 개수를 돌려준다`() {
         val userId = UUID.randomUUID()
         val postId1 = UUID.randomUUID()
         val postId2 = UUID.randomUUID()
-        val bookmark1 = TableBookmark(userId, postId1)
-        val bookmark2 = TableBookmark(userId, postId2)
+        val postIds = listOf(postId1, postId2)
 
-        `when`(bookmarkRepository.findAllByUserIdAndPostIdIn(userId, listOf(postId1, postId2)))
-            .thenReturn(listOf(bookmark1, bookmark2))
+        // 그 사이 다른 요청(단건 해제 등)이 하나를 먼저 지웠다면 일괄 DELETE는 1을 센다 — 예외 없이 그 수를 돌려준다
+        `when`(bookmarkRepository.deleteByUserIdAndPostIdIn(userId, postIds)).thenReturn(1)
 
-        val result = bookmarkFolderService.batchDeleteBookmarks(userId, listOf(postId1, postId2))
+        val result = bookmarkFolderService.batchDeleteBookmarks(userId, postIds)
 
-        assertEquals(2, result)
-        verify(bookmarkFolderItemRepository).deleteByUserIdAndPostIdIn(userId, listOf(postId1, postId2))
-        verify(bookmarkRepository).deleteAll(listOf(bookmark1, bookmark2))
+        assertEquals(1, result)
+        verify(bookmarkFolderItemRepository).deleteByUserIdAndPostIdIn(userId, postIds)
+        verify(bookmarkRepository).deleteByUserIdAndPostIdIn(userId, postIds)
     }
 }

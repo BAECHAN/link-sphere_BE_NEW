@@ -168,11 +168,10 @@ class BookmarkFolderService(
     @Transactional
     fun batchDeleteBookmarks(userId: UUID, postIds: List<UUID>): Int {
         if (postIds.isEmpty()) return 0
-        val bookmarks = bookmarkRepository.findAllByUserIdAndPostIdIn(userId, postIds)
-        if (bookmarks.isEmpty()) return 0
+        // 읽어서 deleteAll하면 단건 해제·글 삭제가 먼저 지운 행에서 StaleObjectStateException이 나
+        // 묶음 전체가 실패했다 — 일괄 DELETE로 지우고 실제로 지운 개수를 돌려준다.
         bookmarkFolderItemRepository.deleteByUserIdAndPostIdIn(userId, postIds)
-        bookmarkRepository.deleteAll(bookmarks)
-        return bookmarks.size
+        return bookmarkRepository.deleteByUserIdAndPostIdIn(userId, postIds)
     }
 
     /**

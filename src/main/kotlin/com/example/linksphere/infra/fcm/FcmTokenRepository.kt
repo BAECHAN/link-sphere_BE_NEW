@@ -9,9 +9,21 @@ import java.util.UUID
 interface FcmTokenRepository : JpaRepository<TableFcmToken, UUID> {
     fun findAllByUserId(userId: UUID): List<TableFcmToken>
     fun findByToken(token: String): TableFcmToken?
-    fun deleteByToken(token: String)
-    fun deleteByUserIdAndToken(userId: UUID, token: String)
-    fun deleteByUserId(userId: UUID)
+
+    // 삭제는 모두 일괄 DELETE — derived delete(엔티티를 읽어 지움)는 같은 행을 동시에 지우는 요청
+    // (여러 탭 로그아웃, 겹친 알림 작업의 만료 토큰 정리)과 부딪히면 StaleObjectStateException을 낸다.
+    // 읽은 뒤 지우는 사이 upsertToken이 행을 다른 유저에게 넘기면 그 유저의 토큰을 지우는 문제도 없다.
+    @Modifying
+    @Query("DELETE FROM TableFcmToken t WHERE t.token = :token")
+    fun deleteByToken(@Param("token") token: String): Int
+
+    @Modifying
+    @Query("DELETE FROM TableFcmToken t WHERE t.userId = :userId AND t.token = :token")
+    fun deleteByUserIdAndToken(@Param("userId") userId: UUID, @Param("token") token: String): Int
+
+    @Modifying
+    @Query("DELETE FROM TableFcmToken t WHERE t.userId = :userId")
+    fun deleteByUserId(@Param("userId") userId: UUID): Int
 
     // 같은 토큰이 이미 있으면(다른 유저가 쓰던 기기 재사용 포함) 소유자·회전계열을 덮어쓴다.
     // findByToken 후 분기 저장하던 기존 방식은, 발송 쪽의 deleteStaleTokensForUser와
