@@ -46,16 +46,29 @@ class InteractionService(
         return PostLikeResponse(isLiked = isLiked, likeCount = likeCount)
     }
 
+    /**
+     * 좋아요 상태를 지정한다(liked=true면 추가, false면 취소) — 토글과 달리 같은 요청을 여러 번
+     * 보내거나 동시에 보내도 결과가 같다(멱등). 이미 그 상태여도 200으로 현재 상태를 돌려준다.
+     * 비공개 글 확인은 취소에도 유지한다 — 응답의 likeCount가 남의 비공개 글 정보를 흘리지 않게.
+     */
+    @Transactional
+    fun setPostLike(postId: UUID, userId: UUID, liked: Boolean): PostLikeResponse {
+        assertPostVisible(postId, userId)
+
+        if (liked) {
+            postReactionRepository.insertIgnoreConflict(userId, postId)
+        } else {
+            postReactionRepository.deleteByUserIdAndPostId(userId, postId)
+        }
+
+        // 동일 트랜잭션 내 COUNT — insert/delete가 반영된 정확값
+        val likeCount = postReactionRepository.countByPostId(postId).toInt()
+        return PostLikeResponse(isLiked = liked, likeCount = likeCount)
+    }
+
     @Transactional
     fun toggleCommentLike(commentId: UUID, userId: UUID): Boolean {
-        val comment =
-            commentRepository.findByIdOrNull(commentId)
-                ?: throw IllegalArgumentException("Comment not found: $commentId")
-        // 비공개 글에 달린 댓글도 글 소유자 외에는 좋아요를 달 수 없어야 한다.
-        assertPostVisible(comment.postId, userId)
-        // 비공개 글 검증 뒤에 확인해야 한다 — 순서를 바꾸면 남의 비공개 글의 삭제된 댓글에
-        // 404 대신 400이 나가면서 "그 댓글이 존재한다"는 사실이 새어나간다.
-        if (comment.isDeleted) throw InvalidInputException("삭제된 댓글에는 좋아요를 누를 수 없습니다.")
+        assertCommentLikeable(commentId, userId)
 
         // togglePostLike 와 같은 "먼저 지워보고 없으면 추가" 방식(동시 요청에도 예외 없음)
         val removed = commentReactionRepository.deleteByUserIdAndCommentId(userId, commentId) > 0
@@ -65,6 +78,20 @@ class InteractionService(
         }
 
         return !removed
+    }
+
+    /** setPostLike 의 댓글판 — 댓글 확인 기준은 toggleCommentLike 와 같다. */
+    @Transactional
+    fun setCommentLike(commentId: UUID, userId: UUID, liked: Boolean): Boolean {
+        assertCommentLikeable(commentId, userId)
+
+        if (liked) {
+            commentReactionRepository.insertIgnoreConflict(userId, commentId)
+        } else {
+            commentReactionRepository.deleteByUserIdAndCommentId(userId, commentId)
+        }
+
+        return liked
     }
 
     @Transactional
@@ -141,5 +168,16 @@ class InteractionService(
     private fun assertPostVisible(postId: UUID, userId: UUID) {
         val post = postRepository.findByIdOrNull(postId) ?: throw PostNotFoundException(postId)
         if (post.isPrivate && post.userId != userId) throw PostNotFoundException(postId)
+    }
+
+    private fun assertCommentLikeable(commentId: UUID, userId: UUID) {
+        val comment =
+            commentRepository.findByIdOrNull(commentId)
+                ?: throw IllegalArgumentException("Comment not found: $commentId")
+        // 비공개 글에 달린 댓글도 글 소유자 외에는 좋아요를 달 수 없어야 한다.
+        assertPostVisible(comment.postId, userId)
+        // 비공개 글 검증 뒤에 확인해야 한다 — 순서를 바꾸면 남의 비공개 글의 삭제된 댓글에
+        // 404 대신 400이 나가면서 "그 댓글이 존재한다"는 사실이 새어나간다.
+        if (comment.isDeleted) throw InvalidInputException("삭제된 댓글에는 좋아요를 누를 수 없습니다.")
     }
 }

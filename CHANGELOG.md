@@ -11,6 +11,21 @@
 
 ### Added
 
+- `post` 게시글·댓글 좋아요를 상태 지정형 `PUT`/`DELETE …/like`로 추가하고 POST 토글은 deprecated
+  <details><summary>배경·구현</summary>
+
+  토글(POST)은 같은 요청이 두 번 가면 상태가 두 번 뒤집혀, 연달아 누른 요청이 재시도되거나 다른
+  기기와 화면이 어긋난 상태에서 누르면 사용자가 누른 것과 반대 결과가 난다. RFC 9110 §9.2.2가 PUT·
+  DELETE를 멱등으로 규정하고, GitHub 별표(`PUT`/`DELETE`)·X 좋아요(`POST`/`DELETE`)도 같은 방식이다.
+  `PUT`은 좋아요, `DELETE`는 취소이며 이미 그 상태여도 200으로 현재 상태를 돌려준다. 게시글은
+  `{isLiked, likeCount}`, 댓글은 `{isLiked}`로 토글과 응답 형태가 같다. 비공개 글 확인은 취소에도
+  유지한다(응답의 좋아요 수가 새지 않게). POST 토글은 화면을 이동하지 않은 탭의 옛 FE 번들을 위해
+  남기고 OpenAPI에 deprecated로 표시했으며, 호출 시 `deprecated like toggle called` INFO 로그를
+  남긴다 - 0건이 되면 제거한다. (`InteractionController.kt`, `InteractionService.kt`
+  `setPostLike`·`setCommentLike`, 계획 `docs/plans/2026-10-13-like-concurrency.md`)
+
+  </details>
+
 - `upload` 아무도 쓰지 않는 업로드 이미지를 4일마다 자동 정리(업로드 24시간 경과분만)
   <details><summary>배경·구현</summary>
 
