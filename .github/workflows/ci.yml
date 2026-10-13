@@ -4,8 +4,11 @@ name: CI
 # PR 단계에서 검사가 전혀 안 됐고, deploy.yml도 ktlintCheck+shadowJar만 돌려 테스트 22개가
 # CI에서 한 번도 실행된 적이 없었다.
 on:
+  # base 브랜치 필터를 두지 않는다 - branches: ['main']이면 다른 PR 브랜치를 base로 하는
+  # 스택 PR에서 이 워크플로 자체가 트리거되지 않아 ktlint·테스트가 한 번도 돌지 않는다.
+  # FE는 이 사각지대를 실측하고 같은 필터를 없앴다(FE PR #111, 2026-09-16). "docs/plans
+  # 불변성 확인" 스텝은 github.base_ref를 동적으로 참조하므로 스택 PR에서도 맞게 동작한다.
   pull_request:
-    branches: ['main']
   workflow_dispatch:
 
 concurrency:
