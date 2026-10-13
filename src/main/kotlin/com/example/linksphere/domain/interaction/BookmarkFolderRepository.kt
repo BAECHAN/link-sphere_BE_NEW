@@ -1,6 +1,7 @@
 package com.example.linksphere.domain.interaction
 
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import java.util.UUID
@@ -18,5 +19,7 @@ interface BookmarkFolderRepository : JpaRepository<TableBookmarkFolder, UUID> {
 
     // 회원탈퇴 시(AccountDeletionService) 그 회원의 폴더를 전부 지운다 - 폴더 아이템을
     // 먼저 지운 뒤 호출해야 한다(BookmarkFolderService.deleteFolder와 같은 순서).
-    fun deleteByUserId(userId: UUID)
+    @Modifying
+    @Query("DELETE FROM TableBookmarkFolder f WHERE f.userId = :userId")
+    fun deleteByUserId(@Param("userId") userId: UUID): Int
 }

@@ -19,6 +19,9 @@ interface PostViewRepository : JpaRepository<TablePostView, PostViewId> {
     )
     fun upsertView(@Param("userId") userId: UUID, @Param("postId") postId: UUID)
 
-    // 회원탈퇴 시(AccountDeletionService) 그 회원의 조회기록을 전부 지운다.
-    fun deleteByUserId(userId: UUID)
+    // 회원탈퇴 시(AccountDeletionService) 그 회원의 조회기록을 전부 지운다. 일괄 DELETE라 다른
+    // 요청(글 삭제 cascade 등)이 먼저 지운 행이 있어도 예외 없이 0을 센다.
+    @Modifying
+    @Query("DELETE FROM TablePostView v WHERE v.userId = :userId")
+    fun deleteByUserId(@Param("userId") userId: UUID): Int
 }

@@ -25,7 +25,9 @@ interface PostReactionRepository : JpaRepository<TablePostReaction, PostReaction
     fun insertIgnoreConflict(@Param("userId") userId: UUID, @Param("postId") postId: UUID): Int
 
     // 회원탈퇴 시(AccountDeletionService) 그 회원의 좋아요를 전부 지운다.
-    fun deleteByUserId(userId: UUID)
+    @Modifying
+    @Query("DELETE FROM TablePostReaction r WHERE r.userId = :userId")
+    fun deleteByUserId(@Param("userId") userId: UUID): Int
     fun countByPostId(postId: UUID): Long
     fun findAllByPostIdIn(postIds: List<UUID>): List<TablePostReaction>
     fun findAllByUserIdAndPostIdIn(userId: UUID, postIds: List<UUID>): List<TablePostReaction>

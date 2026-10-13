@@ -22,7 +22,9 @@ interface CommentReactionRepository : JpaRepository<TableCommentReaction, Commen
     fun insertIgnoreConflict(@Param("userId") userId: UUID, @Param("commentId") commentId: UUID): Int
 
     // 회원탈퇴 시(AccountDeletionService) 그 회원의 댓글 좋아요를 전부 지운다.
-    fun deleteByUserId(userId: UUID)
+    @Modifying
+    @Query("DELETE FROM TableCommentReaction r WHERE r.userId = :userId")
+    fun deleteByUserId(@Param("userId") userId: UUID): Int
     fun findAllByCommentIdIn(commentIds: List<UUID>): List<TableCommentReaction>
     fun findAllByUserIdAndCommentIdIn(userId: UUID, commentIds: List<UUID>): List<TableCommentReaction>
 
