@@ -726,6 +726,7 @@ aws events put-targets \
 |-------------|------|
 | `AWS_ROLE_ARN` | OIDC로 맡을 IAM 역할 ARN (위 "AWS 초기 설정" 1번) |
 | `FIREBASE_SERVICE_ACCOUNT_JSON` | Firebase 서비스 계정 JSON 전문 |
+| `HISTORY_DISPATCH_TOKEN` | `history-dispatch.yml`이 FE 레포에 `repository_dispatch`(`be-history-update`)를 보낼 때 쓰는 개인 액세스 토큰 — 기본 `GITHUB_TOKEN`은 다른 레포에 쓸 수 없어서 따로 둔다. classic 토큰이면 `repo` 범위가 필요하다([GitHub REST 문서](https://docs.github.com/en/rest/repos/repos#create-a-repository-dispatch-event)) |
 
 ### Variables (평문 저장)
 
