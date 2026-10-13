@@ -735,6 +735,24 @@ aws events put-targets \
 | `AWS_S3_BUCKET` | `link-sphere-lambda-deploy` |
 | `LAMBDA_FUNCTION_NAME` | `link-sphere-api` |
 
+### 액션 버전 관리 (SHA 고정 + Dependabot)
+
+모든 워크플로의 `uses:`는 태그(`@v4`)가 아니라 커밋 SHA로 고정하고 버전은 같은 줄 주석으로 단다
+(2026-10-13 도입, 예: `actions/checkout@3d3c42e… # v7.0.1`). 고정한 SHA는 저절로 안 올라가므로
+[`.github/dependabot.yml`](../.github/dependabot.yml)이 한 달에 한 번 액션 업데이트를 PR 하나로 묶어 올린다.
+근거(태그 바꿔치기 사고, GitHub 보안 가이드)와 SHA를 손으로 바꿀 때의 확인법은 FE 레포와 같아 FE
+[`docs/DEPLOY.md`](https://github.com/BAECHAN/link-sphere_FE_NEW/blob/main/docs/DEPLOY.md) "액션 버전 관리"에 한 번만 적었다.
+
+**Dependabot PR이 오면** — `ci.yml`은 시크릿을 쓰지 않아 Dependabot PR에서도 그대로 돈다. 통과를 보고
+squash 병합한 뒤 워크플로별로 확인한다:
+
+| 워크플로 | 새 액션이 처음 도는 때 |
+|---|---|
+| `ci.yml` | 그 PR의 CI |
+| `deploy.yml` | 병합 직후 자동(자기 파일이 경로 필터에 있음) — 같은 코드로 새 버전 발행·검증·prod 승격까지 한 번 돈다 |
+| `prod-alias-drift-check.yml` | 6시간 예약 실행, 또는 `gh workflow run prod-alias-drift-check.yml --ref main` |
+| `history-dispatch.yml`·`release.yml` | 수동 실행이 없어 다음 실제 이벤트(소스 변경 push·`CHANGELOG.md` 갱신) 때 |
+
 ---
 
 ## 배포 흐름 (deploy.yml 단계별)
