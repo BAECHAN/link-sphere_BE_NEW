@@ -222,7 +222,7 @@ src/main/kotlin/com/example/linksphere/
 | `DELETE` | `/post/{postId}/bookmark`              | 게시글 북마크 해제 (멱등, 소속도 전부 삭제) | ✅   |
 | `POST`   | `/post/{postId}/bookmark`              | 게시글 북마크 토글 (deprecated — PUT/DELETE 사용) | ✅   |
 | `POST`   | `/bookmark/{postId}/folders/{folderId}` | 폴더에 추가 (북마크 없으면 자동 생성)    | ✅   |
-| `DELETE` | `/bookmark/{postId}/folders/{folderId}` | 그 폴더에서만 제거 (북마크는 유지)       | ✅   |
+| `DELETE` | `/bookmark/{postId}/folders/{folderId}` | 그 폴더에서만 제거 (북마크는 유지). `?removeBookmarkIfEmpty=true`면 남은 소속이 없을 때만 북마크도 삭제 | ✅   |
 | `DELETE` | `/bookmark/{postId}/folders`           | 폴더 소속 전체 해제 (→ 미분류)           | ✅   |
 | `POST`   | `/bookmark/batch/folders/{folderId}/add`    | 여러 게시글을 한 폴더에 일괄 추가 (북마크 없으면 자동 생성) | ✅   |
 | `POST`   | `/bookmark/batch/folders/{folderId}/remove` | 여러 게시글을 한 폴더에서 일괄 제거      | ✅   |

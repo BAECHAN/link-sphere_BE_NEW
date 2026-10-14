@@ -11,6 +11,21 @@
 
 ### Added
 
+- `bookmark` 폴더 제거에 `removeBookmarkIfEmpty` 옵션 — 남은 소속이 없을 때만 북마크도 삭제
+  <details><summary>배경·구현</summary>
+
+  FE 다이얼로그는 화면상 "마지막 폴더"를 빼면 북마크째 해제(`DELETE /post/{id}/bookmark`)했다. 화면이
+  낡아 다른 기기가 그사이 다른 폴더에 추가해 뒀다면 그 소속까지 FK cascade로 말없이 지워졌다.
+  `DELETE /bookmark/{postId}/folders/{folderId}?removeBookmarkIfEmpty=true`는 소속을 뺀 뒤, 남은 소속이
+  하나도 없을 때만 북마크를 지운다. 확인과 삭제는 `NOT EXISTS` 네이티브 SQL 한 문장이라 따로 세고
+  지우는 사이의 틈이 없다(로컬 Postgres 16 컨테이너에서 소속 없음 1행·다른 소속 남음 0행·북마크 없음
+  0행으로 확인). 옵션을 생략하면(기본 `false`) 지금처럼 그 폴더 소속만 지운다. 응답은 삭제 뒤 실제
+  `BookmarkFoldersResponse(postId, isBookmarked, folderIds)`다. (`BookmarkRepository.kt`
+  `deleteIfNoFolderItems`, `InteractionService.kt` `removeBookmarkFolder`, `InteractionController.kt`,
+  계획 `docs/plans/2026-10-14-last-folder-keeps-others.md`)
+
+  </details>
+
 - `bookmark` 게시글 북마크를 상태 지정형 `PUT`/`DELETE /post/{id}/bookmark`로 추가, 토글은 deprecated
   <details><summary>배경·구현</summary>
 

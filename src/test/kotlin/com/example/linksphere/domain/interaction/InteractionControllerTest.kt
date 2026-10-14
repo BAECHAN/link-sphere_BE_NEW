@@ -116,6 +116,29 @@ class InteractionControllerTest {
             .andExpect(jsonPath("$.data.folderIds").isEmpty)
     }
 
+    @Test
+    @WithMockUser(username = USER_ID)
+    fun `폴더 제거는 removeBookmarkIfEmpty 를 서비스로 넘기고, 생략하면 false 로 넘긴다`() {
+        val postId = UUID.randomUUID()
+        val folderId = UUID.randomUUID()
+        val otherFolderId = UUID.randomUUID()
+        val userId = UUID.fromString(USER_ID)
+        `when`(interactionService.removeBookmarkFolder(postId, folderId, userId, true))
+            .thenReturn(BookmarkFoldersResponse(postId = postId, isBookmarked = true, folderIds = listOf(otherFolderId)))
+        `when`(interactionService.removeBookmarkFolder(postId, folderId, userId, false))
+            .thenReturn(BookmarkFoldersResponse(postId = postId, isBookmarked = true, folderIds = emptyList()))
+
+        mockMvc.perform(
+            delete("/bookmark/$postId/folders/$folderId").param("removeBookmarkIfEmpty", "true").with(csrf()),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.data.isBookmarked").value(true))
+            .andExpect(jsonPath("$.data.folderIds[0]").value(otherFolderId.toString()))
+        mockMvc.perform(delete("/bookmark/$postId/folders/$folderId").with(csrf()))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.data.folderIds").isEmpty)
+    }
+
     companion object {
         private const val USER_ID = "3fa85f64-5717-4562-b3fc-2c963f66afa6"
     }

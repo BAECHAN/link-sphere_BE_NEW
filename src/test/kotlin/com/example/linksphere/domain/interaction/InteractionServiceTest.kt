@@ -478,5 +478,46 @@ class InteractionServiceTest {
         assertTrue(result.folderIds.isEmpty())
         verify(bookmarkFolderItemRepository).deleteByUserIdAndPostIdAndFolderId(userId, postId, folderId)
         verify(bookmarkRepository, never()).deleteByUserIdAndPostId(userId, postId)
+        verify(bookmarkRepository, never()).deleteIfNoFolderItems(userId, postId)
+    }
+
+    @Test
+    fun `removeBookmarkFolder(removeBookmarkIfEmpty) 는 소속을 뺀 뒤 남은 소속이 없을 때만 북마크를 지운다`() {
+        val userId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val folderId = UUID.randomUUID()
+
+        `when`(bookmarkRepository.existsByUserIdAndPostId(userId, postId)).thenReturn(false)
+        `when`(bookmarkFolderItemRepository.findFolderIdsByUserIdAndPostId(userId, postId))
+            .thenReturn(emptyList())
+
+        val result = interactionService.removeBookmarkFolder(postId, folderId, userId, removeBookmarkIfEmpty = true)
+
+        assertFalse(result.isBookmarked)
+        assertTrue(result.folderIds.isEmpty())
+        // 소속을 먼저 빼야 "남은 소속 없음"을 판단할 수 있다
+        val order = inOrder(bookmarkFolderItemRepository, bookmarkRepository)
+        order.verify(bookmarkFolderItemRepository).deleteByUserIdAndPostIdAndFolderId(userId, postId, folderId)
+        order.verify(bookmarkRepository).deleteIfNoFolderItems(userId, postId)
+    }
+
+    @Test
+    fun `removeBookmarkFolder(removeBookmarkIfEmpty) 는 다른 기기가 추가한 소속이 남아 있으면 북마크를 유지한 실제 상태를 돌려준다`() {
+        val userId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val folderId = UUID.randomUUID()
+        val otherFolderId = UUID.randomUUID()
+
+        // 남은 소속이 있어 조건부 삭제가 0행 — 북마크가 그대로 남는다
+        `when`(bookmarkRepository.deleteIfNoFolderItems(userId, postId)).thenReturn(0)
+        `when`(bookmarkRepository.existsByUserIdAndPostId(userId, postId)).thenReturn(true)
+        `when`(bookmarkFolderItemRepository.findFolderIdsByUserIdAndPostId(userId, postId))
+            .thenReturn(listOf(otherFolderId))
+
+        val result = interactionService.removeBookmarkFolder(postId, folderId, userId, removeBookmarkIfEmpty = true)
+
+        assertTrue(result.isBookmarked)
+        assertEquals(listOf(otherFolderId), result.folderIds)
+        verify(bookmarkRepository, never()).deleteByUserIdAndPostId(userId, postId)
     }
 }
