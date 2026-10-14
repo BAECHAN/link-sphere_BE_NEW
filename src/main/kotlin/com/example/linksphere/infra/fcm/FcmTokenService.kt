@@ -26,11 +26,5 @@ class FcmTokenService(private val fcmTokenRepository: FcmTokenRepository) {
         logger.info("[FCM] Token deleted - userId: $userId")
     }
 
-    @Transactional
-    fun deleteAllTokensForUser(userId: UUID) {
-        fcmTokenRepository.deleteByUserId(userId)
-        logger.info("[FCM] All tokens deleted for userId: $userId")
-    }
-
     fun getTokensByUserId(userId: UUID): List<String> = fcmTokenRepository.findAllByUserId(userId).map { it.token }
 }
