@@ -53,5 +53,6 @@ jobs:
           key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties') }}
           restore-keys: ${{ runner.os }}-gradle-
 
-      - name: Ktlint check & test
-        run: chmod +x gradlew && ./gradlew ktlintCheck test --no-daemon
+      # integrationTest는 실제 Postgres 컨테이너(Testcontainers)를 띄운다 - GitHub 호스팅 러너의 Docker를 쓴다
+      - name: Ktlint check, test & integration test
+        run: chmod +x gradlew && ./gradlew ktlintCheck test integrationTest --no-daemon
