@@ -623,6 +623,21 @@
 
 ### Removed
 
+- `post` deprecated 좋아요·북마크 토글(`POST …/like`, `POST /post/{id}/bookmark`) 제거
+  <details><summary>배경·구현</summary>
+
+  2026-10-13 상태 지정형 `PUT`/`DELETE`(#80·#85)로 바꾸면서, 화면을 이동하지 않은 옛 FE 탭을 위해 POST 토글을
+  deprecated로 남기고 호출 로그를 달았다. 2026-10-14 운영 로그(CloudWatch, `/aws/lambda/link-sphere-api`)에서
+  좋아요 토글은 FE 전환 배포(10-13 11:42 UTC) 5분 뒤 옛 탭 하나의 9건 이후 18시간 넘게 0건, 북마크 토글은
+  48시간 동안 0건이었다. FE는 탭에 포커스가 돌아오면 새 배포를 감지해 다음 화면 이동 때 새로고침한다.
+  `POST /post/{postId}/like`·`POST /comment/{commentId}/like`·`POST /post/{postId}/bookmark`와
+  `InteractionService`의 `togglePostLike`·`toggleCommentLike`·`toggleBookmark`를 지웠다. 이 메서드들의 공유
+  검증 테스트(비공개 글 404, 없는 글 404, 톰스톤 검사 순서, 주인의 비공개 글 저장)는 `set*` 기준으로 옮겼고,
+  409 안전망 테스트는 `PUT /post/{id}/like`로 옮겼다. (`InteractionController.kt`, `InteractionService.kt`,
+  `README.md`)
+
+  </details>
+
 - `bookmark` FE에서 호출하는 곳이 없는 폴더 순서 재정렬(reorder) 엔드포인트 제거
   <details><summary>배경·구현</summary>
 

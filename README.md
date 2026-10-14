@@ -75,7 +75,7 @@ src/main/kotlin/com/example/linksphere/
 │   │   ├── CommentService.kt            # 댓글·답글 CRUD (알림·링크프리뷰는 CommentPostProcessService가 커밋 후 별도 처리)
 │   │   └── TableComment.kt
 │   ├── interaction/                     # 좋아요·북마크(폴더 다중 소속 포함) 도메인
-│   │   ├── InteractionController.kt     # 좋아요 + 북마크 토글 + 폴더 소속 추가/제거
+│   │   ├── InteractionController.kt     # 좋아요·북마크 저장/해제 + 폴더 소속 추가/제거
 │   │   ├── InteractionService.kt
 │   │   ├── BookmarkFolderController.kt  # 폴더 CRUD·폴더별 게시글 조회
 │   │   ├── BookmarkFolderService.kt
@@ -216,11 +216,8 @@ src/main/kotlin/com/example/linksphere/
 | `DELETE` | `/post/{postId}/like`                  | 게시글 좋아요 취소 (멱등)                | ✅   |
 | `PUT`    | `/comment/{commentId}/like`            | 댓글 좋아요 (멱등)                       | ✅   |
 | `DELETE` | `/comment/{commentId}/like`            | 댓글 좋아요 취소 (멱등)                  | ✅   |
-| `POST`   | `/post/{postId}/like`                  | 게시글 좋아요 토글 (deprecated — PUT/DELETE 사용) | ✅   |
-| `POST`   | `/comment/{commentId}/like`            | 댓글 좋아요 토글 (deprecated — PUT/DELETE 사용)   | ✅   |
 | `PUT`    | `/post/{postId}/bookmark`              | 게시글 북마크 (멱등, 기존 폴더 소속은 유지) | ✅   |
 | `DELETE` | `/post/{postId}/bookmark`              | 게시글 북마크 해제 (멱등, 소속도 전부 삭제) | ✅   |
-| `POST`   | `/post/{postId}/bookmark`              | 게시글 북마크 토글 (deprecated — PUT/DELETE 사용) | ✅   |
 | `POST`   | `/bookmark/{postId}/folders/{folderId}` | 폴더에 추가 (북마크 없으면 자동 생성)    | ✅   |
 | `DELETE` | `/bookmark/{postId}/folders/{folderId}` | 그 폴더에서만 제거 (북마크는 유지). `?removeBookmarkIfEmpty=true`면 남은 소속이 없을 때만 북마크도 삭제 | ✅   |
 | `DELETE` | `/bookmark/{postId}/folders`           | 폴더 소속 전체 해제 (→ 미분류)           | ✅   |
