@@ -354,6 +354,19 @@ git config core.hooksPath .githooks
 `./gradlew addKtlintCheckGitPreCommitHook`은 `git worktree`에서 깨지므로(`docs/CI-CHECK-GATE.md`
 §7.5) 쓰지 않는다.
 
+### 5. 테스트
+
+```bash
+./gradlew test             # 단위 테스트 - DB·Docker 없이 돈다
+./gradlew integrationTest  # 저장소 통합 테스트 - Docker 필요(실제 Postgres 컨테이너)
+```
+
+- `integrationTest`는 `@PostgresIntegrationTest`(`src/test/kotlin/com/example/linksphere/support/PostgresIntegrationTest.kt`)를
+  붙인 테스트만 돌린다. 운영과 같은 스키마(`src/test/resources/db/schema.sql`, 운영 덤프)를 pgvector Postgres 17
+  컨테이너에 올려 네이티브 SQL·일괄 DELETE·FK cascade·동시 요청을 실제로 실행한다.
+- CI `check` 잡은 둘 다 돌리고, 배포 워크플로는 `test`만 돌린다.
+- 운영 스키마를 바꾸면(`src/main/resources/sql/`) `schema.sql` 머리 주석의 방법으로 다시 덤프해 본문을 바꾼다.
+
 ---
 
 ## 🚀 배포 (Deployment)

@@ -104,6 +104,12 @@ dependencies {
     // 아키텍처 규칙을 컴파일된 바이트코드로 검증 - DB·Spring 컨텍스트 없이 수십 ms 안에 끝난다.
     testImplementation("com.tngtech.archunit:archunit-junit5:1.5.0")
 
+    // 저장소 쿼리를 실제 Postgres(pgvector)로 검증하는 통합 테스트 - @Tag("integration")만 integrationTest
+    // 태스크에서 돈다. Docker가 필요해 기본 test에서는 빠진다(docs/plans/2026-10-14-integration-test.md).
+    // 버전은 Spring Boot BOM이 관리한다.
+    testImplementation("org.springframework.boot:spring-boot-testcontainers")
+    testImplementation("org.testcontainers:postgresql")
+
     // SpringDoc OpenAPI (Swagger) 라이브러리 추가 — UI 에셋 제외한 API 스펙만 포함
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-api:2.7.0")
 
@@ -165,4 +171,17 @@ allOpen {
     annotation("jakarta.persistence.Embeddable")
 }
 
-tasks.withType<Test> { useJUnitPlatform() }
+// 통합 테스트(@Tag("integration"))는 Docker가 필요해 기본 test에서 빼고 integrationTest로만 돌린다.
+// 로컬·배포의 test는 지금처럼 Docker 없이 돌고, CI check 잡이 둘 다 돌린다.
+tasks.test {
+    useJUnitPlatform { excludeTags("integration") }
+}
+
+val integrationTest by tasks.registering(Test::class) {
+    description = "실제 Postgres 컨테이너로 저장소 쿼리를 검증한다(Docker 필요)."
+    group = "verification"
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    useJUnitPlatform { includeTags("integration") }
+    shouldRunAfter(tasks.test)
+}
