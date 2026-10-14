@@ -1,6 +1,6 @@
 # Link-Sphere BE — CI 검사 게이트 정비 (2026-09-03)
 
-> 마지막 검토: 2026-10-13
+> 마지막 검토: 2026-10-14
 
 ## 1. 쉬운 설명
 
@@ -90,7 +90,7 @@ Gradle 프로세스 안에서 컴파일 캐시를 공유하는 게 더 빠르고
 | Gradle 캐시 키 | `gradle-${{ hashFiles('**/*.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties') }}` | `ci.yml`·`deploy.yml` 공통 |
 | 배포 게이트 커맨드 | `./gradlew ktlintCheck test shadowJar --no-daemon` | `deploy.yml` "Ktlint check, test & Build Shadow JAR" 스텝 |
 | CI에 필요한 시크릿 | 없음 (`firebase-service-account.json` 없이도 테스트 통과 확인) | 7장 |
-| main 브랜치 규칙셋 | `Main Branch Protect`(2026-10-13): 브랜치 삭제 금지·강제 push 금지, 우회 없음(관리자에게도 적용). 필수 상태 검사는 없다. 만든 뒤 임시 브랜치를 대상에 잠깐 넣어 강제 push(`Cannot force-push to this branch`)와 삭제(`Cannot delete this branch`)가 거절되는 것을 확인했다 | GitHub 설정(코드 아님, 규칙셋 id 25000908) — 적용 규칙: `gh api repos/BAECHAN/link-sphere_BE_NEW/rules/branches/main`, 대상·우회 목록: `gh api repos/BAECHAN/link-sphere_BE_NEW/rulesets/25000908` |
+| main 브랜치 규칙셋 | `Main Branch Protect`(2026-10-13): 브랜치 삭제 금지·강제 push 금지, 우회 없음(관리자에게도 적용). 만든 뒤 임시 브랜치를 대상에 잠깐 넣어 강제 push(`Cannot force-push to this branch`)와 삭제(`Cannot delete this branch`)가 거절되는 것을 확인했다. 2026-10-14부터 필수 상태 검사 `check`(출처를 GitHub Actions로 고정, 최신 main 기준 재실행 요구는 끔)를 건다 — `check`가 초록이어야 PR이 머지되고, 관리자 예외가 없어 `main` 직접 push(릴리즈 커밋 포함)도 `GH013`으로 거절된다. 되돌리려면 이 규칙셋을 `PUT`해 `required_status_checks` 규칙을 뺀다 | GitHub 설정(코드 아님, 규칙셋 id 25000908) — 적용 규칙: `gh api repos/BAECHAN/link-sphere_BE_NEW/rules/branches/main`, 대상·우회 목록: `gh api repos/BAECHAN/link-sphere_BE_NEW/rulesets/25000908` |
 
 ## 6. 검증 결과
 
