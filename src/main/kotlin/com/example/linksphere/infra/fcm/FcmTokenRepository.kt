@@ -50,7 +50,9 @@ interface FcmTokenRepository : JpaRepository<TableFcmToken, UUID> {
     // 댓글 발송 시점(FcmService.sendToUser)에, 이 유저의 토큰 중 회전 계열이 이미 죽은
     // (또는 애초에 없는) 것을 지운다 - 로그인 세션이 자연 만료된 기기로는 더 이상 푸시가
     // 가지 않게 한다. member_sessions와 FK/연관관계로 묶지 않고 EXISTS 서브쿼리로만
-    // 참조한다(fcm_tokens.user_id도 원래 FK가 아닌 이 레포의 기존 관례).
+    // 참조한다 - session_family_id는 회전한 세션 행들이 함께 쓰는 계열 id라 FK로 걸 대상이
+    // 없다(fcm_tokens.user_id 쪽은 members에 ON DELETE CASCADE FK가 있다, 운영 스키마 덤프
+    // src/test/resources/db/schema.sql의 fcm_tokens_user_id_fkey).
     @Modifying
     @Query(
         value = """
