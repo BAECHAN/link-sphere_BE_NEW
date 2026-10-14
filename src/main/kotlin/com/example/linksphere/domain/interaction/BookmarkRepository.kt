@@ -16,6 +16,18 @@ interface BookmarkRepository :
     @Query("DELETE FROM TableBookmark b WHERE b.userId = :userId AND b.postId = :postId")
     fun deleteByUserIdAndPostId(@Param("userId") userId: UUID, @Param("postId") postId: UUID): Int
 
+    // 폴더 소속이 하나도 남지 않았을 때만 북마크를 지운다(InteractionService.removeBookmarkFolder 의
+    // removeBookmarkIfEmpty). 확인과 삭제를 한 문장으로 해, 따로 세고 지우는 사이에 다른 요청이 소속을
+    // 추가해 그 소속까지 cascade 로 지워지는 틈을 줄인다
+    @Modifying
+    @Query(
+        value = "DELETE FROM bookmarks b WHERE b.user_id = :userId AND b.post_id = :postId " +
+            "AND NOT EXISTS (SELECT 1 FROM bookmark_folder_items i " +
+            "WHERE i.user_id = b.user_id AND i.post_id = b.post_id)",
+        nativeQuery = true,
+    )
+    fun deleteIfNoFolderItems(@Param("userId") userId: UUID, @Param("postId") postId: UUID): Int
+
     // 다중 선택 일괄 삭제(BookmarkFolderService.batchDeleteBookmarks) — 실제로 지운 개수를 돌려준다
     @Modifying
     @Query("DELETE FROM TableBookmark b WHERE b.userId = :userId AND b.postId IN :postIds")

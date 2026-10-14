@@ -163,10 +163,22 @@ class InteractionService(
      * 그 폴더에서만 제거 — 북마크 자체는 유지 (마지막 폴더였어도 미분류로 생존).
      * 없는 소속을 제거해도 멱등 200 — 다른 기기의 stale 상태에서도 안전하게 탭할 수 있어야 하므로
      * 폴더 존재/소유 여부를 별도로 검증하지 않는다 (userId 로 스코프된 삭제라 교차 사용자 노출 없음).
+     *
+     * removeBookmarkIfEmpty 가 참이면 남은 소속이 하나도 없을 때만 북마크도 지운다 — FE 가 화면상 "마지막 폴더"를
+     * 뺄 때 쓴다. 화면이 낡아 다른 기기가 그사이 추가한 폴더가 있으면 북마크와 그 소속을 지키고, 응답의
+     * folderIds 로 화면이 맞춰진다(docs/plans/2026-10-14-last-folder-keeps-others.md).
      */
     @Transactional
-    fun removeBookmarkFolder(postId: UUID, folderId: UUID, userId: UUID): BookmarkFoldersResponse {
+    fun removeBookmarkFolder(
+        postId: UUID,
+        folderId: UUID,
+        userId: UUID,
+        removeBookmarkIfEmpty: Boolean = false,
+    ): BookmarkFoldersResponse {
         bookmarkFolderItemRepository.deleteByUserIdAndPostIdAndFolderId(userId, postId, folderId)
+        if (removeBookmarkIfEmpty) {
+            bookmarkRepository.deleteIfNoFolderItems(userId, postId)
+        }
         return BookmarkFoldersResponse(
             postId = postId,
             isBookmarked = bookmarkRepository.existsByUserIdAndPostId(userId, postId),

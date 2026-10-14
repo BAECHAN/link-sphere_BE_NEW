@@ -189,15 +189,21 @@ class InteractionController(
         return ApiResponse(200, "폴더에 저장 성공", result)
     }
 
-    @Operation(summary = "북마크를 폴더에서 제거", description = "북마크 자체는 유지되고 그 폴더 소속만 지워진다.")
+    @Operation(
+        summary = "북마크를 폴더에서 제거",
+        description = "북마크 자체는 유지되고 그 폴더 소속만 지워진다. removeBookmarkIfEmpty=true 면 남은 소속이 " +
+            "하나도 없을 때만 북마크도 지운다(다른 폴더가 남아 있으면 북마크를 유지). " +
+            "data 는 삭제 뒤 실제 상태 {\"postId\", \"isBookmarked\", \"folderIds\"} 다.",
+    )
     @DeleteMapping("/bookmark/{postId}/folders/{folderId}")
     fun removeBookmarkFolder(
         @PathVariable postId: UUID,
         @PathVariable folderId: UUID,
+        @RequestParam(defaultValue = "false") removeBookmarkIfEmpty: Boolean,
         authentication: Authentication?,
     ): ApiResponse<BookmarkFoldersResponse> {
         val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
-        val result = interactionService.removeBookmarkFolder(postId, folderId, userId)
+        val result = interactionService.removeBookmarkFolder(postId, folderId, userId, removeBookmarkIfEmpty)
         return ApiResponse(200, "폴더에서 제거 성공", result)
     }
 
