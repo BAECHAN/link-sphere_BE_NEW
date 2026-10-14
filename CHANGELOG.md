@@ -11,6 +11,20 @@
 
 ### Added
 
+- `post` 게시글 목록 `GET /post`에 `filter=isLiked` — 내가 좋아요한 글만 조회
+  <details><summary>배경·구현</summary>
+
+  좋아요한 글을 다시 찾을 방법이 앱에 없었다(목록 API도, 피드 필터도 없음). FE 피드의 범위 칩
+  "좋아요한"이 이 값을 보낸다. `isBookmarked`와 같은 형태로 `post_reactions`에서 내 `post_id`를 고르는
+  `IN` 서브쿼리이고, 다른 필터·공개 게이트(공개 글 OR 내 글)와 AND로 묶여 좋아요했어도 남의 비공개
+  글은 나오지 않는다. 비로그인이면 `isBookmarked`·`isMyPosts`처럼 조건을 붙이지 않는다. 정렬은 피드와
+  같은 글 작성순이다. `findPosts`를 실제 Postgres로 검증하는 첫 통합 테스트를 함께 넣었다.
+  **FE보다 먼저 배포해야 한다** — 구버전 BE는 모르는 `filter` 값을 조용히 무시해, FE만 먼저 나가면
+  "좋아요한" 칩이 전체 피드를 보여준다. (`PostRepositoryImpl.kt` `isLiked`,
+  `PostRepositoryIntegrationTest.kt`, 계획 `docs/plans/2026-10-14-liked-filter-chip.md`)
+
+  </details>
+
 - `bookmark` 폴더 제거에 `removeBookmarkIfEmpty` 옵션 — 남은 소속이 없을 때만 북마크도 삭제
   <details><summary>배경·구현</summary>
 
