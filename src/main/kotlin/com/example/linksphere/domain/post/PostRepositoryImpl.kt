@@ -2,6 +2,7 @@ package com.example.linksphere.domain.post
 
 import com.example.linksphere.domain.category.TableCategory
 import com.example.linksphere.domain.interaction.TableBookmark
+import com.example.linksphere.domain.interaction.TablePostReaction
 import jakarta.persistence.EntityManager
 import jakarta.persistence.PersistenceContext
 import jakarta.persistence.criteria.*
@@ -208,6 +209,29 @@ class PostRepositoryImpl : PostRepositoryCustom {
                             )
                             // Post ID must be in the list of bookmarked
                             // Post IDs
+                            predicates.add(
+                                root.get<UUID>("id").`in`(subquery),
+                            )
+                        }
+                    }
+                    "isLiked" -> {
+                        // isBookmarked와 같은 형태 — 내가 좋아요한(post_reactions) 글만 남긴다
+                        if (currentUserId != null) {
+                            val subquery =
+                                query.subquery(UUID::class.java)
+                            val reactionRoot =
+                                subquery.from(
+                                    TablePostReaction::class.java,
+                                )
+                            subquery.select(reactionRoot.get("postId"))
+                            subquery.where(
+                                cb.equal(
+                                    reactionRoot.get<UUID>(
+                                        "userId",
+                                    ),
+                                    currentUserId,
+                                ),
+                            )
                             predicates.add(
                                 root.get<UUID>("id").`in`(subquery),
                             )
