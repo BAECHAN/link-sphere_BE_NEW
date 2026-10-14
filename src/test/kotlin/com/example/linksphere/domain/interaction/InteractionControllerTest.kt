@@ -15,7 +15,6 @@ import org.springframework.security.web.SecurityFilterChain
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
-import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
@@ -45,12 +44,13 @@ class InteractionControllerTest {
     @WithMockUser(username = USER_ID)
     fun `좋아요 처리 중 동시 요청과 부딪혀 낙관적 락 예외가 나면 500 이 아니라 409 CONCURRENT_UPDATE 로 응답한다`() {
         // 2026-10-13 운영에서 같은 사용자의 동시 토글이 StaleObjectStateException → 500 으로 새던 경로.
-        // 토글은 일괄 DELETE로 바꿔 더는 이 예외가 나지 않지만, 같은 종류의 예외가 남은 경로의 안전망을 고정한다.
+        // 좋아요는 일괄 DELETE로 바꿔 더는 이 예외가 나지 않지만(토글은 2026-10-14 제거), 같은 종류의 예외가
+        // 남은 경로의 안전망을 고정한다.
         val postId = UUID.randomUUID()
-        `when`(interactionService.togglePostLike(postId, UUID.fromString(USER_ID)))
+        `when`(interactionService.setPostLike(postId, UUID.fromString(USER_ID), true))
             .thenThrow(ObjectOptimisticLockingFailureException(TablePostReaction::class.java, postId))
 
-        mockMvc.perform(post("/post/$postId/like").with(csrf()))
+        mockMvc.perform(put("/post/$postId/like").with(csrf()))
             .andExpect(status().isConflict)
             .andExpect(jsonPath("$.code").value("CONCURRENT_UPDATE"))
     }

@@ -23,31 +23,7 @@ class InteractionService(
     private val bookmarkFolderItemRepository: BookmarkFolderItemRepository,
 ) {
     /**
-     * 토글은 "먼저 지워보고, 지운 행이 없으면 추가"로 처리한다 — exists 조회 후 분기하면 같은 사용자의
-     * 동시 요청이 둘 다 같은 분기로 들어가 두 번째 삭제가 StaleObjectStateException(500)을 냈다
-     * (2026-10-13 운영). 일괄 DELETE는 이미 지워진 행에 0을 반환하고(READ COMMITTED에서 먼저 지운
-     * 쪽 커밋을 기다렸다가 행을 건너뛴다), insert는 ON CONFLICT DO NOTHING이라 어떤 순서로 겹쳐도
-     * 예외가 나지 않는다. 근거: docs/plans/2026-10-13-like-concurrency.md
-     */
-    @Transactional
-    fun togglePostLike(postId: UUID, userId: UUID): PostLikeResponse {
-        assertPostVisible(postId, userId)
-
-        val removed = postReactionRepository.deleteByUserIdAndPostId(userId, postId) > 0
-
-        if (!removed) {
-            postReactionRepository.insertIgnoreConflict(userId, postId)
-        }
-
-        val isLiked = !removed
-
-        // 동일 트랜잭션 내 COUNT — insert/delete가 반영된 정확값
-        val likeCount = postReactionRepository.countByPostId(postId).toInt()
-        return PostLikeResponse(isLiked = isLiked, likeCount = likeCount)
-    }
-
-    /**
-     * 좋아요 상태를 지정한다(liked=true면 추가, false면 취소) — 토글과 달리 같은 요청을 여러 번
+     * 좋아요 상태를 지정한다(liked=true면 추가, false면 취소) — 같은 요청을 여러 번
      * 보내거나 동시에 보내도 결과가 같다(멱등). 이미 그 상태여도 200으로 현재 상태를 돌려준다.
      * 비공개 글 확인은 취소에도 유지한다 — 응답의 likeCount가 남의 비공개 글 정보를 흘리지 않게.
      */
@@ -66,21 +42,7 @@ class InteractionService(
         return PostLikeResponse(isLiked = liked, likeCount = likeCount)
     }
 
-    @Transactional
-    fun toggleCommentLike(commentId: UUID, userId: UUID): Boolean {
-        assertCommentLikeable(commentId, userId)
-
-        // togglePostLike 와 같은 "먼저 지워보고 없으면 추가" 방식(동시 요청에도 예외 없음)
-        val removed = commentReactionRepository.deleteByUserIdAndCommentId(userId, commentId) > 0
-
-        if (!removed) {
-            commentReactionRepository.insertIgnoreConflict(userId, commentId)
-        }
-
-        return !removed
-    }
-
-    /** setPostLike 의 댓글판 — 댓글 확인 기준은 toggleCommentLike 와 같다. */
+    /** setPostLike 의 댓글판 — 삭제된 댓글·볼 수 없는 글의 댓글은 거절한다(assertCommentLikeable). */
     @Transactional
     fun setCommentLike(commentId: UUID, userId: UUID, liked: Boolean): Boolean {
         assertCommentLikeable(commentId, userId)
@@ -94,26 +56,8 @@ class InteractionService(
         return liked
     }
 
-    @Transactional
-    fun toggleBookmark(postId: UUID, userId: UUID): Boolean {
-        assertPostVisible(postId, userId)
-
-        // togglePostLike 와 같은 "먼저 지워보고 없으면 추가" 방식(동시 요청에도 예외 없음).
-        // 소속 전부 삭제 — FK ON DELETE CASCADE 로도 처리되지만, 이 레포는 통합 테스트 하네스가
-        // 없어 캐스케이드를 단위 테스트로 증명할 수 없다. 명시적으로 먼저 지워 테스트 가능하게 하고,
-        // 캐스케이드는 백스톱으로 남겨둔다. 북마크가 없으면 소속도 없으므로 이 삭제는 0행으로 끝난다.
-        bookmarkFolderItemRepository.deleteByUserIdAndPostId(userId, postId)
-        val removed = bookmarkRepository.deleteByUserIdAndPostId(userId, postId) > 0
-
-        if (!removed) {
-            bookmarkRepository.insertIgnoreConflict(userId, postId)
-        }
-
-        return !removed
-    }
-
     /**
-     * 북마크 상태를 지정한다 — 토글과 달리 같은 요청을 여러 번·동시에 보내도 결과가 같다(멱등).
+     * 북마크 상태를 지정한다 — 같은 요청을 여러 번·동시에 보내도 결과가 같다(멱등).
      * 저장(true)은 북마크만 보장하고 이미 있는 폴더 소속은 건드리지 않는다(addBookmarkFolder와 같은 방식 —
      * 낡은 화면이 다른 기기에서 정리한 분류를 지우지 않게). 그래서 응답에 서버의 실제 folderIds를 담는다.
      * 해제(false)는 removeBookmarkFolder·clearBookmarkFolders처럼 공개 여부를 확인하지 않는다 — 응답에 수가
