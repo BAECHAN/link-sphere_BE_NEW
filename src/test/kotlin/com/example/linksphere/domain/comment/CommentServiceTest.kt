@@ -747,7 +747,7 @@ class CommentServiceTest {
     // 비공개 글 제외·톰스톤 제외는 CommentRepository.findMyComments의 JPQL WHERE 절 자체가
     // 담당해 Mockito로는 검증할 수 없다. 여기서는 Service가 만든 Page를 DTO로 정확히 옮기는지만
     // 검증한다. 작성 당시엔 실 DB 대상 테스트 인프라가 없어 필터 자체는 계획 문서의 수동 검증
-    // 절차로 확인했다. 지금은 @PostgresIntegrationTest(#91)가 있지만 findMyComments 통합 테스트는 아직 없다.
+    // 절차로 확인했다. 필터 자체는 지금 CommentRepositoryIntegrationTest가 실제 Postgres에서 검증한다.
     @Test
     fun `getMyComments maps a comment page into MyCommentPageResponse with post titles`() {
         val userId = UUID.randomUUID()
