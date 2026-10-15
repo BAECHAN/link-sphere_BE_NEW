@@ -282,7 +282,8 @@ class MemberSessionServiceTest {
             memberSessionService.rotate(rawToken, hint)
         }
 
-        // 새 행이 없다 - 앞서 한 소비(consumeRefreshIfActive)는 예외로 트랜잭션이 롤백돼 되돌아간다
+        // 새 행이 없다 - 앞서 한 소비(consumeRefreshIfActive)는 예외로 트랜잭션이 롤백돼 되돌아간다(실제 롤백은
+        // MemberSessionServiceIntegrationTest가 Postgres에서 확인한다)
         verify(memberSessionRepository, never()).save(any())
         verify(memberSessionRepository, never()).revokeFamily(any(), any())
     }
