@@ -2,6 +2,7 @@ package com.example.linksphere.domain.auth
 
 import com.example.linksphere.global.common.SecureToken
 import com.example.linksphere.global.exception.InvalidTokenException
+import com.example.linksphere.global.exception.SessionMismatchException
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -50,7 +51,8 @@ class MemberSessionService(private val memberSessionRepository: MemberSessionRep
         // 세 실패 경로(못 찾음·만료·재사용의심) 모두 같은 메시지를 쓴다 - "재사용 탐지됨"처럼
         // 구체적인 사유를 노출하면 탈취한 쪽에게 "들켰다"는 신호를 주게 된다(PR #42 리뷰에서
         // 발견 - 제거된 JwtException 핸들러의 "실패 사유를 그대로 노출하지 않는다" 원칙과도
-        // 일관되게 맞춘다).
+        // 일관되게 맞춘다). 회원 불일치(SessionMismatchException)는 따로 알리지만 이 원칙과
+        // 충돌하지 않는다 - 회전·재사용 판정을 모두 통과해 "발급됐을" 요청에서만 나온다(assertSameMember).
         private const val INVALID_REFRESH_MESSAGE = "Invalid refresh token"
     }
 
@@ -95,9 +97,12 @@ class MemberSessionService(private val memberSessionRepository: MemberSessionRep
      * 이후 양쪽 다 자기 최신 토큰만 쓰므로 재사용 탐지 없이 절대 수명까지 갈 수 있다 -
      * Okta·Auth0·Supabase의 유예도 같은 성질이다. 로그아웃(계열)·전체 로그아웃·비밀번호
      * 변경은 두 갈래를 모두 끊는다.
+     *
+     * @param accessTokenHint refresh 요청의 X-Access-Token(FE가 원 요청이 보낸 토큰을 싣는다). 있으면 발급 직전에
+     *   그 토큰의 회원이 이 refresh의 회원과 같은지 확인한다(assertSameMember).
      */
     @Transactional
-    fun rotate(rawRefreshToken: String): IssuedSession {
+    fun rotate(rawRefreshToken: String, accessTokenHint: String? = null): IssuedSession {
         val current =
             memberSessionRepository.findByRefreshTokenHash(SecureToken.hash(rawRefreshToken))
                 ?: throw InvalidTokenException(INVALID_REFRESH_MESSAGE)
@@ -127,7 +132,31 @@ class MemberSessionService(private val memberSessionRepository: MemberSessionRep
             )
         }
 
+        assertSameMember(current, accessTokenHint)
         return issueInFamily(current, now)
+    }
+
+    /**
+     * refresh에 실린 access 토큰의 회원이 이 refresh의 회원과 다르면 발급하지 않는다 - 같은 브라우저의 다른 탭에서
+     * 다른 계정으로 로그인해 공유 쿠키가 바뀐 경우다. 그대로 발급하면 FE가 원 요청을 다른 계정으로 재실행한다
+     * (FE docs/AUTH.md §8-B "쿠키 주인이 다른 회원이라 갱신이 거절될 때").
+     *
+     * 회전·재사용 판정을 마친 뒤 발급 직전에 본다 - 소비 앞에서 보면 이미 회전된(탈취 의심) refresh에 다른 계정
+     * 토큰을 붙여 재사용 탐지(revokeFamily)를 피하는 길이 되고, "그 refresh가 아직 살아 있다"는 정보도 샌다. 예외는
+     * 이 트랜잭션을 롤백해 앞의 consumeRefreshIfActive도 되돌린다(쿠키는 계속 유효하다).
+     *
+     * 계열이 아니라 회원을 비교한다 - 같은 계정의 재로그인·비밀번호 변경은 계열이 바뀐다. 힌트가 없거나 모르는
+     * 토큰이면 건너뛴다(새로고침 직후 refresh에는 토큰이 없다) - 헤더를 빼면 우회되므로 보안 경계가 아니라 정상
+     * 클라이언트를 위한 정합성 확인이다. 로그에는 쿠키 쪽 계열만 남긴다 - 힌트 쪽 회원을 남기면 두 계정이 한
+     * 브라우저를 쓴다는 연결 정보가 된다.
+     */
+    private fun assertSameMember(current: TableMemberSession, accessTokenHint: String?) {
+        if (accessTokenHint.isNullOrBlank()) return
+        val hinted = memberSessionRepository.findByAccessTokenHash(SecureToken.hash(accessTokenHint)) ?: return
+        if (hinted.memberId == current.memberId) return
+
+        logger.info("[MemberSession] refresh 회원 불일치 - 발급하지 않음(familyId=${current.familyId})")
+        throw SessionMismatchException()
     }
 
     // 한쪽 경계만 본다 - 진 요청의 now는 락 대기 전에 찍히고 Lambda 인스턴스 간 시계 오차도 있어
