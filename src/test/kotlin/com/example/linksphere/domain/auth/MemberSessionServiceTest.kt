@@ -2,6 +2,7 @@ package com.example.linksphere.domain.auth
 
 import com.example.linksphere.global.common.SecureToken
 import com.example.linksphere.global.exception.InvalidTokenException
+import com.example.linksphere.global.exception.SessionMismatchException
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertThrows
@@ -9,6 +10,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import org.mockito.ArgumentCaptor
 import org.mockito.ArgumentMatchers.any
+import org.mockito.ArgumentMatchers.anyString
 import org.mockito.InjectMocks
 import org.mockito.Mock
 import org.mockito.Mockito.never
@@ -253,6 +255,131 @@ class MemberSessionServiceTest {
         }
 
         // revokeFamily도 save도 호출되지 않는다 - 찾기 조회 하나만 있어야 한다.
+        verify(memberSessionRepository).findByRefreshTokenHash(SecureToken.hash(rawToken))
+        verifyNoMoreInteractions(memberSessionRepository)
+    }
+
+    // ── rotate: refresh에 실린 X-Access-Token의 회원 확인 ───────────────
+    // 같은 브라우저의 다른 탭에서 다른 계정으로 로그인해 공유 쿠키가 바뀐 경우 발급하지 않는다(assertSameMember).
+    // findByAccessTokenHash는 파라미터가 non-null String이라 any() 대신 실제 해시 값으로 stub하고, "호출 안 됨"은
+    // anyString()(빈 문자열을 돌려줘 Kotlin null 체크에 안 걸린다)으로 검증한다(위 클래스 주석 참고).
+
+    private fun stubActiveRefresh(rawToken: String, memberId: UUID, familyId: UUID = UUID.randomUUID()) {
+        val current = session(memberId = memberId, refreshTokenHash = SecureToken.hash(rawToken), familyId = familyId)
+        `when`(memberSessionRepository.findByRefreshTokenHash(SecureToken.hash(rawToken))).thenReturn(current)
+        `when`(memberSessionRepository.consumeRefreshIfActive(any(), any())).thenReturn(1)
+    }
+
+    @Test
+    fun `rotate는 힌트 토큰의 회원이 refresh의 회원과 다르면 발급하지 않고 SessionMismatchException`() {
+        val rawToken = "cookie-of-member-b"
+        stubActiveRefresh(rawToken, memberId = UUID.randomUUID())
+        val hint = "access-of-member-a"
+        `when`(memberSessionRepository.findByAccessTokenHash(SecureToken.hash(hint)))
+            .thenReturn(session(memberId = UUID.randomUUID()))
+
+        assertThrows(SessionMismatchException::class.java) {
+            memberSessionService.rotate(rawToken, hint)
+        }
+
+        // 새 행이 없다 - 앞서 한 소비(consumeRefreshIfActive)는 예외로 트랜잭션이 롤백돼 되돌아간다
+        verify(memberSessionRepository, never()).save(any())
+        verify(memberSessionRepository, never()).revokeFamily(any(), any())
+    }
+
+    @Test
+    fun `rotate는 힌트 토큰이 같은 회원의 다른 계열이어도(재로그인·비밀번호 변경) 쿠키의 계열로 발급한다`() {
+        val memberId = UUID.randomUUID()
+        val familyId = UUID.randomUUID()
+        val rawToken = "cookie-new-family"
+        stubActiveRefresh(rawToken, memberId, familyId)
+        val hint = "access-old-family"
+        `when`(memberSessionRepository.findByAccessTokenHash(SecureToken.hash(hint)))
+            .thenReturn(session(memberId = memberId, familyId = UUID.randomUUID()))
+
+        memberSessionService.rotate(rawToken, hint)
+
+        val newSessionCaptor = ArgumentCaptor.forClass(TableMemberSession::class.java)
+        verify(memberSessionRepository).save(newSessionCaptor.capture())
+        assertEquals(memberId, newSessionCaptor.value.memberId)
+        assertEquals(familyId, newSessionCaptor.value.familyId)
+    }
+
+    @Test
+    fun `rotate는 힌트가 없거나 비어 있으면 확인하지 않고 발급한다(새로고침 직후 refresh)`() {
+        for (hint in listOf(null, "", "   ")) {
+            val rawToken = "cookie-without-hint-${hint?.length}"
+            stubActiveRefresh(rawToken, memberId = UUID.randomUUID())
+
+            memberSessionService.rotate(rawToken, hint)
+        }
+
+        verify(memberSessionRepository, never()).findByAccessTokenHash(anyString())
+        verify(memberSessionRepository, times(3)).save(any())
+    }
+
+    @Test
+    fun `rotate는 모르는 힌트 토큰이면 확인을 건너뛰고 발급한다`() {
+        val rawToken = "cookie-unknown-hint"
+        stubActiveRefresh(rawToken, memberId = UUID.randomUUID())
+        val hint = "garbage-access"
+        `when`(memberSessionRepository.findByAccessTokenHash(SecureToken.hash(hint))).thenReturn(null)
+
+        memberSessionService.rotate(rawToken, hint)
+
+        verify(memberSessionRepository).save(ArgumentCaptor.forClass(TableMemberSession::class.java).capture())
+    }
+
+    @Test
+    fun `rotate는 유예 안 재사용 경로에서도 힌트 회원이 다르면 발급하지 않는다`() {
+        val rawToken = "raced-cookie-of-member-b"
+        val current = session(refreshTokenHash = SecureToken.hash(rawToken))
+        `when`(memberSessionRepository.findByRefreshTokenHash(SecureToken.hash(rawToken))).thenReturn(current)
+        `when`(memberSessionRepository.consumeRefreshIfActive(any(), any())).thenReturn(0)
+        `when`(memberSessionRepository.findRevokedAtById(any())).thenReturn(Instant.now().minusSeconds(3))
+        `when`(memberSessionRepository.countActiveInFamily(any(), any())).thenReturn(1L)
+        val hint = "access-of-member-a"
+        `when`(memberSessionRepository.findByAccessTokenHash(SecureToken.hash(hint)))
+            .thenReturn(session(memberId = UUID.randomUUID()))
+
+        assertThrows(SessionMismatchException::class.java) {
+            memberSessionService.rotate(rawToken, hint)
+        }
+
+        verify(memberSessionRepository, never()).save(any())
+        verify(memberSessionRepository, never()).revokeFamily(any(), any())
+    }
+
+    @Test
+    fun `rotate는 유예 밖 재사용이면 힌트 회원이 달라도 기존대로 계열을 폐기하고 InvalidTokenException - 회원 확인으로 탐지를 피할 수 없다`() {
+        val rawToken = "stolen-rotated-cookie"
+        val current = session(refreshTokenHash = SecureToken.hash(rawToken))
+        `when`(memberSessionRepository.findByRefreshTokenHash(SecureToken.hash(rawToken))).thenReturn(current)
+        `when`(memberSessionRepository.consumeRefreshIfActive(any(), any())).thenReturn(0)
+        `when`(memberSessionRepository.findRevokedAtById(any())).thenReturn(Instant.now().minusSeconds(11))
+
+        assertThrows(InvalidTokenException::class.java) {
+            memberSessionService.rotate(rawToken, "access-of-other-member")
+        }
+
+        verify(memberSessionRepository).revokeFamily(any(), any())
+        // 회원 확인은 판정을 마친 뒤 발급 직전에만 한다 - 재사용 탐지 경로에서는 힌트를 보지도 않는다
+        verify(memberSessionRepository, never()).findByAccessTokenHash(anyString())
+    }
+
+    @Test
+    fun `rotate는 만료된 refresh면 힌트를 조회하지 않고 InvalidTokenException`() {
+        val rawToken = "expired-cookie"
+        val expired = session(
+            refreshTokenHash = SecureToken.hash(rawToken),
+            refreshExpiresAt = Instant.now().minusSeconds(1),
+        )
+        `when`(memberSessionRepository.findByRefreshTokenHash(SecureToken.hash(rawToken))).thenReturn(expired)
+
+        assertThrows(InvalidTokenException::class.java) {
+            memberSessionService.rotate(rawToken, "access-of-other-member")
+        }
+
         verify(memberSessionRepository).findByRefreshTokenHash(SecureToken.hash(rawToken))
         verifyNoMoreInteractions(memberSessionRepository)
     }

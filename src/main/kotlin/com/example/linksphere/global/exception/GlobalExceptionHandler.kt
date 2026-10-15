@@ -157,6 +157,19 @@ class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response)
     }
 
+    // refresh에 실린 토큰의 회원이 쿠키 주인과 다름 - FE는 그 탭만 로그아웃한다(FE client.ts handleTokenExpired).
+    // INVALID_REFRESH_TOKEN으로 내면 FE가 일반 갱신 실패로 보고 공유 세션 플래그까지 지운다.
+    @ExceptionHandler(SessionMismatchException::class)
+    fun handleSessionMismatchException(e: SessionMismatchException): ResponseEntity<ErrorResponse> {
+        val response =
+            ErrorResponse(
+                status = HttpStatus.CONFLICT.value(),
+                code = "SESSION_MISMATCH",
+                message = e.message ?: "Session mismatch",
+            )
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(response)
+    }
+
     @ExceptionHandler(EmailNotVerifiedException::class)
     fun handleEmailNotVerifiedException(e: EmailNotVerifiedException): ResponseEntity<ErrorResponse> {
         val response =

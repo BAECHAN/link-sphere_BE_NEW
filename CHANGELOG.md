@@ -11,6 +11,25 @@
 
 ### Added
 
+- `auth` refresh 때 실린 토큰의 회원이 쿠키 주인과 다르면 발급하지 않음(409 `SESSION_MISMATCH`)
+  <details><summary>배경·구현</summary>
+
+  refresh 쿠키는 한 브라우저의 모든 탭이 같이 쓴다. 요청이 서버에 가 있는 사이 다른 탭에서 다른 계정으로 로그인하면,
+  그 요청이 받은 `TOKEN_EXPIRED`(폐기된 세션의 토큰에도 이 코드를 준다)로 FE가 새 계정 쿠키로 갱신해 원 요청을 새
+  계정으로 다시 보낼 수 있었다. FE의 인증 세대 확인(FE #381)이 대부분을 막지만 모든 탭이 세대를 쓸 때만 작동해,
+  업데이트 전 번들 탭·localStorage 쓰기 실패가 남았다. 이제 `/auth/refresh`가 `X-Access-Token`(만료된 토큰이어도
+  됨, FE가 원 요청이 보낸 토큰을 싣는다)을 읽어 그 토큰의 회원이 쿠키의 회원과 다르면 새 토큰을 발급하지 않고 409
+  `SESSION_MISMATCH`로 답한다. 비교는 회전·재사용 판정을 마친 뒤 발급 직전에 해 재사용 탐지를 피하는 길이 되지
+  않고(테스트로 고정), 예외로 트랜잭션이 롤백돼 소비도 되돌아간다(쿠키는 그대로 유효). 같은 회원의 다른
+  계열(재로그인·비밀번호 변경)은 통과하고, 헤더가 없거나 모르는 토큰이면 건너뛴다 — 정상 클라이언트를 위한
+  정합성 확인이지 보안 경계가 아니다. **FE([#391](https://github.com/BAECHAN/link-sphere_FE_NEW/pull/391))를 먼저 배포해야 한다** — 구버전 FE는 409를 몰라 일반 갱신 실패로 보고
+  로그인 화면으로 보내면서 공유 세션 플래그까지 지운다. FE 배포 뒤에도 업데이트 전 번들로 열려 있던 탭은 같은
+  이유로 로그인 화면으로 간다(새로고침하면 끝, 일시적). 설명은 FE `docs/AUTH.md` §8-B, 계획
+  `docs/plans/2026-10-15-drift-ci-and-refresh-guard.md`. (`MemberSessionService.kt` `assertSameMember`,
+  `AuthController.kt`, `AuthService.kt`, `SessionMismatchException.kt`(신규), `GlobalExceptionHandler.kt`, [PR #97](https://github.com/BAECHAN/link-sphere_BE_NEW/pull/97))
+
+  </details>
+
 - `post` 게시글 목록 `GET /post`에 `filter=isLiked` — 내가 좋아요한 글만 조회
   <details><summary>배경·구현</summary>
 

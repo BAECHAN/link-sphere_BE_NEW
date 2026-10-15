@@ -21,6 +21,7 @@ import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
+import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
@@ -75,12 +76,19 @@ class AuthController(
         description = "요청 본문이 아니라 refreshToken 쿠키를 읽는다. 성공 시 쿠키도 새로 발급된다(회전 - 이전 " +
             "refresh는 그 순간 폐기되고 재사용하면 같은 로그인에서 나온 세션 전체가 폐기된다. 단 회전 후 10초 " +
             "안의 재사용은 여러 탭의 동시 갱신으로 보고 같은 로그인으로 새 토큰을 하나 더 발급한다). " +
-            "실패: 401 MISSING_REFRESH_TOKEN(쿠키 없음) · 401 INVALID_REFRESH_TOKEN(만료·위조·이미 소비됨)",
+            "X-Access-Token 헤더(만료된 토큰이어도 됨)가 있으면 그 토큰의 회원이 쿠키의 회원과 같은지 확인한다 - " +
+            "같은 브라우저의 다른 탭에서 다른 계정으로 로그인해 쿠키가 바뀐 경우를 막는다. " +
+            "실패: 401 MISSING_REFRESH_TOKEN(쿠키 없음) · 401 INVALID_REFRESH_TOKEN(만료·위조·이미 소비됨) · " +
+            "409 SESSION_MISMATCH(헤더 토큰의 회원이 쿠키의 회원과 다름 - 쿠키는 그대로 유효)",
     )
     @SecurityRequirements
     @PostMapping("/refresh")
-    fun refresh(@CookieValue(REFRESH_COOKIE_NAME) refreshToken: String): ResponseEntity<ApiResponse<TokenResponse>> {
-        val authResult = authService.refresh(refreshToken)
+    fun refresh(
+        @CookieValue(REFRESH_COOKIE_NAME) refreshToken: String,
+        // SessionAuthenticationFilter가 같은 헤더를 읽지만 만료된 토큰이면 인증 정보를 남기지 않아 여기서 직접 받는다
+        @RequestHeader("X-Access-Token", required = false) accessTokenHint: String?,
+    ): ResponseEntity<ApiResponse<TokenResponse>> {
+        val authResult = authService.refresh(refreshToken, accessTokenHint)
         return createCookieResponse(
             authResult,
             ApiResponse(HttpStatus.OK.value(), "Token refreshed", TokenResponse(authResult.accessToken, authResult.deletionCancelled)),

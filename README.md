@@ -170,7 +170,7 @@ src/main/kotlin/com/example/linksphere/
 | -------- | ---------------------------------------- | --------------------------------------------- | ---- |
 | `POST`   | `/auth/signup`                           | 회원가입 (인증메일 자동 발송)                 | ❌   |
 | `POST`   | `/auth/login`                            | 로그인 (미인증 이메일이어도 성공)             | ❌   |
-| `POST`   | `/auth/refresh`                          | Access Token 갱신 (회전 + 재사용 탐지)        | ❌   |
+| `POST`   | `/auth/refresh`                          | Access Token 갱신 (회전 + 재사용 탐지 + 회원 확인) | ❌   |
 | `POST`   | `/auth/logout`                           | 로그아웃 (이 기기만)                          | ❌   |
 | `POST`   | `/auth/logout-all`                       | 로그아웃 (전체 기기)                          | ✅   |
 | `GET`    | `/auth/account`                          | 내 계정 정보 조회                             | ✅   |

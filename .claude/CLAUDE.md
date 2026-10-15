@@ -428,6 +428,7 @@ fun handleBookmarkFolderNotFoundException(e: BookmarkFolderNotFoundException): R
 | `EmailNotVerifiedException`   | 403  | `EMAIL_NOT_VERIFIED`    |
 | `InvalidActionTokenException` | 401  | `INVALID_ACTION_TOKEN`  |
 | `RateLimitExceededException`  | 429  | `RATE_LIMIT_EXCEEDED`   |
+| `SessionMismatchException`    | 409  | `SESSION_MISMATCH`      |
 
 ---
 

@@ -166,8 +166,8 @@ class AuthService(
     // 회전(재사용 탐지 포함)은 MemberSessionService.rotate가 전담한다 - 실패 시
     // InvalidTokenException을 직접 던지므로 여기서 다시 감쌀 필요가 없다.
     @Transactional
-    fun refresh(refreshToken: String): AuthResult {
-        val session = memberSessionService.rotate(refreshToken)
+    fun refresh(refreshToken: String, accessTokenHint: String? = null): AuthResult {
+        val session = memberSessionService.rotate(refreshToken, accessTokenHint)
         return AuthResult(session.accessToken, session.refreshToken, session.refreshExpiresInSeconds)
     }
 

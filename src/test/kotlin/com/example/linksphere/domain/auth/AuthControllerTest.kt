@@ -6,6 +6,7 @@ import com.example.linksphere.global.exception.DuplicateNicknameException
 import com.example.linksphere.global.exception.InvalidActionTokenException
 import com.example.linksphere.global.exception.InvalidCredentialsException
 import com.example.linksphere.global.exception.RateLimitExceededException
+import com.example.linksphere.global.exception.SessionMismatchException
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
@@ -544,6 +545,58 @@ class AuthControllerTest {
             .andExpect(status().isOk)
 
         verify(authService).logout(null)
+    }
+
+    @Test
+    @WithMockUser
+    fun `refresh는 X-Access-Token 헤더를 authService에 그대로 넘기고 새 쿠키를 세팅한다`() {
+        // 헤더가 있으면 SessionAuthenticationFilter가 먼저 판정한다 - refresh 때 실리는 건 대개 만료된 토큰이다
+        `when`(memberSessionService.checkAccessToken("access-a")).thenReturn(AccessTokenCheck.Expired)
+        `when`(authService.refresh("refresh-token", "access-a"))
+            .thenReturn(AuthResult("access-new", "refresh-new", refreshExpiresInSeconds = 3600L))
+
+        mockMvc.perform(
+            post("/auth/refresh")
+                .cookie(jakarta.servlet.http.Cookie("__Host-refreshToken", "refresh-token"))
+                .header("X-Access-Token", "access-a")
+                .with(csrf()),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.data.accessToken").value("access-new"))
+            .andExpect(cookie().value("__Host-refreshToken", "refresh-new"))
+    }
+
+    @Test
+    @WithMockUser
+    fun `refresh는 X-Access-Token 헤더가 없으면 힌트 없이 넘긴다(새로고침 직후)`() {
+        `when`(authService.refresh("refresh-token", null))
+            .thenReturn(AuthResult("access-new", "refresh-new", refreshExpiresInSeconds = 3600L))
+
+        mockMvc.perform(
+            post("/auth/refresh")
+                .cookie(jakarta.servlet.http.Cookie("__Host-refreshToken", "refresh-token"))
+                .with(csrf()),
+        )
+            .andExpect(status().isOk)
+
+        verify(authService).refresh("refresh-token", null)
+    }
+
+    @Test
+    @WithMockUser
+    fun `refresh는 SessionMismatchException이면 409 SESSION_MISMATCH를 반환하고 쿠키를 건드리지 않는다`() {
+        `when`(memberSessionService.checkAccessToken("access-a")).thenReturn(AccessTokenCheck.Expired)
+        `when`(authService.refresh("refresh-token", "access-a")).thenThrow(SessionMismatchException())
+
+        mockMvc.perform(
+            post("/auth/refresh")
+                .cookie(jakarta.servlet.http.Cookie("__Host-refreshToken", "refresh-token"))
+                .header("X-Access-Token", "access-a")
+                .with(csrf()),
+        )
+            .andExpect(status().isConflict)
+            .andExpect(jsonPath("$.code").value("SESSION_MISMATCH"))
+            .andExpect(cookie().doesNotExist("__Host-refreshToken"))
     }
 
     @Test
