@@ -30,9 +30,9 @@ interface PostRepository :
 
     // 장애 조사 문서·PR 본문에는 개인정보 노출을 피하려 postId 앞 8자만 남기는 관례가 있다
     // (docs/AI-ASYNC-PROCESSING.md §5.9). PostLocaleBackfillRunner의 --post-id가 그 접두어만으로도
-    // 대상을 찾을 수 있게 하는 조회. 이 레포에 @DataJpaTest 등 실 DB 대상 테스트 인프라가 없어
-    // (CommentServiceTest.kt 참고) HQL의 uuid-string CAST 표현이 검증될 경로가 없으므로, 표준
-    // Postgres 캐스트 문법을 쓰는 네이티브 쿼리로 위험을 줄인다.
+    // 대상을 찾을 수 있게 하는 조회. 작성 당시엔 실 DB 대상 테스트 인프라가 없어 HQL의 uuid-string
+    // CAST 표현이 검증될 경로가 없었으므로, 표준 Postgres 캐스트 문법을 쓰는 네이티브 쿼리로 위험을
+    // 줄였다. 지금은 @PostgresIntegrationTest(#91)가 있지만 이 조회의 통합 테스트는 아직 없다.
     @Query(value = "SELECT * FROM posts WHERE id::text LIKE CONCAT(:prefix, '%')", nativeQuery = true)
     fun findAllByIdStartingWith(@Param("prefix") prefix: String): List<TablePost>
 
