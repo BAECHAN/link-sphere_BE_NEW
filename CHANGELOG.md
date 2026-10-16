@@ -294,6 +294,22 @@
 
 ### Changed
 
+- `category` 카테고리 목록 응답을 브라우저가 저장해 두고 쓰도록 캐시 헤더를 붙임
+  <details><summary>배경·구현</summary>
+
+  `GET /common/category-option`에 Spring Security 기본 헤더(`no-cache, no-store`)가 붙어, 거의 바뀌지 않는
+  카테고리 8개를 방문마다 Lambda에서 새로 받았다. 이 요청이 콜드 스타트에 걸려 게시글보다 늦으면 FE 피드 필터
+  카드의 칩이 뒤늦게 그려지며 아래가 밀렸다(FE `docs/SEARCH.md` §10·§11, FE #405 이후 남은 한계). 이제 이 응답만
+  `Cache-Control: max-age=300, public, stale-while-revalidate=604800`으로 답한다 — 5분은 브라우저가 그대로 쓰고,
+  그 뒤 7일 안의 방문은 옛 목록을 즉시 쓰며 뒤에서 새로 받는다(2026-10-16 사용자 결정). 카테고리를 DB에서 바꾸면
+  방문 한 번만큼 늦게 보이고, 그사이 지운 카테고리를 골라 등록하면 지금처럼 그 카테고리만 빠진 채 저장된다
+  (`PostService`의 `findAllByIdIn`). 컨트롤러가 값을 지정하면 Spring Security의 `CacheControlHeadersWriter`가
+  기본값을 쓰지 않는다(spring-security-web 6.5.7 바이트코드로 확인). CloudFront `/api/*`는 그대로
+  `CachingDisabled`라 엣지는 캐시하지 않는다 — 브라우저 캐시만 쓴다. (`CategoryController.kt`,
+  `CategoryControllerTest.kt`(신규), [PR #102](https://github.com/BAECHAN/link-sphere_BE_NEW/pull/102))
+
+  </details>
+
 - `post` 게시글 좋아요 토글 응답에 변경 후 좋아요 수(`likeCount`)를 함께 담음
   <details><summary>배경·구현</summary>
 
