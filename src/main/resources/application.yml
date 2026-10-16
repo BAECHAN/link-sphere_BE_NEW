@@ -13,7 +13,10 @@ spring:
     driver-class-name: org.postgresql.Driver
     hikari:
       connection-timeout: 30000
-      minimum-idle: 1        # Lambda는 요청 처리 후 유휴 상태 → idle 커넥션 최소화
+      # 0이면 풀이 혼자 커넥션을 미리 만들지 않고 요청이 기다릴 때만 만든다. 1일 때는 워밍 핑(수 ms)
+      # 사이에 시작된 백그라운드 보충이 Lambda가 환경을 얼리는 바람에 인증 도중 멈추고, 풀러가 15초 뒤
+      # EAUTHTIMEOUT으로 끊는 일이 하루 약 30건 반복됐다(docs/DEPLOY.md 시행착오 9)
+      minimum-idle: 0
       maximum-pool-size: 5   # Lambda 동시 실행 컨테이너 수에 맞게 조정
       idle-timeout: 600000   # 10분
       max-lifetime: 1800000  # 30분
@@ -53,7 +56,9 @@ management:
       show-details: never
   health:
     db:
-      enabled: false
+      # 워밍 핑(/actuator/health, 5분 주기)이 커넥션을 빌려 SELECT 1로 확인하게 해 핑을 받는 컨테이너의
+      # 연결을 데워 둔다 - minimum-idle: 0과 짝이다(docs/DEPLOY.md §6·시행착오 9)
+      enabled: true
     diskSpace:
       enabled: false
 

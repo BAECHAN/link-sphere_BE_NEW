@@ -1,6 +1,6 @@
 # AWS Lambda SnapStart 배포 가이드
 
-> 마지막 검토: 2026-09-30
+> 마지막 검토: 2026-10-16
 
 ## 아키텍처 개요
 
@@ -405,7 +405,10 @@ aws events put-targets \
   }]'
 ```
 
-- `/actuator/health`는 `management.health.db.enabled: false`라 DB를 건드리지 않아 가볍다
+- `/actuator/health`는 `management.health.db.enabled: true`라 커넥션을 하나 빌려 `SELECT 1`로 확인한다
+  (2026-10-16부터, 그전에는 DB를 건드리지 않았다). 핑을 받는 컨테이너의 DB 연결을 데워 두는 역할을
+  겸하며, HikariCP `minimum-idle: 0`과 짝이다 — 이유는 시행착오 9 참고. DB 장애 때는 핑이
+  `connection-timeout`(30초)까지 기다렸다가 503을 받지만, EventBridge는 응답 코드를 보지 않으므로 핑은 계속 돈다
 - **한계**: 컨테이너 1개만 유지한다. 동시 요청이 늘면 초과분은 여전히 콜드다
 - classic 스케줄 룰은 호출 과금 대상이 아니다
 
@@ -986,3 +989,74 @@ hikari:
   keepalive-time: 30000       # 유휴 중 연결 끊김 사전 예방
   connection-test-query: SELECT 1  # pool에서 꺼낼 때 즉시 검증 → 죽은 연결 교체
   allow-pool-suspension: true # 체크포인트 전 pool 중단 허용 (경고 제거)
+```
+
+### 9. 워밍 핑 사이 HikariCP 백그라운드 보충이 얼어붙어 `EAUTHTIMEOUT` 반복 (2026-10-16)
+
+**증상**: 2026-07-25부터 아래 로그가 하루 15~47건(10-15까지 82일간 2,425건) 찍혔다. 시각은 거의 모두
+매시 x2분·x7분 49초, 즉 워밍 핑(§6) 시각이다.
+```
+WARN [onnection-adder] com.zaxxer.hikari.pool.PoolBase : HikariPool-1 - Pool is empty, failed to create/setup connection (...)
+org.postgresql.util.PSQLException: FATAL: (EAUTHTIMEOUT) timeout while waiting for message
+```
+사용자 요청 실패는 없었다 — 로그 전체 기간(2026-03~)에 대여 타임아웃(`Connection is not available`)과 DB 연결
+계열 예외가 0건이고, 2026-10-14~15 48시간 동안 `Url5xxCount`·`Errors`도 0이었다(URL 요청 5,240건). 다만 조용한
+시간 뒤 첫 DB 요청이 0.3초가량 늦었다(실측 339ms·395ms, 같은 시기 일반 요청 60~80ms).
+
+**원인**:
+- `EAUTHTIMEOUT`은 Supabase 풀러(Supavisor)가 클라이언트의 인증 메시지를 기다리다 시간이 넘으면 보내는 에러다
+  ([정의](https://github.com/supabase/supavisor/blob/5df5caf10694bb68ddd3eca14ac005832de40427/lib/supavisor/errors/auth_timeout_error.ex)).
+  대기 시간은 15초다([`client_handler.ex:347`](https://github.com/supabase/supavisor/blob/a7a1903616c7badce754b4f00195a17240f97103/lib/supavisor/client_handler.ex#L347),
+  main 브랜치 기준 — 우리가 붙는 배포 버전의 값은 확인하지 않았다). 즉 커넥션을 **새로 맺는 도중에만** 난다.
+- Lambda는 호출이 끝나면 실행 환경을 얼린다. AWS 문서는 _"함수가 끝날 때 완료되지 않은 백그라운드 프로세스나
+  콜백은 Lambda가 실행 환경을 재사용할 때 재개된다"_ (번역, [실행 환경 수명 주기](https://docs.aws.amazon.com/lambda/latest/dg/lambda-runtime-environment.html))고 쓴다.
+- `minimum-idle: 1`일 때는 풀이 비면 Hikari의 `connection-adder` 스레드가 요청과 무관하게 혼자 커넥션을 만든다.
+  워밍 핑은 DB를 건드리지 않아 수 ms 만에 끝나므로 이 보충이 인증 도중에 얼어붙었고, 15초 뒤 풀러가 끊었다.
+  다음 핑에 깨어나 FATAL을 읽고 재시도하지만 또 얼어붙어, 핑만 받는 컨테이너는 풀이 몇 시간씩 빈 채로 남았다.
+- 풀이 비는 계기는 SnapStart다. 스냅샷 직전에 Spring Boot의
+  [`HikariCheckpointRestoreLifecycle`](https://docs.spring.io/spring-boot/api/java/org/springframework/boot/jdbc/HikariCheckpointRestoreLifecycle.html)이
+  커넥션을 닫으므로(로그 `Suspending Hikari pool`), 복원된 컨테이너는 늘 빈 풀로 시작하고 복원 순간 시작된 보충이
+  곧바로 얼어붙는다. Lambda는 몇 시간마다 컨테이너를 새로 복원한다(실측 약 2시간).
+- 2026-10-14~15 48시간의 51건은 복원 뒤 첫 호출 8건, 핑만 받은 컨테이너 40건, 사용자 요청 중 3건이었다(마지막
+  3건은 재시도로 흡수). 핑 도입(2026-07-25 11:13 KST, CloudTrail `PutTargets`) 전 4.5개월은 2건뿐이었다.
+- `Pool is empty` WARN은 풀이 비어 있고 실패가 1분 넘게 이어질 때만 찍힌다([`PoolBase.java:387-389`](https://github.com/brettwooldridge/HikariCP/blob/HikariCP-6.3.3/src/main/java/com/zaxxer/hikari/pool/PoolBase.java#L387-L389)) —
+  그래서 핑마다가 아니라 10~30분 간격으로 보였고, 실제 실패 시도는 로그보다 많다.
+
+```mermaid
+sequenceDiagram
+  participant EB as EventBridge 워밍 핑
+  participant L as Lambda 컨테이너
+  participant H as Hikari connection-adder
+  participant S as Supavisor
+  EB->>L: /actuator/health (수 ms, DB 미사용)
+  L->>H: 풀이 비어 있음 → 보충 시작
+  H->>S: 접속 후 인증 시작
+  Note over L: 핑 끝 → 환경 얼림 (인증 도중 멈춤)
+  S-->>H: 15초 무응답 → FATAL EAUTHTIMEOUT, 연결 종료
+  EB->>L: 5분 뒤 다음 핑으로 깨어남
+  H->>H: FATAL 읽음 → WARN 로그, 재시도 → 또 얼어붙음
+```
+
+**해결** (`src/main/resources/application.yml`):
+```yaml
+spring.datasource.hikari:
+  minimum-idle: 0             # 풀이 혼자 커넥션을 미리 만들지 않음
+management.health.db:
+  enabled: true               # 워밍 핑이 커넥션을 빌려 SELECT 1 → 연결을 데워 둠
+```
+- `minimum-idle: 0`: HikariCP 6.3.3은 보충(`fillPool`)을 유휴 수가 `minimum-idle`보다 적을 때만 하고, 수명 만료
+  교체와 `resumePool` 뒤에는 커넥션을 기다리는 스레드가 있을 때만 새로 만든다([`HikariPool.java`](https://github.com/brettwooldridge/HikariCP/blob/HikariCP-6.3.3/src/main/java/com/zaxxer/hikari/pool/HikariPool.java)).
+  그래서 커넥션 생성이 요청이 기다리는 동안, 즉 환경이 깨어 있는 동안에만 일어난다.
+- 핑이 DB를 확인하므로 핑이 연결 완료까지 기다려 주고, 핑을 받는 컨테이너는 연결이 데워진 채 유지된다.
+- 트레이드오프: 핑을 받지 않는 컨테이너는 `idle-timeout`(10분) 넘게 쉰 뒤 첫 DB 요청에서 연결을 새로 맺는다.
+  DB 장애 때는 핑이 `connection-timeout`(30초)까지 기다렸다가 503을 받는다(§6).
+
+**채택하지 않은 대안**:
+- pgjdbc `connectTimeout`·`socketTimeout` 추가 — 얼어 있는 동안은 클라이언트 코드가 돌지 않아 효과가 없다
+- 세션 모드(5432)나 직접 연결 — Postgres도 인증 대기 제한 `authentication_timeout`(기본 1분,
+  [PostgreSQL 문서](https://www.postgresql.org/docs/current/runtime-config-connection.html))이 있어 5분 간격 핑이면
+  똑같이 끊긴다. 직접 연결은 IPv4 애드온이 없으면 IPv6 전용이다([Supabase 문서](https://supabase.com/docs/guides/database/connecting-to-postgres))
+- `PoolBase` 로그 레벨 올리기 — 실제 DB 장애도 가린다
+
+**확인 방법**: CloudWatch Logs Insights(`/aws/lambda/link-sphere-api`)에서
+`filter @message like /EAUTHTIMEOUT/ | stats count() by bin(1d)` — 배포 다음 날부터 0건이어야 한다.
