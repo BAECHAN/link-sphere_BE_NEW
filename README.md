@@ -250,6 +250,9 @@ Bookmark Folder 섹션 참고.
 | `GET`  | `/common/category-option`        | 전체 카테고리 목록 | ❌   |
 | `GET`  | `/common/category-option/{slug}` | 카테고리 상세 조회 | ❌   |
 
+전체 목록 응답은 `Cache-Control: max-age=300, public, stale-while-revalidate=604800`으로 브라우저가 저장해 두고 쓴다
+(`CategoryController`) — 카테고리를 DB에서 바꾸면 방문 한 번만큼 늦게 보인다.
+
 ### 🔔 FCM Token (`/fcm`)
 
 | Method   | Endpoint     | 설명                | 인증 |
