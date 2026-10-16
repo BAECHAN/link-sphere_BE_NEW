@@ -1,6 +1,6 @@
 # Link-Sphere BE — 성능 (Lambda 콜드스타트)
 
-> 마지막 검토: 2026-09-29 (§4.5가 JWT 폐지로 삭제된 코드에 대한 기록임을 명시)
+> 마지막 검토: 2026-10-16 (§4.1의 체크포인트 처리 주체를 Spring Boot 내장 기능으로 정정)
 
 이 문서는 **"왜 느렸고, 무엇을 근거로 무엇을 바꿨는지"** 를 남긴다.
 배포 절차는 [DEPLOY.md](./DEPLOY.md), 무엇이 바뀌었는지는 [CHANGELOG.md](../CHANGELOG.md)를 참고.
@@ -68,8 +68,9 @@
 제약:
 - 읽기 전용·`permitAll` 엔드포인트만 사용한다 (부작용 방지)
 - 실패해도 부팅은 계속한다 — 배포 시점에 DB가 닿지 않아도 Lambda는 기동되어야 한다
-- `DataSourceCracHook.beforeCheckpoint`의 `suspendPool()`은 체크포인트 시점에 호출되므로
-  init 단계의 DB 워밍업과 충돌하지 않는다. **순서를 바꾸지 말 것**
+- HikariCP 풀은 Spring Boot의 `HikariCheckpointRestoreLifecycle`이 체크포인트 직전에 멈추고
+  커넥션을 닫으므로(복원 때 다시 연다) init 단계의 DB 워밍업과 충돌하지 않는다. **순서를 바꾸지 말 것**
+  (2026-10-16 이전에는 자체 훅 `DataSourceCracHook`이 같은 일을 겹쳐 하다 삭제됐다 — DEPLOY.md 시행착오 8)
 
 ### 4.2 메모리 1024 → 2048MB — 적용 중
 

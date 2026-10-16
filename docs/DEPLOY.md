@@ -104,7 +104,7 @@ SnapStart는 Lambda init phase를 스냅샷으로 저장해 cold start를 단축
 주의사항:
 - 워밍업은 **읽기 전용·`permitAll` 엔드포인트만** 사용한다 (부작용 방지)
 - 실패해도 부팅은 계속한다 — 배포 시점에 DB가 닿지 않아도 Lambda는 기동되어야 한다
-- `DataSourceCracHook.beforeCheckpoint`의 `suspendPool()`은 체크포인트 시점에 호출되므로 init 단계의 DB 워밍업과 충돌하지 않는다. **순서를 바꾸지 말 것**
+- HikariCP 풀은 Spring Boot의 `HikariCheckpointRestoreLifecycle`이 체크포인트 직전에 멈추고 커넥션을 닫으므로(복원 때 다시 연다) init 단계의 DB 워밍업과 충돌하지 않는다. **순서를 바꾸지 말 것** — 워밍업은 체크포인트 전에 끝나야 한다
 
 ### Shadow JAR에서 spring.factories를 append하는 이유
 
@@ -990,6 +990,16 @@ hikari:
   connection-test-query: SELECT 1  # pool에서 꺼낼 때 즉시 검증 → 죽은 연결 교체
   allow-pool-suspension: true # 체크포인트 전 pool 중단 허용 (경고 제거)
 ```
+
+**후속 (2026-10-16)**: 같은 시기(`cb45a3c`, 2026-03-14)에 넣은 자체 CRaC 훅 `DataSourceCracHook`(체크포인트 전
+`suspendPool()`, 복원 후 `resumePool()`)을 삭제했다. Spring Boot 3.2+는 `org.crac`가 클래스패스에 있으면
+[`HikariCheckpointRestoreLifecycle`](https://docs.spring.io/spring-boot/api/java/org/springframework/boot/jdbc/HikariCheckpointRestoreLifecycle.html)을
+자동 등록해(3.5.8 `DataSourceCheckpointRestoreConfiguration`) 체크포인트 직전에 풀을 멈추고 커넥션을 닫고, 복원 때
+다시 연다. 공식 Javadoc의 설명은 _"정지되면 풀을 중단해 대여 시도를 막고, 열린 커넥션과 유휴 커넥션을 제거한다"_ (번역)이다.
+자체 훅은 이와 겹쳤을 뿐이고, 주석은 "suspend해 커넥션을 닫는다"고 했지만 HikariCP의 `suspendPool()`은 대여만 막는다.
+운영 로그로 겹침을 확인했다(2026-09-16~10-16): 체크포인트의 `Suspending Hikari pool`(내장 기능) 769건, 복원 1,123건
+중 내장 기능의 `Resuming Hikari pool` 0건. 자체 훅이 먼저 풀을 다시 열어 내장 기능은 할 일이 없었다는 뜻이다. 삭제 뒤에는
+복원 때마다 `Resuming Hikari pool`이 찍혀야 한다. `allow-pool-suspension: true`와 `org.crac` 의존성은 내장 기능이 쓰므로 남긴다.
 
 ### 9. 워밍 핑 사이 HikariCP 백그라운드 보충이 얼어붙어 `EAUTHTIMEOUT` 반복 (2026-10-16)
 

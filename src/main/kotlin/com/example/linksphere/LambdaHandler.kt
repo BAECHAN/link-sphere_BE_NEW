@@ -99,9 +99,9 @@ class LambdaHandler : RequestStreamHandler {
          * 접속하지 못해 호출 전체가 502로 실패했다. LWA 레이어를 제거해 MockMvc가 실제 서빙
          * 경로가 된 뒤에야 이 워밍업이 성립한다. 자세한 경위는 docs/PERFORMANCE.md 5장 참고.
          *
-         * DataSourceCracHook의 suspendPool()은 체크포인트 시점에 호출되므로 이 DB 워밍업과
-         * 충돌하지 않는다. 워밍업이 실패해도 부팅은 계속한다 — 배포 시점에 DB가 닿지 않아도
-         * Lambda는 기동되어야 한다.
+         * HikariCP 풀은 Spring Boot의 HikariCheckpointRestoreLifecycle이 체크포인트 직전에 멈추고
+         * 커넥션을 닫으므로(복원 때 다시 연다) 이 DB 워밍업과 충돌하지 않는다. 워밍업이 실패해도
+         * 부팅은 계속한다 — 배포 시점에 DB가 닿지 않아도 Lambda는 기동되어야 한다.
          */
         private fun warmUp() {
             // JIT를 인터프리터 단계 밖으로 밀어내기 위해 반복 호출한다
