@@ -373,6 +373,21 @@
 
 ### Fixed
 
+- `config` 워밍 핑 사이 DB 인증이 얼어붙어 `EAUTHTIMEOUT` 로그가 반복되던 문제
+  <details><summary>배경·구현</summary>
+
+  2026-07-25 워밍 핑 도입 뒤로 `PSQLException: FATAL: (EAUTHTIMEOUT)`이 하루 약 30건 찍혔다. HikariCP
+  `minimum-idle: 1`이라 풀이 비면 백그라운드 스레드가 혼자 커넥션을 만드는데, DB를 안 쓰는 핑은 수 ms 만에
+  끝나 Lambda가 인증 도중에 환경을 얼렸고 Supabase 풀러가 15초 뒤 끊었다. SnapStart 스냅샷 때 커넥션이
+  닫혀 복원된 컨테이너는 늘 빈 풀로 시작했고, 핑만 받는 컨테이너는 몇 시간씩 빈 풀로 남았다. 사용자 요청
+  실패(5xx)는 0건이었지만 조용한 시간 뒤 첫 DB 요청이 0.3초가량 늦었다. `minimum-idle: 0`으로 커넥션을
+  요청이 기다릴 때만 만들게 하고, `management.health.db.enabled: true`로 워밍 핑이 커넥션을 빌려 연결을
+  데워 두게 했다. 핑을 받지 않는 컨테이너는 10분 넘게 쉰 뒤 첫 DB 요청에서 연결을 새로 맺고, DB 장애
+  때는 핑이 30초 기다렸다가 503을 받는다. 조사 근거·대안 비교는 `docs/DEPLOY.md` 시행착오 9.
+  (`application.yml`)
+
+  </details>
+
 - `bookmark`·`fcm`·`member` 동시 요청이 같은 행을 지우면 실패하던 나머지 삭제 경로
   <details><summary>배경·구현</summary>
 
