@@ -68,6 +68,24 @@ class PostSearchQueryTest {
         assertEquals("라이프스타일,데이터", stripKeepComma("라이프스타일,데이터!"))
     }
 
+    // NON_WORD_CHARS도 Postgres regexp_replace용이지만 부정 문자 클래스 문법이 Java Regex와 같다
+    private fun toWords(input: String) = input.lowercase().replace(Regex(PostSearchQuery.NON_WORD_CHARS), " ")
+
+    @Test
+    fun `NON_WORD_CHARS는 기호를 공백으로 바꿔 rea를 한 단어로 떼어낸다`() {
+        assertEquals("github   morluto rea  reverse", toWords("GitHub - morluto/rea: Reverse"))
+    }
+
+    @Test
+    fun `NON_WORD_CHARS는 한글도 단어 경계로 본다`() {
+        assertEquals("react ", toWords("React로"))
+    }
+
+    @Test
+    fun `NON_WORD_CHARS는 영문 소문자와 숫자는 남긴다`() {
+        assertEquals("abcxyz09", toWords("abcxyz09"))
+    }
+
     @Test
     fun `matchesKeywordLiterally는 제목에 토큰이 있으면 true`() {
         assertTrue(PostSearchQuery.matchesKeywordLiterally(post(title = "Zustand 입문 가이드"), listOf("zustand")))
