@@ -389,6 +389,22 @@
 
 ### Fixed
 
+- `post` 영문 검색어를 한 단어로 담은 글이 단어 일부로만 걸린 글보다 뒤에 나오던 문제
+  <details><summary>배경·구현</summary>
+
+  검색은 공백을 뺀 필드에 `LIKE '%토큰%'`으로 부분 일치를 찾는다. 그래서 "rea"는 Th**rea**ds·**Rea**ct 속에도
+  걸리고, 관련도 점수에는 이 둘과 "rea"라는 단어 자체를 가르는 항목이 없었다. 운영에서 "rea"로 검색하면 REA
+  소개 글(`github.com/morluto/rea`)이 45건 중 11번째(점수 10)로, Threads(11)·React 글(11~12)·제목이 "react"로
+  시작하는 글(58)에 밀려 첫 페이지 10건 밖에 있었다. 이제 영문 소문자·숫자로만 된 토큰이 제목·설명·태그·요약
+  중 하나에 한 단어로 들어 있으면 +60을 더한다(`WORD_MATCH_BONUS`, 제목 시작 부분 일치 +50보다 크다). 단어 경계는
+  영문 소문자·숫자가 아닌 모든 글자라서, "React로"처럼 한글 조사가 붙어도 단어 일치다. 한글 토큰은 조사와 붙여 쓴
+  복합어 때문에 단어 경계가 관련도를 뜻하지 않아 대상에서 뺐다. 결과 집합(WHERE)과 건수는 그대로고 순서만 바뀐다.
+  북마크 검색도 같은 점수를 쓴다. 검색 SQL을 실제 Postgres에서 검증하는 첫 통합 테스트를 함께 넣었다.
+  (`PostSearchQuery.kt` `relevanceScore`·`wordMatches`, `PostSearchIntegrationTest.kt`(신규),
+  계획 `docs/plans/2026-10-19-search-word-match-bonus.md`)
+
+  </details>
+
 - `config` 워밍 핑 사이 DB 인증이 얼어붙어 `EAUTHTIMEOUT` 로그가 반복되던 문제
   <details><summary>배경·구현</summary>
 

@@ -16,6 +16,8 @@ import java.util.UUID
  *   기호 제거는 필드 쪽에만 적용하고 검색어 쪽은 그대로 둔다("node.js"가 "nodejs"로는 안
  *   걸리는 한계가 있지만, 결과가 줄어드는 방향이 아니라 늘어나기만 하는 안전한 확장이다)
  * - 제목/설명/태그/AI 요약을 대상으로 OR 매칭(recall 우선), 관련도 점수로 정렬
+ * - 영문·숫자 토큰이 다른 단어의 일부가 아니라 한 단어로 들어 있으면 점수를 더 준다("rea"가
+ *   "Threads"·"React"보다 "morluto/rea"에서 먼저 나오게, docs/plans/2026-10-19-search-word-match-bonus.md)
  * - semanticMatches가 주어지면 키워드 OR 의미(코사인 거리) 매칭으로 확장한다(2026-09-28,
  *   docs/plans/2026-09-27-search-quality.md 2e). 임계값 0.30은 실제 임베딩 216건 +
  *   한/영 질의 쌍으로 실측해 정했다 - 진짜 관련 결과는 0.24~0.31, "향수"·"폰케이스" 같은
@@ -36,6 +38,16 @@ object PostSearchQuery {
     private const val TOKEN_MATCH_BONUS = 5
     private const val TITLE_EXACT_BONUS = 100
     private const val TITLE_PREFIX_BONUS = 50
+
+    // TITLE_PREFIX_BONUS(50)보다 크게 둬 "rea"로 검색하면 제목이 "react"로 시작하는 글보다
+    // "rea"를 한 단어로 담은 글이 먼저 나온다. 영문·숫자 토큰에만 준다 - 한글은 조사("리액트를")와
+    // 붙여 쓴 복합어("전역상태관리") 때문에 단어 경계가 관련도를 뜻하지 않는다.
+    private const val WORD_MATCH_BONUS = 60
+    private val WORD_TOKEN = Regex("[a-z0-9]+")
+
+    // 단어 경계 = 영문 소문자·숫자가 아닌 모든 글자(공백·기호·한글). 범위(a-z)나 [:alnum:] 대신
+    // 글자를 나열한 이유는 STRIP_CHARS와 같다(로케일 의존 방어). internal: 테스트에서 같은 리터럴을 검증한다.
+    internal const val NON_WORD_CHARS = "[^abcdefghijklmnopqrstuvwxyz0123456789]"
 
     // TITLE_EXACT_BONUS(100)보다 한참 아래로 둬 정확한 제목 일치가 항상 의미 매칭을 이긴다.
     private const val SEMANTIC_WEIGHT = 20.0
@@ -136,6 +148,9 @@ object PostSearchQuery {
                     ),
                     TOKEN_MATCH_BONUS,
                 )
+            if (WORD_TOKEN.matches(token)) {
+                terms += caseInt(cb, fields.wordMatches(cb, "% $token %"), WORD_MATCH_BONUS)
+            }
         }
 
         val fullNorm = tokens.joinToString("")
@@ -207,6 +222,13 @@ object PostSearchQuery {
         private val summaryNorm: Expression<String> = norm(cb, from.get("aiSummary"))
         private val summaryStripped: Expression<String> = stripSymbols(cb, summaryNorm)
 
+        // 단어 일치 판정용 - 공백을 빼지 않은 원문 소문자에서 단어가 아닌 글자를 공백으로 바꾸고 양끝에
+        // 공백을 붙인다. "% token %" LIKE 하나로 단어 일치를 본다.
+        private val titleWords: Expression<String> = words(cb, cb.lower(from.get("title")))
+        private val descWords: Expression<String> = words(cb, cb.lower(from.get("description")))
+        private val tagsWords: Expression<String> = words(cb, cb.lower(cb.function("array_to_string", String::class.java, from.get<Any>("tags"), cb.literal(","))))
+        private val summaryWords: Expression<String> = words(cb, cb.lower(from.get("aiSummary")))
+
         fun titleMatches(cb: CriteriaBuilder, like: String): Predicate = fieldMatches(cb, titleNorm, titleStripped, like)
 
         fun descriptionMatches(cb: CriteriaBuilder, like: String): Predicate = fieldMatches(cb, descNorm, descStripped, like)
@@ -214,6 +236,8 @@ object PostSearchQuery {
         fun tagsMatches(cb: CriteriaBuilder, like: String): Predicate = fieldMatches(cb, tagsNorm, tagsStripped, like)
 
         fun summaryMatches(cb: CriteriaBuilder, like: String): Predicate = fieldMatches(cb, summaryNorm, summaryStripped, like)
+
+        fun wordMatches(cb: CriteriaBuilder, like: String): Predicate = cb.or(cb.like(titleWords, like), cb.like(descWords, like), cb.like(tagsWords, like), cb.like(summaryWords, like))
 
         private fun fieldMatches(cb: CriteriaBuilder, fieldNorm: Expression<String>, fieldStripped: Expression<String>, like: String): Predicate = cb.or(cb.like(fieldNorm, like), cb.like(fieldStripped, like))
     }
@@ -234,12 +258,14 @@ object PostSearchQuery {
 
     private fun stripSymbolsKeepComma(cb: CriteriaBuilder, expr: Expression<String>): Expression<String> = regexpReplace(cb, expr, STRIP_CHARS_KEEP_COMMA)
 
-    private fun regexpReplace(cb: CriteriaBuilder, expr: Expression<String>, pattern: String): Expression<String> = cb.function(
+    private fun words(cb: CriteriaBuilder, expr: Expression<String>): Expression<String> = cb.concat(cb.concat(" ", regexpReplace(cb, expr, NON_WORD_CHARS, " ")), " ")
+
+    private fun regexpReplace(cb: CriteriaBuilder, expr: Expression<String>, pattern: String, replacement: String = ""): Expression<String> = cb.function(
         "regexp_replace",
         String::class.java,
         expr,
         cb.literal(pattern),
-        cb.literal(""),
+        cb.literal(replacement),
         cb.literal("g"),
     )
 }
