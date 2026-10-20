@@ -699,7 +699,10 @@ aws events put-targets \
    로그의 `[OrphanImageGc] 완료 - dryRun=true, 전체=N, 참조=N, 후보=N` 요약과 후보 URL 몇 개를
    DB(`comments.content`·`members.image`·`posts`)에서 찾아 정말 안 쓰이는지 대조한다. 2026-10-05
    로컬 dry-run 실측은 전체 76, 참조 31, 후보 45였고, 후보 45개 모두 댓글·회원·게시글 어디에서도
-   참조되지 않음을 읽기 전용 SQL로 확인했다.
+   참조되지 않음을 읽기 전용 SQL로 확인했다. 정정(2026-10-20): 그 확인은 앱 계정으로 6543에 붙어 세션 수준
+   `SET default_transaction_read_only = on`을 건 스크립트로 했고, 그 설정이 앱과 같은 풀에 남아 약 1분간 Lambda
+   쓰기 요청 6건이 500이 났다. 이 대조는 이제 [12장](#12-운영-db-임시-조회-전용-읽기-계정-supabase--적용-완료-2026-10-20)
+   계정으로 한다.
 3. 확인되면 같은 명령에서 `"dryRun":true`를 빼고 한 번 실행한 뒤, 다시 dry-run해 후보가 0인지 본다.
 4. 타겟을 추가한다:
    ```bash
@@ -718,6 +721,71 @@ aws events put-targets \
 - 스토리지 삭제 실패는 `SupabaseStorageService.deleteObjectsByPublicUrls`가 로그만 남기므로,
   다음 실행에서 같은 파일이 다시 후보로 잡혀 재시도된다(별도 재처리 코드 없음).
 - 로컬에서 같은 판정을 미리 보려면 `tools/OrphanImageCleanupRunner.kt` 머리말의 명령을 쓴다.
+
+### 12. 운영 DB 임시 조회 전용 읽기 계정 (Supabase) — 적용 완료 (2026-10-20)
+
+사람이나 Claude 세션이 운영 DB를 **임시로 조회**할 때는 SELECT만 되는 `adhoc_readonly` 계정을 쓴다. 앱 계정
+(`application-secret.yml`의 `postgres.<ref>`)이나 트랜잭션 풀러 6543으로 임시 조회하지 않는다. 쓰기(마이그레이션,
+`tools/*Runner`의 `--commit`·`--delete`)는 지금처럼 사용자가 기존 계정으로 직접 한다(`docs/ACCOUNT-DELETION.md` §10-3).
+
+```bash
+/opt/homebrew/opt/libpq/bin/psql "service=linksphere-ro" -c "select count(*) from posts"
+```
+
+접속 정보는 저장소 밖 두 파일에 있다 — 워크트리마다 복사할 필요가 없고 커밋될 일도 없다.
+
+| 파일 | 내용 |
+| --- | --- |
+| `~/.pg_service.conf` | `[linksphere-ro]` 서비스: 풀러 호스트, **세션 모드 5432**, `dbname=postgres`, `user=adhoc_readonly.<ref>`, `sslmode=require` |
+| `~/.pgpass` (권한 600) | 같은 호스트·포트·DB·사용자의 비밀번호 한 줄. [PostgreSQL 문서](https://www.postgresql.org/docs/current/libpq-pgpass.html)는 그룹·기타 사용자 접근을 막아야 한다며 _"권한이 이보다 느슨하면 파일을 무시한다"_ (번역)고 쓴다 |
+
+**왜 따로 두나 — 2026-10-05 사건.** 11장의 고아 이미지 대조를 하던 세션이 앱 계정으로 6543에 붙어
+`SET default_transaction_read_only = on`을 건 뒤 조회했다(04:58 UTC). Supavisor 트랜잭션 모드는 서버 커넥션을
+여러 클라이언트가 돌려 쓰고 세션 상태를 초기화하지 않아, 이 설정이 앱과 같은 풀의 커넥션에 남았다. 1분 뒤부터
+Lambda 두 인스턴스가 그 커넥션을 받아 게시글 상세(조회수 증가) 5건과 토큰 갱신 1건이 `cannot execute UPDATE in a
+read-only transaction`으로 500이 났다. "읽기 전용으로 하려던" 장치가 오히려 앱 쓰기를 막았다.
+
+[Supabase 트러블슈팅 문서](https://supabase.com/docs/guides/troubleshooting/resolving-cannot-execute-update-in-a-read-only-transaction-on-transaction-pooler-connections-ef582c)가
+이 증상을 그대로 설명한다:
+
+> 트랜잭션 풀링 모드에서는 성능을 위해 초기화 동작을 의도적으로 제한하므로, 명시적으로 되돌리지 않으면 세션
+> 상태가 남을 수 있다. (...) 스크립트에 특정 세션 상태가 필요하면(오래 걸리는 읽기 전용 내보내기 등) 트랜잭션
+> 풀러(6543) 대신 데이터베이스에 직접(5432) 연결하라. (번역)
+>
+> — Supabase Docs, "Resolving 'cannot execute UPDATE in a read-only transaction' on transaction pooler connections"
+
+전용 계정은 이 문제를 권한으로 끊는다. Supavisor는 계정이 다르면 풀을 따로 만든다 — [Supavisor FAQ](https://supabase.com/docs/guides/troubleshooting/supavisor-faq-YyP5tI)는
+_"서로 다른 조합(사용자+데이터베이스+모드)이 연결하면 새 커넥션 풀이 만들어진다"_ (번역)고 쓴다. 그래서 이 계정으로
+무엇을 `SET`해도 앱 커넥션에 닿지 않고, 실수로 쓰기를 해도 권한에서 막힌다.
+
+| 설정 | 값 | 이유 |
+| --- | --- | --- |
+| 권한 | `public` 전 테이블 SELECT, 단 `members.password`·`fcm_tokens.token` 제외(두 테이블은 컬럼 단위) | 조회 결과가 세션 기록에 남는다 — 비밀번호 해시와 기기 토큰 원문은 임시 조회에 필요 없다 |
+| `BYPASSRLS` | 켬 | 공개 테이블 전부 RLS가 켜져 있고 정책이 0개라(`src/test/resources/db/schema.sql`) 없으면 0행이다. Supabase [Prisma 가이드](https://supabase.com/docs/guides/database/prisma)의 전용 계정도 `bypassrls` |
+| `default_transaction_read_only` | `on`(계정 기본값) | 보조 장치 — `SET`으로 끌 수 있어 실제 차단은 권한이 한다 |
+| `statement_timeout` | `30s`(계정 기본값) | 무거운 임시 조회가 운영 DB를 오래 잡지 않게 |
+| 접속 모드 | 풀러 세션 모드 5432 | 위 문서는 직접 연결(5432)을 권하지만 직접 연결(`db.<ref>`)은 IPv4 애드온 없이 IPv6 전용이다(시행착오 9장). [Supavisor 용어 설명](https://supabase.com/docs/guides/troubleshooting/supavisor-and-connection-terminology-explained-9pr_ZO)은 세션 모드가 _"풀러가 실제 커넥션 하나를 클라이언트 연결 하나에만 내주도록 강제한다"_ (번역)고 쓴다 — 계정 분리와 함께 세션 설정이 남의 요청에 섞이지 않는다 |
+
+생성 SQL(Supabase SQL Editor에서 `postgres`로 실행, 비밀번호는 `openssl rand -hex 24`처럼 따옴표·콜론이 없는 값):
+
+```sql
+create role adhoc_readonly with login password '<비밀번호>' bypassrls;
+alter role adhoc_readonly set default_transaction_read_only = on;
+alter role adhoc_readonly set statement_timeout = '30s';
+grant usage on schema public to adhoc_readonly;
+grant select on all tables in schema public to adhoc_readonly;
+alter default privileges for role postgres in schema public grant select on tables to adhoc_readonly;
+revoke select on public.members, public.fcm_tokens from adhoc_readonly;
+grant select (id, email, nickname, image, created_at, updated_at, role, is_bot, deleted_at, email_verified, deletion_requested_at)
+  on public.members to adhoc_readonly;
+grant select (id, user_id, platform, created_at, updated_at, session_family_id) on public.fcm_tokens to adhoc_readonly;
+```
+
+- **새 테이블**은 `alter default privileges` 덕분에 `postgres`로 만들면 SELECT가 자동으로 붙는다.
+- **`members`·`fcm_tokens`에 컬럼을 추가하는 마이그레이션**에는 `grant select (<새 컬럼>) on public.<테이블> to
+  adhoc_readonly;`를 같이 넣는다. 빠뜨리면 이 계정에서 그 컬럼만 안 보인다(쓰기·앱에는 영향 없음).
+- **되돌리기:** `alter default privileges for role postgres in schema public revoke select on tables from adhoc_readonly;
+  drop owned by adhoc_readonly; drop role adhoc_readonly;` 후 로컬 두 파일에서 해당 줄을 지운다.
 
 ---
 
