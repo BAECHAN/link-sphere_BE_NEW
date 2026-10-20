@@ -389,6 +389,21 @@
 
 ### Fixed
 
+- `auth` 만료된 토큰으로 피드를 조회하면 401 대신 비로그인 결과를 주던 문제
+  <details><summary>배경·구현</summary>
+
+  `GET /post`·`/post/{id}`·`/post/{id}/comment`는 `permitAll`이라, 만료·무효 토큰을 낸 요청을
+  `SessionAuthenticationFilter`가 비로그인으로 넘기면 401 없이 200이 나갔다. FE는 401에만 토큰을 갱신하므로
+  새로고침 없이 1시간 넘게 둔 탭에서 "나만 볼 수 있는" 필터가 빈 목록으로 뜨고, 다른 범위 필터는 전체 공개 피드를,
+  내 비공개 글 상세는 404를 보여줬다. 이제 이 세 경로는 토큰 없이 오면 지금처럼 비로그인으로 허용하고, 토큰을
+  냈는데 만료·무효면 거부해 진입점이 401 `TOKEN_EXPIRED`/`INVALID_TOKEN`을 쓴다. FE는 기존 인터셉터대로 갱신 후
+  다시 요청하므로 FE 변경은 없다. 로그인 후 7일이 지나 refresh도 만료된 탭은 피드를 다시 불러올 때 로그인 화면으로
+  간다(전에는 비로그인 피드를 보여줬다). 만료 토큰을 일부러 받는 `/auth/refresh`는 대상이 아니다. 실제 보안 체인을
+  로드하는 첫 테스트를 함께 넣었다. (`SecurityConfig.kt`, `PostSecurityTest.kt`(신규),
+  계획 `docs/plans/2026-10-20-public-get-expired-token-401.md`)
+
+  </details>
+
 - `post` 영문 검색어를 한 단어로 담은 글이 단어 일부로만 걸린 글보다 뒤에 나오던 문제
   <details><summary>배경·구현</summary>
 
