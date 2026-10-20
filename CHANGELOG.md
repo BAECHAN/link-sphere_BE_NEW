@@ -389,6 +389,18 @@
 
 ### Fixed
 
+- `config` 해석할 수 없는 Accept 헤더에 406 대신 500을 주던 문제
+  <details><summary>배경·구현</summary>
+
+  `Accept`를 해석하지 못하면 `HttpMediaTypeNotAcceptableException`이 모든 예외를 받는 `handleException`으로
+  떨어져 500(빈 본문)과 ERROR 로그 "Unhandled exception"이 나갔다. 헤더 줄 앞에 공백을 붙여 보내면 그 줄이
+  `Accept`에 이어 붙는데(`Accept: */* X-Access-Token: …`), 이 값이 로그에 그대로 찍혀 토큰이 남을 수도 있었다
+  (2026-10-20 운영 재현 중 curl 명령 실수로 발생, 최근 30일 실제 트래픽은 0건). 이제 전용 핸들러가 본문 없는 406을
+  주고 헤더 값 없이 WARN만 남긴다. 해석은 되지만 JSON을 거부하는 `Accept`(예: `application/xml`)는 원래도 406이었고
+  그대로다. (`GlobalExceptionHandler.kt` `handleHttpMediaTypeNotAcceptableException`, `GlobalExceptionHandlerTest.kt`(신규))
+
+  </details>
+
 - `auth` 만료된 토큰으로 피드를 조회하면 401 대신 비로그인 결과를 주던 문제
   <details><summary>배경·구현</summary>
 

@@ -349,6 +349,16 @@ class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response)
     }
 
+    // Accept 헤더를 해석할 수 없거나(형식이 깨짐) JSON을 받지 않겠다는 요청 - 이 핸들러가 없으면
+    // handleException(500)으로 떨어진다. 본문은 싣지 않는다: JSON을 쓰려면 같은 Accept로 다시 협상해야 해
+    // 또 실패한다. 헤더 값도 로그에 남기지 않는다 - 클라이언트가 헤더 줄 앞에 공백을 붙여 보내면 다음 헤더
+    // (X-Access-Token 등)가 Accept에 이어 붙어 함께 찍힌다(2026-10-20 운영 재현에서 실제로 일어남).
+    @ExceptionHandler(org.springframework.web.HttpMediaTypeNotAcceptableException::class)
+    fun handleHttpMediaTypeNotAcceptableException(): ResponseEntity<Void> {
+        logger.warn("Not acceptable: unparseable or non-JSON Accept header")
+        return ResponseEntity.status(HttpStatus.NOT_ACCEPTABLE).build()
+    }
+
     @ExceptionHandler(Exception::class)
     fun handleException(e: Exception): ResponseEntity<ErrorResponse> {
         logger.error("Unhandled exception", e)
