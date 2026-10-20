@@ -472,8 +472,14 @@ it.requestMatchers(
     "/post",
     "/post/*",
     "/post/*/comment",
-).permitAll()   // GET만 공개 — 같은 경로의 POST/PATCH/DELETE는 여전히 인증 필요
+).access { _, context -> AuthorizationDecision(context.request.getAttribute("exception") == null) }
+// GET만 공개 — 같은 경로의 POST/PATCH/DELETE는 여전히 인증 필요
 ```
+
+로그인 여부에 따라 응답이 달라지는 공개 조회(위 `GET /post` 계열)는 `permitAll()` 대신 이 규칙을 쓴다 —
+토큰 없이 오면 허용하고, 토큰을 냈는데 만료·무효면 401을 돌려줘 FE가 갱신하게 한다. `permitAll()`이면
+만료 토큰이 조용히 비로그인으로 처리된다(2026-10-20, `docs/plans/2026-10-20-public-get-expired-token-401.md`).
+만료 토큰을 일부러 받는 `/auth/refresh`처럼 응답이 로그인 여부와 무관한 경로는 `permitAll()`을 그대로 쓴다.
 
 ---
 

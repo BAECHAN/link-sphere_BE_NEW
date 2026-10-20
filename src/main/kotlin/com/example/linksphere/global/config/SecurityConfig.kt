@@ -9,6 +9,7 @@ import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.core.env.Environment
 import org.springframework.http.HttpMethod
+import org.springframework.security.authorization.AuthorizationDecision
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity
 import org.springframework.security.config.http.SessionCreationPolicy
@@ -56,13 +57,18 @@ class SecurityConfig(
                     "/actuator/**",
                 )
                     .permitAll()
+                // 누가 보느냐에 따라 응답이 달라지는 공개 조회 - 토큰 없이 오면 비로그인으로 허용하되, 토큰을 냈는데
+                // 만료·무효면(SessionAuthenticationFilter가 exception 속성을 남김) 거부해 진입점이 401을 쓰게 한다.
+                // permitAll이면 만료 토큰이 조용히 비로그인으로 처리돼 FE가 갱신하지 못하고, 본인 비공개 글이 빠진
+                // 200을 그대로 그린다(docs/plans/2026-10-20-public-get-expired-token-401.md). 만료 토큰을 일부러
+                // 받는 /auth/refresh(위 목록)에는 걸지 않는다.
                 it.requestMatchers(
                     HttpMethod.GET,
                     "/post",
                     "/post/*",
                     "/post/*/comment",
                 )
-                    .permitAll()
+                    .access { _, context -> AuthorizationDecision(context.request.getAttribute("exception") == null) }
                 it.anyRequest().authenticated()
             }
             .exceptionHandling {
