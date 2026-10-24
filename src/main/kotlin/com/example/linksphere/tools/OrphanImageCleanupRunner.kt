@@ -12,9 +12,9 @@ import org.springframework.stereotype.Component
  * admin/role 개념이 없어 REST 엔드포인트로 노출하면 로그인한 아무나 버킷을 지울 수 있게 되므로 그
  * 형태는 쓰지 않는다.
  *
- * Lambda 배포는 LambdaHandler가 별도 진입점이라 main()을 거치지 않으므로, @Profile 가드가 없어도
- * 구조적으로 배포된 Lambda에는 영향이 없다 - 다만 로컬에서 프로필을 지정하지 않고 실행했을 때
- * 실수로 도는 것까지 막기 위해 가드를 둔다.
+ * @Profile 가드가 운영 Lambda에서 이 도구가 도는 것을 막는 유일한 장치다 - LambdaHandler도
+ * SpringApplication.run()으로 기동하고, run()은 등록된 CommandLineRunner를 모두 실행한다(Spring Boot
+ * 3.5.8 SpringApplication.callRunners). 가드를 빼면 콜드스타트마다 버킷 정리가 돈다.
  *
  * 실행: ./gradlew bootRun --args='--spring.profiles.active=secret,cleanup-orphans' (기본 dry-run, 보고만)
  *      ./gradlew bootRun --args='--spring.profiles.active=secret,cleanup-orphans --delete' (실제 삭제)

@@ -114,8 +114,8 @@ class BookmarkFolderService(
         if (folder.userId != userId) throw ForbiddenException("Cannot delete another user's folder")
 
         // 그 폴더의 소속만 삭제 — 다른 폴더에도 있는 북마크는 그대로 유지된다.
-        // FK ON DELETE CASCADE 로도 처리되지만, 통합 테스트 하네스가 없는 이 레포에서 단위 테스트로
-        // 검증 가능하도록 명시적으로 먼저 지운다.
+        // FK ON DELETE CASCADE 로도 처리되지만, DB의 cascade에 기대지 않고 단위 테스트로도
+        // 검증할 수 있도록 명시적으로 먼저 지운다.
         bookmarkFolderItemRepository.deleteByFolderId(folderId)
         bookmarkFolderRepository.delete(folder)
     }

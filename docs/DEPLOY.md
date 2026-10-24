@@ -39,8 +39,8 @@ API 요청 (linksphere.click, HTTPS)
       호출은 IAM 인가 단계에서 403, §5-1 참고)
       → LambdaHandler.handleRequest()
         → linksphereJob 필드로 분기: 없으면 아래 HTTP 요청 경로, 있으면
-          ai-analysis/comment-postprocess/feed-crawl/feed-item/account-purge
-          같은 내부 작업(self-invoke·EventBridge)을 MockMvc 없이 바로 처리
+          ai-analysis/comment-postprocess/feed-crawl/feed-item/account-purge/orphan-image-gc
+          내부 작업(self-invoke·EventBridge, 목록 정본은 docs/BE-ARCHITECTURE.md §1)을 MockMvc 없이 바로 처리
         → (HTTP 요청 경로) FunctionUrlOriginGuard 검사 — 지금은 ORIGIN_VERIFY_SECRET이
           미설정이라 fail-open(항상 통과)이며, OAC가 사실상 이 자리를 대신한다(§5-1
           "Phase 0 관련 정정" 참고)

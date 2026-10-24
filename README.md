@@ -38,6 +38,8 @@
 src/main/kotlin/com/example/linksphere/
 ├── LambdaHandler.kt                     # AWS Lambda 진입점 (MockMvc 기반)
 ├── LinkSphereBeApplication.kt           # 메인 애플리케이션
+├── FunctionUrlOriginGuard.kt            # Function URL 직접 호출 차단(비밀 헤더 비교, 미설정이면 통과)
+├── MultipartRequestParser.kt            # Lambda 이벤트의 multipart 본문 파싱
 ├── domain/
 │   ├── auth/                            # 인증 도메인
 │   │   ├── AuthController.kt            # 회원가입, 로그인, 토큰 갱신, 로그아웃, 내 정보, 비밀번호 변경, 회원탈퇴
@@ -66,6 +68,11 @@ src/main/kotlin/com/example/linksphere/
 │   │   ├── PostRepositoryImpl.kt        # JPA Criteria/JPQL 검색·필터 구현
 │   │   ├── PostService.kt
 │   │   ├── PostAiService.kt             # AI 분석 비동기 처리
+│   │   ├── PostResponseAssembler.kt     # 목록·상세 응답 조립(작성자·좋아요·북마크·댓글수 batch fetch)
+│   │   ├── PostCategoryClassifier.kt    # AI 카테고리 분류
+│   │   ├── PostSearchQuery.kt           # 키워드·의미 검색 조건 조립
+│   │   ├── SafeUrlValidator.kt          # SSRF 방어(내부망·해석 불가 URL 거부)
+│   │   ├── LinkPreviewController.kt / LinkPreviewService.kt / LinkPreviewRepository.kt  # 등록 전 링크 미리보기(10분 캐시)
 │   │   ├── TablePost.kt
 │   │   └── UrlMetadataExtractor.kt      # URL 크롤링 / YouTube 인라인 JSON·oEmbed
 │   ├── comment/                         # 댓글 도메인
@@ -73,6 +80,7 @@ src/main/kotlin/com/example/linksphere/
 │   │   ├── CommentDTO.kt
 │   │   ├── CommentRepository.kt
 │   │   ├── CommentService.kt            # 댓글·답글 CRUD (알림·링크프리뷰는 CommentPostProcessService가 커밋 후 별도 처리)
+│   │   ├── CommentPostProcessService.kt # 커밋 뒤 self-invoke 잡: FCM 알림·링크 프리뷰
 │   │   └── TableComment.kt
 │   ├── interaction/                     # 좋아요·북마크(폴더 다중 소속 포함) 도메인
 │   │   ├── InteractionController.kt     # 좋아요·북마크 저장/해제 + 폴더 소속 추가/제거
@@ -108,7 +116,8 @@ src/main/kotlin/com/example/linksphere/
 │   └── upload/                          # 이미지 업로드용 서명 URL 발급
 │       ├── UploadController.kt
 │       ├── UploadDTO.kt
-│       └── UploadService.kt
+│       ├── UploadService.kt
+│       └── OrphanImageGcService.kt      # 어디서도 참조하지 않는 스토리지 이미지 회수(EventBridge 잡)
 ├── global/
 │   ├── common/
 │   │   ├── ApiResponse.kt               # 공통 응답 래퍼
@@ -117,24 +126,20 @@ src/main/kotlin/com/example/linksphere/
 │   │   ├── SecureToken.kt               # 세션·비밀번호재설정 등 불투명 토큰 발급·해시
 │   │   ├── ClientIpResolver.kt          # CloudFront-Viewer-Address 헤더에서 요청자 IP 추출
 │   │   ├── RateLimitService.kt          # bucketKey·limit·window 기반 범용 고정윈도 카운터
+│   │   ├── Paging.kt                    # 목록 size 상한(1~50)
 │   │   └── SupabaseStorageService.kt    # Supabase 이미지 업로드
 │   ├── config/
 │   │   ├── AsyncConfig.kt               # 비동기 스레드풀 설정
 │   │   ├── SecurityConfig.kt            # Spring Security & CORS 설정
 │   │   ├── SwaggerConfig.kt
+│   │   ├── NullableAwareModelConverter.kt  # Kotlin nullability를 OpenAPI 스키마에 반영
 │   │   └── security/
 │   │       ├── CustomAccessDeniedHandler.kt
 │   │       └── CustomAuthenticationEntryPoint.kt
 │   └── exception/
-│       ├── GlobalExceptionHandler.kt
-│       ├── DuplicateMemberException.kt
-│       ├── ForbiddenException.kt
-│       ├── InvalidCredentialsException.kt
-│       ├── InvalidTokenException.kt
-│       ├── InvalidActionTokenException.kt  # 비밀번호재설정·이메일인증 토큰 전용(세션 InvalidTokenException과 분리)
-│       ├── RateLimitExceededException.kt
-│       ├── EmailNotVerifiedException.kt
-│       └── PostNotFoundException.kt
+│       ├── GlobalExceptionHandler.kt    # 예외 → ErrorResponse(status, code, message)
+│       └── *Exception.kt                # 커스텀 예외 17개 — status·code 표는 docs/BE-ARCHITECTURE.md §4
+├── tools/                               # 로컬 1회성 CLI 7개(@Profile CommandLineRunner) — AI·임베딩·OG 이미지·언어 백필, 일본어 글 점검, 고아 이미지 정리, 피드 수동 수집
 └── infra/
     ├── ai/
     │   ├── GeminiService.kt             # Gemini AI 콘텐츠 분석·임베딩 생성 (폴백 모델 포함)
@@ -194,6 +199,10 @@ src/main/kotlin/com/example/linksphere/
 | `PATCH`  | `/post/{id}`              | 게시글 수정                    | ✅   |
 | `PATCH`  | `/post/{id}/visibility`   | 게시글 공개/비공개 토글        | ✅   |
 | `DELETE` | `/post/{id}`              | 게시글 삭제                    | ✅   |
+| `GET`    | `/link-preview?url=`      | 등록 전 링크 미리보기 (결과 10분 캐시, 이메일 미인증 시 403) | ✅   |
+
+`/link-preview`는 `/post` 아래가 아니다 — `GET /post/*`가 비로그인에게 열려 있어, 그 아래 두면 로그인 없이 크롤링을
+시키는 경로가 된다(`LinkPreviewController`).
 
 **게시글 목록 쿼리 파라미터**: `category`, `search`, `filter`, `nickname`, `page`, `size`
 
@@ -201,7 +210,7 @@ src/main/kotlin/com/example/linksphere/
 
 | Method   | Endpoint                                      | 설명                    | 인증 |
 | -------- | --------------------------------------------- | ----------------------- | ---- |
-| `GET`    | `/post/{postId}/comment`                      | 댓글 목록 조회          | 선택(로그인 시 좋아요·북마크 반영) |
+| `GET`    | `/post/{postId}/comment`                      | 댓글 목록 조회          | 선택(로그인 시 좋아요 반영) |
 | `GET`    | `/comment/my`                                 | 내 댓글 목록 조회 (페이지네이션) | ✅   |
 | `POST`   | `/post/{postId}/comment`                      | 댓글 작성 (이미지 포함, 이메일 미인증 시 403) | ✅   |
 | `POST`   | `/comment/{commentId}/reply`                  | 답글 작성 (이미지 포함, 이메일 미인증 시 403) | ✅   |
@@ -463,6 +472,10 @@ SnapStart 체크포인트 **이전**(`companion object init`)에 읽기 전용 �
 
 - [`docs/DEPLOY.md`](docs/DEPLOY.md) — 배포 인프라 설정·변경, EventBridge 룰 조작, GitHub Actions 배포 흐름
 - [`docs/LAMBDA-CONFIG-ROLLBACK.md`](docs/LAMBDA-CONFIG-ROLLBACK.md) — `prod` alias를 안전 버전으로 롤백해야 할 때
+
+**레퍼런스** — "지금 무엇으로, 왜 이렇게 구성되어 있는가"
+
+- [`docs/BE-ARCHITECTURE.md`](docs/BE-ARCHITECTURE.md) — 요청 파이프라인, 레이어 규칙과 허용 예외, 응답·에러 계약, 패턴 카탈로그, 자동 검사, 알려진 예외. 새 코드를 쓰기 전에 먼저 읽는다
 
 **보관** — 더 이상 갱신하지 않음
 

@@ -124,8 +124,9 @@ class LambdaHandler : RequestStreamHandler {
     override fun handleRequest(input: InputStream, output: OutputStream, context: Context) {
         val event = mapper.readTree(input)
 
-        // AiJobDispatcher/CommentJobDispatcher가 self-invoke로 보낸 내부 작업이면 HTTP 라우팅(MockMvc)을
-        // 거치지 않고 바로 처리한다 — rawPath/requestContext가 없는, Function URL 이벤트와 다른 모양이다.
+        // self-invoke(AiJobDispatcher·CommentJobDispatcher·FeedJobDispatcher)나 EventBridge 룰이 보낸 내부 작업이면
+        // HTTP 라우팅(MockMvc)을 거치지 않고 바로 처리한다 — rawPath/requestContext가 없는, Function URL 이벤트와
+        // 다른 모양이다. 잡 목록은 docs/BE-ARCHITECTURE.md §1.
         when (event.get("linksphereJob")?.asText()) {
             "ai-analysis" -> {
                 handleAiJob(event, output)

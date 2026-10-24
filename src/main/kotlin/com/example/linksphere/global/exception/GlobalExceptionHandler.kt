@@ -318,8 +318,9 @@ class GlobalExceptionHandler {
 
     // 동시 요청끼리 부딪힌 경우 — 낙관적 락(엔티티로 지우려던 행을 다른 요청이 먼저 지움) · 비관적 락 ·
     // 데드락 실패가 모두 ConcurrencyFailureException 하위다. 서버 결함이 아니라 재시도하면 풀리는
-    // 충돌이라 500 대신 409로 돌려준다. 좋아요·북마크 토글은 일괄 DELETE로 바꿔 더는 여기 오지 않고,
-    // 엔티티 단위 삭제가 남은 경로(batchDeleteBookmarks 등)의 안전망이다(docs/plans/2026-10-13-like-concurrency.md).
+    // 충돌이라 500 대신 409로 돌려준다. 좋아요·북마크와 batchDeleteBookmarks는 일괄 DELETE로 바꿔 더는 여기
+    // 오지 않고, 엔티티 단위 삭제(delete(entity))가 남은 PostService.deletePost·CommentService.deleteComment·
+    // BookmarkFolderService.deleteFolder의 안전망이다(docs/plans/2026-10-13-like-concurrency.md).
     @ExceptionHandler(org.springframework.dao.ConcurrencyFailureException::class)
     fun handleConcurrencyFailureException(
         e: org.springframework.dao.ConcurrencyFailureException,

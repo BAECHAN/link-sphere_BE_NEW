@@ -25,7 +25,7 @@ import java.util.UUID
  * isWithdrawn 기준으로 유예 중에도 이미 "탈퇴한 사용자"로 보인다(CommentService·
  * PostResponseAssembler 참고) - 본인이 복구하면 자동으로 원래 닉네임이 돌아온다.
  *
- * 2단계(purge)는 AccountPurgeService가 매일 유예가 끝난 회원에 대해 호출한다 - 여기서
+ * 2단계(purge)는 AccountPurgeService가 4일마다(EventBridge 룰) 유예가 끝난 회원에 대해 호출한다 - 여기서
  * 실제로 회원 행을 익명화한다(글·댓글은 손대지 않는다 - 익명화된 회원 행을 그대로
  * 참조하므로 작성자 표시는 이미 1단계부터 바뀌어 있다). 남에게 안 보이는 개인 전용
  * 데이터(북마크·좋아요·조회기록·FCM 토큰)는 복구 가능성 때문에 1단계에서는 건드리지
