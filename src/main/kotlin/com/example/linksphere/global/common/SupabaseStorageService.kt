@@ -7,8 +7,10 @@ import org.springframework.http.HttpEntity
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpMethod
 import org.springframework.http.MediaType
+import org.springframework.http.client.SimpleClientHttpRequestFactory
 import org.springframework.stereotype.Service
 import org.springframework.web.client.RestTemplate
+import java.time.Duration
 import java.time.Instant
 import java.time.OffsetDateTime
 import java.util.UUID
@@ -20,7 +22,18 @@ class SupabaseStorageService(
     @Value("\${supabase.bucket}") private val bucketName: String,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
-    private val restTemplate = RestTemplate()
+
+    // 기본 생성자 RestTemplate()은 연결·읽기 타임아웃이 없다(spring-web 6.2.14 SimpleClientHttpRequestFactory는
+    // 값이 -1이면 설정하지 않는다) - Supabase가 응답을 멈추면 업로드 서명 요청이 Lambda 제한시간(120초)까지
+    // 붙잡혔다. 요청 경로 최악 13초 < CloudFront origin 30초, 고아 이미지 GC 최악 90+13초 < 120초가 되게 잡았다
+    // (실측 지연 데이터는 없는 판단값, docs/plans/2026-10-25-be-architecture-audit.md PR-S).
+    private val restTemplate =
+        RestTemplate(
+            SimpleClientHttpRequestFactory().apply {
+                setConnectTimeout(Duration.ofSeconds(3))
+                setReadTimeout(Duration.ofSeconds(10))
+            },
+        )
     private val publicUrlPrefix = "$supabaseUrl/storage/v1/object/public/$bucketName/"
 
     data class SignedUploadUrl(val uploadUrl: String, val token: String, val publicUrl: String)
