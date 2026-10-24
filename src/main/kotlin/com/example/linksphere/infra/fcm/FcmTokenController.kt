@@ -5,6 +5,7 @@ import com.example.linksphere.global.common.getUserId
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.tags.Tag
 import jakarta.validation.Valid
+import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.security.core.Authentication
 import org.springframework.web.bind.annotation.*
@@ -26,7 +27,7 @@ class FcmTokenController(private val fcmTokenService: FcmTokenService) {
         @Valid @RequestBody request: RegisterFcmTokenRequest,
     ): ResponseEntity<Void> {
         val userId = authentication.getUserId()
-            ?: return ResponseEntity.status(401).build()
+            ?: return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build()
         fcmTokenService.registerToken(userId, request.token, request.platform, authentication.getSessionFamilyId())
         return ResponseEntity.ok().build()
     }
@@ -42,7 +43,7 @@ class FcmTokenController(private val fcmTokenService: FcmTokenService) {
         @Valid @RequestBody request: DeleteFcmTokenRequest,
     ): ResponseEntity<Void> {
         val userId = authentication.getUserId()
-            ?: return ResponseEntity.status(401).build()
+            ?: return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build()
         fcmTokenService.deleteToken(userId, request.token)
         return ResponseEntity.ok().build()
     }
