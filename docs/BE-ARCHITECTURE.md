@@ -395,7 +395,8 @@ for (id in ids) {
   null 반환 → 호출부가 폴백한다. 키 설정은 `@Value("\${키:}")` 기본값으로 비어 있어도 부팅되게 한다. AWS SDK 클라이언트는
   SnapStart 때문에 `by lazy`(`MailService`). 응답 파싱은 `internal` 순수 함수로 떼어 테스트한다.
 - **안티패턴**: 기본 생성자 `RestTemplate()` — 타임아웃이 없다(spring-web 6.2.14 `SimpleClientHttpRequestFactory`는
-  timeout이 -1이면 설정하지 않음, 2026-10-25 업스트림 소스로 확인). §9 참고.
+  timeout이 -1이면 설정하지 않음, 2026-10-25 업스트림 소스로 확인). `SupabaseStorageService`가 이것으로 업로드 서명
+  요청이 끝없이 멈췄다 — 지금은 팩토리에 타임아웃을 건 `RestTemplate`이다(§9).
 
 ### 7-12. 상수와 설정
 
@@ -447,7 +448,7 @@ for (id in ids) {
 | `@AuthenticationPrincipal String?` + 자체 파싱 | `CommentController` | 위와 같음 |
 | 인증 필수인데 `Authentication?` 17곳 | `InteractionController`(12)·`BookmarkFolderController`(5) | 위와 같음 |
 | `ResponseEntity<Void>` 반환, 401 직접 반환 | `FcmTokenController` | 위와 같음 |
-| `RestTemplate()` 타임아웃 없음 | `SupabaseStorageService` — 업로드 서명 요청이 Lambda 제한시간까지 멈출 수 있다 | 타임아웃 PR(connect 3s / read 10s) |
+| 외부 클라이언트가 RestClient가 아니라 `RestTemplate` | `SupabaseStorageService` — 타임아웃(연결 3초·읽기 10초)은 설정돼 있다 | 바꾸지 않음 — 전환하면 호출부 3곳과 DELETE+본문 동작까지 바뀌어 회귀 범위가 크다 |
 | 엔티티 안의 표시 규칙 | `TableMember.isWithdrawn`·`publicNickname`·`publicImage`, `TableLinkPreview.toMetadata` | 바꾸지 않음(기록만) |
 | 상속받은 `delete(entity)` 3곳 | `PostService.deletePost`, `CommentService.deleteComment`, `BookmarkFolderService.deleteFolder` | 바꾸지 않음 — 409 `CONCURRENT_UPDATE` 안전망에 기댄다 |
 

@@ -389,6 +389,21 @@
 
 ### Fixed
 
+- `upload` 스토리지가 응답을 멈추면 업로드 서명 요청이 끝없이 기다리던 문제
+  <details><summary>배경·구현</summary>
+
+  `SupabaseStorageService`가 기본 생성자 `RestTemplate()`을 써서 연결·읽기 타임아웃이 없었다(spring-web 6.2.14
+  `SimpleClientHttpRequestFactory`는 값이 -1이면 설정하지 않는다). Supabase가 연결만 받고 응답하지 않으면
+  `/upload/signed-url`이 Lambda 제한시간(120초)까지 붙잡혀 CloudFront 30초 뒤 504로 끝나고, 그동안 Lambda 실행
+  환경도 묶였다. 연결 3초·읽기 10초를 걸어 요청 경로 최악 13초(< CloudFront 30초), 고아 이미지 GC 최악 90+13초(< 120초)가
+  되게 했다 — 실측 지연 데이터 없이 잡은 판단값이다. 타임아웃이 나면 서명 발급은 기존 처리대로 500, 이미지 삭제는
+  로그만 남기고(남은 파일은 GC가 회수), GC 목록 조회는 그 실행을 일찍 끝낸다. 전송 계층(HttpURLConnection)은 그대로
+  두어 다른 동작은 바뀌지 않는다. 응답하지 않는 로컬 서버로 재현하는 테스트를 추가했다(수정 전 20초 대기 초과로 실패,
+  수정 후 약 10초에 예외). (`SupabaseStorageService.kt`, `SupabaseStorageServiceTest.kt`(신규), 계획
+  `docs/plans/2026-10-25-be-architecture-audit.md` PR-S)
+
+  </details>
+
 - `config` 해석할 수 없는 Accept 헤더에 406 대신 500을 주던 문제
   <details><summary>배경·구현</summary>
 
