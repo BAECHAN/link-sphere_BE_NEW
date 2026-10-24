@@ -180,7 +180,7 @@ Plan mode로 계획을 세우고 구현한 작업은, PR을 열기 전에:
   아니라 텍스트 그대로 보여주므로 목적을 이루지 못한다.
 - 단일 파일 한 줄 수정처럼 흐름이랄 게 없는 작업에는 적용하지 않는다.
 
-`:633`의 "장 끝에 프로세스 Mermaid 순서도를 반드시 넣는다"는 독립 기능 문서로만 한정돼
+아래 "서사형 작업 문서 형식" 절의 "장 끝에 프로세스 Mermaid 순서도를 반드시 넣는다"는 독립 기능 문서로만 한정돼
 있다 — 이 절은 그 범위를 계획 파일·PR 본문·대화 답변까지 넓힌 것이다(2026-09-04 세션에서
 "RSS-FEED-BOT.md를 순서도로 보여주면 더 이해하기 쉬울것"이라는 요청이 있었는데 그때는
 독립 기능 문서 규칙으로만 반영돼, 2026-09-09 다른 작업의 계획 설명 때 같은 지적을 다시
@@ -213,12 +213,12 @@ Plan mode로 계획을 세우고 구현한 작업은, PR을 열기 전에:
 
 ## Critical Rules
 
-- **Never** `Authentication.name` 직접 파싱 → 항상 `authentication.getUserId()` 확장 함수 사용 (`global/common/SecurityUtils.kt`)
-- **Never** Controller에서 비즈니스 로직 → 반드시 Service 레이어로 위임
-- **Never** Repository에서 직접 예외 throw → Service에서 처리
-- **Never** 새 예외 클래스 없이 `IllegalArgumentException` 남용 → 의미 있는 예외 클래스를 `global/exception/`에 추가
-- **Never** `GlobalExceptionHandler` 수정 없이 새 예외 클래스 추가 → 핸들러에 `@ExceptionHandler` 반드시 등록
-- **Never** Controller에서 직접 HTTP 상태코드 하드코딩 → `HttpStatus.*` 상수 사용
+- **Never** `Authentication.name`·`Principal.name` 직접 파싱 → 항상 `authentication.getUserId()` 확장 함수 사용 (`global/common/SecurityUtils.kt`). 아직 어기는 곳은 `docs/BE-ARCHITECTURE.md` §9에 있다 — 본뜨지 않는다
+- **Never** Controller에서 비즈니스 로직 → 반드시 Service 레이어로 위임. 예외는 사용자 요청 경로에만 거는 레이트리밋(`rateLimitService.consume`)이다 — 봇(`FeedItemProcessor`)이 Service를 직접 부르므로 한도는 컨트롤러에서 건다(BE-ARCHITECTURE §3). Repository 직접 참조는 `controllersMustNotDependOnRepositories`가 막는다
+- **Never** Repository에서 직접 예외 throw → Service에서 처리 (`repositoriesMustNotConstructExceptions`가 막는다)
+- **Never** `IllegalArgumentException` throw → 전역 핸들러가 404 `NOT_FOUND`로 바꿔 입력 오류가 "없음"으로 보인다. 입력 오류는 `InvalidInputException`, 대상 없음은 `*NotFoundException`, 내부 불변조건 위반은 `IllegalStateException`(BE-ARCHITECTURE §4). 남은 곳은 §9
+- **Never** `GlobalExceptionHandler` 수정 없이 새 예외 클래스 추가 → 핸들러에 `@ExceptionHandler` 반드시 등록 (`ExceptionHandlerCoverageTest`가 막는다)
+- **Never** Controller에서 직접 HTTP 상태코드 하드코딩 → `HttpStatus.*` 상수 사용 (`ApiResponse(HttpStatus.OK.value(), …)`). 남은 곳은 §9
 - **Never** Security 인증 없이 사용자 식별 → `Authentication?`이 null이면 인증 안 된 것, 명시적으로 처리
 - **Never** 대상 파일 양식 무시하고 코드 생성 → 항상 붙여넣을 파일(및 인접 코드)을 **먼저 읽고** 들여쓰기·네이밍·import 순서·따옴표·주석 밀도·정렬을 그대로 맞춘다. 본인 스타일을 강요하거나 기존 코드를 재포맷하지 않는다
 - **Never** Lambda Web Adapter 레이어를 다시 붙이지 않는다 → 2026-07-25 502 장애의 직접 원인이었고, `LambdaHandler.warmUp()`은 이 레이어가 **없는 상태를 전제**로 한다. 붙이면 워밍업이 깨진다 (`docs/PERFORMANCE.md` 5장)
@@ -289,283 +289,42 @@ Plan mode로 계획을 세우고 구현한 작업은, PR을 열기 전에:
 
 ---
 
-## 패키지 구조
+## 아키텍처와 패턴 — 정본은 `docs/BE-ARCHITECTURE.md`
 
-```
-src/main/kotlin/com/example/linksphere/
-├── domain/                    # 비즈니스 도메인 (평면 구조, 서브패키지 없음)
-│   ├── auth/                  # 인증 (AuthController, AuthService, AuthDTO, SessionAuthenticationFilter, MemberSessionService 등 평면 구조 — JWT는 PR #42로 폐지, jwt/ 패키지 없음)
-│   ├── category/              # 카테고리
-│   ├── comment/               # 댓글
-│   ├── interaction/           # 좋아요·북마크 (InteractionController, InteractionService, ...)
-│   ├── member/                # 회원
-│   └── post/                  # 게시글
-│
-├── global/
-│   ├── common/                # ApiResponse, ErrorResponse, SecurityUtils, SupabaseStorageService
-│   ├── config/                # SecurityConfig, SwaggerConfig, AsyncConfig, security/
-│   └── exception/             # 예외 클래스들, GlobalExceptionHandler
-│
-└── infra/
-    ├── ai/                    # GeminiService (AI 요약)
-    └── fcm/                   # FCM 푸시 알림
-```
+요청 파이프라인, 패키지 역할, 레이어 규칙과 허용 예외, 응답·에러 계약(code 표), 인증, 트랜잭션, 패턴 카탈로그,
+테스트 패턴, 체크리스트는 [`docs/BE-ARCHITECTURE.md`](../docs/BE-ARCHITECTURE.md)가 정본이다 — 여기 복사해두지 않는다.
+이 자리에 패키지 트리·예외 코드표·레퍼런스 표를 직접 두었다가 코드가 바뀌며 낡은 것을 2026-10-25 전체 점검에서 발견했다
+(패키지 6개 누락, 코드표 20개 이상 누락, 이미 없어진 토글 패턴을 정석으로 안내 — `docs/plans/2026-10-25-be-architecture-audit.md`).
+FE가 `docs/FE-ARCHITECTURE.md`를 정본으로 두고 CLAUDE.md에 요약표만 두는 것과 같은 방식이다. 새 엔드포인트·도메인·예외·
+배치 잡·외부 클라이언트를 만들기 전에 해당 절을 **먼저 읽는다**. 그 문서 §9 "알려진 예외"에 있는 코드는 본뜨지 않는다.
 
-**도메인 추가 시**: `domain/<도메인명>/` 디렉토리에 평면 구조로 파일 생성. 서브패키지(api/, service/ 등) 만들지 않는다.
-
-### 패키지 네이밍 원칙
-
-| 위치 | 규칙 | ✅ | ❌ |
-| ---- | ---- | -- | -- |
-| `domain/` 하위 도메인 | **단수 소문자** | `post/`, `comment/`, `member/` | `posts/`, `Post/`, `post-domain/` |
-| 도메인 내 서브패키지 | **최소화, 단일 소문자** (꼭 필요할 때만) | `infra/ai/dto/` | `jwt-util/`, `utils/` |
-| `global/` 하위 | **역할 단수 소문자** | `common/`, `config/`, `exception/` | `commons/`, `configs/` |
-| `infra/` 하위 | **기술/서비스명 그대로** | `ai/`, `fcm/`, `storage/` | `ai-service/`, `fcmService/` |
-| infra 내 서브패키지 | **단일 소문자** | `dto/` | `dtos/`, `DTO/` |
-
----
-
-## 응답 포맷
-
-### 성공 응답 — `ApiResponse<T>`
-
-```kotlin
-// global/common/ApiResponse.kt
-data class ApiResponse<T>(
-    val status: Int,
-    val message: String,
-    val data: T,
-    val timestamp: String = ...
-)
-
-// 사용 예
-return ApiResponse(HttpStatus.OK.value(), "북마크 폴더 조회 성공", folderList)
-return ApiResponse(HttpStatus.CREATED.value(), "폴더 생성 성공", folder)
-```
-
-### 에러 응답 — `ErrorResponse`
-
-```kotlin
-// global/common/ErrorResponse.kt
-data class ErrorResponse(
-    val status: Int,
-    val code: String,       // 대문자 SNAKE_CASE (예: FOLDER_NOT_FOUND)
-    val message: String,
-    val timestamp: String = ...
-)
-```
-
----
-
-## 파일 역할 규칙
-
-| 파일             | 역할                    | 규칙                                                                 |
-| ---------------- | ----------------------- | -------------------------------------------------------------------- |
-| `Table*.kt`      | JPA 엔티티              | `@Entity`, `@Table`, `@Column` — 비즈니스 로직 없음                  |
-| `*Repository.kt` | Spring Data JPA         | 쿼리 메서드만, 복잡한 로직은 `*RepositoryImpl` + `*RepositoryCustom` |
-| `*Service.kt`    | 비즈니스 로직           | `@Service`, `@Transactional` — 유효성 검사, 예외 throw, 변환         |
-| `*Controller.kt` | HTTP 진입점             | `@RestController` — 인증 추출 + Service 위임 + `ApiResponse` 반환만  |
-| `*DTO.kt`        | Request/Response 클래스 | `data class` — 도메인별 하나의 파일에 모아서 관리                    |
-
----
-
-## 인증 처리 패턴
-
-```kotlin
-// 인증 필수 엔드포인트
-@PostMapping("/bookmark/folders")
-fun createFolder(
-    @RequestBody request: CreateFolderRequest,
-    authentication: Authentication   // nullable 아님 → Security가 보장
-): ApiResponse<FolderResponse> {
-    // Security가 인증을 보장하므로 이 분기는 "인증 안 됨"이 아니라 "이미 검증된 토큰의
-    // principal이 UUID로 파싱 안 됨" - 있으면 안 되는 내부 불변조건 위반이다. 그래서
-    // IllegalArgumentException(→404)이 아니라 IllegalStateException(전용 핸들러 없이
-    // catch-all → 500)을 쓴다 (2026-09-21 정정, `CommentController.kt`의
-    // `toRequiredUserId()`가 원래 이 패턴이었다).
-    val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
-    return ApiResponse(HttpStatus.CREATED.value(), "폴더 생성 성공", service.createFolder(userId, request))
-}
-
-// 인증 선택적 엔드포인트 (비로그인도 조회 가능)
-@GetMapping("/post")
-fun getPosts(
-    authentication: Authentication?  // nullable → 비로그인 허용
-): ApiResponse<...> {
-    val currentUserId = authentication.getUserId()  // null이면 비로그인
-    ...
-}
-```
-
-> 예외: 일부 레거시 컨트롤러는 아직 다른 패턴을 쓴다 — `CommentController.kt`는 위 정정 이후에도
-> `authentication.getUserId()` 대신 `@AuthenticationPrincipal principal: String?` +
-> 자체 `toRequiredUserId()`/`toOptionalUserId()` 확장 함수를 그대로 쓰고 있다.
-
----
-
-## 예외 처리 패턴
-
-### 1. 예외 클래스 생성 (`global/exception/`)
-
-```kotlin
-// global/exception/BookmarkFolderNotFoundException.kt
-class BookmarkFolderNotFoundException(folderId: UUID) :
-    RuntimeException("Bookmark folder not found: $folderId")
-```
-
-### 2. GlobalExceptionHandler에 등록
-
-```kotlin
-// global/exception/GlobalExceptionHandler.kt 에 추가
-@ExceptionHandler(BookmarkFolderNotFoundException::class)
-fun handleBookmarkFolderNotFoundException(e: BookmarkFolderNotFoundException): ResponseEntity<ErrorResponse> {
-    val response = ErrorResponse(
-        status = HttpStatus.NOT_FOUND.value(),
-        code = "FOLDER_NOT_FOUND",
-        message = e.message ?: "Folder not found"
-    )
-    return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response)
-}
-```
-
-### 기존 예외 코드 참조
-
-| 예외                          | HTTP | code                    |
-| ----------------------------- | ---- | ----------------------- |
-| `PostNotFoundException`       | 404  | `POST_NOT_FOUND`        |
-| `ForbiddenException`          | 403  | `FORBIDDEN`             |
-| `DuplicateMemberException`    | 409  | `DUPLICATE_MEMBER`      |
-| `InvalidCredentialsException` | 401  | `INVALID_CREDENTIALS`   |
-| `InvalidTokenException`       | 401  | `INVALID_REFRESH_TOKEN` |
-| `EmailNotVerifiedException`   | 403  | `EMAIL_NOT_VERIFIED`    |
-| `InvalidActionTokenException` | 401  | `INVALID_ACTION_TOKEN`  |
-| `RateLimitExceededException`  | 429  | `RATE_LIMIT_EXCEEDED`   |
-| `SessionMismatchException`    | 409  | `SESSION_MISMATCH`      |
+| 패턴 | 정본 | 한 줄 요약 |
+| ---- | ---- | ---------- |
+| 정석 컨트롤러 | §5 | `LinkPreviewController` — non-null `Authentication` + `getUserId() ?: throw IllegalStateException`, `ApiResponse(HttpStatus.X.value(), …)` |
+| 레이어 규칙·허용 예외 | §3 | 컨트롤러 레이트리밋 허용, 다른 도메인 Repository 허용(금지는 Service 순환), global → domain은 허용 3쌍만 |
+| 예외 선택·code 표 | §4 | 입력 오류 `InvalidInputException`, 없음 `*NotFoundException`, 내부 불변조건 `IllegalStateException`, IAE 금지 |
+| 트랜잭션 | §6 | 새 코드는 클래스 `@Transactional(readOnly = true)` + 쓰기 메서드만 `@Transactional`. rollback-only·`saveAndFlush`·AFTER_COMMIT 예외 삼킴 주의 |
+| 멱등 insert + 상태 지정 API | §7-1 | `InteractionService.setPostLike` — 원하는 상태를 받아 `ON CONFLICT DO NOTHING` 또는 일괄 DELETE. 토글·`exists` 후 분기 금지 |
+| 조건부 UPDATE 선점 | §7-2 | `MemberSessionRepository.consumeRefreshIfActive` — 영향 행 수(0/1)로 경쟁의 승패를 가른다 |
+| upsert·원자적 카운터 | §7-3 | `FcmTokenRepository.upsertToken`, `PostRepository.incrementViewCount` |
+| 일괄 DELETE | §7-4 | `deleteBy*`는 `@Modifying @Query`만(`repositoryDeleteMethodsMustBeBulk`) |
+| 커밋 뒤 비동기 잡 | §7-5 | AFTER_COMMIT 리스너 → `*JobDispatcher` → self-invoke → `LambdaHandler` 잡 분기 |
+| 배치 잡 | §7-7 | `AccountPurgeService` — 90초 마감 + 항목별 `runCatching` + 요약 로그 |
+| N+1 없는 조립 | §7-8 | `PostResponseAssembler` — id를 모아 `…In(ids)` 조회 → Map → 조립 |
+| 외부 클라이언트 | §7-11 | `YoutubeVideoClient` — RestClient + 명시 타임아웃 + 실패 시 null. `RestTemplate()` 기본 생성 금지 |
+| 엔티티 PK | §7-13 | 새 엔티티는 `val id: UUID = UUID.randomUUID()`, `@GeneratedValue`와 섞지 않는다 |
+| 테스트 | §8 | Mockito 단위, `@WebMvcTest` + `@WithMockUser(username = <UUID>)`, 쿼리·트랜잭션 버그는 `@PostgresIntegrationTest` |
 
 ---
 
 ## Security — 새 엔드포인트 공개 허용
 
-기본적으로 모든 요청은 인증 필요. 비로그인 허용이 필요한 경우 `SecurityConfig.kt`의 `permitAll()` 목록에
-추가한다 — **`/auth/**` 같은 와일드카드는 쓰지 않는다.** `/auth/logout-all`·`/auth/account`처럼
-인증이 꼭 필요한 경로까지 함께 공개돼버린다. 실제 코드는 이렇게 경로를 하나씩 나열한다:
-
-```kotlin
-it.requestMatchers(
-    "/auth/signup",
-    "/auth/login",
-    "/auth/refresh",
-    "/auth/logout",
-    "/auth/email-availability",
-    "/auth/account/nickname-availability",
-    "/auth/password-reset/request",
-    "/auth/password-reset/confirm",
-    "/auth/email-verification/request",
-    "/auth/email-verification/confirm",
-    "/common/**",
-    "/swagger-ui/**",
-    "/v3/api-docs/**",
-    "/error",
-    "/actuator/**",
-).permitAll()
-it.requestMatchers(
-    HttpMethod.GET,
-    "/post",
-    "/post/*",
-    "/post/*/comment",
-).access { _, context -> AuthorizationDecision(context.request.getAttribute("exception") == null) }
-// GET만 공개 — 같은 경로의 POST/PATCH/DELETE는 여전히 인증 필요
-```
-
-로그인 여부에 따라 응답이 달라지는 공개 조회(위 `GET /post` 계열)는 `permitAll()` 대신 이 규칙을 쓴다 —
-토큰 없이 오면 허용하고, 토큰을 냈는데 만료·무효면 401을 돌려줘 FE가 갱신하게 한다. `permitAll()`이면
-만료 토큰이 조용히 비로그인으로 처리된다(2026-10-20, `docs/plans/2026-10-20-public-get-expired-token-401.md`).
-만료 토큰을 일부러 받는 `/auth/refresh`처럼 응답이 로그인 여부와 무관한 경로는 `permitAll()`을 그대로 쓴다.
-
----
-
-## DB / JPA 패턴
-
-### 단일 PK 엔티티
-
-```kotlin
-@Entity
-@Table(name = "bookmark_folders")
-class TableBookmarkFolder(
-    @Id
-    @Column(name = "id", updatable = false, nullable = false)
-    val id: UUID = UUID.randomUUID(),   // DB에 @GeneratedValue 없음 - 애플리케이션에서 직접 생성
-
-    @Column(name = "user_id", nullable = false)
-    val userId: UUID,
-
-    @Column(name = "name", nullable = false, length = 100)
-    var name: String,
-
-    @Column(name = "sort_order", nullable = false)
-    var sortOrder: Int = 0,
-
-    @Column(name = "created_at", updatable = false, nullable = false)
-    val createdAt: LocalDateTime = LocalDateTime.now(),
-
-    @Column(name = "updated_at", nullable = false)
-    var updatedAt: LocalDateTime = LocalDateTime.now()
-)
-```
-
-### 복합 PK 엔티티 (기존 `TableBookmark` 참조)
-
-```kotlin
-@Entity
-@IdClass(BookmarkId::class)
-class TableBookmark(
-    @Id @Column(name = "user_id") val userId: UUID,
-    @Id @Column(name = "post_id") val postId: UUID,
-    ...
-)
-```
-
----
-
-## Repository 패턴
-
-```kotlin
-// 기본 Spring Data JPA
-interface BookmarkFolderRepository : JpaRepository<TableBookmarkFolder, UUID> {
-    fun findByUserIdOrderBySortOrderAsc(userId: UUID): List<TableBookmarkFolder>
-    fun existsByUserIdAndName(userId: UUID, name: String): Boolean
-    fun existsByIdAndUserId(id: UUID, userId: UUID): Boolean
-}
-
-// 복잡한 쿼리가 필요한 경우 → Custom 패턴 사용 (PostRepositoryCustom/Impl 참조)
-interface PostRepositoryCustom { ... }
-class PostRepositoryImpl : PostRepositoryCustom { ... }
-interface PostRepository : JpaRepository<TablePost, UUID>, PostRepositoryCustom
-```
-
----
-
-## DTO 작성 규칙
-
-- 도메인별로 `*DTO.kt` 파일 하나에 모아서 관리
-- Request: `*Request` suffix (`CreateFolderRequest`, `UpdateFolderRequest`)
-- Response: `*Response` suffix (`FolderResponse`, `FolderListResponse`)
-- `data class` 사용, 불변 필드는 `val`, 가변은 `var`
-
-```kotlin
-// domain/interaction/BookmarkFolderDTO.kt
-data class CreateFolderRequest(val name: String)
-
-data class UpdateFolderRequest(val name: String)
-
-data class FolderResponse(
-    val id: UUID,
-    val name: String,
-    val sortOrder: Int,
-    val bookmarkCount: Int,
-    val lastUsedAt: LocalDateTime? = null, // 이 폴더에 마지막으로 저장한 시각 — 한 번도 저장 안 됐으면 null
-)
-```
+기본적으로 모든 요청은 인증이 필요하다. 공개 경로는 `global/config/SecurityConfig.kt`에 **하나씩 나열한다** —
+`/auth/**` 같은 와일드카드는 `/auth/logout-all`·`/auth/account`처럼 인증이 꼭 필요한 경로까지 함께 연다. 로그인 여부에
+따라 응답이 달라지는 공개 조회(`GET /post` 계열)는 `permitAll()`이 아니라 `.access { … getAttribute("exception") == null }`을
+쓴다 — `permitAll()`이면 만료 토큰이 조용히 비로그인으로 처리된다(2026-10-20,
+`docs/plans/2026-10-20-public-get-expired-token-401.md`). 실제 목록은 `SecurityConfig.kt`가 정본이고, 컨트롤러 쪽 짝
+(`Authentication?` + `@SecurityRequirements`)은 BE-ARCHITECTURE §5.
 
 ---
 
@@ -574,23 +333,11 @@ data class FolderResponse(
 ```bash
 ./gradlew bootRun          # 로컬 실행 (port 8080)
 ./gradlew build            # 빌드
-./gradlew test             # 테스트 실행
+./gradlew test             # 단위·아키텍처 테스트 (integration 태그 제외)
+./gradlew integrationTest  # 실제 Postgres 통합 테스트 (Docker 필요, PR CI에서 실행)
 ./gradlew ktlintCheck      # 코드 스타일 검사
 ./gradlew ktlintFormat     # 코드 스타일 자동 수정
 ```
-
----
-
-## 체크리스트: 새 도메인 API 추가
-
-- [ ] `Table*.kt` — JPA 엔티티 작성
-- [ ] `*Repository.kt` — Spring Data JPA 인터페이스
-- [ ] `*DTO.kt` — Request/Response data class
-- [ ] `*Service.kt` — `@Service`, `@Transactional` 비즈니스 로직
-- [ ] `*Controller.kt` — `@RestController` + `ApiResponse` 반환
-- [ ] `global/exception/` — 필요한 예외 클래스 추가
-- [ ] `GlobalExceptionHandler.kt` — 예외 핸들러 등록
-- [ ] `SecurityConfig.kt` — 공개 허용 엔드포인트 있으면 `permitAll()` 추가
 
 ---
 
@@ -599,22 +346,6 @@ data class FolderResponse(
 | 커맨드        | 사용법                                      | 역할                                                                   |
 | ------------- | ------------------------------------------- | ---------------------------------------------------------------------- |
 | `/new-domain` | `/new-domain bookmark-folder`               | Entity + Repository + DTO + Service + Controller + Exception 일괄 생성 |
-
----
-
-## 코드 스타일 레퍼런스
-
-새 도메인 구현 전 아래 파일들을 읽어 스타일을 학습한다. 각 파일이 해당 역할의 정석 패턴이다.
-
-| 역할 | 레퍼런스 파일 | 핵심 패턴 |
-| ---- | ------------- | --------- |
-| Controller | `domain/comment/CommentController.kt` | `ApiResponse` 래핑, 한글 메시지, `Authentication` 파라미터 주입, `@AuthenticationPrincipal` |
-| Service (CRUD) | `domain/comment/CommentService.kt` | `@Transactional`, fail-fast 검증, 배치 조회(N+1 방지), 권한 확인, 소프트 삭제 |
-| Service (Toggle) | `domain/interaction/InteractionService.kt` | 일괄 DELETE 먼저 → 0행이면 `insertIgnoreConflict`(동시 요청에도 예외 없음), `exists` 후 분기 금지 |
-| DTO | `domain/comment/CommentDTO.kt` | `data class`, nullable 명시, Request/Response 분리, 기본값(`= emptyList()`) |
-| Entity | `domain/comment/TableComment.kt` | UUID PK, `LAZY` loading, `insertable=false` FK, timestamp 자동화 |
-| 예외 핸들러 | `global/exception/GlobalExceptionHandler.kt` | `@ExceptionHandler` 등록, `ErrorResponse(status, code, message)` |
-| 인증 유틸 | `global/common/SecurityUtils.kt` | `Authentication?.getUserId(): UUID?` 확장 함수 |
 
 ---
 
@@ -663,7 +394,7 @@ data class FolderResponse(
 버전 호환 매트릭스 등)는 전부 `docs/`에 둔다.
 
 `docs/` 안의 문서는 다섯 중 하나다 — **서사형**(설명, 아래 절 참고) / **절차**(how-to·런북,
-예: `DEPLOY.md`·`LAMBDA-CONFIG-ROLLBACK.md`) / **레퍼런스**(현재 해당 문서 없음 — 버전
+예: `DEPLOY.md`·`LAMBDA-CONFIG-ROLLBACK.md`) / **레퍼런스**(예: `BE-ARCHITECTURE.md` — 버전
 호환 매트릭스는 2026-09-14부로 FE 레포에 통합, 아래 보관 참고) /
 **보관**(archive, 더 이상 갱신하지 않는 과거 기록 — 예: `HISTORY.md`·`VERSION-COMPATIBILITY.md`·`DEPLOY-WHEN-APP-RUNNER.md`) /
 **작업 계획**(`docs/plans/<YYYY-MM-DD>-<slug>.md` — plan mode로 세운 계획의 스냅샷.

@@ -25,7 +25,7 @@ interface MemberRepository : JpaRepository<TableMember, UUID> {
     @Query("SELECT m FROM TableMember m WHERE m.isBot = true")
     fun findFirstByIsBotTrue(): TableMember?
 
-    // AccountPurgeService가 매일 퍼지 대상을 고를 때 쓴다. WHERE를 claimForPurge와 정확히
+    // AccountPurgeService가 4일마다 퍼지 대상을 고를 때 쓴다. WHERE를 claimForPurge와 정확히
     // 같은 조건(cutoff 이전, 아직 퍼지 전)으로 맞춰야 여기서 뽑은 id가 claim에서 다시
     // 걸러지지 않는다.
     @Query("SELECT m.id FROM TableMember m WHERE m.deletionRequestedAt < :cutoff AND m.deletedAt IS NULL ORDER BY m.deletionRequestedAt")

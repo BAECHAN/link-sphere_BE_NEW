@@ -16,9 +16,10 @@ Parse "$ARGUMENTS":
 
 ## Step 1: 기존 패턴 파악
 
-Before creating any files, read these reference files to match the exact style:
+Before creating any files, read `docs/BE-ARCHITECTURE.md`(§3 레이어 규칙, §4 예외, §6 트랜잭션, §7 패턴, §10 체크리스트)
+and these reference files to match the exact style:
 
-- `src/main/kotlin/com/example/linksphere/domain/post/TablePost.kt` — Entity 패턴
+- `src/main/kotlin/com/example/linksphere/domain/interaction/TableBookmarkFolder.kt` — Entity 패턴(앱에서 만든 UUID PK)
 - `src/main/kotlin/com/example/linksphere/domain/post/PostDTO.kt` — DTO 패턴
 - `src/main/kotlin/com/example/linksphere/domain/post/PostRepository.kt` — Repository 패턴
 - `src/main/kotlin/com/example/linksphere/domain/post/PostService.kt` — Service 패턴
@@ -42,9 +43,8 @@ import java.util.UUID
 @Table(name = "<table_name>")
 class Table<Entity>(
     @Id
-    @GeneratedValue(strategy = GenerationType.AUTO)
     @Column(name = "id", updatable = false, nullable = false)
-    val id: UUID = UUID.randomUUID(),
+    val id: UUID = UUID.randomUUID(), // DB에 @GeneratedValue 없음 - 애플리케이션에서 직접 생성(BE-ARCHITECTURE §7-13)
 
     @Column(name = "user_id", nullable = false)
     val userId: UUID,
@@ -65,12 +65,20 @@ class Table<Entity>(
 package com.example.linksphere.domain.<domain>
 
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.Modifying
+import org.springframework.data.jpa.repository.Query
+import org.springframework.data.repository.query.Param
 import java.util.UUID
 
 interface <Entity>Repository : JpaRepository<Table<Entity>, UUID> {
     // TODO: 도메인에 맞는 쿼리 메서드 추가
     fun findByUserId(userId: UUID): List<Table<Entity>>
-    fun existsByIdAndUserId(id: UUID, userId: UUID): Boolean
+
+    // 삭제는 일괄 DELETE로만 만든다 - 상속받은 delete(entity)는 동시 삭제와 부딪히면 StaleObjectStateException을
+    // 낸다(RepositoryDeleteRulesTest, BE-ARCHITECTURE §7-4).
+    @Modifying
+    @Query("DELETE FROM Table<Entity> e WHERE e.id = :id")
+    fun deleteByIdInBulk(@Param("id") id: UUID): Int
 }
 ```
 
@@ -107,6 +115,7 @@ import org.springframework.transaction.annotation.Transactional
 import java.util.UUID
 
 @Service
+@Transactional(readOnly = true) // 새 코드는 클래스 readOnly + 쓰기 메서드만 @Transactional(BE-ARCHITECTURE §6)
 class <Entity>Service(
     private val <entity>Repository: <Entity>Repository
 ) {
@@ -139,7 +148,7 @@ class <Entity>Service(
             <Entity>NotFoundException(id)
         }
         if (entity.userId != userId) throw ForbiddenException("Access denied")
-        <entity>Repository.delete(entity)
+        <entity>Repository.deleteByIdInBulk(id)
     }
 
     private fun Table<Entity>.toResponse() = <Entity>Response(
@@ -236,5 +245,6 @@ fun handle<Entity>NotFoundException(e: <Entity>NotFoundException): ResponseEntit
 
 1. `Table<Entity>.kt`의 TODO 필드를 실제 도메인 필드로 채워야 함
 2. `<Entity>Service.kt`의 toResponse() 매핑을 완성해야 함
-3. 인증 없이 접근 가능한 엔드포인트가 있으면 `SecurityConfig.kt`의 `permitAll()` 목록에 추가 필요
+3. 인증 없이 접근 가능한 엔드포인트가 있으면 `SecurityConfig.kt`에 경로를 하나씩 추가하고(로그인 여부로 응답이 달라지는
+   GET은 `.access{}`), 컨트롤러 파라미터는 `Authentication?` + `@SecurityRequirements`로 바꿔야 함(BE-ARCHITECTURE §5)
 4. DB 테이블 생성 SQL이 필요하면 `src/main/resources/sql/` 에 추가
