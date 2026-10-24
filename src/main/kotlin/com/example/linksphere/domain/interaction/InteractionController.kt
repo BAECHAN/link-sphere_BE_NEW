@@ -5,6 +5,7 @@ import com.example.linksphere.global.common.ApiResponse
 import com.example.linksphere.global.common.getUserId
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.tags.Tag
+import org.springframework.http.HttpStatus
 import org.springframework.security.core.Authentication
 import org.springframework.web.bind.annotation.*
 import java.util.UUID
@@ -28,7 +29,7 @@ class InteractionController(
     ): ApiResponse<PostLikeResponse> {
         val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
         val result = interactionService.setPostLike(postId, userId, liked = true)
-        return ApiResponse(200, "좋아요 성공", result)
+        return ApiResponse(HttpStatus.OK.value(), "좋아요 성공", result)
     }
 
     @Operation(
@@ -43,7 +44,7 @@ class InteractionController(
     ): ApiResponse<PostLikeResponse> {
         val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
         val result = interactionService.setPostLike(postId, userId, liked = false)
-        return ApiResponse(200, "좋아요 취소 성공", result)
+        return ApiResponse(HttpStatus.OK.value(), "좋아요 취소 성공", result)
     }
 
     @Operation(
@@ -58,7 +59,7 @@ class InteractionController(
     ): ApiResponse<Map<String, Boolean>> {
         val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
         val isLiked = interactionService.setCommentLike(commentId, userId, liked = true)
-        return ApiResponse(200, "댓글 좋아요 성공", mapOf("isLiked" to isLiked))
+        return ApiResponse(HttpStatus.OK.value(), "댓글 좋아요 성공", mapOf("isLiked" to isLiked))
     }
 
     @Operation(
@@ -73,7 +74,7 @@ class InteractionController(
     ): ApiResponse<Map<String, Boolean>> {
         val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
         val isLiked = interactionService.setCommentLike(commentId, userId, liked = false)
-        return ApiResponse(200, "댓글 좋아요 취소 성공", mapOf("isLiked" to isLiked))
+        return ApiResponse(HttpStatus.OK.value(), "댓글 좋아요 취소 성공", mapOf("isLiked" to isLiked))
     }
 
     @Operation(
@@ -88,7 +89,7 @@ class InteractionController(
     ): ApiResponse<BookmarkFoldersResponse> {
         val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
         val result = interactionService.setBookmark(postId, userId, bookmarked = true)
-        return ApiResponse(200, "북마크 성공", result)
+        return ApiResponse(HttpStatus.OK.value(), "북마크 성공", result)
     }
 
     @Operation(
@@ -103,7 +104,7 @@ class InteractionController(
     ): ApiResponse<BookmarkFoldersResponse> {
         val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
         val result = interactionService.setBookmark(postId, userId, bookmarked = false)
-        return ApiResponse(200, "북마크 취소 성공", result)
+        return ApiResponse(HttpStatus.OK.value(), "북마크 취소 성공", result)
     }
 
     @Operation(
@@ -119,7 +120,7 @@ class InteractionController(
     ): ApiResponse<BookmarkFoldersResponse> {
         val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
         val result = interactionService.addBookmarkFolder(postId, folderId, userId)
-        return ApiResponse(200, "폴더에 저장 성공", result)
+        return ApiResponse(HttpStatus.OK.value(), "폴더에 저장 성공", result)
     }
 
     @Operation(
@@ -137,7 +138,7 @@ class InteractionController(
     ): ApiResponse<BookmarkFoldersResponse> {
         val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
         val result = interactionService.removeBookmarkFolder(postId, folderId, userId, removeBookmarkIfEmpty)
-        return ApiResponse(200, "폴더에서 제거 성공", result)
+        return ApiResponse(HttpStatus.OK.value(), "폴더에서 제거 성공", result)
     }
 
     @Operation(summary = "북마크의 폴더 소속 전체 해제", description = "북마크 자체는 유지되고 모든 폴더 소속만 지워진다(미분류로 이동).")
@@ -148,7 +149,7 @@ class InteractionController(
     ): ApiResponse<BookmarkFoldersResponse> {
         val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
         val result = interactionService.clearBookmarkFolders(postId, userId)
-        return ApiResponse(200, "폴더 소속 전체 해제 성공", result)
+        return ApiResponse(HttpStatus.OK.value(), "폴더 소속 전체 해제 성공", result)
     }
 
     @Operation(
@@ -164,7 +165,7 @@ class InteractionController(
     ): ApiResponse<BatchResultResponse> {
         val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
         val added = bookmarkFolderService.batchAddBookmarksToFolder(userId, folderId, request.postIds)
-        return ApiResponse(200, "북마크 일괄 추가 성공", BatchResultResponse(added))
+        return ApiResponse(HttpStatus.OK.value(), "북마크 일괄 추가 성공", BatchResultResponse(added))
     }
 
     @Operation(summary = "여러 게시글을 폴더에서 일괄 제거", description = "data.processedCount 는 실제로 삭제된 행 수다.")
@@ -176,7 +177,7 @@ class InteractionController(
     ): ApiResponse<BatchResultResponse> {
         val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
         val removed = bookmarkFolderService.batchRemoveBookmarksFromFolder(userId, folderId, request.postIds)
-        return ApiResponse(200, "북마크 일괄 제거 성공", BatchResultResponse(removed))
+        return ApiResponse(HttpStatus.OK.value(), "북마크 일괄 제거 성공", BatchResultResponse(removed))
     }
 
     @Operation(
@@ -191,6 +192,6 @@ class InteractionController(
     ): ApiResponse<BatchResultResponse> {
         val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
         val deleted = bookmarkFolderService.batchDeleteBookmarks(userId, request.postIds)
-        return ApiResponse(200, "북마크 일괄 삭제 성공", BatchResultResponse(deleted))
+        return ApiResponse(HttpStatus.OK.value(), "북마크 일괄 삭제 성공", BatchResultResponse(deleted))
     }
 }

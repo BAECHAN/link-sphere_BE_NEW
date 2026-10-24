@@ -86,6 +86,7 @@ flowchart TD
 | `servicesMustNotHaveCrossDomainCycles` | 도메인 Service 사이 순환 의존(빈 생성 실패로만 드러남) | 위와 같음 |
 | `repositoryDeleteMethodsMustBeBulk` | derived delete(`deleteBy…`) — `@Modifying @Query` 일괄 DELETE만 | `architecture/RepositoryDeleteRulesTest.kt` |
 | `global exception 패키지의 모든 예외에 @ExceptionHandler가 있다` | 등록 안 된 예외가 500으로 떨어짐 | `global/exception/ExceptionHandlerCoverageTest.kt` |
+| `응답 상태코드에 숫자 리터럴을 쓰지 않는다` | `ApiResponse(200, …)`·`ResponseEntity.status(401)` — 상수 인자는 바이트코드로 구별되지 않아 소스 텍스트를 스캔 | `architecture/HttpStatusLiteralTest.kt` |
 | `모든 컨트롤러에 @Tag 가, 모든 엔드포인트에 @Operation summary 가 있다` | Swagger 문서 누락 | `global/config/SwaggerDocsCoverageTest.kt` |
 
 ArchUnit 규칙은 대상 클래스가 0개면 실패한다(`archRule.failOnEmptyShould` 기본값, 2026-10-25 빈 대상 규칙을 일부러
@@ -95,7 +96,6 @@ ArchUnit 규칙은 대상 클래스가 0개면 실패한다(`archRule.failOnEmpt
 
 | 예정 규칙 | 막을 것 | 켜는 PR |
 |---|---|---|
-| 상태코드 리터럴 금지(소스 스캔) | `ApiResponse(200, …)`·`ResponseEntity.status(401)` | 상태코드 정리 |
 | `IllegalArgumentException` 생성 금지 | IAE가 404 `NOT_FOUND`로 바뀌어 응답 코드가 틀어짐 | 에러 코드 정리 |
 | `Principal`·`@AuthenticationPrincipal` 파라미터 금지, `getName()`은 `SecurityUtils`에서만 | 사용자 id를 문자열로 직접 파싱 | 사용자 추출 통일 |
 | `Authentication?`는 `@SecurityRequirements`가 붙은 공개 엔드포인트에만 | 인증 필수 엔드포인트의 nullable 파라미터 | 위와 같음 |
@@ -153,7 +153,7 @@ ArchUnit 규칙은 대상 클래스가 0개면 실패한다(`archRule.failOnEmpt
 return ApiResponse(HttpStatus.OK.value(), "Link preview", postService.previewLink(userId, url))
 ```
 
-- status는 반드시 `HttpStatus.X.value()` — 숫자 리터럴을 쓰지 않는다(§9에 남은 곳이 있다).
+- status는 반드시 `HttpStatus.X.value()` — 숫자 리터럴을 쓰지 않는다(`HttpStatusLiteralTest`가 막는다).
 - 쿠키를 붙여야 하는 auth 엔드포인트만 `ResponseEntity<ApiResponse<T>>`를 쓴다(`AuthController`).
 - `message`는 FE가 화면에 쓰지 않는다(FE는 `TEXTS`로 문구를 정한다) — 언어가 섞여 있어도 계약 문제는 아니다.
 
@@ -441,7 +441,6 @@ for (id in ids) {
 
 | 항목 | 어디 | 정리 계획 |
 |---|---|---|
-| 상태코드 숫자 리터럴 25곳 | `CommentController`(6)·`BookmarkFolderController`(5)·`InteractionController`(12)·`FcmTokenController`(2, `ResponseEntity.status(401)`) | 상태코드 정리 PR + 소스 스캔 검사 |
 | `IllegalArgumentException` 17곳 → 404 `NOT_FOUND` | 빈 댓글(`CommentService.createComment` 등)이 400이 아니라 404, `InteractionService.assertCommentLikeable`이 `CommentNotFoundException` 대신 IAE, 회원 없음 불변조건 9곳 | 에러 코드 정리 PR — 입력 오류는 `InvalidInputException`, 불변조건은 `IllegalStateException`, IAE 핸들러는 400 안전망으로 |
 | 닉네임 수정 중복이 `DUPLICATE_MEMBER` | `MemberService.updateAccount`(가입은 `DUPLICATE_NICKNAME`) | 위와 같음 |
 | `Principal.name`을 문자열로 넘겨 서비스에서 `UUID.fromString` | `AuthController` 5곳 → `AuthService`·`AccountDeletionService` | 사용자 추출 통일 PR |

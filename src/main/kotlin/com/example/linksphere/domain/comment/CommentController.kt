@@ -4,6 +4,7 @@ import com.example.linksphere.global.common.ApiResponse
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.security.SecurityRequirements
 import io.swagger.v3.oas.annotations.tags.Tag
+import org.springframework.http.HttpStatus
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.web.bind.annotation.*
 import java.util.UUID
@@ -27,7 +28,7 @@ class CommentController(private val commentService: CommentService) {
     fun getComments(
         @PathVariable postId: UUID,
         @AuthenticationPrincipal principal: String?,
-    ): ApiResponse<List<CommentResponse>> = ApiResponse(200, "댓글 조회 성공", commentService.getComments(postId, principal.toOptionalUserId()))
+    ): ApiResponse<List<CommentResponse>> = ApiResponse(HttpStatus.OK.value(), "댓글 조회 성공", commentService.getComments(postId, principal.toOptionalUserId()))
 
     @Operation(
         summary = "내 댓글 목록 조회",
@@ -39,7 +40,7 @@ class CommentController(private val commentService: CommentService) {
         @RequestParam(defaultValue = "0") page: Int,
         @RequestParam(defaultValue = "10") size: Int,
         @AuthenticationPrincipal principal: String?,
-    ): ApiResponse<MyCommentPageResponse> = ApiResponse(200, "내 댓글 목록 조회 성공", commentService.getMyComments(principal.toRequiredUserId(), page, size))
+    ): ApiResponse<MyCommentPageResponse> = ApiResponse(HttpStatus.OK.value(), "내 댓글 목록 조회 성공", commentService.getMyComments(principal.toRequiredUserId(), page, size))
 
     @Operation(
         summary = "댓글 작성",
@@ -54,7 +55,7 @@ class CommentController(private val commentService: CommentService) {
         @AuthenticationPrincipal principal: String?,
     ): ApiResponse<CommentResponse> {
         val comment = commentService.createComment(postId, principal.toRequiredUserId(), request.content, request.images)
-        return ApiResponse(201, "댓글 작성 성공", comment)
+        return ApiResponse(HttpStatus.CREATED.value(), "댓글 작성 성공", comment)
     }
 
     @Operation(
@@ -68,7 +69,7 @@ class CommentController(private val commentService: CommentService) {
         @PathVariable commentId: UUID,
         @RequestBody request: CreateCommentRequest,
         @AuthenticationPrincipal principal: String?,
-    ): ApiResponse<CommentResponse> = ApiResponse(201, "답글 작성 성공", commentService.createReply(commentId, principal.toRequiredUserId(), request.content, request.images))
+    ): ApiResponse<CommentResponse> = ApiResponse(HttpStatus.CREATED.value(), "답글 작성 성공", commentService.createReply(commentId, principal.toRequiredUserId(), request.content, request.images))
 
     @Operation(
         summary = "댓글 삭제",
@@ -80,7 +81,7 @@ class CommentController(private val commentService: CommentService) {
         @AuthenticationPrincipal principal: String?,
     ): ApiResponse<Unit> {
         commentService.deleteComment(commentId, principal.toRequiredUserId())
-        return ApiResponse(200, "댓글 삭제 성공", Unit)
+        return ApiResponse(HttpStatus.OK.value(), "댓글 삭제 성공", Unit)
     }
 
     @Operation(
@@ -93,5 +94,5 @@ class CommentController(private val commentService: CommentService) {
         @PathVariable commentId: UUID,
         @RequestBody request: CreateCommentRequest,
         @AuthenticationPrincipal principal: String?,
-    ): ApiResponse<CommentResponse> = ApiResponse(200, "댓글 수정 성공", commentService.updateComment(commentId, principal.toRequiredUserId(), request.content, request.images))
+    ): ApiResponse<CommentResponse> = ApiResponse(HttpStatus.OK.value(), "댓글 수정 성공", commentService.updateComment(commentId, principal.toRequiredUserId(), request.content, request.images))
 }
