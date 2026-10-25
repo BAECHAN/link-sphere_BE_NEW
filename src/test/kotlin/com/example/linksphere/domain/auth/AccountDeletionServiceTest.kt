@@ -80,7 +80,7 @@ class AccountDeletionServiceTest {
         `when`(passwordEncoder.matches("wrong", "encoded")).thenReturn(false)
 
         assertThrows(InvalidCredentialsException::class.java) {
-            service.requestDeletion(memberId.toString(), "wrong")
+            service.requestDeletion(memberId, "wrong")
         }
 
         verify(memberRepository, never()).save(org.mockito.ArgumentMatchers.any())
@@ -94,7 +94,7 @@ class AccountDeletionServiceTest {
         `when`(memberRepository.findById(memberId)).thenReturn(Optional.of(member))
         `when`(passwordEncoder.matches("correct", "encoded")).thenReturn(true)
 
-        service.requestDeletion(memberId.toString(), "correct")
+        service.requestDeletion(memberId, "correct")
 
         assertEquals("test@example.com", member.email)
         assertEquals("tester", member.nickname)
@@ -114,7 +114,7 @@ class AccountDeletionServiceTest {
         `when`(memberRepository.findById(memberId)).thenReturn(Optional.of(member))
         `when`(passwordEncoder.matches("correct", "encoded")).thenReturn(true)
 
-        service.requestDeletion(memberId.toString(), "correct")
+        service.requestDeletion(memberId, "correct")
 
         assertEquals(original, member.deletionRequestedAt)
         verify(memberRepository, never()).save(org.mockito.ArgumentMatchers.any())

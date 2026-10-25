@@ -31,6 +31,7 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
+import java.util.UUID
 
 @WebMvcTest(
     controllers = [AuthController::class],
@@ -214,7 +215,7 @@ class AuthControllerTest {
     }
 
     @Test
-    @WithMockUser
+    @WithMockUser(username = MEMBER_ID)
     fun `updateAccount returns 200 with updated AccountResponse`() {
         val request = UpdateAccountRequest(nickname = "newNick", image = null)
         val response = AccountResponse(
@@ -222,7 +223,7 @@ class AuthControllerTest {
             nickname = "newNick",
             image = null,
         )
-        `when`(authService.updateAccount("user", request)).thenReturn(response)
+        `when`(authService.updateAccount(UUID.fromString(MEMBER_ID), request)).thenReturn(response)
 
         val mapper = jacksonObjectMapper()
         val json = mapper.writeValueAsString(request)
@@ -238,10 +239,10 @@ class AuthControllerTest {
     }
 
     @Test
-    @WithMockUser
+    @WithMockUser(username = MEMBER_ID)
     fun `changePassword 성공 시 __Host-refreshToken 쿠키를 새로 세팅한다`() {
         val request = ChangePasswordRequest(currentPassword = "current1!", newPassword = "newPassword1!")
-        `when`(authService.changePassword("user", request))
+        `when`(authService.changePassword(UUID.fromString(MEMBER_ID), request))
             .thenReturn(AuthResult("new-access-token", "new-refresh-token", refreshExpiresInSeconds = 604800L))
 
         mockMvc.perform(
@@ -256,10 +257,10 @@ class AuthControllerTest {
     }
 
     @Test
-    @WithMockUser
+    @WithMockUser(username = MEMBER_ID)
     fun `changePassword returns 401 when current password is wrong`() {
         val request = ChangePasswordRequest(currentPassword = "wrong", newPassword = "newPassword1!")
-        `when`(authService.changePassword("user", request))
+        `when`(authService.changePassword(UUID.fromString(MEMBER_ID), request))
             .thenThrow(InvalidCredentialsException("Current password is incorrect"))
 
         mockMvc.perform(
@@ -273,7 +274,7 @@ class AuthControllerTest {
     }
 
     @Test
-    @WithMockUser
+    @WithMockUser(username = MEMBER_ID)
     fun `deleteAccount 성공 시 쿠키를 만료시키고 200을 반환한다`() {
         val request = DeleteAccountRequest(password = "correct1!")
 
@@ -286,15 +287,15 @@ class AuthControllerTest {
             .andExpect(status().isOk)
             .andExpect(cookie().maxAge("__Host-refreshToken", 0))
 
-        verify(accountDeletionService).requestDeletion("user", "correct1!")
+        verify(accountDeletionService).requestDeletion(UUID.fromString(MEMBER_ID), "correct1!")
     }
 
     @Test
-    @WithMockUser
+    @WithMockUser(username = MEMBER_ID)
     fun `deleteAccount returns 401 when password is wrong`() {
         val request = DeleteAccountRequest(password = "wrong")
         doThrow(InvalidCredentialsException("Password is incorrect"))
-            .`when`(accountDeletionService).requestDeletion("user", "wrong")
+            .`when`(accountDeletionService).requestDeletion(UUID.fromString(MEMBER_ID), "wrong")
 
         mockMvc.perform(
             delete("/auth/account")
@@ -430,10 +431,10 @@ class AuthControllerTest {
     }
 
     @Test
-    @WithMockUser(username = "3fa85f64-5717-4562-b3fc-2c963f66afa6")
+    @WithMockUser(username = MEMBER_ID)
     fun `checkNicknameAvailability passes the authenticated userId when logged in`() {
         // 마이페이지(로그인)에서 호출하는 경로 - 본인 현재 닉네임은 중복에서 제외되어야 한다
-        `when`(authService.isNicknameAvailable("3fa85f64-5717-4562-b3fc-2c963f66afa6", "newNick"))
+        `when`(authService.isNicknameAvailable(UUID.fromString(MEMBER_ID), "newNick"))
             .thenReturn(NicknameAvailabilityResponse(true))
 
         mockMvc.perform(get("/auth/account/nickname-availability").param("nickname", "newNick"))
@@ -600,12 +601,17 @@ class AuthControllerTest {
     }
 
     @Test
-    @WithMockUser(username = "3fa85f64-5717-4562-b3fc-2c963f66afa6")
+    @WithMockUser(username = MEMBER_ID)
     fun `logout-all은 인증된 사용자 id로 authService를 호출하고 쿠키를 만료시킨다`() {
         mockMvc.perform(post("/auth/logout-all").with(csrf()))
             .andExpect(status().isOk)
             .andExpect(cookie().maxAge("__Host-refreshToken", 0))
 
-        verify(authService).logoutAll("3fa85f64-5717-4562-b3fc-2c963f66afa6")
+        verify(authService).logoutAll(UUID.fromString(MEMBER_ID))
+    }
+
+    companion object {
+        // 컨트롤러가 getUserId()로 principal 이름을 UUID로 읽으므로 @WithMockUser 기본값("user") 대신 UUID를 쓴다
+        private const val MEMBER_ID = "3fa85f64-5717-4562-b3fc-2c963f66afa6"
     }
 }

@@ -25,7 +25,6 @@ import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
-import java.security.Principal
 
 @Tag(name = "인증", description = "회원가입·로그인·토큰 갱신·계정 조회")
 @RestController
@@ -125,8 +124,9 @@ class AuthController(
             "포함). 이 요청을 보낸 기기의 쿠키도 함께 만료시킨다.",
     )
     @PostMapping("/logout-all")
-    fun logoutAll(principal: Principal): ResponseEntity<ApiResponse<Unit>> {
-        authService.logoutAll(principal.name)
+    fun logoutAll(authentication: Authentication): ResponseEntity<ApiResponse<Unit>> {
+        val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
+        authService.logoutAll(userId)
         val cookie =
             ResponseCookie.from(REFRESH_COOKIE_NAME, "")
                 .httpOnly(true)
@@ -145,7 +145,10 @@ class AuthController(
         description = "인증된 세션이 가리키는 회원 ID로 조회한다.",
     )
     @GetMapping("/account")
-    fun getAccount(principal: Principal): ResponseEntity<ApiResponse<AccountResponse>> = ResponseEntity.ok(ApiResponse(HttpStatus.OK.value(), "Account retrieved", authService.getAccount(principal.name)))
+    fun getAccount(authentication: Authentication): ResponseEntity<ApiResponse<AccountResponse>> {
+        val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
+        return ResponseEntity.ok(ApiResponse(HttpStatus.OK.value(), "Account retrieved", authService.getAccount(userId)))
+    }
 
     @Operation(
         summary = "내 계정 수정",
@@ -155,8 +158,11 @@ class AuthController(
     @PatchMapping("/account")
     fun updateAccount(
         @Valid @RequestBody request: UpdateAccountRequest,
-        principal: Principal,
-    ): ResponseEntity<ApiResponse<AccountResponse>> = ResponseEntity.ok(ApiResponse(HttpStatus.OK.value(), "Account updated", authService.updateAccount(principal.name, request)))
+        authentication: Authentication,
+    ): ResponseEntity<ApiResponse<AccountResponse>> {
+        val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
+        return ResponseEntity.ok(ApiResponse(HttpStatus.OK.value(), "Account updated", authService.updateAccount(userId, request)))
+    }
 
     @Operation(
         summary = "비밀번호 변경",
@@ -167,9 +173,10 @@ class AuthController(
     @PatchMapping("/account/password")
     fun changePassword(
         @Valid @RequestBody request: ChangePasswordRequest,
-        principal: Principal,
+        authentication: Authentication,
     ): ResponseEntity<ApiResponse<TokenResponse>> {
-        val authResult = authService.changePassword(principal.name, request)
+        val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
+        val authResult = authService.changePassword(userId, request)
         return createCookieResponse(
             authResult,
             ApiResponse(HttpStatus.OK.value(), "Password changed", TokenResponse(authResult.accessToken, authResult.deletionCancelled)),
@@ -188,9 +195,10 @@ class AuthController(
     @DeleteMapping("/account")
     fun deleteAccount(
         @Valid @RequestBody request: DeleteAccountRequest,
-        principal: Principal,
+        authentication: Authentication,
     ): ResponseEntity<ApiResponse<Unit>> {
-        accountDeletionService.requestDeletion(principal.name, request.password)
+        val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
+        accountDeletionService.requestDeletion(userId, request.password)
         val cookie =
             ResponseCookie.from(REFRESH_COOKIE_NAME, "")
                 .httpOnly(true)
@@ -275,7 +283,7 @@ class AuthController(
         ApiResponse(
             HttpStatus.OK.value(),
             "Nickname availability checked",
-            authService.isNicknameAvailable(authentication.getUserId()?.toString(), nickname),
+            authService.isNicknameAvailable(authentication.getUserId(), nickname),
         ),
     )
 

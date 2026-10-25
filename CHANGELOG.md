@@ -294,6 +294,21 @@
 
 ### Changed
 
+- `fcm` FCM 토큰 등록·해제 응답을 다른 API와 같은 ApiResponse JSON으로
+  <details><summary>배경·구현</summary>
+
+  `POST·DELETE /fcm/token`만 본문 없는 200을 주고, 인증 principal을 UUID로 못 읽으면 401을 직접 반환했다. 이제
+  `ApiResponse(200, 메시지, data 없음)`을 주고, principal을 못 읽는 경우는 다른 컨트롤러와 같이 내부 불변조건
+  위반(500)으로 본다 — Security가 인증을 보장한 뒤라 실제로는 일어나지 않는다. FE는 등록만 호출하고 결과를 버리며
+  (`fcm.api.ts`), `client.ts`가 `ApiResponse` 본문에서 `data`를 꺼내므로 바뀌는 동작이 없다. 같은 PR에서 컨트롤러의
+  사용자 id 추출을 `Authentication` + `getUserId()`로 통일했다(AuthController 5곳·CommentController·인증 필수인데
+  `Authentication?`이던 17곳) — 응답은 그대로다. 규칙은 `ControllerSignatureRulesTest`·
+  `AppWideArchitectureRulesTest.onlySecurityUtilsReadsPrincipalName`이 막는다. (`FcmTokenController.kt`,
+  `AuthController.kt`, `AuthService.kt`, `AccountDeletionService.kt`, `CommentController.kt`, 계획
+  `docs/plans/2026-10-25-be-architecture-audit.md` PR4)
+
+  </details>
+
 - `comment` 빈 댓글·답글 깊이 초과는 400 INVALID_INPUT, 없는 댓글 좋아요는 COMMENT_NOT_FOUND
   <details><summary>배경·구현</summary>
 

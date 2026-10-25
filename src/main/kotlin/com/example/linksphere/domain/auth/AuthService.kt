@@ -179,15 +179,14 @@ class AuthService(
     }
 
     @Transactional
-    fun logoutAll(userId: String) {
-        memberSessionService.revokeAllForMember(UUID.fromString(userId))
+    fun logoutAll(userId: UUID) {
+        memberSessionService.revokeAllForMember(userId)
     }
 
     // 성공하면 모든 세션(이 기기 포함)을 폐기한 뒤 이 기기에만 새 세션을 발급한다 - 다른
     // 기기는 재로그인이 필요해진다(비밀번호가 유출됐을 가능성에 대비한 의도된 동작).
     @Transactional
-    fun changePassword(userId: String, request: ChangePasswordRequest): AuthResult {
-        val id = UUID.fromString(userId)
+    fun changePassword(id: UUID, request: ChangePasswordRequest): AuthResult {
         val member = memberService.findById(id)
 
         if (!passwordEncoder.matches(request.currentPassword, member.password)) {
@@ -200,14 +199,14 @@ class AuthService(
         return AuthResult(session.accessToken, session.refreshToken, session.refreshExpiresInSeconds)
     }
 
-    fun getAccount(userId: String): AccountResponse = toAccountResponse(memberService.findById(UUID.fromString(userId)))
+    fun getAccount(userId: UUID): AccountResponse = toAccountResponse(memberService.findById(userId))
 
     @Transactional
-    fun updateAccount(userId: String, request: UpdateAccountRequest): AccountResponse = toAccountResponse(memberService.updateAccount(UUID.fromString(userId), request))
+    fun updateAccount(userId: UUID, request: UpdateAccountRequest): AccountResponse = toAccountResponse(memberService.updateAccount(userId, request))
 
     // userId가 없으면(가입 화면, 비로그인 조회) 본인 제외 없이 순수 존재 여부만 확인한다
-    fun isNicknameAvailable(userId: String?, nickname: String): NicknameAvailabilityResponse = NicknameAvailabilityResponse(
-        memberService.isNicknameAvailable(userId?.let { UUID.fromString(it) }, nickname),
+    fun isNicknameAvailable(userId: UUID?, nickname: String): NicknameAvailabilityResponse = NicknameAvailabilityResponse(
+        memberService.isNicknameAvailable(userId, nickname),
     )
 
     fun isEmailAvailable(email: String): EmailAvailabilityResponse = EmailAvailabilityResponse(memberService.isEmailAvailable(email))

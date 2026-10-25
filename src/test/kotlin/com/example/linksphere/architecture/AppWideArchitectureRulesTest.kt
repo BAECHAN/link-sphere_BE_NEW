@@ -12,6 +12,7 @@ import com.tngtech.archunit.core.domain.JavaClass.Predicates.assignableTo
 import com.tngtech.archunit.core.domain.JavaClass.Predicates.simpleNameEndingWith
 import com.tngtech.archunit.core.domain.JavaModifier
 import com.tngtech.archunit.core.domain.properties.HasModifiers.Predicates.modifier
+import com.tngtech.archunit.core.domain.properties.HasName.Predicates.name
 import com.tngtech.archunit.core.domain.properties.HasOwner.Predicates.With.owner
 import com.tngtech.archunit.core.importer.ImportOption
 import com.tngtech.archunit.junit.AnalyzeClasses
@@ -21,6 +22,7 @@ import com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses
 import com.tngtech.archunit.library.Architectures.layeredArchitecture
 import org.springframework.data.repository.Repository
 import org.springframework.web.bind.annotation.RestController
+import java.security.Principal
 
 /**
  * 앱 전체(domain·global·infra)에 걸리는 레이어 규칙. ArchitectureRulesTest는 domain 패키지만 분석해
@@ -69,6 +71,18 @@ class AppWideArchitectureRulesTest {
         noClasses()
             .should().callConstructorWhere(target(owner(assignableTo(IllegalArgumentException::class.java))))
             .`as`("앱 코드는 IllegalArgumentException을 만들지 않는다 - 의미 있는 예외(§4)를 던진다")
+
+    // 사용자 id는 SecurityUtils의 getUserId()로만 꺼낸다 - Principal·Authentication의 name을 직접 읽어 문자열로 넘기면
+    // 서비스마다 UUID.fromString을 따로 하게 되고 파싱 실패 처리도 제각각이 된다(docs/BE-ARCHITECTURE.md §5).
+    // Authentication은 Principal의 하위 타입이라 owner를 Principal에 할당 가능한 타입으로 잡으면 둘 다 걸린다.
+    @ArchTest
+    val onlySecurityUtilsReadsPrincipalName: ArchRule =
+        noClasses()
+            .that().doNotHaveFullyQualifiedName("com.example.linksphere.global.common.SecurityUtilsKt")
+            .should().callMethodWhere(
+                target(name("getName")).and(target(owner(assignableTo(Principal::class.java)))),
+            )
+            .`as`("Principal·Authentication의 name은 SecurityUtils(getUserId)에서만 읽는다")
 
     // global은 도메인을 모르는 공통 계층이다. 아래 세 쌍만 의도적인 예외다(docs/BE-ARCHITECTURE.md §3):
     // 보안 필터 체인이 auth 도메인의 세션 필터를 끼우고, 범용 레이트리밋이 auth 도메인의 카운터 테이블을 쓴다.

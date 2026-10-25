@@ -229,7 +229,7 @@ class AuthServiceTest {
         `when`(passwordEncoder.matches("wrong", "encoded")).thenReturn(false)
 
         assertThrows(InvalidCredentialsException::class.java) {
-            authService.changePassword(memberId.toString(), request)
+            authService.changePassword(memberId, request)
         }
 
         verifyNoInteractions(memberSessionService)
@@ -246,7 +246,7 @@ class AuthServiceTest {
         `when`(memberSessionService.createSession(memberId))
             .thenReturn(IssuedSession("access", "refresh", 604800L))
 
-        val result = authService.changePassword(memberId.toString(), request)
+        val result = authService.changePassword(memberId, request)
 
         verify(memberService).changePassword(memberId, "newEncoded")
         verify(memberSessionService).revokeAllForMember(memberId)
