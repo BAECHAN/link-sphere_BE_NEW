@@ -253,8 +253,15 @@ fun getPosts(authentication: Authentication?, ...): ApiResponse<PostPageResponse
 - **rollback-only 함정** — `@Transactional` 메서드에서 예외가 경계를 넘으면, 호출부가 잡고 정상 종료해도 커밋 때
   `UnexpectedRollbackException`(500)이 난다. "없음"을 정상 흐름으로 다뤄야 하면 예외 대신 null을 돌려준다
   (`MemberService.findByEmailOrNull` 주석, [`TRAFFIC-MANAGEMENT.md`](TRAFFIC-MANAGEMENT.md) 시행착오).
-- **제약 위반을 그 자리에서 잡으려면 `saveAndFlush`** — `save()`는 INSERT를 커밋 때까지 미룰 수 있어 try 블록 밖에서
-  예외가 난다(`PostAIService.processAiJob`의 `saveAndFlush` 주석). 같은 이유로 방금 `save()`한 행을 FK로 가리키는
+  **같은 트랜잭션 안에서 난 DB 오류는 try로 삼켜도 커밋을 막는다** — Hibernate가 `PersistenceException`(NoResult 등 4종
+  제외)에서 트랜잭션을 롤백 전용으로 표시하고, Spring은 커밋 때 그 표시를 보고 롤백한 뒤 `UnexpectedRollbackException`을
+  던진다(hibernate-core 6.6.36 `ExceptionConverterImpl.rollbackIfNecessary`, spring-tx 6.2.14 `AbstractPlatformTransactionManager.commit`, 2026-10-25 업스트림 태그 소스로 확인). 실패해도 바깥 작업이 살아야 하는 부수 작업(알림 등)은
+  REQUIRES_NEW로 떼어 낸다(`FcmService.sendToUser`, `FcmServiceIntegrationTest`).
+- **제약 위반을 그 자리에서 잡으려면 `saveAndFlush`(이름 변경 등 dirty checking이면 `flush()`)** — `save()`는 INSERT를
+  커밋 때까지 미뤄 try 블록 밖에서 예외가 난다 — `save()`는 `persist`/`merge`만 하고(spring-data-jpa 3.5.6
+  `SimpleJpaRepository.save`), Hibernate는 id를 미리 만든 엔티티의 INSERT를 `ActionQueue`에 넣어 flush 때 실행한다
+  (hibernate-core 6.6.36 `AbstractSaveEventListener.addInsertAction`). `@GeneratedValue` UUID(`MemberServiceIntegrationTest`)든 앱이 만든
+  UUID(`BookmarkFolderRepositoryIntegrationTest`)든 같다 — 선례는 `MemberService.signup`, `BookmarkFolderService.createFolder`. 같은 이유로 방금 `save()`한 행을 FK로 가리키는
   네이티브 쿼리 앞에서는 `flush()`가 필요하다(`PostService.saveBookmarkWithFolders`).
 - **REQUIRES_NEW** — 호출부가 바로 예외를 던져 롤백돼도 남아야 하는 기록(로그인 실패 카운트, 재사용 탐지 시 계열 폐기)만
   쓴다(`RateLimitService` KDoc). 같은 행에 쓰기 락을 쥔 채 부르면 교착하니 그 경로는 읽기만 한다.
@@ -339,8 +346,9 @@ if (memberActionTokenRepository.consumeIfActive(token.id, Instant.now()) == 0) {
 
 ### 7-6. 커밋 뒤 동기 정리 (`afterCommit`)
 
-- **언제**: 롤백되면 하면 안 되는 외부 부수효과(스토리지 파일 삭제)를 같은 요청 안에서 할 때.
-- **정석**: `CommentService.deleteComment`의 `TransactionSynchronizationManager.registerSynchronization { afterCommit }`
+- **언제**: 롤백되면 하면 안 되는 외부 부수효과(스토리지 파일 삭제, 토큰 링크가 담긴 메일)를 같은 요청 안에서 할 때.
+- **정석**: `CommentService.deleteComment`의 `TransactionSynchronizationManager.registerSynchronization { afterCommit }`,
+  인증·재설정 메일은 `AuthService.sendVerificationEmail`·`PasswordResetService.requestReset`
 - 삭제 실패는 로그만 남긴다 — 남은 파일은 고아 이미지 GC(§7-7)가 회수한다.
 - **안티패턴**: 트랜잭션 안에서 바로 외부 삭제(롤백돼도 파일은 이미 없다). 같은 블록을 메서드마다 복사하는 것도 피한다
   — 지금 3곳에 반복돼 있다(남은 것).
@@ -445,9 +453,9 @@ for (id in ids) {
 | 엔티티 안의 표시 규칙 | `TableMember.isWithdrawn`·`publicNickname`·`publicImage`, `TableLinkPreview.toMetadata` | 바꾸지 않음(기록만) |
 | 상속받은 `delete(entity)` 3곳 | `PostService.deletePost`, `CommentService.deleteComment`, `BookmarkFolderService.deleteFolder` | 바꾸지 않음 — 409 `CONCURRENT_UPDATE` 안전망에 기댄다 |
 
-검증 중인 의심(재현되면 수정, 아니면 "남은 것"으로): 가입·재설정 메일이 토큰 커밋 전에 나감, `FcmService`가 바깥
-트랜잭션을 rollback-only로 만들 가능성, 폴더 이름 동시 중복이 `DUPLICATE_RESOURCE`로 나감, 상세 조회 응답의 조회수가
-증가 전 값, 댓글 `updatedAt` 미갱신, 가입 제약 위반 catch가 `save()` 지연 때문에 헛돎.
+2026-10-25 점검에서 의심만 하던 6건(가입 제약 위반 catch가 `save()` 지연으로 헛돎, 폴더 이름 동시 중복이
+`DUPLICATE_RESOURCE`로 나감, 인증·재설정 메일이 토큰 커밋 전에 나감, `FcmService`가 바깥 트랜잭션을 깨뜨림, 상세 조회
+응답의 조회수가 증가 전 값, 댓글 `updatedAt` 미갱신)은 재현 테스트로 확인한 뒤 모두 고쳤다(CHANGELOG `Fixed`).
 
 ---
 
@@ -490,8 +498,8 @@ for (id in ids) {
 
 - **방식 혼재**: 응답 `message` 언어(영어·한국어), 실제 HTTP 201은 `signup`만(나머지는 HTTP 200 + 본문 201),
   DTO 이름 어순(`PostCreateRequest` vs `CreateFolderRequest`), 엔티티 ID 생성 4종·시간 타입(`LocalDateTime`/`Instant`),
-  개수 세는 방식 3종, 커밋 뒤 처리 방식 4종(AFTER_COMMIT 리스너 · 인라인 `afterCommit` — `CommentService`에 3회 반복 ·
-  트랜잭션 밖 바로 디스패치 · 커밋 전 동기 메일 발송, 마지막은 §9 검증 대상), `@Valid`는 Auth·FCM 컨트롤러만,
+  개수 세는 방식 3종, 커밋 뒤 처리 방식 3종(AFTER_COMMIT 리스너 · 인라인 `afterCommit` — `CommentService` 3회와 인증·재설정
+  메일 2곳 · 트랜잭션 밖 바로 디스패치), `@Valid`는 Auth·FCM 컨트롤러만,
   Page 응답 DTO 수동 복제, 로거 선언 변형, 중복 상수(90초 마감 ×3, 이메일 정규화 ×4).
 - **검증하지 않은 위험 후보**: Lambda 응답 헤더가 이름당 첫 값만 남음(`LambdaHandler`의 응답 직렬화 — 여러
   `Set-Cookie`에서 문제), Lambda 안에서 Tomcat 기동 여부, `findFirstByIsBotTrue`의 `@Query` 단건 조회(봇이 둘이면 실패),

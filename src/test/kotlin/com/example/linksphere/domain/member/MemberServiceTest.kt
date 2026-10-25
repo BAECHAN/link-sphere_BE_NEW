@@ -153,7 +153,7 @@ class MemberServiceTest {
         `when`(memberRepository.existsByNicknameIgnoreCase("testuser")).thenReturn(false)
 
         val captor = ArgumentCaptor.forClass(TableMember::class.java)
-        `when`(memberRepository.save(captor.capture())).thenAnswer { captor.value }
+        `when`(memberRepository.saveAndFlush(captor.capture())).thenAnswer { captor.value }
 
         val result = memberService.signup(request)
 
@@ -242,7 +242,7 @@ class MemberServiceTest {
         `when`(memberRepository.existsByEmail(request.email)).thenReturn(false)
         `when`(memberRepository.existsByNicknameIgnoreCase(request.nickname)).thenReturn(false)
         val captor = ArgumentCaptor.forClass(TableMember::class.java)
-        `when`(memberRepository.save(captor.capture()))
+        `when`(memberRepository.saveAndFlush(captor.capture()))
             .thenThrow(
                 DataIntegrityViolationException(
                     "duplicate key value violates unique constraint \"members_email_lower_key\"",
@@ -260,7 +260,7 @@ class MemberServiceTest {
         `when`(memberRepository.existsByEmail(request.email)).thenReturn(false)
         `when`(memberRepository.existsByNicknameIgnoreCase(request.nickname)).thenReturn(false)
         val captor = ArgumentCaptor.forClass(TableMember::class.java)
-        `when`(memberRepository.save(captor.capture()))
+        `when`(memberRepository.saveAndFlush(captor.capture()))
             .thenThrow(
                 DataIntegrityViolationException(
                     "duplicate key value violates unique constraint \"members_nickname_lower_key\"",
@@ -278,7 +278,7 @@ class MemberServiceTest {
         `when`(memberRepository.existsByEmail(request.email)).thenReturn(false)
         `when`(memberRepository.existsByNicknameIgnoreCase(request.nickname)).thenReturn(false)
         val captor = ArgumentCaptor.forClass(TableMember::class.java)
-        `when`(memberRepository.save(captor.capture()))
+        `when`(memberRepository.saveAndFlush(captor.capture()))
             .thenThrow(DataIntegrityViolationException("some other constraint violated"))
 
         assertThrows(DataIntegrityViolationException::class.java) { memberService.signup(request) }

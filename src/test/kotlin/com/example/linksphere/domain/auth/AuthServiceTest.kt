@@ -21,6 +21,7 @@ import org.mockito.Mockito.verifyNoInteractions
 import org.mockito.Mockito.verifyNoMoreInteractions
 import org.mockito.Mockito.`when`
 import org.springframework.security.crypto.password.PasswordEncoder
+import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.time.Duration
 import java.time.Instant
 import java.util.UUID
@@ -255,13 +256,13 @@ class AuthServiceTest {
     }
 
     @Test
-    fun `signup은 성공하면 인증메일용 토큰을 저장하고 메일을 보낸다`() {
+    fun `signup은 성공하면 인증메일용 토큰을 저장하고 메일은 커밋 뒤에 보낸다`() {
         val request = SignupRequest("new@example.com", "password1!", "newuser")
         val savedMember = TableMember(id = UUID.randomUUID(), email = request.email, password = "encoded")
         `when`(passwordEncoder.encode(request.password)).thenReturn("encoded")
         `when`(memberService.signup(request.copy(password = "encoded"))).thenReturn(savedMember)
 
-        authService.signup(request, "203.0.113.1")
+        afterCommitOf { authService.signup(request, "203.0.113.1") }
 
         verify(memberActionTokenRepository).save(any())
         verify(mailService).send(anyString(), anyString(), anyString())
@@ -304,10 +305,23 @@ class AuthServiceTest {
         val member = TableMember(id = UUID.randomUUID(), email = "test@example.com", password = "enc", emailVerified = false)
         `when`(memberService.findByEmailOrNull("test@example.com")).thenReturn(member)
 
-        authService.requestEmailVerification("test@example.com", "203.0.113.1")
+        afterCommitOf { authService.requestEmailVerification("test@example.com", "203.0.113.1") }
 
         verify(memberActionTokenRepository).save(any())
         verify(mailService).send(anyString(), anyString(), anyString())
+    }
+
+    // 메일은 토큰 커밋 뒤에만 나가야 한다 - 커밋 전에는 보내지 않았는지 확인한 뒤 afterCommit을 직접 부른다
+    // (CommentServiceTest의 이미지 삭제와 같은 방식).
+    private fun afterCommitOf(block: () -> Unit) {
+        TransactionSynchronizationManager.initSynchronization()
+        try {
+            block()
+            verify(mailService, never()).send(anyString(), anyString(), anyString())
+            TransactionSynchronizationManager.getSynchronizations().forEach { it.afterCommit() }
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization()
+        }
     }
 
     @Test

@@ -14,7 +14,8 @@ import org.springframework.transaction.event.TransactionalEventListener
 // 댓글 작성/수정 요청 경로 밖에서 알림 발송과 링크 프리뷰 크롤링을 처리한다.
 // CommentService가 요청 경로 안에서 이 둘을 동기 호출하면, 외부 사이트/Firebase 응답이
 // 느려질 때 댓글 등록 자체가 지연되거나(크롤링 최대 ~30초) FCM 전송 실패가 댓글 INSERT를
-// 롤백시킬 수 있다(FcmService가 @Transactional로 합류). PostAIService와 동일한 패턴으로 분리한다.
+// 롤백시킬 수 있었다(그때는 FcmService가 @Transactional로 합류했다 - 지금은 REQUIRES_NEW로 떼어져 있다). PostAIService와
+// 동일한 패턴으로 분리한다.
 @Service
 class CommentPostProcessService(
     private val commentRepository: CommentRepository,

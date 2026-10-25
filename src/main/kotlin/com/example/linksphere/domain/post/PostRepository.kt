@@ -40,6 +40,10 @@ interface PostRepository :
     @Query("UPDATE TablePost p SET p.viewCount = COALESCE(p.viewCount, 0) + 1 WHERE p.id = :id")
     fun incrementViewCount(@Param("id") id: UUID)
 
+    // incrementViewCount는 벌크 UPDATE라 이미 읽어 둔 엔티티에는 반영되지 않는다 - 증가 뒤 응답에 실을 값은 이걸로 다시 읽는다
+    @Query("SELECT COALESCE(p.viewCount, 0) FROM TablePost p WHERE p.id = :id")
+    fun findViewCountById(@Param("id") id: UUID): Int
+
     // embedding은 TablePost에 insertable/updatable=false로 매핑돼 있어 JPA save()로는
     // 못 쓴다 - 항상 이 네이티브 UPDATE로만 쓴다. embeddingLiteral은 "[0.1,0.2,...]" 형식
     // 문자열이나 null(리셋용)이고, CAST가 Postgres의 vector 입력 파싱을 그대로 쓴다.

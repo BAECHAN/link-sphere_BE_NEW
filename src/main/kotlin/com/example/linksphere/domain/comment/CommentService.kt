@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.transaction.support.TransactionSynchronization
 import org.springframework.transaction.support.TransactionSynchronizationManager
+import java.time.LocalDateTime
 import java.util.UUID
 
 private const val DELETED_COMMENT_CONTENT = "삭제된 댓글입니다."
@@ -308,6 +309,7 @@ class CommentService(
         if (hasReplies) {
             comment.content = DELETED_COMMENT_CONTENT
             comment.isDeleted = true
+            comment.updatedAt = LocalDateTime.now()
             commentRepository.save(comment)
         } else {
             commentRepository.delete(comment)
@@ -406,6 +408,7 @@ class CommentService(
         comment.linkTitle = null
         comment.linkDescription = null
         comment.linkOgImage = null
+        comment.updatedAt = LocalDateTime.now()
         val updated = commentRepository.save(comment)
 
         // 이미지 삭제는 반드시 커밋 이후에 실행한다 - 아래 memberRepository 조회가 실패하면

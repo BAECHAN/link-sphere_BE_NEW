@@ -33,6 +33,7 @@ import org.springframework.data.domain.PageImpl
 import org.springframework.data.domain.PageRequest
 import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.time.Instant
+import java.time.LocalDateTime
 import java.util.Optional
 import java.util.UUID
 
@@ -250,7 +251,8 @@ class CommentServiceTest {
         val userId = UUID.randomUUID()
         val commentId = UUID.randomUUID()
         val postId = UUID.randomUUID()
-        val comment = TableComment(id = commentId, postId = postId, userId = userId, content = "내용")
+        val createdLongAgo = LocalDateTime.of(2020, 1, 1, 0, 0)
+        val comment = TableComment(id = commentId, postId = postId, userId = userId, content = "내용", updatedAt = createdLongAgo)
 
         `when`(commentRepository.findById(commentId)).thenReturn(Optional.of(comment))
         `when`(commentRepository.existsByParentId(commentId)).thenReturn(true)
@@ -261,6 +263,7 @@ class CommentServiceTest {
         verify(commentReactionRepository).deleteByCommentId(commentId)
         assertTrue(comment.isDeleted)
         assertEquals("삭제된 댓글입니다.", comment.content)
+        assertTrue(comment.updatedAt.isAfter(createdLongAgo))
     }
 
     @Test
@@ -758,6 +761,24 @@ class CommentServiceTest {
         } finally {
             TransactionSynchronizationManager.clearSynchronization()
         }
+    }
+
+    // updatedAt이 val이던 동안은 수정해도 생성 시각에 고정돼 있었다(docs/plans/2026-10-25-be-architecture-audit.md PR5)
+    @Test
+    fun `updateComment 는 updatedAt 을 갱신한다`() {
+        val userId = UUID.randomUUID()
+        val commentId = UUID.randomUUID()
+        val createdLongAgo = LocalDateTime.of(2020, 1, 1, 0, 0)
+        val comment = TableComment(id = commentId, postId = UUID.randomUUID(), userId = userId, content = "내용", updatedAt = createdLongAgo)
+        val member = TableMember(id = userId, email = "a@a.com", password = "pw", nickname = "tester", emailVerified = true)
+
+        `when`(commentRepository.findById(commentId)).thenReturn(Optional.of(comment))
+        `when`(commentRepository.save(comment)).thenReturn(comment)
+        `when`(memberRepository.findById(userId)).thenReturn(Optional.of(member))
+
+        commentService.updateComment(commentId, userId, "고친 내용", null)
+
+        assertTrue(comment.updatedAt.isAfter(createdLongAgo))
     }
 
     @Test

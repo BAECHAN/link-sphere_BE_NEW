@@ -14,6 +14,7 @@ import com.example.linksphere.global.exception.InvalidInputException
 import com.example.linksphere.global.exception.PostNotFoundException
 import com.example.linksphere.infra.ai.GeminiService
 import org.slf4j.LoggerFactory
+import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -66,13 +67,21 @@ class BookmarkFolderService(
 
         val nextSortOrder = bookmarkFolderRepository.findMaxSortOrderByUserId(userId) + 1
 
-        val saved = bookmarkFolderRepository.save(
-            TableBookmarkFolder(
-                userId = userId,
-                name = name,
-                sortOrder = nextSortOrder,
-            ),
-        )
+        // 위 exists 확인과 저장 사이에 같은 이름 요청이 끼면 유니크 제약(uk_bookmark_folders_user_name)이 막는다. 그 위반은
+        // flush(보통 커밋) 때 나므로 saveAndFlush로 여기서 내게 해 사전 확인과 같은 DUPLICATE_FOLDER_NAME으로 바꾼다 -
+        // save()면 커밋에서 DUPLICATE_RESOURCE로 나갔다(BookmarkFolderRepositoryIntegrationTest, MemberService.signup과 같은 이유).
+        val saved =
+            try {
+                bookmarkFolderRepository.saveAndFlush(
+                    TableBookmarkFolder(
+                        userId = userId,
+                        name = name,
+                        sortOrder = nextSortOrder,
+                    ),
+                )
+            } catch (e: DataIntegrityViolationException) {
+                throw e.asDuplicateFolderName(name)
+            }
 
         return FolderResponse(
             id = saved.id,
@@ -97,6 +106,12 @@ class BookmarkFolderService(
 
         folder.name = newName
         folder.updatedAt = LocalDateTime.now()
+        // createFolder와 같은 이유로 이름 변경도 여기서 flush해 동시 요청의 제약 위반을 같은 code로 바꾼다
+        try {
+            bookmarkFolderRepository.flush()
+        } catch (e: DataIntegrityViolationException) {
+            throw e.asDuplicateFolderName(newName)
+        }
 
         val bookmarkCount = bookmarkFolderItemRepository.countByFolderId(folder.id).toInt()
         return FolderResponse(
@@ -269,5 +284,11 @@ class BookmarkFolderService(
             semantic,
             search.replace(Regex("[\\r\\n\"]"), " ").take(100),
         )
+    }
+
+    private fun DataIntegrityViolationException.asDuplicateFolderName(name: String): RuntimeException = if (mostSpecificCause.message?.contains("uk_bookmark_folders_user_name") == true) {
+        DuplicateFolderNameException(name)
+    } else {
+        this
     }
 }
