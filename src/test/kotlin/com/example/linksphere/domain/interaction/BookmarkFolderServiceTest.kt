@@ -4,6 +4,7 @@ import com.example.linksphere.domain.post.PostRepository
 import com.example.linksphere.domain.post.PostResponseAssembler
 import com.example.linksphere.domain.post.TablePost
 import com.example.linksphere.global.exception.BookmarkFolderNotFoundException
+import com.example.linksphere.global.exception.DuplicateFolderNameException
 import com.example.linksphere.global.exception.ForbiddenException
 import com.example.linksphere.global.exception.InvalidInputException
 import com.example.linksphere.global.exception.PostNotFoundException
@@ -12,14 +13,17 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
+import org.mockito.ArgumentCaptor
 import org.mockito.InjectMocks
 import org.mockito.Mock
+import org.mockito.Mockito.doThrow
 import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.verifyNoInteractions
 import org.mockito.Mockito.verifyNoMoreInteractions
 import org.mockito.Mockito.`when`
 import org.mockito.junit.jupiter.MockitoExtension
+import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.data.domain.PageImpl
 import org.springframework.data.domain.PageRequest
 import java.time.LocalDateTime
@@ -412,4 +416,43 @@ class BookmarkFolderServiceTest {
         verify(bookmarkFolderItemRepository).deleteByUserIdAndPostIdIn(userId, postIds)
         verify(bookmarkRepository).deleteByUserIdAndPostIdIn(userId, postIds)
     }
+
+    // 사전 exists 확인은 통과했지만(동시 요청 레이스) 저장 시점에 DB 유니크 제약이 막은 경우 - 사전 확인 경로와 같은
+    // DUPLICATE_FOLDER_NAME이 나가야 한다. 위반이 실제로 flush에서 난다는 건 BookmarkFolderRepositoryIntegrationTest가 보인다.
+    @Test
+    fun `createFolder 는 저장 시점의 이름 유니크 제약 위반을 DuplicateFolderNameException 으로 바꾼다`() {
+        val userId = UUID.randomUUID()
+        val captor = ArgumentCaptor.forClass(TableBookmarkFolder::class.java)
+        `when`(bookmarkFolderRepository.saveAndFlush(captor.capture()))
+            .thenThrow(duplicateKey("uk_bookmark_folders_user_name"))
+
+        assertThrows(DuplicateFolderNameException::class.java) {
+            bookmarkFolderService.createFolder(userId, CreateFolderRequest(name = "읽을거리"))
+        }
+    }
+
+    @Test
+    fun `createFolder 는 다른 제약 위반은 그대로 다시 던진다`() {
+        val captor = ArgumentCaptor.forClass(TableBookmarkFolder::class.java)
+        `when`(bookmarkFolderRepository.saveAndFlush(captor.capture()))
+            .thenThrow(duplicateKey("bookmark_folders_pkey"))
+
+        assertThrows(DataIntegrityViolationException::class.java) {
+            bookmarkFolderService.createFolder(UUID.randomUUID(), CreateFolderRequest(name = "읽을거리"))
+        }
+    }
+
+    @Test
+    fun `updateFolder 는 flush 시점의 이름 유니크 제약 위반을 DuplicateFolderNameException 으로 바꾼다`() {
+        val userId = UUID.randomUUID()
+        val folder = TableBookmarkFolder(userId = userId, name = "나중에")
+        `when`(bookmarkFolderRepository.findById(folder.id)).thenReturn(Optional.of(folder))
+        doThrow(duplicateKey("uk_bookmark_folders_user_name")).`when`(bookmarkFolderRepository).flush()
+
+        assertThrows(DuplicateFolderNameException::class.java) {
+            bookmarkFolderService.updateFolder(userId, folder.id, UpdateFolderRequest(name = "읽을거리"))
+        }
+    }
+
+    private fun duplicateKey(constraint: String) = DataIntegrityViolationException("duplicate key value violates unique constraint \"$constraint\"")
 }

@@ -51,8 +51,12 @@ class MemberService(private val memberRepository: MemberRepository) {
         // 충돌했는지 모른 채 DUPLICATE_RESOURCE(한글 메시지)로 뭉뚱그려 응답해 위의 사전
         // 체크 경로와 코드가 갈라진다. 어느 인덱스가 깨졌는지 이름으로 구분해 같은 예외로
         // 다시 던져 FE가 항상 같은 code를 받게 한다.
+        //
+        // save()가 아니라 saveAndFlush()여야 한다 - id가 @GeneratedValue UUID라 save()는 persist만 하고 INSERT를
+        // 커밋 때로 미뤄, 제약 위반이 이 try 밖(커밋)에서 나 DUPLICATE_RESOURCE로 나갔다(MemberServiceIntegrationTest,
+        // PostAIService.processAiJob의 saveAndFlush와 같은 이유).
         try {
-            return memberRepository.save(newMember)
+            return memberRepository.saveAndFlush(newMember)
         } catch (e: DataIntegrityViolationException) {
             val cause = e.mostSpecificCause.message ?: ""
             when {

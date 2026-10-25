@@ -199,7 +199,11 @@ class PostService(
         if (post.isPrivate && post.userId != currentUserId) throw PostNotFoundException(id)
         postRepository.incrementViewCount(id)
         currentUserId?.let { postViewRepository.upsertView(it, id) }
-        return postResponseAssembler.convertToResponse(post, currentUserId)
+        // incrementViewCount는 JPQL 벌크 UPDATE라 위에서 읽은 post 엔티티에는 반영되지 않아, 그대로 조립하면 상세는 증가 전
+        // 값(N), 목록은 N+1로 어긋났다. 같은 트랜잭션에서 DB 값을 다시 읽어 싣는다(InteractionService가 쓴 뒤 COUNT를 다시
+        // 읽는 것과 같은 방식, docs/plans/2026-10-25-be-architecture-audit.md PR5).
+        val response = postResponseAssembler.convertToResponse(post, currentUserId)
+        return response.copy(stats = response.stats.copy(viewCount = postRepository.findViewCountById(id)))
     }
 
     @Transactional

@@ -8,6 +8,7 @@ import com.google.firebase.messaging.MulticastMessage
 import com.google.firebase.messaging.Notification
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
 import java.util.UUID
 
@@ -19,7 +20,13 @@ class FcmService(
 
     private val logger = LoggerFactory.getLogger(FcmService::class.java)
 
-    @Transactional
+    // 호출부(CommentPostProcessService.processCommentJob)의 트랜잭션과 떼어 놓는다 - 참여한 채 토큰 정리 쿼리가 DB 오류를 내면,
+    // 아래 catch가 예외를 삼켜도 Hibernate가 그 트랜잭션을 롤백 전용으로 표시해 바깥 커밋이 UnexpectedRollbackException으로
+    // 실패했다(hibernate-core 6.6.36 ExceptionConverterImpl.rollbackIfNecessary, spring-tx 6.2.14
+    // AbstractPlatformTransactionManager.commit) - 링크 프리뷰 갱신까지 사라지고 Lambda 재시도로 알림이 다시 나간다
+    // (FcmServiceIntegrationTest). 이렇게 떼면 실패는 이 트랜잭션에서 끝나고 커밋 실패 예외는 호출부의 runCatching이 받는다.
+    // RateLimitService의 REQUIRES_NEW와 같은 방식이다.
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     fun sendToUser(userId: UUID, title: String, body: String, data: Map<String, String> = emptyMap()) {
         // Firebase가 초기화되지 않았으면 조용히 스킵
         if (FirebaseApp.getApps().isEmpty()) {

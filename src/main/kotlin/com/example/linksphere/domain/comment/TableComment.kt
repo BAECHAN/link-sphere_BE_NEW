@@ -21,8 +21,9 @@ class TableComment(
     @Column(name = "link_og_image", columnDefinition = "text") var linkOgImage: String? = null,
     @Column(name = "created_at", nullable = false)
     val createdAt: LocalDateTime = LocalDateTime.now(),
+    // 수정·톰스톤 삭제 때 CommentService가 갱신한다 - val이던 동안은 생성 시각에 고정돼 있었다
     @Column(name = "updated_at", nullable = false)
-    val updatedAt: LocalDateTime = LocalDateTime.now(),
+    var updatedAt: LocalDateTime = LocalDateTime.now(),
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", insertable = false, updatable = false)
     val member: TableMember? = null,

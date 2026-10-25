@@ -438,6 +438,66 @@
 
 ### Fixed
 
+- `member` 동시 가입이 사전 확인을 함께 통과하면 이메일·닉네임 중복 대신 DUPLICATE_RESOURCE가 나가던 문제
+  <details><summary>배경·구현</summary>
+
+  `MemberService.signup`은 저장 시 DB 유니크 인덱스 위반을 잡아 `DUPLICATE_MEMBER`·`DUPLICATE_NICKNAME`으로 바꾸려 했지만,
+  id가 `@GeneratedValue` UUID라 `save()`가 INSERT를 커밋 때로 미뤄 그 catch가 헛돌았다 — 위반은 커밋에서 나 409
+  `DUPLICATE_RESOURCE`로 나갔다(FE는 닉네임 안내 대신 일반 문구를 띄운다). `saveAndFlush`로 그 자리에서 내게 했다. 단위 테스트는
+  `save()`가 곧바로 던지도록 mock해 이 지연을 보지 못했다 — 실제 Postgres로 재현하는 `MemberServiceIntegrationTest`를 추가했다
+  (사전 확인은 정확 일치, 인덱스는 `lower(email)`이라 대문자 이메일 행으로 레이스를 재현). (계획 `docs/plans/2026-10-25-be-architecture-audit.md` PR5)
+
+  </details>
+
+- `bookmark` 폴더 이름 동시 중복이 전용 code 대신 DUPLICATE_RESOURCE로 나가던 문제
+  <details><summary>배경·구현</summary>
+
+  폴더 생성은 앱이 만든 UUID라 `save()`가 merge로 가고 이름 변경은 dirty checking이라, 사전 확인을 함께 통과한 요청의 유니크
+  제약(`uk_bookmark_folders_user_name`) 위반이 커밋에서 났다. 생성은 `saveAndFlush`, 변경은 `flush()`로 그 자리에서 내게 하고
+  제약 이름을 보고 `DuplicateFolderNameException`으로 바꾼다. FE는 두 code를 같은 문구로 보여 화면은 그대로다.
+  (`BookmarkFolderService.kt`, `BookmarkFolderRepositoryIntegrationTest`(신규))
+
+  </details>
+
+- `auth` 인증·비밀번호 재설정 메일이 토큰 커밋 전에 나가 커밋이 실패하면 죽은 링크가 발송되던 문제
+  <details><summary>배경·구현</summary>
+
+  `AuthService.sendVerificationEmail`·`PasswordResetService.requestReset`이 토큰을 저장한 같은 트랜잭션 안에서 메일을
+  보냈다. 위 가입 레이스처럼 커밋이 실패하면 DB에 없는 토큰의 링크가 이미 나간 상태가 된다. 메일은
+  `registerSynchronization`의 `afterCommit`에서 보낸다(`CommentService`의 이미지 삭제와 같은 방식). 응답 시간은 같다 — 커밋은
+  컨트롤러로 돌아가기 전에 끝난다. (계획 `docs/plans/2026-10-25-be-architecture-audit.md` PR5)
+
+  </details>
+
+- `fcm` 댓글 알림의 토큰 정리 쿼리가 DB 오류를 내면 같은 잡의 링크 프리뷰까지 사라지고 알림이 다시 나갈 수 있던 문제
+  <details><summary>배경·구현</summary>
+
+  `FcmService.sendToUser`가 댓글 후처리 잡(`CommentPostProcessService.processCommentJob`)의 트랜잭션에 참여했다. 그 안에서 DB
+  작업이 실패하면 `sendToUser`가 예외를 삼켜도 Hibernate가 트랜잭션을 롤백 전용으로 표시해, 잡의 커밋이
+  `UnexpectedRollbackException`으로 실패했다(hibernate-core 6.6.36 `ExceptionConverterImpl.rollbackIfNecessary`, spring-tx 6.2.14
+  `AbstractPlatformTransactionManager.commit`) — 링크 프리뷰 갱신이 사라지고 Lambda 비동기 재시도(최대 2회)로 알림이 중복 발송될
+  수 있다. `REQUIRES_NEW`로 떼어 실패가 그 트랜잭션에서 끝나게 했다(호출부의 `runCatching`이 받는다). 실패하는 SQL을 현재
+  트랜잭션 연결에서 실행해 재현하는 `FcmServiceIntegrationTest`를 추가했다(수정 전 `UnexpectedRollbackException`).
+
+  </details>
+
+- `post` 게시글 상세 응답의 조회수가 이번 조회가 빠진 값이라 목록과 1씩 어긋나던 문제
+  <details><summary>배경·구현</summary>
+
+  `PostService.getPostById`가 조회수를 JPQL 벌크 UPDATE로 올린 뒤 이미 읽어 둔 엔티티로 응답을 만들어, 상세는 N, 목록으로
+  돌아가면 N+1로 보였다. 증가 뒤 같은 트랜잭션에서 DB 값을 다시 읽어(`PostRepository.findViewCountById`) 응답에 싣는다
+  (2026-10-25 사용자 승인 — 상세 화면의 조회수가 1 커진다). (`PostRepositoryIntegrationTest`에 재현 추가)
+
+  </details>
+
+- `comment` 댓글을 수정·삭제(답글이 있어 톰스톤)해도 updated_at이 생성 시각에 고정돼 있던 문제
+  <details><summary>배경·구현</summary>
+
+  `TableComment.updatedAt`이 `val`이고 갱신하는 코드가 없었다. `var`로 바꾸고 수정·톰스톤 삭제 때 갱신한다. 응답 DTO에는
+  없어 화면 변화는 없다. (`TableComment.kt`, `CommentService.kt`)
+
+  </details>
+
 - `upload` 스토리지가 응답을 멈추면 업로드 서명 요청이 끝없이 기다리던 문제
   <details><summary>배경·구현</summary>
 

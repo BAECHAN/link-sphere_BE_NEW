@@ -17,6 +17,7 @@ import org.mockito.Mockito.verify
 import org.mockito.Mockito.verifyNoInteractions
 import org.mockito.Mockito.`when`
 import org.springframework.security.crypto.password.PasswordEncoder
+import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.time.Duration
 import java.time.Instant
 import java.util.Optional
@@ -87,11 +88,19 @@ class PasswordResetServiceTest {
     }
 
     @Test
-    fun `requestReset은 존재하는 이메일이면 토큰을 저장하고 메일을 보낸다`() {
+    fun `requestReset은 존재하는 이메일이면 토큰을 저장하고 메일은 커밋 뒤에 보낸다`() {
         val member = TableMember(id = UUID.randomUUID(), email = "test@example.com", password = "enc", nickname = "tester")
         `when`(memberRepository.findByEmail("test@example.com")).thenReturn(member)
 
-        service.requestReset("test@example.com", "203.0.113.1")
+        // 메일은 토큰 커밋 뒤에만 나가야 한다 - 커밋 전에는 보내지 않았는지 확인한 뒤 afterCommit을 직접 부른다
+        TransactionSynchronizationManager.initSynchronization()
+        try {
+            service.requestReset("test@example.com", "203.0.113.1")
+            verifyNoInteractions(mailService)
+            TransactionSynchronizationManager.getSynchronizations().forEach { it.afterCommit() }
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization()
+        }
 
         verify(memberActionTokenRepository).save(any())
         verify(mailService).send(

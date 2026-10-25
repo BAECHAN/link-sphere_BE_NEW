@@ -11,6 +11,8 @@ import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionSynchronization
+import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.time.Duration
 import java.time.Instant
 import java.util.UUID
@@ -116,10 +118,19 @@ class AuthService(
         )
 
         val link = "$frontendUrl/verify-email?token=$raw"
-        mailService.send(
-            member.email,
-            "이메일 인증 안내",
-            "<p>아래 링크를 눌러 이메일 인증을 완료해주세요. 24시간 동안 유효합니다.</p><p><a href=\"$link\">$link</a></p>",
+        // 메일은 토큰이 커밋된 뒤에 보낸다 - 같은 트랜잭션 안에서 먼저 보내면 커밋이 실패했을 때(예: 동시 가입으로 회원
+        // INSERT가 막힘) DB에 없는 토큰의 링크가 이미 나가 있다. MailService는 실패해도 로그만 남겨 커밋 뒤 예외가 새지
+        // 않는다(CommentService의 이미지 삭제와 같은 방식, docs/plans/2026-10-25-be-architecture-audit.md PR5).
+        TransactionSynchronizationManager.registerSynchronization(
+            object : TransactionSynchronization {
+                override fun afterCommit() {
+                    mailService.send(
+                        member.email,
+                        "이메일 인증 안내",
+                        "<p>아래 링크를 눌러 이메일 인증을 완료해주세요. 24시간 동안 유효합니다.</p><p><a href=\"$link\">$link</a></p>",
+                    )
+                }
+            },
         )
     }
 
