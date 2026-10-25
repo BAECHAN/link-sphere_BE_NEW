@@ -43,7 +43,7 @@ class PostService(
     fun createPost(userId: UUID, request: PostCreateRequest, fallbackContent: String? = null): PostResponse {
         // 크롤링 등 비싼 작업을 하기 전에 먼저 확인한다 - 읽기·좋아요·북마크는 막지 않고
         // 글쓰기만 막는다(docs/plans/2026-09-28-auth-hardening.md "확정된 결정들" 참고).
-        val member = memberRepository.findById(userId).orElseThrow { IllegalArgumentException("User not found") }
+        val member = memberRepository.findById(userId).orElseThrow { IllegalStateException("User not found") }
         if (!member.emailVerified) {
             throw EmailNotVerifiedException("Email verification required to create a post")
         }
@@ -321,7 +321,7 @@ class PostService(
      */
     @Transactional
     fun previewLink(userId: UUID, rawUrl: String): LinkPreviewResponse {
-        val member = memberRepository.findById(userId).orElseThrow { IllegalArgumentException("User not found") }
+        val member = memberRepository.findById(userId).orElseThrow { IllegalStateException("User not found") }
         if (!member.emailVerified) {
             throw EmailNotVerifiedException("Email verification required to preview a link")
         }

@@ -5,6 +5,7 @@ import com.example.linksphere.domain.comment.TableComment
 import com.example.linksphere.domain.post.PostRepository
 import com.example.linksphere.domain.post.TablePost
 import com.example.linksphere.global.exception.BookmarkFolderNotFoundException
+import com.example.linksphere.global.exception.CommentNotFoundException
 import com.example.linksphere.global.exception.ForbiddenException
 import com.example.linksphere.global.exception.InvalidInputException
 import com.example.linksphere.global.exception.PostNotFoundException
@@ -133,6 +134,19 @@ class InteractionServiceTest {
 
         assertFalse(interactionService.setCommentLike(commentId, ownerId, liked = false))
         verify(commentReactionRepository).deleteByUserIdAndCommentId(ownerId, commentId)
+    }
+
+    // 예전에는 IllegalArgumentException의 공통 매핑으로 code가 NOT_FOUND였다 - 다른 댓글 경로와 같은 COMMENT_NOT_FOUND를 낸다
+    @Test
+    fun `setCommentLike 는 댓글이 없으면 CommentNotFoundException`() {
+        val userId = UUID.randomUUID()
+        val commentId = UUID.randomUUID()
+        `when`(commentRepository.findById(commentId)).thenReturn(Optional.empty())
+
+        assertThrows(CommentNotFoundException::class.java) {
+            interactionService.setCommentLike(commentId, userId, liked = true)
+        }
+        verify(commentReactionRepository, never()).insertIgnoreConflict(userId, commentId)
     }
 
     @Test

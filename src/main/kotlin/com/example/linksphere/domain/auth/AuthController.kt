@@ -142,7 +142,7 @@ class AuthController(
 
     @Operation(
         summary = "내 계정 조회",
-        description = "인증된 세션이 가리키는 회원 ID로 조회한다. 실패: 404 NOT_FOUND(탈퇴 등으로 회원이 없을 때)",
+        description = "인증된 세션이 가리키는 회원 ID로 조회한다.",
     )
     @GetMapping("/account")
     fun getAccount(principal: Principal): ResponseEntity<ApiResponse<AccountResponse>> = ResponseEntity.ok(ApiResponse(HttpStatus.OK.value(), "Account retrieved", authService.getAccount(principal.name)))
@@ -150,7 +150,7 @@ class AuthController(
     @Operation(
         summary = "내 계정 수정",
         description = "nickname·image 만 부분 수정한다(null 인 필드는 유지). " +
-            "실패: 404 NOT_FOUND · 409 DUPLICATE_MEMBER(닉네임 중복 시에도 이 코드다)",
+            "실패: 409 DUPLICATE_NICKNAME(닉네임 중복)",
     )
     @PatchMapping("/account")
     fun updateAccount(

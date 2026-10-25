@@ -87,7 +87,7 @@ class PostResponseAssembler(
             val postId = post.id ?: throw IllegalStateException("Post ID cannot be null")
             val author =
                 authorMap[post.userId]
-                    ?: throw IllegalArgumentException("Member not found: ${post.userId}")
+                    ?: throw IllegalStateException("Member not found: ${post.userId}")
             buildPostResponse(
                 post = post,
                 postId = postId,
@@ -109,7 +109,7 @@ class PostResponseAssembler(
 
         val dbAuthor =
             memberRepository.findById(post.userId).orElseThrow {
-                IllegalArgumentException("Member not found with id: ${post.userId}")
+                IllegalStateException("Member not found with id: ${post.userId}")
             }
         val author =
             UserSummary(

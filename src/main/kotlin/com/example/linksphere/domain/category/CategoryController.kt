@@ -22,7 +22,7 @@ class CategoryController(private val categoryService: CategoryService) {
         .cacheControl(CATEGORY_LIST_CACHE_CONTROL)
         .body(ApiResponse(HttpStatus.OK.value(), "Categories retrieved", categoryService.getAllCategories()))
 
-    @Operation(summary = "slug 로 카테고리 단건 조회", description = "실패: 404 NOT_FOUND")
+    @Operation(summary = "slug 로 카테고리 단건 조회", description = "실패: 404 CATEGORY_NOT_FOUND")
     @SecurityRequirements
     @GetMapping("/{slug}")
     fun getCategoryBySlug(@PathVariable slug: String): ApiResponse<CategoryResponse> = ApiResponse(HttpStatus.OK.value(), "Category retrieved", categoryService.getCategoryBySlug(slug))

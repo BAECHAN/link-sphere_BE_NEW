@@ -35,6 +35,17 @@ class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response)
     }
 
+    @ExceptionHandler(CategoryNotFoundException::class)
+    fun handleCategoryNotFoundException(e: CategoryNotFoundException): ResponseEntity<ErrorResponse> {
+        val response =
+            ErrorResponse(
+                status = HttpStatus.NOT_FOUND.value(),
+                code = "CATEGORY_NOT_FOUND",
+                message = e.message ?: "Category not found",
+            )
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response)
+    }
+
     @ExceptionHandler(CommentDeletedException::class)
     fun handleCommentDeletedException(e: CommentDeletedException): ResponseEntity<ErrorResponse> {
         val response =
@@ -224,15 +235,19 @@ class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response)
     }
 
+    // 앱 코드는 IllegalArgumentException을 던지지 않는다(AppWideArchitectureRulesTest가 막는다) - 여기 오는 건
+    // 라이브러리가 잘못된 인자로 던진 것뿐이라(예: page=-1이면 PageRequest.of) 입력 오류로 본다. 예전에는 404
+    // NOT_FOUND로 매핑해 빈 댓글 같은 입력 오류까지 "없음"으로 나갔다(docs/plans/2026-10-25-be-architecture-audit.md PR3).
     @ExceptionHandler(IllegalArgumentException::class)
     fun handleIllegalArgumentException(e: IllegalArgumentException): ResponseEntity<ErrorResponse> {
+        logger.warn("Illegal argument: {}", e.message)
         val response =
             ErrorResponse(
-                status = HttpStatus.NOT_FOUND.value(),
-                code = "NOT_FOUND",
-                message = e.message ?: "Not found",
+                status = HttpStatus.BAD_REQUEST.value(),
+                code = "INVALID_INPUT",
+                message = e.message ?: "Invalid input",
             )
-        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response)
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response)
     }
 
     @ExceptionHandler(InvalidUrlException::class)

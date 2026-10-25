@@ -216,7 +216,7 @@ Plan mode로 계획을 세우고 구현한 작업은, PR을 열기 전에:
 - **Never** `Authentication.name`·`Principal.name` 직접 파싱 → 항상 `authentication.getUserId()` 확장 함수 사용 (`global/common/SecurityUtils.kt`). 아직 어기는 곳은 `docs/BE-ARCHITECTURE.md` §9에 있다 — 본뜨지 않는다
 - **Never** Controller에서 비즈니스 로직 → 반드시 Service 레이어로 위임. 예외는 사용자 요청 경로에만 거는 레이트리밋(`rateLimitService.consume`)이다 — 봇(`FeedItemProcessor`)이 Service를 직접 부르므로 한도는 컨트롤러에서 건다(BE-ARCHITECTURE §3). Repository 직접 참조는 `controllersMustNotDependOnRepositories`가 막는다
 - **Never** Repository에서 직접 예외 throw → Service에서 처리 (`repositoriesMustNotConstructExceptions`가 막는다)
-- **Never** `IllegalArgumentException` throw → 전역 핸들러가 404 `NOT_FOUND`로 바꿔 입력 오류가 "없음"으로 보인다. 입력 오류는 `InvalidInputException`, 대상 없음은 `*NotFoundException`, 내부 불변조건 위반은 `IllegalStateException`(BE-ARCHITECTURE §4). 남은 곳은 §9
+- **Never** `IllegalArgumentException` throw → 의미가 뭉개진다(예전에는 핸들러가 404 `NOT_FOUND`로 바꿔 빈 댓글 같은 입력 오류가 "없음"으로 나갔다). 입력 오류는 `InvalidInputException`, 대상 없음은 `*NotFoundException`, 내부 불변조건 위반은 `IllegalStateException`(BE-ARCHITECTURE §4). `appCodeMustNotConstructIllegalArgumentException`가 막는다
 - **Never** `GlobalExceptionHandler` 수정 없이 새 예외 클래스 추가 → 핸들러에 `@ExceptionHandler` 반드시 등록 (`ExceptionHandlerCoverageTest`가 막는다)
 - **Never** Controller에서 직접 HTTP 상태코드 하드코딩 → `HttpStatus.*` 상수 사용 (`ApiResponse(HttpStatus.OK.value(), …)`, `HttpStatusLiteralTest`가 막는다)
 - **Never** Security 인증 없이 사용자 식별 → `Authentication?`이 null이면 인증 안 된 것, 명시적으로 처리

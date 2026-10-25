@@ -60,6 +60,16 @@ class AppWideArchitectureRulesTest {
             )
             .`as`("Repository는 예외를 만들어 던지지 않는다 - 없으면 null/0을 돌려주고 Service가 판단한다")
 
+    // GlobalExceptionHandler가 IllegalArgumentException을 라이브러리발 입력 오류(400)로만 다루므로, 앱 코드가 직접
+    // 던지면 "없음"·"불변조건 위반"이 입력 오류로 섞인다. 입력 오류는 InvalidInputException, 없음은 *NotFoundException,
+    // 내부 불변조건은 IllegalStateException을 쓴다(docs/BE-ARCHITECTURE.md §4). require() 같은 Kotlin inline 함수도
+    // 호출부 바이트코드에 IAE 생성이 펼쳐져 함께 잡힌다 - 정책상 맞다.
+    @ArchTest
+    val appCodeMustNotConstructIllegalArgumentException: ArchRule =
+        noClasses()
+            .should().callConstructorWhere(target(owner(assignableTo(IllegalArgumentException::class.java))))
+            .`as`("앱 코드는 IllegalArgumentException을 만들지 않는다 - 의미 있는 예외(§4)를 던진다")
+
     // global은 도메인을 모르는 공통 계층이다. 아래 세 쌍만 의도적인 예외다(docs/BE-ARCHITECTURE.md §3):
     // 보안 필터 체인이 auth 도메인의 세션 필터를 끼우고, 범용 레이트리밋이 auth 도메인의 카운터 테이블을 쓴다.
     @ArchTest

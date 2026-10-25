@@ -165,7 +165,7 @@ class CommentService(
         parentId: UUID? = null,
     ): CommentResponse {
         if (content.isNullOrBlank() && images?.isEmpty() ?: true) {
-            throw IllegalArgumentException("Content or image must be provided")
+            throw InvalidInputException("Content or image must be provided")
         }
         if ((images?.size ?: 0) > MAX_COMMENT_IMAGES) {
             throw InvalidInputException("Comment images cannot exceed $MAX_COMMENT_IMAGES")
@@ -180,12 +180,12 @@ class CommentService(
                 commentRepository.findByIdOrNull(parentId)
                     ?: throw CommentNotFoundException(parentId)
             if (parentComment.parentId != null) {
-                throw IllegalArgumentException(
+                throw InvalidInputException(
                     "Reply to reply is not allowed (Max Depth 1)",
                 )
             }
             if (parentComment.postId != postId) {
-                throw IllegalArgumentException(
+                throw InvalidInputException(
                     "Parent comment belongs to a different post",
                 )
             }
@@ -198,7 +198,7 @@ class CommentService(
         if (post.isPrivate && post.userId != userId) throw PostNotFoundException(postId)
         val member =
             memberRepository.findByIdOrNull(userId)
-                ?: throw IllegalArgumentException("User not found")
+                ?: throw IllegalStateException("User not found")
         // 읽기·좋아요·북마크는 막지 않고 글쓰기·댓글쓰기만 막는다(docs/plans/2026-09-28-auth-hardening.md
         // "확정된 결정들" 참고). 위에서 이미 조회한 member를 그대로 써 추가 쿼리가 없다.
         if (!member.emailVerified) {
@@ -234,7 +234,7 @@ class CommentService(
         images: List<String>?,
     ): CommentResponse {
         if (content.isNullOrBlank() && images?.isEmpty() ?: true) {
-            throw IllegalArgumentException("Content or image must be provided")
+            throw InvalidInputException("Content or image must be provided")
         }
         if ((images?.size ?: 0) > MAX_COMMENT_IMAGES) {
             throw InvalidInputException("Comment images cannot exceed $MAX_COMMENT_IMAGES")
@@ -249,7 +249,7 @@ class CommentService(
 
         // Depth Check (Max Depth 1)
         if (parent.parentId != null) {
-            throw IllegalArgumentException(
+            throw InvalidInputException(
                 "Reply to reply is not allowed (Max Depth 1)",
             )
         }
@@ -262,7 +262,7 @@ class CommentService(
 
         val member =
             memberRepository.findByIdOrNull(userId)
-                ?: throw IllegalArgumentException("User not found")
+                ?: throw IllegalStateException("User not found")
         if (!member.emailVerified) {
             throw EmailNotVerifiedException("Email verification required to create a reply")
         }
@@ -375,7 +375,7 @@ class CommentService(
         images: List<String>?,
     ): CommentResponse {
         if (content.isNullOrBlank() && images?.isEmpty() ?: true) {
-            throw IllegalArgumentException("Content or image must be provided")
+            throw InvalidInputException("Content or image must be provided")
         }
         if ((images?.size ?: 0) > MAX_COMMENT_IMAGES) {
             throw InvalidInputException("Comment images cannot exceed $MAX_COMMENT_IMAGES")
@@ -429,7 +429,7 @@ class CommentService(
 
         val member =
             memberRepository.findByIdOrNull(userId)
-                ?: throw IllegalArgumentException("User not found")
+                ?: throw IllegalStateException("User not found")
 
         return toCommentResponse(updated, member)
     }
