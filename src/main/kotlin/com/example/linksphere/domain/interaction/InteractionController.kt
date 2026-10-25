@@ -25,7 +25,7 @@ class InteractionController(
     @PutMapping("/post/{postId}/like")
     fun putPostLike(
         @PathVariable postId: UUID,
-        authentication: Authentication?,
+        authentication: Authentication,
     ): ApiResponse<PostLikeResponse> {
         val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
         val result = interactionService.setPostLike(postId, userId, liked = true)
@@ -40,7 +40,7 @@ class InteractionController(
     @DeleteMapping("/post/{postId}/like")
     fun deletePostLike(
         @PathVariable postId: UUID,
-        authentication: Authentication?,
+        authentication: Authentication,
     ): ApiResponse<PostLikeResponse> {
         val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
         val result = interactionService.setPostLike(postId, userId, liked = false)
@@ -55,7 +55,7 @@ class InteractionController(
     @PutMapping("/comment/{commentId}/like")
     fun putCommentLike(
         @PathVariable commentId: UUID,
-        authentication: Authentication?,
+        authentication: Authentication,
     ): ApiResponse<Map<String, Boolean>> {
         val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
         val isLiked = interactionService.setCommentLike(commentId, userId, liked = true)
@@ -70,7 +70,7 @@ class InteractionController(
     @DeleteMapping("/comment/{commentId}/like")
     fun deleteCommentLike(
         @PathVariable commentId: UUID,
-        authentication: Authentication?,
+        authentication: Authentication,
     ): ApiResponse<Map<String, Boolean>> {
         val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
         val isLiked = interactionService.setCommentLike(commentId, userId, liked = false)
@@ -85,7 +85,7 @@ class InteractionController(
     @PutMapping("/post/{postId}/bookmark")
     fun putPostBookmark(
         @PathVariable postId: UUID,
-        authentication: Authentication?,
+        authentication: Authentication,
     ): ApiResponse<BookmarkFoldersResponse> {
         val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
         val result = interactionService.setBookmark(postId, userId, bookmarked = true)
@@ -100,7 +100,7 @@ class InteractionController(
     @DeleteMapping("/post/{postId}/bookmark")
     fun deletePostBookmark(
         @PathVariable postId: UUID,
-        authentication: Authentication?,
+        authentication: Authentication,
     ): ApiResponse<BookmarkFoldersResponse> {
         val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
         val result = interactionService.setBookmark(postId, userId, bookmarked = false)
@@ -116,7 +116,7 @@ class InteractionController(
     fun addBookmarkFolder(
         @PathVariable postId: UUID,
         @PathVariable folderId: UUID,
-        authentication: Authentication?,
+        authentication: Authentication,
     ): ApiResponse<BookmarkFoldersResponse> {
         val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
         val result = interactionService.addBookmarkFolder(postId, folderId, userId)
@@ -134,7 +134,7 @@ class InteractionController(
         @PathVariable postId: UUID,
         @PathVariable folderId: UUID,
         @RequestParam(defaultValue = "false") removeBookmarkIfEmpty: Boolean,
-        authentication: Authentication?,
+        authentication: Authentication,
     ): ApiResponse<BookmarkFoldersResponse> {
         val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
         val result = interactionService.removeBookmarkFolder(postId, folderId, userId, removeBookmarkIfEmpty)
@@ -145,7 +145,7 @@ class InteractionController(
     @DeleteMapping("/bookmark/{postId}/folders")
     fun clearBookmarkFolders(
         @PathVariable postId: UUID,
-        authentication: Authentication?,
+        authentication: Authentication,
     ): ApiResponse<BookmarkFoldersResponse> {
         val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
         val result = interactionService.clearBookmarkFolders(postId, userId)
@@ -161,7 +161,7 @@ class InteractionController(
     fun batchAddBookmarksToFolder(
         @PathVariable folderId: UUID,
         @RequestBody request: BatchFolderBookmarksRequest,
-        authentication: Authentication?,
+        authentication: Authentication,
     ): ApiResponse<BatchResultResponse> {
         val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
         val added = bookmarkFolderService.batchAddBookmarksToFolder(userId, folderId, request.postIds)
@@ -173,7 +173,7 @@ class InteractionController(
     fun batchRemoveBookmarksFromFolder(
         @PathVariable folderId: UUID,
         @RequestBody request: BatchFolderBookmarksRequest,
-        authentication: Authentication?,
+        authentication: Authentication,
     ): ApiResponse<BatchResultResponse> {
         val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
         val removed = bookmarkFolderService.batchRemoveBookmarksFromFolder(userId, folderId, request.postIds)
@@ -188,7 +188,7 @@ class InteractionController(
     @PostMapping("/bookmark/batch/delete")
     fun batchDeleteBookmarks(
         @RequestBody request: BatchDeleteBookmarksRequest,
-        authentication: Authentication?,
+        authentication: Authentication,
     ): ApiResponse<BatchResultResponse> {
         val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
         val deleted = bookmarkFolderService.batchDeleteBookmarks(userId, request.postIds)

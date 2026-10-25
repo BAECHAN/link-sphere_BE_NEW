@@ -89,17 +89,15 @@ flowchart TD
 | `global exception 패키지의 모든 예외에 @ExceptionHandler가 있다` | 등록 안 된 예외가 500으로 떨어짐 | `global/exception/ExceptionHandlerCoverageTest.kt` |
 | `응답 상태코드에 숫자 리터럴을 쓰지 않는다` | `ApiResponse(200, …)`·`ResponseEntity.status(401)` — 상수 인자는 바이트코드로 구별되지 않아 소스 텍스트를 스캔 | `architecture/HttpStatusLiteralTest.kt` |
 | `모든 컨트롤러에 @Tag 가, 모든 엔드포인트에 @Operation summary 가 있다` | Swagger 문서 누락 | `global/config/SwaggerDocsCoverageTest.kt` |
+| `onlySecurityUtilsReadsPrincipalName` | `Principal`·`Authentication`의 `name`을 `SecurityUtils` 밖에서 읽어 직접 파싱 | `architecture/AppWideArchitectureRulesTest.kt` |
+| `엔드포인트는 Principal이나 @AuthenticationPrincipal로 사용자를 받지 않는다` | 사용자를 `Authentication` + `getUserId()` 밖의 방식으로 받음 | `architecture/ControllerSignatureRulesTest.kt` |
+| `Authentication 파라미터의 nullable은 @SecurityRequirements가 붙은 공개 엔드포인트에만 쓴다` | 인증 필수 엔드포인트의 `Authentication?` — Kotlin nullability를 봐야 해 리플렉션으로 검사 | 위와 같음 |
+| `엔드포인트는 ApiResponse 또는 ResponseEntity로 감싼 ApiResponse를 반환한다` | 응답 래퍼를 안 쓰는 엔드포인트(제네릭 반환형 검사) | 위와 같음 |
 
 ArchUnit 규칙은 대상 클래스가 0개면 실패한다(`archRule.failOnEmptyShould` 기본값, 2026-10-25 빈 대상 규칙을 일부러
 넣어 확인) — 패키지가 바뀌어도 조용히 통과하지 않는다. 클래스패스 스캔 테스트는 최소 개수 하한선을 둔다.
 
-**지금 위반이 남아 있어 아직 켜지 않은 규칙** — §9의 정리 PR에서 수정과 함께 켠다:
-
-| 예정 규칙 | 막을 것 | 켜는 PR |
-|---|---|---|
-| `Principal`·`@AuthenticationPrincipal` 파라미터 금지, `getName()`은 `SecurityUtils`에서만 | 사용자 id를 문자열로 직접 파싱 | 사용자 추출 통일 |
-| `Authentication?`는 `@SecurityRequirements`가 붙은 공개 엔드포인트에만 | 인증 필수 엔드포인트의 nullable 파라미터 | 위와 같음 |
-| 매핑 메서드는 `ApiResponse<*>` 또는 `ResponseEntity<ApiResponse<*>>` 반환 | 응답 래퍼를 안 쓰는 엔드포인트 | 위와 같음 |
+2026-10-25 점검에서 찾은 위반은 위 검사를 켜며 모두 고쳤다. 검사로 막을 수 없어 그대로 둔 곳은 §9에 있다.
 
 ---
 
@@ -154,7 +152,7 @@ return ApiResponse(HttpStatus.OK.value(), "Link preview", postService.previewLin
 ```
 
 - status는 반드시 `HttpStatus.X.value()` — 숫자 리터럴을 쓰지 않는다(`HttpStatusLiteralTest`가 막는다).
-- 쿠키를 붙여야 하는 auth 엔드포인트만 `ResponseEntity<ApiResponse<T>>`를 쓴다(`AuthController`).
+- 응답 헤더(쿠키·캐시)를 붙여야 하는 곳만 `ResponseEntity<ApiResponse<T>>`를 쓴다(`AuthController`, `CategoryController`의 목록).
 - `message`는 FE가 화면에 쓰지 않는다(FE는 `TEXTS`로 문구를 정한다) — 언어가 섞여 있어도 계약 문제는 아니다.
 
 ### 실패 — 예외를 던지고 핸들러가 `ErrorResponse(status, code, message)`로 바꾼다
@@ -425,6 +423,7 @@ for (id in ids) {
 |---|---|---|
 | Service 단위 | `@ExtendWith(MockitoExtension::class)` + `@Mock` + `@InjectMocks` (MockK·AssertJ는 쓰지 않음) | `domain/interaction/InteractionServiceTest.kt` |
 | Controller | `@WebMvcTest(excludeFilters = [SecurityFilterChain…])` + `@MockitoBean` + `@WithMockUser(username = <UUID 문자열>)` + `csrf()` | `domain/interaction/InteractionControllerTest.kt` |
+| 보안 규칙·사용자 추출 | `@WebMvcTest` + `@Import(SecurityConfig, CustomAuthenticationEntryPoint, CustomAccessDeniedHandler)` + `MemberSessionService` mock으로 `X-Access-Token` 판정 | `domain/comment/CommentControllerTest.kt`, `domain/post/PostSecurityTest.kt` |
 | 실제 Postgres | `@PostgresIntegrationTest`(`@DataJpaTest` + Testcontainers `pgvector:pg17` + 운영 덤프 `schema.sql` + `@Tag("integration")`) | `support/PostgresIntegrationTest.kt` |
 | 커밋 동작·동시성 | 위 + `@Import(Service)` + `@Transactional(propagation = NOT_SUPPORTED)` | `domain/auth/MemberSessionServiceIntegrationTest.kt` |
 | 순수 함수 | 일반 클래스에서 직접 호출 | `domain/post/WeakTitleDetectorTest.kt` |
@@ -442,10 +441,6 @@ for (id in ids) {
 
 | 항목 | 어디 | 정리 계획 |
 |---|---|---|
-| `Principal.name`을 문자열로 넘겨 서비스에서 `UUID.fromString` | `AuthController` 5곳 → `AuthService`·`AccountDeletionService` | 사용자 추출 통일 PR |
-| `@AuthenticationPrincipal String?` + 자체 파싱 | `CommentController` | 위와 같음 |
-| 인증 필수인데 `Authentication?` 17곳 | `InteractionController`(12)·`BookmarkFolderController`(5) | 위와 같음 |
-| `ResponseEntity<Void>` 반환, 401 직접 반환 | `FcmTokenController` | 위와 같음 |
 | 외부 클라이언트가 RestClient가 아니라 `RestTemplate` | `SupabaseStorageService` — 타임아웃(연결 3초·읽기 10초)은 설정돼 있다 | 바꾸지 않음 — 전환하면 호출부 3곳과 DELETE+본문 동작까지 바뀌어 회귀 범위가 크다 |
 | 엔티티 안의 표시 규칙 | `TableMember.isWithdrawn`·`publicNickname`·`publicImage`, `TableLinkPreview.toMetadata` | 바꾸지 않음(기록만) |
 | 상속받은 `delete(entity)` 3곳 | `PostService.deletePost`, `CommentService.deleteComment`, `BookmarkFolderService.deleteFolder` | 바꾸지 않음 — 409 `CONCURRENT_UPDATE` 안전망에 기댄다 |

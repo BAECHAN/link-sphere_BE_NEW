@@ -17,7 +17,7 @@ class BookmarkFolderController(private val bookmarkFolderService: BookmarkFolder
 
     @Operation(summary = "내 폴더 목록 조회")
     @GetMapping
-    fun getFolders(authentication: Authentication?): ApiResponse<FolderListResponse> {
+    fun getFolders(authentication: Authentication): ApiResponse<FolderListResponse> {
         val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
         val folders = bookmarkFolderService.getFolders(userId)
         return ApiResponse(HttpStatus.OK.value(), "북마크 폴더 조회 성공", folders)
@@ -31,7 +31,7 @@ class BookmarkFolderController(private val bookmarkFolderService: BookmarkFolder
     @PostMapping
     fun createFolder(
         @RequestBody request: CreateFolderRequest,
-        authentication: Authentication?,
+        authentication: Authentication,
     ): ApiResponse<FolderResponse> {
         val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
         val folder = bookmarkFolderService.createFolder(userId, request)
@@ -47,7 +47,7 @@ class BookmarkFolderController(private val bookmarkFolderService: BookmarkFolder
     fun updateFolder(
         @PathVariable folderId: UUID,
         @RequestBody request: UpdateFolderRequest,
-        authentication: Authentication?,
+        authentication: Authentication,
     ): ApiResponse<FolderResponse> {
         val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
         val folder = bookmarkFolderService.updateFolder(userId, folderId, request)
@@ -62,7 +62,7 @@ class BookmarkFolderController(private val bookmarkFolderService: BookmarkFolder
     @DeleteMapping("/{folderId}")
     fun deleteFolder(
         @PathVariable folderId: UUID,
-        authentication: Authentication?,
+        authentication: Authentication,
     ): ApiResponse<Unit> {
         val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
         bookmarkFolderService.deleteFolder(userId, folderId)
@@ -85,7 +85,7 @@ class BookmarkFolderController(private val bookmarkFolderService: BookmarkFolder
         @RequestParam(required = false) search: String?,
         @RequestParam(defaultValue = "0") page: Int,
         @RequestParam(defaultValue = "10") size: Int,
-        authentication: Authentication?,
+        authentication: Authentication,
     ): ApiResponse<PostPageResponse> {
         val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
         val posts = bookmarkFolderService.getBookmarkedPosts(userId, folderKey, sort, search, page, size)

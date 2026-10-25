@@ -1,22 +1,18 @@
 package com.example.linksphere.domain.comment
 
 import com.example.linksphere.global.common.ApiResponse
+import com.example.linksphere.global.common.getUserId
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.security.SecurityRequirements
 import io.swagger.v3.oas.annotations.tags.Tag
 import org.springframework.http.HttpStatus
-import org.springframework.security.core.annotation.AuthenticationPrincipal
+import org.springframework.security.core.Authentication
 import org.springframework.web.bind.annotation.*
 import java.util.UUID
 
 @Tag(name = "댓글", description = "댓글·답글 작성·조회·수정·삭제")
 @RestController
 class CommentController(private val commentService: CommentService) {
-
-    private fun String?.toRequiredUserId(): UUID = this?.let { UUID.fromString(it) } ?: throw IllegalStateException("User not authenticated")
-
-    // 비로그인 시 Security가 principal에 "anonymousUser" 문자열을 주입하므로 UUID 파싱 실패 → null 처리
-    private fun String?.toOptionalUserId(): UUID? = this?.let { runCatching { UUID.fromString(it) }.getOrNull() }
 
     @Operation(
         summary = "댓글 목록 조회",
@@ -27,8 +23,8 @@ class CommentController(private val commentService: CommentService) {
     @GetMapping("/post/{postId}/comment")
     fun getComments(
         @PathVariable postId: UUID,
-        @AuthenticationPrincipal principal: String?,
-    ): ApiResponse<List<CommentResponse>> = ApiResponse(HttpStatus.OK.value(), "댓글 조회 성공", commentService.getComments(postId, principal.toOptionalUserId()))
+        authentication: Authentication?,
+    ): ApiResponse<List<CommentResponse>> = ApiResponse(HttpStatus.OK.value(), "댓글 조회 성공", commentService.getComments(postId, authentication.getUserId()))
 
     @Operation(
         summary = "내 댓글 목록 조회",
@@ -39,8 +35,11 @@ class CommentController(private val commentService: CommentService) {
     fun getMyComments(
         @RequestParam(defaultValue = "0") page: Int,
         @RequestParam(defaultValue = "10") size: Int,
-        @AuthenticationPrincipal principal: String?,
-    ): ApiResponse<MyCommentPageResponse> = ApiResponse(HttpStatus.OK.value(), "내 댓글 목록 조회 성공", commentService.getMyComments(principal.toRequiredUserId(), page, size))
+        authentication: Authentication,
+    ): ApiResponse<MyCommentPageResponse> {
+        val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
+        return ApiResponse(HttpStatus.OK.value(), "내 댓글 목록 조회 성공", commentService.getMyComments(userId, page, size))
+    }
 
     @Operation(
         summary = "댓글 작성",
@@ -51,9 +50,10 @@ class CommentController(private val commentService: CommentService) {
     fun createComment(
         @PathVariable postId: UUID,
         @RequestBody request: CreateCommentRequest,
-        @AuthenticationPrincipal principal: String?,
+        authentication: Authentication,
     ): ApiResponse<CommentResponse> {
-        val comment = commentService.createComment(postId, principal.toRequiredUserId(), request.content, request.images)
+        val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
+        val comment = commentService.createComment(postId, userId, request.content, request.images)
         return ApiResponse(HttpStatus.CREATED.value(), "댓글 작성 성공", comment)
     }
 
@@ -67,8 +67,11 @@ class CommentController(private val commentService: CommentService) {
     fun createReply(
         @PathVariable commentId: UUID,
         @RequestBody request: CreateCommentRequest,
-        @AuthenticationPrincipal principal: String?,
-    ): ApiResponse<CommentResponse> = ApiResponse(HttpStatus.CREATED.value(), "답글 작성 성공", commentService.createReply(commentId, principal.toRequiredUserId(), request.content, request.images))
+        authentication: Authentication,
+    ): ApiResponse<CommentResponse> {
+        val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
+        return ApiResponse(HttpStatus.CREATED.value(), "답글 작성 성공", commentService.createReply(commentId, userId, request.content, request.images))
+    }
 
     @Operation(
         summary = "댓글 삭제",
@@ -77,9 +80,10 @@ class CommentController(private val commentService: CommentService) {
     @DeleteMapping("/comment/{commentId}")
     fun deleteComment(
         @PathVariable commentId: UUID,
-        @AuthenticationPrincipal principal: String?,
+        authentication: Authentication,
     ): ApiResponse<Unit> {
-        commentService.deleteComment(commentId, principal.toRequiredUserId())
+        val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
+        commentService.deleteComment(commentId, userId)
         return ApiResponse(HttpStatus.OK.value(), "댓글 삭제 성공", Unit)
     }
 
@@ -93,6 +97,9 @@ class CommentController(private val commentService: CommentService) {
     fun updateComment(
         @PathVariable commentId: UUID,
         @RequestBody request: CreateCommentRequest,
-        @AuthenticationPrincipal principal: String?,
-    ): ApiResponse<CommentResponse> = ApiResponse(HttpStatus.OK.value(), "댓글 수정 성공", commentService.updateComment(commentId, principal.toRequiredUserId(), request.content, request.images))
+        authentication: Authentication,
+    ): ApiResponse<CommentResponse> {
+        val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
+        return ApiResponse(HttpStatus.OK.value(), "댓글 수정 성공", commentService.updateComment(commentId, userId, request.content, request.images))
+    }
 }

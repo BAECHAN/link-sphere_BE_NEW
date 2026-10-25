@@ -213,13 +213,13 @@ Plan mode로 계획을 세우고 구현한 작업은, PR을 열기 전에:
 
 ## Critical Rules
 
-- **Never** `Authentication.name`·`Principal.name` 직접 파싱 → 항상 `authentication.getUserId()` 확장 함수 사용 (`global/common/SecurityUtils.kt`). 아직 어기는 곳은 `docs/BE-ARCHITECTURE.md` §9에 있다 — 본뜨지 않는다
+- **Never** `Authentication.name`·`Principal.name` 직접 파싱 → 항상 `authentication.getUserId()` 확장 함수 사용 (`global/common/SecurityUtils.kt`). `Principal`·`@AuthenticationPrincipal` 파라미터도 쓰지 않는다 (`onlySecurityUtilsReadsPrincipalName`·`ControllerSignatureRulesTest`가 막는다)
 - **Never** Controller에서 비즈니스 로직 → 반드시 Service 레이어로 위임. 예외는 사용자 요청 경로에만 거는 레이트리밋(`rateLimitService.consume`)이다 — 봇(`FeedItemProcessor`)이 Service를 직접 부르므로 한도는 컨트롤러에서 건다(BE-ARCHITECTURE §3). Repository 직접 참조는 `controllersMustNotDependOnRepositories`가 막는다
 - **Never** Repository에서 직접 예외 throw → Service에서 처리 (`repositoriesMustNotConstructExceptions`가 막는다)
 - **Never** `IllegalArgumentException` throw → 의미가 뭉개진다(예전에는 핸들러가 404 `NOT_FOUND`로 바꿔 빈 댓글 같은 입력 오류가 "없음"으로 나갔다). 입력 오류는 `InvalidInputException`, 대상 없음은 `*NotFoundException`, 내부 불변조건 위반은 `IllegalStateException`(BE-ARCHITECTURE §4). `appCodeMustNotConstructIllegalArgumentException`가 막는다
 - **Never** `GlobalExceptionHandler` 수정 없이 새 예외 클래스 추가 → 핸들러에 `@ExceptionHandler` 반드시 등록 (`ExceptionHandlerCoverageTest`가 막는다)
 - **Never** Controller에서 직접 HTTP 상태코드 하드코딩 → `HttpStatus.*` 상수 사용 (`ApiResponse(HttpStatus.OK.value(), …)`, `HttpStatusLiteralTest`가 막는다)
-- **Never** Security 인증 없이 사용자 식별 → `Authentication?`이 null이면 인증 안 된 것, 명시적으로 처리
+- **Never** Security 인증 없이 사용자 식별 → 인증 필수 엔드포인트는 `authentication: Authentication`(non-null), 비로그인을 허용하는 공개 엔드포인트만 `Authentication?` + `@SecurityRequirements`이고 null이면 비로그인으로 명시적으로 처리 (`ControllerSignatureRulesTest`가 막는다)
 - **Never** 대상 파일 양식 무시하고 코드 생성 → 항상 붙여넣을 파일(및 인접 코드)을 **먼저 읽고** 들여쓰기·네이밍·import 순서·따옴표·주석 밀도·정렬을 그대로 맞춘다. 본인 스타일을 강요하거나 기존 코드를 재포맷하지 않는다
 - **Never** Lambda Web Adapter 레이어를 다시 붙이지 않는다 → 2026-07-25 502 장애의 직접 원인이었고, `LambdaHandler.warmUp()`은 이 레이어가 **없는 상태를 전제**로 한다. 붙이면 워밍업이 깨진다 (`docs/PERFORMANCE.md` 5장)
 - **Never** 검증 없이 `prod` alias 이동 → 정상 배포는 2026-08-13부터 `deploy.yml`이
