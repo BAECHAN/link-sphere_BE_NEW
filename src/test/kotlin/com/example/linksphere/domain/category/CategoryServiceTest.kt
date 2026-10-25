@@ -1,6 +1,8 @@
 package com.example.linksphere.domain.category
 
+import com.example.linksphere.global.exception.CategoryNotFoundException
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import org.mockito.InjectMocks
@@ -9,9 +11,8 @@ import org.mockito.Mockito.`when`
 import org.mockito.junit.jupiter.MockitoExtension
 
 /**
- * getCategoriesByIds만 다룬다 - PostService가 CategoryRepository를 직접 쓰지 않고 이
- * 메서드를 거치도록 리팩터하면서 추가된 새 코드다. getAllCategories/getCategoryBySlug는
- * 이번 변경으로 건드리지 않아 이 파일의 범위 밖이다.
+ * getCategoriesByIds(PostService가 CategoryRepository를 직접 쓰지 않고 이 메서드를 거치도록 리팩터하면서
+ * 추가된 코드)와 getCategoryBySlug의 "없음" 처리를 다룬다. getAllCategories는 이 파일의 범위 밖이다.
  */
 @ExtendWith(MockitoExtension::class)
 class CategoryServiceTest {
@@ -37,5 +38,13 @@ class CategoryServiceTest {
         val result = categoryService.getCategoriesByIds(emptyList())
 
         assertEquals(emptyList<TableCategory>(), result)
+    }
+
+    // 예전에는 IllegalArgumentException의 공통 매핑으로 404 NOT_FOUND였다 - 무엇이 없는지 code로 알 수 있게 한다
+    @Test
+    fun `getCategoryBySlug 는 slug가 없으면 CategoryNotFoundException`() {
+        `when`(categoryRepository.findBySlug("missing")).thenReturn(null)
+
+        assertThrows(CategoryNotFoundException::class.java) { categoryService.getCategoryBySlug("missing") }
     }
 }

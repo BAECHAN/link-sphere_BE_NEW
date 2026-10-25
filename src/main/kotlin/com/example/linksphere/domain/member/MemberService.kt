@@ -74,14 +74,14 @@ class MemberService(private val memberRepository: MemberRepository) {
     // 규정하지만, 같은 문서가 실제 활용은 상호운용성을 해치므로 권장하지 않는다고 명시한다)
     private fun normalizeEmail(email: String): String = email.trim().lowercase()
 
-    fun findById(id: UUID): TableMember = memberRepository.findById(id).orElseThrow { IllegalArgumentException("Member not found with id: $id") }
+    fun findById(id: UUID): TableMember = memberRepository.findById(id).orElseThrow { IllegalStateException("Member not found with id: $id") }
 
     @Transactional
     fun updateAccount(id: UUID, request: UpdateAccountRequest): TableMember {
         val member = findById(id)
         request.nickname?.let {
             if (!it.equals(member.nickname, ignoreCase = true) && memberRepository.existsByNicknameIgnoreCase(it)) {
-                throw DuplicateMemberException("Nickname already exists: $it")
+                throw DuplicateNicknameException(it)
             }
             member.nickname = it
         }

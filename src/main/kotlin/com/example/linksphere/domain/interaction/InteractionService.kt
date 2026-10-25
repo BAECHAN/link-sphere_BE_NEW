@@ -4,6 +4,7 @@ import com.example.linksphere.domain.comment.CommentRepository
 import com.example.linksphere.domain.post.PostLikeResponse
 import com.example.linksphere.domain.post.PostRepository
 import com.example.linksphere.global.exception.BookmarkFolderNotFoundException
+import com.example.linksphere.global.exception.CommentNotFoundException
 import com.example.linksphere.global.exception.ForbiddenException
 import com.example.linksphere.global.exception.InvalidInputException
 import com.example.linksphere.global.exception.PostNotFoundException
@@ -155,7 +156,7 @@ class InteractionService(
     private fun assertCommentLikeable(commentId: UUID, userId: UUID) {
         val comment =
             commentRepository.findByIdOrNull(commentId)
-                ?: throw IllegalArgumentException("Comment not found: $commentId")
+                ?: throw CommentNotFoundException(commentId)
         // 비공개 글에 달린 댓글도 글 소유자 외에는 좋아요를 달 수 없어야 한다.
         assertPostVisible(comment.postId, userId)
         // 비공개 글 검증 뒤에 확인해야 한다 — 순서를 바꾸면 남의 비공개 글의 삭제된 댓글에

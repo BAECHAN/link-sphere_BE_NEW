@@ -1,5 +1,6 @@
 package com.example.linksphere.domain.category
 
+import com.example.linksphere.global.exception.CategoryNotFoundException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 
@@ -11,7 +12,7 @@ class CategoryService(private val categoryRepository: CategoryRepository) {
 
     fun getCategoryBySlug(slug: String): CategoryResponse = CategoryResponse.from(
         categoryRepository.findBySlug(slug)
-            ?: throw IllegalArgumentException("Category not found with slug: $slug"),
+            ?: throw CategoryNotFoundException(slug),
     )
 
     /** 게시글 등록/수정 시 카테고리 배정용 - PostService가 CategoryRepository를 직접 쓰지 않게 한다. */

@@ -547,6 +547,44 @@ class CommentServiceTest {
         verifyNoInteractions(commentRepository)
     }
 
+    // 본문·이미지가 둘 다 비면 입력 오류(400 INVALID_INPUT)다 - 예전에는 IllegalArgumentException의 공통 매핑으로
+    // 404 NOT_FOUND가 나갔다(docs/plans/2026-10-25-be-architecture-audit.md PR3).
+    @Test
+    fun `createComment는 본문과 이미지가 모두 비면 InvalidInputException을 던진다`() {
+        assertThrows(InvalidInputException::class.java) {
+            commentService.createComment(UUID.randomUUID(), UUID.randomUUID(), " ", emptyList())
+        }
+        verifyNoInteractions(postRepository)
+    }
+
+    @Test
+    fun `createReply는 본문과 이미지가 모두 비면 InvalidInputException을 던진다`() {
+        assertThrows(InvalidInputException::class.java) {
+            commentService.createReply(UUID.randomUUID(), UUID.randomUUID(), null, null)
+        }
+        verifyNoInteractions(commentRepository)
+    }
+
+    @Test
+    fun `updateComment는 본문과 이미지가 모두 비면 InvalidInputException을 던진다`() {
+        assertThrows(InvalidInputException::class.java) {
+            commentService.updateComment(UUID.randomUUID(), UUID.randomUUID(), "", null)
+        }
+        verifyNoInteractions(commentRepository)
+    }
+
+    @Test
+    fun `createReply는 답글에 다시 답글을 달면 InvalidInputException을 던진다`() {
+        val replyId = UUID.randomUUID()
+        val reply = TableComment(id = replyId, postId = UUID.randomUUID(), userId = UUID.randomUUID(), parentId = UUID.randomUUID(), content = "답글")
+        `when`(commentRepository.findById(replyId)).thenReturn(Optional.of(reply))
+
+        assertThrows(InvalidInputException::class.java) {
+            commentService.createReply(replyId, UUID.randomUUID(), "답글의 답글", null)
+        }
+        verifyNoInteractions(postRepository)
+    }
+
     @Test
     fun `updateComment 는 이미 삭제된 댓글이면 CommentDeletedException(409)을 던진다`() {
         val userId = UUID.randomUUID()

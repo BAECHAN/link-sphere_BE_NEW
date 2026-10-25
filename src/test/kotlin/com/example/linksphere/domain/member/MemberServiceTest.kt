@@ -102,7 +102,7 @@ class MemberServiceTest {
     }
 
     @Test
-    fun `updateAccount throws DuplicateMemberException when nickname already taken`() {
+    fun `updateAccount throws DuplicateNicknameException when nickname already taken`() {
         val memberId = UUID.randomUUID()
         val member = TableMember(id = memberId, email = "test@example.com", password = "enc", nickname = "old")
         val request = UpdateAccountRequest(nickname = "takenNick")
@@ -110,7 +110,8 @@ class MemberServiceTest {
         `when`(memberRepository.findById(memberId)).thenReturn(Optional.of(member))
         `when`(memberRepository.existsByNicknameIgnoreCase("takenNick")).thenReturn(true)
 
-        val exception = assertThrows(DuplicateMemberException::class.java) {
+        // 가입(signup)과 같은 code(DUPLICATE_NICKNAME)가 나가야 한다 - 예전에는 DUPLICATE_MEMBER였다
+        val exception = assertThrows(DuplicateNicknameException::class.java) {
             memberService.updateAccount(memberId, request)
         }
         assertTrue(exception.message!!.contains("Nickname already exists"))

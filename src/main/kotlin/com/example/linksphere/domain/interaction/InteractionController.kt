@@ -50,7 +50,7 @@ class InteractionController(
     @Operation(
         summary = "댓글 좋아요",
         description = "이미 좋아요한 상태여도 200 이다(멱등). data 는 {\"isLiked\": true} 다. " +
-            "실패: 404 POST_NOT_FOUND(글 없음·비공개) · 400 INVALID_INPUT(삭제된 댓글)",
+            "실패: 404 COMMENT_NOT_FOUND(댓글 없음) · 404 POST_NOT_FOUND(글 없음·비공개) · 400 INVALID_INPUT(삭제된 댓글)",
     )
     @PutMapping("/comment/{commentId}/like")
     fun putCommentLike(
@@ -65,7 +65,7 @@ class InteractionController(
     @Operation(
         summary = "댓글 좋아요 취소",
         description = "좋아요하지 않은 상태여도 200 이다(멱등). data 는 {\"isLiked\": false} 다. " +
-            "실패: 404 POST_NOT_FOUND(글 없음·비공개) · 400 INVALID_INPUT(삭제된 댓글)",
+            "실패: 404 COMMENT_NOT_FOUND(댓글 없음) · 404 POST_NOT_FOUND(글 없음·비공개) · 400 INVALID_INPUT(삭제된 댓글)",
     )
     @DeleteMapping("/comment/{commentId}/like")
     fun deleteCommentLike(

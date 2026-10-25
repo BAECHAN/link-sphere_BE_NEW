@@ -294,6 +294,40 @@
 
 ### Changed
 
+- `comment` 빈 댓글·답글 깊이 초과는 400 INVALID_INPUT, 없는 댓글 좋아요는 COMMENT_NOT_FOUND
+  <details><summary>배경·구현</summary>
+
+  서비스가 `IllegalArgumentException`을 던지면 전역 핸들러가 전부 404 `NOT_FOUND`로 바꿔, 본문·이미지가 둘 다 빈
+  댓글·답글·수정과 답글의 답글이 "없음"으로 나갔고, 없는 댓글에 좋아요를 누르면 다른 댓글 경로의 `COMMENT_NOT_FOUND`가
+  아니라 일반 `NOT_FOUND`가 나갔다. 이제 입력 오류는 `InvalidInputException`(400 `INVALID_INPUT`), 없는 댓글은
+  `CommentNotFoundException`(404 `COMMENT_NOT_FOUND`)이다. FE는 댓글 오류를 code와 무관한 기본 문구로 보여 주고 404는
+  상태값으로만 봐 바뀌는 화면이 없다. 인증된 본인·작성자 회원이 없는 경우(FK `ON DELETE CASCADE`이고 앱은 회원을 지우지
+  않아 일어나지 않는 불변조건, 9곳)는 `IllegalStateException`(500)으로 바꿨다. 앱 코드의 IAE 생성은
+  `AppWideArchitectureRulesTest.appCodeMustNotConstructIllegalArgumentException`이 막는다.
+  (`CommentService.kt`, `InteractionService.kt`, `PostService.kt`, `PostResponseAssembler.kt`, `MemberService.kt`,
+  `AccountDeletionService.kt`, 계획 `docs/plans/2026-10-25-be-architecture-audit.md` PR3)
+
+  </details>
+
+- `member` 내 계정 수정의 닉네임 중복 code를 가입과 같은 DUPLICATE_NICKNAME으로
+  <details><summary>배경·구현</summary>
+
+  가입은 `DUPLICATE_NICKNAME`인데 `PATCH /auth/account`만 `DUPLICATE_MEMBER`(이메일 중복과 같은 code)를 냈다
+  (`MemberService.updateAccount`). FE는 닉네임 중복을 409 상태값으로만 판단해(`account.queries.ts`) 화면은 그대로다.
+
+  </details>
+
+- `category` 없는 slug 조회는 404 CATEGORY_NOT_FOUND, 라이브러리발 잘못된 인자는 400 INVALID_INPUT
+  <details><summary>배경·구현</summary>
+
+  `GET /common/category-option/{slug}`가 없는 slug에 일반 `NOT_FOUND`를 냈다 — 새 `CategoryNotFoundException`
+  (404 `CATEGORY_NOT_FOUND`)으로 바꿨다(FE는 이 엔드포인트를 쓰지 않는다). 앱 코드가 IAE를 더는 던지지 않으므로 전역
+  `IllegalArgumentException` 핸들러는 라이브러리가 잘못된 인자로 던진 경우(예: `page=-1`이면 `PageRequest.of`)만 받는다 —
+  404 `NOT_FOUND` 대신 400 `INVALID_INPUT` + warn 로그로 바꿨다. (`CategoryNotFoundException.kt`(신규),
+  `CategoryService.kt`, `GlobalExceptionHandler.kt`)
+
+  </details>
+
 - `category` 카테고리 목록 응답을 브라우저가 저장해 두고 쓰도록 캐시 헤더를 붙임
   <details><summary>배경·구현</summary>
 

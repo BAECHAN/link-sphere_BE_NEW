@@ -55,7 +55,7 @@ class AccountDeletionService(
     @Transactional
     fun requestDeletion(userId: String, rawPassword: String) {
         val id = UUID.fromString(userId)
-        val member = memberRepository.findById(id).orElseThrow { IllegalArgumentException("Member not found with id: $userId") }
+        val member = memberRepository.findById(id).orElseThrow { IllegalStateException("Member not found with id: $userId") }
 
         if (!passwordEncoder.matches(rawPassword, member.password)) {
             throw InvalidCredentialsException("Password is incorrect")

@@ -82,6 +82,7 @@ flowchart TD
 | `controllersMustNotDependOnRepositories` | `@RestController`가 Repository·`*RepositoryImpl`을 직접 참조(앱 전체) | `architecture/AppWideArchitectureRulesTest.kt` |
 | `repositoriesMustNotConstructExceptions` | Repository·`*RepositoryImpl`이 예외를 생성 | 위와 같음 |
 | `globalMustNotDependOnDomain` | `global` → `domain` 의존(허용 3쌍 제외) | 위와 같음 |
+| `appCodeMustNotConstructIllegalArgumentException` | 앱 코드의 `IllegalArgumentException` 생성(`require()` 같은 inline 함수 포함) | 위와 같음 |
 | `controllerMustNotDependOnRepository` | 위 첫 규칙의 domain 한정판(먼저 있던 것) | `architecture/ArchitectureRulesTest.kt` |
 | `servicesMustNotHaveCrossDomainCycles` | 도메인 Service 사이 순환 의존(빈 생성 실패로만 드러남) | 위와 같음 |
 | `repositoryDeleteMethodsMustBeBulk` | derived delete(`deleteBy…`) — `@Modifying @Query` 일괄 DELETE만 | `architecture/RepositoryDeleteRulesTest.kt` |
@@ -96,7 +97,6 @@ ArchUnit 규칙은 대상 클래스가 0개면 실패한다(`archRule.failOnEmpt
 
 | 예정 규칙 | 막을 것 | 켜는 PR |
 |---|---|---|
-| `IllegalArgumentException` 생성 금지 | IAE가 404 `NOT_FOUND`로 바뀌어 응답 코드가 틀어짐 | 에러 코드 정리 |
 | `Principal`·`@AuthenticationPrincipal` 파라미터 금지, `getName()`은 `SecurityUtils`에서만 | 사용자 id를 문자열로 직접 파싱 | 사용자 추출 통일 |
 | `Authentication?`는 `@SecurityRequirements`가 붙은 공개 엔드포인트에만 | 인증 필수 엔드포인트의 nullable 파라미터 | 위와 같음 |
 | 매핑 메서드는 `ApiResponse<*>` 또는 `ResponseEntity<ApiResponse<*>>` 반환 | 응답 래퍼를 안 쓰는 엔드포인트 | 위와 같음 |
@@ -170,7 +170,7 @@ return ApiResponse(HttpStatus.OK.value(), "Link preview", postService.previewLin
 | 권한 없음(존재를 숨길 필요가 없을 때) | `ForbiddenException` → 403 |
 | 동시 요청·중복 | 전용 예외(`DuplicateNicknameException` 등) 또는 전역 409 안전망 |
 | **있어서는 안 되는 내부 불변조건 위반**(인증된 principal이 UUID가 아님 등) | `IllegalStateException` → 전용 핸들러 없이 500 |
-| ~~`IllegalArgumentException`~~ | **쓰지 않는다** — 핸들러가 404 `NOT_FOUND`로 바꿔 "입력 오류"도 "없음"으로 보인다(§9) |
+| ~~`IllegalArgumentException`~~ | **쓰지 않는다**(`appCodeMustNotConstructIllegalArgumentException`) — 핸들러는 라이브러리가 던진 IAE(예: `page=-1`)만 받는 400 안전망이다. 예전에 404 `NOT_FOUND`로 매핑해 입력 오류가 "없음"으로 나갔다 |
 
 새 예외 클래스는 `global/exception/`에 만들고 `GlobalExceptionHandler`에 `@ExceptionHandler`를 추가한다 —
 `ExceptionHandlerCoverageTest`가 빠뜨림을 잡는다. FE가 code로 분기해야 하면 FE `shared/config/error-code.ts`에도 추가한다.
@@ -182,11 +182,12 @@ return ApiResponse(HttpStatus.OK.value(), "Link preview", postService.previewLin
 | 예외 | HTTP | code |
 |---|---|---|
 | `PostNotFoundException` | 404 | `POST_NOT_FOUND` |
+| `CategoryNotFoundException` | 404 | `CATEGORY_NOT_FOUND` |
 | `CommentNotFoundException` | 404 | `COMMENT_NOT_FOUND` |
 | `BookmarkFolderNotFoundException` | 404 | `FOLDER_NOT_FOUND` |
 | `CommentDeletedException` | 409 | `COMMENT_DELETED` |
-| `DuplicateMemberException` | 409 | `DUPLICATE_MEMBER` |
-| `DuplicateNicknameException` | 409 | `DUPLICATE_NICKNAME` |
+| `DuplicateMemberException` | 409 | `DUPLICATE_MEMBER`(이메일 중복) |
+| `DuplicateNicknameException` | 409 | `DUPLICATE_NICKNAME`(가입·수정 모두) |
 | `DuplicateFolderNameException` | 409 | `DUPLICATE_FOLDER_NAME` |
 | `SessionMismatchException` | 409 | `SESSION_MISMATCH` |
 | `ForbiddenException` | 403 | `FORBIDDEN` |
@@ -198,7 +199,7 @@ return ApiResponse(HttpStatus.OK.value(), "Link preview", postService.previewLin
 | `InvalidInputException` | 400 | `INVALID_INPUT` |
 | `InvalidUrlException` | 400 | `INVALID_URL` / `URL_UNRESOLVABLE` / `URL_NOT_ALLOWED` (`e.code`) |
 | `UnsupportedImageTypeException` | 400 | `UNSUPPORTED_IMAGE_TYPE` |
-| `IllegalArgumentException` | 404 | `NOT_FOUND` (§9 — 정리 예정) |
+| `IllegalArgumentException`(라이브러리발만) | 400 | `INVALID_INPUT` |
 | Spring `MissingRequestCookieException` | 401 | `MISSING_REFRESH_TOKEN` |
 | Jakarta `ConstraintViolationException` · Spring `MethodArgumentNotValidException` | 400 | `INVALID_INPUT` |
 | Spring `MethodArgumentTypeMismatchException` | 400 | `INVALID_PATH_VARIABLE` |
@@ -441,8 +442,6 @@ for (id in ids) {
 
 | 항목 | 어디 | 정리 계획 |
 |---|---|---|
-| `IllegalArgumentException` 17곳 → 404 `NOT_FOUND` | 빈 댓글(`CommentService.createComment` 등)이 400이 아니라 404, `InteractionService.assertCommentLikeable`이 `CommentNotFoundException` 대신 IAE, 회원 없음 불변조건 9곳 | 에러 코드 정리 PR — 입력 오류는 `InvalidInputException`, 불변조건은 `IllegalStateException`, IAE 핸들러는 400 안전망으로 |
-| 닉네임 수정 중복이 `DUPLICATE_MEMBER` | `MemberService.updateAccount`(가입은 `DUPLICATE_NICKNAME`) | 위와 같음 |
 | `Principal.name`을 문자열로 넘겨 서비스에서 `UUID.fromString` | `AuthController` 5곳 → `AuthService`·`AccountDeletionService` | 사용자 추출 통일 PR |
 | `@AuthenticationPrincipal String?` + 자체 파싱 | `CommentController` | 위와 같음 |
 | 인증 필수인데 `Authentication?` 17곳 | `InteractionController`(12)·`BookmarkFolderController`(5) | 위와 같음 |
