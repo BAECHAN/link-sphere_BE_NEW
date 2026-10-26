@@ -4,6 +4,7 @@ import com.example.linksphere.domain.auth.MemberSessionService
 import com.example.linksphere.domain.category.CategoryController
 import com.example.linksphere.domain.category.CategoryResponse
 import com.example.linksphere.domain.category.CategoryService
+import org.hamcrest.Matchers.startsWith
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.`when`
 import org.springframework.beans.factory.annotation.Autowired
@@ -12,18 +13,21 @@ import org.springframework.context.annotation.ComponentScan
 import org.springframework.context.annotation.FilterType
 import org.springframework.http.HttpHeaders
 import org.springframework.security.test.context.support.WithMockUser
+import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf
 import org.springframework.security.web.SecurityFilterChain
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.header
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import java.util.UUID
 
 /**
- * 예외가 의도한 HTTP 상태·code로 나가는지 실제 MVC 경로로 검증한다 - Accept 협상 실패(406), IllegalArgumentException
- * 안전망(400), 카테고리 없음(404). 어느 컨트롤러든 같은 핸들러를 타므로 의존성이 가장 적은 CategoryController로 확인한다.
+ * 예외가 의도한 HTTP 상태·code로 나가는지 실제 MVC 경로로 검증한다 - Accept 협상 실패(406), 지원하지 않는 메서드(405),
+ * IllegalArgumentException 안전망(400), 카테고리 없음(404). 어느 컨트롤러든 같은 핸들러를 타므로 의존성이 가장 적은 CategoryController로 확인한다.
  */
 @WebMvcTest(
     controllers = [CategoryController::class],
@@ -84,6 +88,30 @@ class GlobalExceptionHandlerTest {
         mockMvc.perform(get("/common/category-option/missing"))
             .andExpect(status().isNotFound)
             .andExpect(jsonPath("$.code").value("CATEGORY_NOT_FOUND"))
+    }
+
+    // 컨트롤러에 없는 메서드는 Spring MVC가 매핑 단계에서 HttpRequestMethodNotSupportedException을 던진다 - 예전에는 Exception
+    // 안전망이 먼저 잡아 500이었다(운영 재현: DELETE /api/common/category-option, 2026-10-26). RFC 9110 §10.2.1은 405에
+    // Allow 헤더를 필수로 요구한다.
+    @Test
+    @WithMockUser
+    fun `지원하지 않는 메서드는 500이 아니라 Allow 헤더가 있는 405 METHOD_NOT_ALLOWED로 나간다`() {
+        mockMvc.perform(delete("/common/category-option").with(csrf()))
+            .andExpect(status().isMethodNotAllowed)
+            .andExpect(header().string(HttpHeaders.ALLOW, "GET"))
+            .andExpect(jsonPath("$.code").value("METHOD_NOT_ALLOWED"))
+    }
+
+    // NoResourceFoundException은 ServletException이라 handleSpringMvcException 대상에도 들지만, 더 구체적인 전용 핸들러가
+    // 이겨 기존 응답(404 NOT_FOUND)이 그대로여야 한다
+    @Test
+    @WithMockUser
+    fun `없는 경로는 전용 핸들러가 받아 404 NOT_FOUND로 나간다`() {
+        mockMvc.perform(get("/no-such-path"))
+            .andExpect(status().isNotFound)
+            .andExpect(jsonPath("$.code").value("NOT_FOUND"))
+            // code는 새 핸들러가 받아도 상태 이름이라 같다 - 전용 핸들러만 쓰는 message로 누가 받았는지 가린다
+            .andExpect(jsonPath("$.message").value(startsWith("Resource not found: ")))
     }
 
     // 아래 셋은 IllegalArgumentException 정리(PR3)로 서비스가 새로 던지게 된 예외가 실제로 어떤 응답이 되는지 고정한다 -

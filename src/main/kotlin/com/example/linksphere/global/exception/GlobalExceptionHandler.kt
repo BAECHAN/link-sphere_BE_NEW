@@ -375,6 +375,41 @@ class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.NOT_ACCEPTABLE).build()
     }
 
+    // Spring MVC가 요청을 컨트롤러에 넘기기 전(매핑·바인딩)에 던지는 표준 예외 - 405(지원하지 않는 메서드)·415(Content-Type)·
+    // 400(필수 파라미터 누락) 등. 이 핸들러가 없으면 아래 Exception 안전망이 먼저 잡아 500으로 바꾼다 - 상태를 정해 주는
+    // DefaultHandlerExceptionResolver는 @ExceptionHandler 리졸버 뒤 순서라 돌지 않는다(spring-webmvc 6.2.14
+    // WebMvcConfigurationSupport:1069-1091). 이 예외들은 org.springframework.web.ErrorResponse로 상태와 헤더(405의 Allow -
+    // RFC 9110 §10.2.1이 필수로 요구한다)를 들고 있어 그대로 쓴다. 전용 핸들러가 있는 예외(쿠키 누락·없는 경로·406)는 더
+    // 구체적인 타입이라 그쪽이 이긴다. 뒤의 두 타입은 ServletException이 아니지만 ErrorResponse를 구현한다. 빠진 예외가
+    // 없는지는 SpringMvcExceptionCoverageTest가 감시한다.
+    @ExceptionHandler(
+        jakarta.servlet.ServletException::class,
+        org.springframework.web.ErrorResponseException::class,
+        org.springframework.web.context.request.async.AsyncRequestTimeoutException::class,
+        org.springframework.web.multipart.MaxUploadSizeExceededException::class,
+    )
+    fun handleSpringMvcException(e: Exception): ResponseEntity<ErrorResponse> {
+        if (e !is org.springframework.web.ErrorResponse) {
+            return handleException(e)
+        }
+
+        val status = HttpStatus.resolve(e.statusCode.value()) ?: HttpStatus.INTERNAL_SERVER_ERROR
+
+        if (status.is5xxServerError) {
+            logger.error("Spring MVC error", e)
+        } else {
+            logger.warn("Rejected request ({}): {}", status.value(), e.message)
+        }
+
+        val response =
+            ErrorResponse(
+                status = status.value(),
+                code = if (status == HttpStatus.BAD_REQUEST) "INVALID_INPUT" else status.name,
+                message = e.message ?: status.reasonPhrase,
+            )
+        return ResponseEntity.status(status).headers(e.headers).body(response)
+    }
+
     @ExceptionHandler(Exception::class)
     fun handleException(e: Exception): ResponseEntity<ErrorResponse> {
         logger.error("Unhandled exception", e)

@@ -162,6 +162,7 @@ flowchart LR
 | `servicesMustNotHaveCrossDomainCycles` | 도메인 Service 사이 순환 의존(빈 생성 실패로만 드러남) | 위와 같음 |
 | `repositoryDeleteMethodsMustBeBulk` | derived delete(`deleteBy…`) — `@Modifying @Query` 일괄 DELETE만 | `architecture/RepositoryDeleteRulesTest.kt` |
 | `global exception 패키지의 모든 예외에 @ExceptionHandler가 있다` | 등록 안 된 예외가 500으로 떨어짐 | `global/exception/ExceptionHandlerCoverageTest.kt` |
+| `Spring MVC 표준 예외는 500 안전망으로 떨어지지 않는다` | 405·415·400 같은 Spring 예외가 `Exception` 안전망(500)으로 감 — 대상은 설치된 Spring의 `ResponseEntityExceptionHandler` 목록에서 읽는다 | `global/exception/SpringMvcExceptionCoverageTest.kt` |
 | `응답 상태코드에 숫자 리터럴을 쓰지 않는다` | `ApiResponse(200, …)`·`ResponseEntity.status(401)` — 상수 인자는 바이트코드로 구별되지 않아 소스 텍스트를 스캔 | `architecture/HttpStatusLiteralTest.kt` |
 | `모든 컨트롤러에 @Tag 가, 모든 엔드포인트에 @Operation summary 가 있다` | Swagger 문서 누락 | `global/config/SwaggerDocsCoverageTest.kt` |
 | `onlySecurityUtilsReadsPrincipalName` | `Principal`·`Authentication`의 `name`을 `SecurityUtils` 밖에서 읽어 직접 파싱 | `architecture/AppWideArchitectureRulesTest.kt` |
@@ -319,7 +320,8 @@ return ApiResponse(HttpStatus.OK.value(), "Link preview", postService.previewLin
 | ~~`IllegalArgumentException`~~ | **쓰지 않는다**(`appCodeMustNotConstructIllegalArgumentException`) — 핸들러는 라이브러리가 던진 IAE(예: `page=-1`)만 받는 400 안전망이다. 예전에 404 `NOT_FOUND`로 매핑해 입력 오류가 "없음"으로 나갔다 |
 
 새 예외 클래스는 `global/exception/`에 만들고 `GlobalExceptionHandler`에 `@ExceptionHandler`를 추가한다 —
-`ExceptionHandlerCoverageTest`가 빠뜨림을 잡는다. FE가 code로 분기해야 하면 FE `shared/config/error-code.ts`에도 추가한다.
+`ExceptionHandlerCoverageTest`가 빠뜨림을 잡는다. Spring MVC 표준 예외(설치된 `ResponseEntityExceptionHandler`의 목록)가
+500 안전망으로 떨어지지 않는지는 `SpringMvcExceptionCoverageTest`가 본다. FE가 code로 분기해야 하면 FE `shared/config/error-code.ts`에도 추가한다.
 
 ### code 표
 
@@ -354,6 +356,7 @@ return ApiResponse(HttpStatus.OK.value(), "Link preview", postService.previewLin
 | Spring `ConcurrencyFailureException` | 409 | `CONCURRENT_UPDATE` |
 | Spring `NoResourceFoundException` | 404 | `NOT_FOUND` |
 | Spring `HttpMediaTypeNotAcceptableException` | 406 | (본문 없음) |
+| 그 밖의 Spring MVC 표준 예외(`ErrorResponse` 구현 — 405 메서드·415 Content-Type·400 필수 파라미터 누락 등) | 예외가 정한 상태(405는 `Allow` 헤더 포함) | 400이면 `INVALID_INPUT`, 그 밖은 상태 이름(`METHOD_NOT_ALLOWED`, `UNSUPPORTED_MEDIA_TYPE` …) |
 | 그 밖의 `Exception` | 500 | `INTERNAL_SERVER_ERROR` |
 | 보안 진입점(`CustomAuthenticationEntryPoint`) | 401 | `TOKEN_EXPIRED` / `INVALID_TOKEN` / `NOT_LOGGED_IN` |
 | 보안 거부(`CustomAccessDeniedHandler`) | 403 | `ACCESS_DENIED` |
@@ -601,7 +604,6 @@ for (id in ids) {
 | 엔티티 안의 표시 규칙 | `TableMember.isWithdrawn`·`publicNickname`·`publicImage`, `TableLinkPreview.toMetadata` | 바꾸지 않음(기록만) |
 | 상속받은 `delete(entity)` 3곳 | `PostService.deletePost`, `CommentService.deleteComment`, `BookmarkFolderService.deleteFolder` | 바꾸지 않음 — 409 `CONCURRENT_UPDATE` 안전망에 기댄다 |
 | 패키지 순환을 만드는 간선 9개 | 아래 표 | 바꾸지 않음(지금은) — 새 순환은 `packagesMustBeFreeOfCyclesExceptDocumented`가 막는다. 해소 후보는 "남은 것" |
-| Spring MVC 표준 예외(405·415·필수 파라미터 누락 등)가 500 | `GlobalExceptionHandler`의 `Exception` 안전망이 먼저 잡는다(운영 재현: `DELETE /api/common/category-option` → 500) | 정리 예정 — 예외가 들고 있는 상태·헤더를 쓰는 핸들러 하나 + 누락 감시 검사([계획](plans/2026-10-26-be-architecture-skeleton.md) PR-B) |
 | 생성 엔드포인트가 HTTP 200 + 본문 201 | `PostController.createPost`, `CommentController.createComment`·`createReply`, `BookmarkFolderController.createFolder`, `UploadController.createSignedUploadUrl` | 정리 예정 — `@ResponseStatus(HttpStatus.CREATED)`(같은 계획 PR-C) |
 | 응답 데이터가 이름 없는 `Map` | `InteractionController`의 댓글 좋아요·취소 | 정리 예정 — `CommentLikeResponse`(PR-C) |
 | 헤더를 붙이지 않는데 `ResponseEntity` | `AuthController`의 8곳(`getAccount` 등) — §4는 헤더가 필요한 곳만 쓴다고 적는다 | 정리 예정(PR-C) |
@@ -666,9 +668,9 @@ for (id in ids) {
 
 | 항목 | 표준·공식 문서 | 이 레포 | 결정 |
 |---|---|---|---|
-| 에러 응답 형식 | [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) Problem Details. Spring은 `ProblemDetail`과 `ResponseEntityExceptionHandler`를 준다 | 자체 봉투 `ErrorResponse(status, code, message)` | 유지 — FE가 최상위 `code`로 분기한다. 전환하면 모든 에러 응답 모양이 바뀐다. Spring MVC 표준 예외는 상태·헤더를 그대로 쓰는 핸들러 하나로 맞춘다(§9 정리 예정) |
+| 에러 응답 형식 | [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) Problem Details. Spring은 `ProblemDetail`과 `ResponseEntityExceptionHandler`를 준다 | 자체 봉투 `ErrorResponse(status, code, message)` | 유지 — FE가 최상위 `code`로 분기한다. 전환하면 모든 에러 응답 모양이 바뀐다. Spring MVC 표준 예외는 상태·헤더를 그대로 쓰는 핸들러 하나(`handleSpringMvcException`)로 맞췄다 |
 | 생성 응답 | [RFC 9110 §9.3.3](https://www.rfc-editor.org/rfc/rfc9110#section-9.3.3) | 본문만 201, HTTP는 200(`signup` 제외) | 실제 HTTP 201로 맞춘다(§9). `Location`은 "남은 것" |
-| 405 응답 | [RFC 9110 §10.2.1](https://www.rfc-editor.org/rfc/rfc9110#section-10.2.1) | 500 | 405 + `Allow`(§9) |
+| 405 응답 | [RFC 9110 §10.2.1](https://www.rfc-editor.org/rfc/rfc9110#section-10.2.1) | 405 + `Allow`(`handleSpringMvcException`, 2026-10-26 전에는 500) | 따른다 |
 | 경계 입력 검증 | Bean Validation(`@Valid`) | `@RequestBody` 23곳 중 10곳 | 방식 혼재로 둔다 — `PostCreateRequest`는 봇 경로(`FeedItemProcessor`)도 쓰므로 Service 검증이 어차피 필요하다 |
 | 모듈 순환 | [Spring Modulith 검증](https://docs.spring.io/spring-modulith/reference/verification.html), ArchUnit `slices().beFreeOfCycles()` | 허용 간선 9개(§9) | 새 순환만 막는다 |
 | 관측성 | 구조화 로그·요청 상관 ID | Lambda 로그 형식 Text — 앱 로그 줄에 RequestId가 없다 | "남은 것" |
