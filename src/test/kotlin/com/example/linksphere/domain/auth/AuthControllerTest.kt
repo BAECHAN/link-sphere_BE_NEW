@@ -430,6 +430,38 @@ class AuthControllerTest {
             .andExpect(jsonPath("$.data.available").value(true))
     }
 
+    // MissingRequestCookieException도 ServletException이지만 전용 핸들러가 이겨 기존 응답(401 MISSING_REFRESH_TOKEN)이 그대로다
+    @Test
+    @WithMockUser
+    fun `refresh 쿠키가 없으면 전용 핸들러가 받아 401 MISSING_REFRESH_TOKEN을 반환한다`() {
+        mockMvc.perform(post("/auth/refresh").with(csrf()))
+            .andExpect(status().isUnauthorized)
+            .andExpect(jsonPath("$.code").value("MISSING_REFRESH_TOKEN"))
+    }
+
+    // 아래 둘은 Spring MVC가 컨트롤러에 넘기기 전에 던지는 표준 예외다 - 예전에는 Exception 안전망이 먼저 잡아 500이었다
+    // (운영 재현 2026-10-26, GlobalExceptionHandler.handleSpringMvcException)
+    @Test
+    @WithMockUser
+    fun `필수 파라미터 email이 없으면 500이 아니라 400 INVALID_INPUT을 반환한다`() {
+        mockMvc.perform(get("/auth/email-availability"))
+            .andExpect(status().isBadRequest)
+            .andExpect(jsonPath("$.code").value("INVALID_INPUT"))
+    }
+
+    @Test
+    @WithMockUser
+    fun `JSON이 아닌 Content-Type으로 로그인하면 500이 아니라 415 UNSUPPORTED_MEDIA_TYPE을 반환한다`() {
+        mockMvc.perform(
+            post("/auth/login")
+                .contentType(MediaType.TEXT_PLAIN)
+                .content("email=a@example.com")
+                .with(csrf()),
+        )
+            .andExpect(status().isUnsupportedMediaType)
+            .andExpect(jsonPath("$.code").value("UNSUPPORTED_MEDIA_TYPE"))
+    }
+
     @Test
     @WithMockUser(username = MEMBER_ID)
     fun `checkNicknameAvailability passes the authenticated userId when logged in`() {

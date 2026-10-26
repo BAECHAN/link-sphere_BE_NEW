@@ -438,6 +438,21 @@
 
 ### Fixed
 
+- `api` 지원하지 않는 메서드·Content-Type, 필수 파라미터 누락이 4xx가 아니라 500으로 나가던 문제
+  <details><summary>배경·구현</summary>
+
+  Spring MVC가 컨트롤러에 넘기기 전(매핑·바인딩)에 던지는 표준 예외를 우리 `@ExceptionHandler(Exception::class)` 안전망이
+  먼저 잡아 500 `INTERNAL_SERVER_ERROR`로 바꿨다 — 상태를 정해 주는 `DefaultHandlerExceptionResolver`는 `@ExceptionHandler`
+  리졸버 뒤 순서라 돌지 않는다(spring-webmvc 6.2.14 `WebMvcConfigurationSupport:1069-1091`). 운영에서 `DELETE
+  /api/common/category-option`과 `email` 없는 `GET /api/auth/email-availability`가 500과 ERROR 스택(이벤트 약 110개)을 냈다.
+  `handleSpringMvcException` 하나가 이 예외들이 `ErrorResponse`로 들고 있는 상태·헤더를 그대로 쓴다 — 405는 `Allow` 헤더와
+  `METHOD_NOT_ALLOWED`, 415는 `UNSUPPORTED_MEDIA_TYPE`, 400은 기존 입력 오류 code `INVALID_INPUT`, 로그는 4xx면 warn 한 줄.
+  전용 핸들러가 있는 예외(쿠키 누락·없는 경로·406)는 그대로다. 대상을 설치된 Spring의 `ResponseEntityExceptionHandler`
+  목록에서 읽어 빠짐을 감시하는 `SpringMvcExceptionCoverageTest`를 추가했다. FE는 이 요청을 보내지 않아 화면 변화가 없다.
+  (`GlobalExceptionHandler.kt`, 계획 `docs/plans/2026-10-26-be-architecture-skeleton.md` PR-B)
+
+  </details>
+
 - `member` 동시 가입이 사전 확인을 함께 통과하면 이메일·닉네임 중복 대신 DUPLICATE_RESOURCE가 나가던 문제
   <details><summary>배경·구현</summary>
 
