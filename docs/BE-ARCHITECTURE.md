@@ -733,6 +733,7 @@ for (id in ids) {
   필터 조인)을 별도 조회 패키지로 빼는 안. `member → auth`는 요청 DTO 2개를 옮기면 끊긴다.
 - **공용화·중복 후보**: 비공개 글 404 게이트 6곳(§7-10)과 이메일 인증 확인 4곳의 인라인 반복, `CommentService`의 입력 검증
   3벌(등록·답글·수정)과 `CommentResponse` 변환 2벌(목록·단건).
-- **정리 후보**: 쓰지 않는 의존성 `spring-boot-starter-oauth2-client`와
-  `jwt.secret` 키, 쓰지 않는 Repository 메서드(`PostRepository.findByCategoriesSlug` 등 4개), HTTP로 도달할 수 없는
-  `CommentService.createComment`의 `parentId` 분기, 파일명 `PostAiService.kt`와 클래스명 `PostAIService` 불일치.
+- **정리 후보**: Lambda 환경변수 `JWT_SECRET` — 코드·tracked 설정 어디서도 읽지 않는다(2026-10-26, 변수 이름만 조회).
+  환경변수를 API로 고치려면 다른 비밀값까지 다시 넘겨야 해서, 값이 노출되지 않게 콘솔에서 지운다. (쓰지 않던
+  `spring-boot-starter-oauth2-client` 의존성, 호출 0건인 Repository 메서드 5개, HTTP로 도달할 수 없던 `createComment`의
+  `parentId` 분기, 파일명 `PostAiService.kt` 불일치는 2026-10-26에 정리했다.)

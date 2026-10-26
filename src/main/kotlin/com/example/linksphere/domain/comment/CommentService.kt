@@ -163,7 +163,6 @@ class CommentService(
         userId: UUID,
         content: String?,
         images: List<String>?,
-        parentId: UUID? = null,
     ): CommentResponse {
         if (content.isNullOrBlank() && images?.isEmpty() ?: true) {
             throw InvalidInputException("Content or image must be provided")
@@ -173,23 +172,6 @@ class CommentService(
         }
         if ((content?.toByteArray(Charsets.UTF_8)?.size ?: 0) > MAX_COMMENT_CONTENT_BYTES) {
             throw InvalidInputException("Comment content cannot exceed $MAX_COMMENT_CONTENT_BYTES bytes")
-        }
-
-        // Depth Check (fail fast, before image upload)
-        if (parentId != null) {
-            val parentComment =
-                commentRepository.findByIdOrNull(parentId)
-                    ?: throw CommentNotFoundException(parentId)
-            if (parentComment.parentId != null) {
-                throw InvalidInputException(
-                    "Reply to reply is not allowed (Max Depth 1)",
-                )
-            }
-            if (parentComment.postId != postId) {
-                throw InvalidInputException(
-                    "Parent comment belongs to a different post",
-                )
-            }
         }
 
         val post =
@@ -212,16 +194,16 @@ class CommentService(
             TableComment(
                 postId = postId,
                 userId = userId,
-                parentId = parentId,
                 content = finalContent,
                 linkUrl = extractFirstNonImageUrl(finalContent),
             )
         val saved = commentRepository.save(comment)
 
         // 알림·링크 프리뷰는 요청 경로 밖(커밋 후 별도 Lambda)에서 처리한다 - CommentPostProcessService 참고.
-        // 알림 조건(루트 댓글만, 자기 자신 제외)은 지금 판정해 이벤트에 실어 보낸다.
+        // 알림 조건(루트 댓글만, 자기 자신 제외)은 지금 판정해 이벤트에 실어 보낸다 - 이 함수는 루트 댓글만 만든다
+        // (답글은 createReply). 예전의 parentId 인자는 HTTP로 넘어오는 길이 없어 2026-10-26에 지웠다.
         eventPublisher.publishEvent(
-            CommentPostProcessEvent(commentId = saved.id, notify = parentId == null && post.userId != userId),
+            CommentPostProcessEvent(commentId = saved.id, notify = post.userId != userId),
         )
 
         return toCommentResponse(saved, member)

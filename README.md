@@ -67,7 +67,7 @@ src/main/kotlin/com/example/linksphere/
 │   │   ├── PostRepositoryCustom.kt      # 커스텀 쿼리 인터페이스
 │   │   ├── PostRepositoryImpl.kt        # JPA Criteria/JPQL 검색·필터 구현
 │   │   ├── PostService.kt
-│   │   ├── PostAiService.kt             # AI 분석 비동기 처리
+│   │   ├── PostAIService.kt             # AI 분석 비동기 처리
 │   │   ├── PostResponseAssembler.kt     # 목록·상세 응답 조립(작성자·좋아요·북마크·댓글수 batch fetch)
 │   │   ├── PostCategoryClassifier.kt    # AI 카테고리 분류
 │   │   ├── PostSearchQuery.kt           # 키워드·의미 검색 조건 조립

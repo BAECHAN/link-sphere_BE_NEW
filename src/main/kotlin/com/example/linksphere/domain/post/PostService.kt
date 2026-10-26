@@ -264,7 +264,7 @@ class PostService(
         }
 
         // 재수집한 김에 AI도 다시 돌린다. aiSummary를 미리 지우지 않는 이유는 PostAIService가
-        // 요약을 순수 폴백으로 쓰기 때문이다(PostAiService.kt) - 재분석이 실패해도 기존
+        // 요약을 순수 폴백으로 쓰기 때문이다(PostAIService.kt) - 재분석이 실패해도 기존
         // 요약이 남는다. URL 변경 경로는 위에서 이미 aiSummary를 리셋했다.
         val pageContent = metadata?.pageContent
         when {

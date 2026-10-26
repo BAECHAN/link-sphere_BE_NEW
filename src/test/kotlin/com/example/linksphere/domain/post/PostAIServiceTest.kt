@@ -20,7 +20,7 @@ import java.util.UUID
 import java.util.concurrent.CompletableFuture
 
 @ExtendWith(MockitoExtension::class)
-class PostAiServiceTest {
+class PostAIServiceTest {
 
     @Mock private lateinit var postRepository: PostRepository
 
