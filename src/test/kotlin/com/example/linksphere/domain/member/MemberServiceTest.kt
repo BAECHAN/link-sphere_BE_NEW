@@ -1,7 +1,5 @@
 package com.example.linksphere.domain.member
 
-import com.example.linksphere.domain.auth.SignupRequest
-import com.example.linksphere.domain.auth.UpdateAccountRequest
 import com.example.linksphere.global.exception.DuplicateMemberException
 import com.example.linksphere.global.exception.DuplicateNicknameException
 import org.junit.jupiter.api.Assertions.assertEquals

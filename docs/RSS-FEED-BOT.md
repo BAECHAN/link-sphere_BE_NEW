@@ -244,10 +244,10 @@ nullable + `ON DELETE SET NULL`로 둬서, 봇 글을 관리자가 지워도 원
 | 파라미터 | 값 | 실제 위치 |
 | --- | --- | --- |
 | 실행 주기 | 4일마다 UTC 22:00 (KST 오전 7시) | **AWS EventBridge 룰 자체** (`link-sphere-feed-crawl`, `cron(0 22 */4 * ? *)`) — 이 프로젝트는 IaC가 없어서 레포 안 어떤 파일에도 이 cron 표현식을 담은 "설정 파일"은 없다. `docs/DEPLOY.md` 8장의 `aws events put-rule` 커맨드가 유일한 기록이자 값을 바꾸는 방법. **이 룰은 봇 전용이 아니다** — 같은 룰에 `account-purge`(회원탈퇴 14일 유예 정리) 타겟도 붙어 있다([`docs/ACCOUNT-DELETION.md`](./ACCOUNT-DELETION.md) 참고) |
-| 소스당 최대 건수 | 1 | `FeedCrawlService.kt:29` `MAX_ITEMS_PER_SOURCE` |
-| 전체 최대 건수 | 5 | `FeedCrawlService.kt:30` `MAX_ITEMS_TOTAL` |
-| self-invoke chunk 크기 | 5 | `FeedCrawlService.kt:31` `CHUNK_SIZE` |
-| Stage A 마감 가드 | 90,000ms | `FeedCrawlService.kt:32` `DEADLINE_MILLIS` |
+| 소스당 최대 건수 | 1 | `FeedCrawlService.kt:30` `MAX_ITEMS_PER_SOURCE` |
+| 전체 최대 건수 | 5 | `FeedCrawlService.kt:31` `MAX_ITEMS_TOTAL` |
+| self-invoke chunk 크기 | 5 | `FeedCrawlService.kt:32` `CHUNK_SIZE` |
+| Stage A 마감 가드 | 90,000ms | `BatchJobLimits.kt:10` `DEADLINE_MILLIS` — 계정 정리·고아 이미지 회수 배치와 같은 값을 쓴다 |
 | 피드 소스 목록(9개, 1개 비활성) | `feed_sources` 테이블 | DB (SQL 시딩, `sql/create_feed_sources.sql`이 최초 시딩 기록 — 소스 추가/제거는 이 테이블에 직접 SQL로 한다, 재배포 불필요) |
 | 크롤링 본문 최소 길이 | 1,000자 | `UrlMetadataExtractor.kt` `MIN_PAGE_CONTENT_LENGTH` — 이 밑이면 네비·푸터 같은 껍데기로 보고 `null` 처리해 RSS 본문 폴백으로 넘긴다(`docs/AI-ASYNC-PROCESSING.md` §5.5) |
 | 메타 설명(og:description 등) 최소 길이 | 40자 | `UrlMetadataExtractor.kt` `MIN_META_DESCRIPTION_LENGTH` |

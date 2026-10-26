@@ -6,6 +6,11 @@ import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import java.util.UUID
 
+interface PostBookmarkCount {
+    val postId: UUID
+    val count: Long
+}
+
 interface BookmarkRepository :
     JpaRepository<TableBookmark, BookmarkId>,
     BookmarkRepositoryCustom {
@@ -38,7 +43,10 @@ interface BookmarkRepository :
     @Query("DELETE FROM TableBookmark b WHERE b.userId = :userId")
     fun deleteByUserId(@Param("userId") userId: UUID): Int
     fun countByPostId(postId: UUID): Long
-    fun findAllByPostIdIn(postIds: List<UUID>): List<TableBookmark>
+
+    // 글 목록의 북마크 수 - 행을 다 읽지 않고 DB에서 센다(docs/BE-ARCHITECTURE.md §7-8, CommentRepository.countByPostIdIn과 같은 형태)
+    @Query("SELECT b.postId as postId, COUNT(b.userId) as count FROM TableBookmark b WHERE b.postId IN :postIds GROUP BY b.postId")
+    fun countByPostIdIn(@Param("postIds") postIds: List<UUID>): List<PostBookmarkCount>
     fun findAllByUserIdAndPostIdIn(userId: UUID, postIds: List<UUID>): List<TableBookmark>
 
     // 미분류(bookmark_folder_items 소속 0개) 북마크 수 — 폴더 목록 응답에 사용

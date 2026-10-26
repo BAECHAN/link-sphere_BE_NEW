@@ -6,6 +6,7 @@ import com.example.linksphere.domain.post.PostPageResponse
 import com.example.linksphere.domain.post.PostRepository
 import com.example.linksphere.domain.post.PostResponseAssembler
 import com.example.linksphere.domain.post.PostSearchQuery
+import com.example.linksphere.domain.post.PostVisibility
 import com.example.linksphere.global.common.Paging
 import com.example.linksphere.global.exception.BookmarkFolderNotFoundException
 import com.example.linksphere.global.exception.DuplicateFolderNameException
@@ -153,7 +154,7 @@ class BookmarkFolderService(
         val postsById = postRepository.findAllById(postIds).associateBy { it.id }
         postIds.forEach { postId ->
             val post = postsById[postId] ?: throw PostNotFoundException(postId)
-            if (post.isPrivate && post.userId != userId) throw PostNotFoundException(postId)
+            PostVisibility.assertVisible(post, userId, postId)
         }
 
         postIds.forEach { postId ->

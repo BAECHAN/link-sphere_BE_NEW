@@ -2,6 +2,7 @@ package com.example.linksphere.domain.upload
 
 import com.example.linksphere.domain.comment.CommentRepository
 import com.example.linksphere.domain.member.MemberRepository
+import com.example.linksphere.global.common.BatchJobLimits
 import com.example.linksphere.global.common.SupabaseStorageService
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
@@ -39,7 +40,6 @@ class OrphanImageGcService(
         val MIN_AGE: Duration = Duration.ofHours(24)
         const val MAX_DELETE_PER_RUN = 500
         private const val DELETE_CHUNK_SIZE = 100
-        private const val DEADLINE_MILLIS = 90_000L
     }
 
     /**
@@ -59,7 +59,7 @@ class OrphanImageGcService(
 
     // now를 받는 쪽은 테스트용이다 - 기본 인자로 두면 호출부를 mock할 때 매번 다른 now가 넘어가 스텁이 안 맞는다.
     fun collect(dryRun: Boolean, now: Instant): GcSummary {
-        val deadline = System.currentTimeMillis() + DEADLINE_MILLIS
+        val deadline = System.currentTimeMillis() + BatchJobLimits.DEADLINE_MILLIS
 
         // 버킷을 먼저 읽고 참조를 나중에 읽는다 - 사이에 새로 생긴 참조까지 반영해 덜 지우는 쪽으로 기운다.
         val objects = supabaseStorageService.listAllObjects()

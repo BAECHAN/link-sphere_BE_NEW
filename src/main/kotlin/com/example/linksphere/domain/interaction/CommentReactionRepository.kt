@@ -6,6 +6,11 @@ import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import java.util.UUID
 
+interface CommentLikeCount {
+    val commentId: UUID
+    val count: Long
+}
+
 interface CommentReactionRepository : JpaRepository<TableCommentReaction, CommentReactionId> {
     // 일괄 DELETE — PostReactionRepository.deleteByUserIdAndPostId 와 같은 이유(동시 요청에도 예외 없음)
     @Modifying
@@ -25,7 +30,10 @@ interface CommentReactionRepository : JpaRepository<TableCommentReaction, Commen
     @Modifying
     @Query("DELETE FROM TableCommentReaction r WHERE r.userId = :userId")
     fun deleteByUserId(@Param("userId") userId: UUID): Int
-    fun findAllByCommentIdIn(commentIds: List<UUID>): List<TableCommentReaction>
+
+    // 댓글 목록의 좋아요 수 - 행을 다 읽지 않고 DB에서 센다(docs/BE-ARCHITECTURE.md §7-8, CommentRepository.countByPostIdIn과 같은 형태)
+    @Query("SELECT r.commentId as commentId, COUNT(r.userId) as count FROM TableCommentReaction r WHERE r.commentId IN :commentIds GROUP BY r.commentId")
+    fun countByCommentIdIn(@Param("commentIds") commentIds: List<UUID>): List<CommentLikeCount>
     fun findAllByUserIdAndCommentIdIn(userId: UUID, commentIds: List<UUID>): List<TableCommentReaction>
 
     // 댓글 삭제(톰스톤 처리) 시 사용 — comments row가 살아남아 FK 캐스케이드가 발동하지 않는 경로용

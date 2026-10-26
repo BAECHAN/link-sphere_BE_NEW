@@ -61,7 +61,7 @@ flowchart TD
 |---|---|---|
 | 루트 | `LambdaHandler`(진입점·잡 분기), `FunctionUrlOriginGuard`, `FunctionUrlResponse`(응답 직렬화) | 전부 |
 | `domain/<도메인>/` | 도메인별 평면 구조 — Controller·Service·Repository·`Table*` 엔티티·`*DTO.kt`와 그 도메인 전용 헬퍼 | 다른 도메인(§3), `global`, `infra` |
-| `global/common/` | 응답 래퍼, `SecurityUtils`, `SecureToken`, `ClientIpResolver`, `Paging`, `RateLimitService`, `SupabaseStorageService` | `domain` 금지(허용 3쌍 예외, §3) |
+| `global/common/` | 응답 래퍼, `SecurityUtils`, `SecureToken`, `ClientIpResolver`, `Paging`, `RateLimitService`, `SupabaseStorageService`, `TransactionCallbacks`, `BatchJobLimits` | `domain` 금지(허용 3쌍 예외, §3) |
 | `global/config/` | Security·Swagger·Async 설정 | 위와 같음 |
 | `global/exception/` | 커스텀 예외 전부 + `GlobalExceptionHandler` | — |
 | `infra/<기술>/` | 외부 연동(Gemini·YouTube·SES·FCM·Lambda self-invoke) | `domain`은 이벤트 DTO만(디스패처) |
@@ -74,7 +74,7 @@ flowchart TD
 
 아래 그림은 손으로 그린 것이 아니다. `PackageGraphDocTest`가 바이트코드에서 패키지(`domain.post`처럼 두 단계) 사이
 간선을 계산해 이 블록과 비교하고, 다르면 실패하면서 붙여 넣을 새 블록을 출력한다 — 새 의존을 만들면 이 그림이 같은 PR에서
-바뀌어 리뷰에 드러난다. 점선은 순환을 만들지만 허용한 간선이다(§9의 9개 중 8개 — `global.exception → global.common`은
+바뀌어 리뷰에 드러난다. 점선은 순환을 만들지만 허용한 간선이다(§9의 8개 중 7개 — `global.exception → global.common`은
 아래처럼 그림에서 뺀 패키지라 보이지 않는다). 모든 패키지가 예외를 던지느라 의존하는 `global.exception`은 그림에서만
 뺐고 순환 검사에는 들어간다. 루트(`LambdaHandler` 등)와 `tools/`는 두 단계 패키지가 아니라 그림·순환 검사 모두에서 빠진다 —
 다른 패키지가 이들을 참조하는 곳이 없어(2026-10-26 확인) 순환에 낄 수 없다.
@@ -123,7 +123,6 @@ flowchart LR
   domain_interaction --> domain_post
   domain_interaction --> global_common
   domain_interaction --> infra_ai
-  domain_member -.-> domain_auth
   domain_post --> domain_category
   domain_post -.-> domain_comment
   domain_post -.-> domain_interaction
@@ -178,14 +177,21 @@ flowchart LR
 | `persistenceMustNotDependOnUpperLayers` | Repository·엔티티가 Service·`@Component`·Controller·DTO를 참조 | 위와 같음 |
 | `dtosMustNotDependOnBeans` | `*DTO.kt`의 클래스가 Service·`@Component`·Repository·Controller를 참조 | 위와 같음 |
 | `apiDtosLiveInDtoFiles` | domain의 `*Request`·`*Response`를 `*DTO.kt` 밖에 정의 | 위와 같음 |
-| `packagesMustBeFreeOfCyclesExceptDocumented` | 패키지 사이 새 순환 — 허용 간선 9개는 `PackageGraphDocTest.kt`의 `DOCUMENTED_CYCLE_EDGES`, 이유는 §9 | 위와 같음 |
+| `packagesMustBeFreeOfCyclesExceptDocumented` | 패키지 사이 새 순환 — 허용 간선 8개는 `PackageGraphDocTest.kt`의 `DOCUMENTED_CYCLE_EDGES`, 이유는 §9 | 위와 같음 |
 | `문서의 패키지 의존 그래프가 코드와 같다` | §1 "실제 패키지 의존 그래프"가 코드와 어긋남 | `architecture/PackageGraphDocTest.kt` |
+| `순환 허용 간선 목록의 간선은 모두 실제로 있다` | 끊은 간선이 `DOCUMENTED_CYCLE_EDGES`에 남아 다시 생겨도 조용히 통과 | 위와 같음 |
+| `afterCommitGoesThroughTransactionCallbacks` | `TransactionSynchronizationManager.registerSynchronization` 직접 호출(§7-6) | `architecture/LayerSkeletonRulesTest.kt` |
+| `emailVerificationGoesThroughGate` | `EmailVerificationGate` 밖에서 `EmailNotVerifiedException` 생성 | 위와 같음 |
+| `generatedIdsOnlyOnLegacyEntities` | `TableMember`·`TablePost`·`TableCategory` 밖의 `@GeneratedValue`(§7-13) | 위와 같음 |
+| `제약 어노테이션이 있는 요청 본문은 @Valid로 받는다` | DTO에 `@NotBlank` 등을 달고 `@Valid`를 빼 제약이 무시됨 | `architecture/ControllerSignatureRulesTest.kt` |
 
 ArchUnit 규칙은 대상 클래스가 0개면 실패한다(`archRule.failOnEmptyShould` 기본값, 2026-10-25 빈 대상 규칙을 일부러
 넣어 확인) — 패키지가 바뀌어도 조용히 통과하지 않는다. 클래스패스 스캔 테스트는 최소 개수 하한선을 둔다.
 
 2026-10-25 점검에서 찾은 위반은 위 검사를 켜며 모두 고쳤다. 2026-10-26 골격 점검에서 더한 `LayerSkeletonRulesTest`
-7개는 켤 때 위반 0건이었고, 규칙마다 위반을 일부러 넣어 실패하는 것을 확인했다. 검사로 막을 수 없어 그대로 둔 곳은 §9에 있다.
+7개는 켤 때 위반 0건이었고, 규칙마다 위반을 일부러 넣어 실패하는 것을 확인했다. 같은 날 남은 것 정리에서 중복을 헬퍼로 모은
+뒤 더한 5개(커밋 뒤 처리·이메일 인증 게이트·`@GeneratedValue`·`@Valid`·순환 허용 목록)도 같은 방식으로 확인했다. 검사로 막을 수
+없어 그대로 둔 곳은 §9에 있다.
 
 ---
 
@@ -506,11 +512,11 @@ if (memberActionTokenRepository.consumeIfActive(token.id, Instant.now()) == 0) {
 ### 7-6. 커밋 뒤 동기 정리 (`afterCommit`)
 
 - **언제**: 롤백되면 하면 안 되는 외부 부수효과(스토리지 파일 삭제, 토큰 링크가 담긴 메일)를 같은 요청 안에서 할 때.
-- **정석**: `CommentService.deleteComment`의 `TransactionSynchronizationManager.registerSynchronization { afterCommit }`,
-  인증·재설정 메일은 `AuthService.sendVerificationEmail`·`PasswordResetService.requestReset`
+- **정석**: `TransactionCallbacks.afterCommit { … }`(`global/common`) — `CommentService.deleteComment`의 이미지 삭제,
+  `AuthService.sendVerificationEmail`·`PasswordResetService.requestReset`의 메일. 트랜잭션 밖에서 부르면 예외다.
 - 삭제 실패는 로그만 남긴다 — 남은 파일은 고아 이미지 GC(§7-7)가 회수한다.
-- **안티패턴**: 트랜잭션 안에서 바로 외부 삭제(롤백돼도 파일은 이미 없다). 같은 블록을 메서드마다 복사하는 것도 피한다
-  — 지금 3곳에 반복돼 있다(남은 것).
+- **안티패턴**: 트랜잭션 안에서 바로 외부 삭제(롤백돼도 파일은 이미 없다), `TransactionSynchronizationManager.registerSynchronization`
+  직접 호출(`afterCommitGoesThroughTransactionCallbacks`가 막는다 — 2026-10-26 전에는 같은 블록이 5곳에 복사돼 있었다).
 
 ### 7-7. 배치 잡 형태
 
@@ -550,8 +556,9 @@ for (id in ids) {
 ### 7-10. 비공개 글 404 게이트
 
 - **언제**: 글이나 그 글에 딸린 것(댓글·좋아요·북마크)을 읽거나 쓰는 모든 경로.
-- **정석**: `InteractionService.assertPostVisible` — `post.isPrivate && post.userId != userId`면 **403이 아니라
-  `PostNotFoundException`(404)** 을 던져 존재 자체를 숨긴다. 댓글·북마크·조회 경로가 같은 판정을 쓴다.
+- **정석**: `PostVisibility.assertVisible(post, viewerId, postId)`(`domain/post`) — 비공개 글을 작성자가 아닌 사람이 보면
+  **403이 아니라 `PostNotFoundException`(404)** 을 던져 존재 자체를 숨긴다. 상세 조회·댓글·좋아요·북마크가 모두 이 함수를
+  쓴다(2026-10-26 전에는 6곳에 인라인으로 복사돼 있었다). 목록 쿼리는 같은 조건을 SQL로 건다.
 - **안티패턴**: `ForbiddenException`(403)으로 막기 — "그 글이 있다"는 사실이 새어 나간다.
 
 ### 7-11. 외부 클라이언트
@@ -571,7 +578,9 @@ for (id in ids) {
   (`CommentService.MAX_COMMENT_CONTENT_BYTES` — WAF 8KB 벽과 FE 상수와의 동기화 이유).
 - 외부 키·URL만 `@Value`로 주입한다. `@ConfigurationProperties`는 쓰지 않는다.
 - 다른 클래스가 참조해야 하는 값만 공개 상수로 둔다(`AccountDeletionService.GRACE_PERIOD`).
-- **안티패턴**: 근거 주석 없는 매직 넘버, 같은 값을 여러 파일에 따로 선언(지금 90초 마감이 3곳에 있다 — 남은 것).
+- 여러 클래스가 같은 제약을 공유하면 그 제약을 이름으로 가진 `object`에 둔다 — 배치 잡 90초 마감은
+  `BatchJobLimits.DEADLINE_MILLIS`(Lambda 120초 타임아웃 근거), 이메일 정규화는 `EmailNormalizer.normalize`.
+- **안티패턴**: 근거 주석 없는 매직 넘버, 같은 값을 여러 파일에 따로 선언(2026-10-26 전에는 90초 마감 3곳·이메일 정규화 4곳).
 
 ### 7-13. 엔티티 PK와 시간
 
@@ -611,9 +620,9 @@ for (id in ids) {
 | 외부 클라이언트가 RestClient가 아니라 `RestTemplate` | `SupabaseStorageService` — 타임아웃(연결 3초·읽기 10초)은 설정돼 있다 | 바꾸지 않음 — 전환하면 호출부 3곳과 DELETE+본문 동작까지 바뀌어 회귀 범위가 크다 |
 | 엔티티 안의 표시 규칙 | `TableMember.isWithdrawn`·`publicNickname`·`publicImage`, `TableLinkPreview.toMetadata` | 바꾸지 않음(기록만) |
 | 상속받은 `delete(entity)` 3곳 | `PostService.deletePost`, `CommentService.deleteComment`, `BookmarkFolderService.deleteFolder` | 바꾸지 않음 — 409 `CONCURRENT_UPDATE` 안전망에 기댄다 |
-| 패키지 순환을 만드는 간선 9개 | 아래 표 | 바꾸지 않음(지금은) — 새 순환은 `packagesMustBeFreeOfCyclesExceptDocumented`가 막는다. 해소 후보는 "남은 것" |
+| 패키지 순환을 만드는 간선 8개 | 아래 표 | 바꾸지 않음(지금은) — 새 순환은 `packagesMustBeFreeOfCyclesExceptDocumented`가 막는다. 해소 후보는 "남은 것" |
 
-**순환을 허용한 간선 9개** — `PackageGraphDocTest.kt`의 `DOCUMENTED_CYCLE_EDGES`가 정본이다. 이 간선을 빼면 패키지 그래프에
+**순환을 허용한 간선 8개** — `PackageGraphDocTest.kt`의 `DOCUMENTED_CYCLE_EDGES`가 정본이다. 이 간선을 빼면 패키지 그래프에
 순환이 없다(2026-10-26 계산).
 
 | 간선 | 대표 위치 | 이유 |
@@ -621,7 +630,6 @@ for (id in ids) {
 | `global.common → domain.auth` | `RateLimitService` → `AuthRateLimitRepository` | 범용 레이트리밋이 auth의 카운터 테이블을 쓴다(§3 global → domain 허용 쌍) |
 | `global.exception → global.common` | `GlobalExceptionHandler` → `ErrorResponse` | 핸들러가 응답 봉투를 쓰고, 반대로 `RateLimitService`가 `RateLimitExceededException`을 던진다 |
 | `infra.aws → domain.post`·`comment`·`feed` | `AiJobDispatcher` → `PostCreatedEvent` 등 | 커밋 뒤 디스패처가 도메인의 이벤트 DTO를 받는다(§1 패키지 역할) |
-| `domain.member → domain.auth` | `MemberService` → `SignupRequest`·`UpdateAccountRequest` | 가입·계정 수정 요청 DTO를 그대로 받는다 |
 | `domain.post → domain.comment` | `PostResponseAssembler` → `CommentRepository`, `PostService` → `CommentService` | 목록 응답의 댓글 수, 글 삭제 때 댓글 이미지 정리 |
 | `domain.post → domain.interaction` | `PostResponseAssembler`·`PostService`·`PostRepositoryImpl` → 반응·북마크 Repository·엔티티 | 목록 응답의 좋아요·북마크 상태와 `filter=isLiked` 같은 조인 |
 | `domain.interaction → domain.comment` | `InteractionService` → `CommentRepository` | 댓글 좋아요 때 댓글 존재·삭제 여부 확인 |
@@ -678,7 +686,7 @@ for (id in ids) {
 | 생성 응답 | [RFC 9110 §9.3.3](https://www.rfc-editor.org/rfc/rfc9110#section-9.3.3) | HTTP 201(`@ResponseStatus`, 2026-10-26 전에는 본문만 201) | 따른다. `Location`은 "남은 것" |
 | 405 응답 | [RFC 9110 §10.2.1](https://www.rfc-editor.org/rfc/rfc9110#section-10.2.1) | 405 + `Allow`(`handleSpringMvcException`, 2026-10-26 전에는 500) | 따른다 |
 | 경계 입력 검증 | Bean Validation(`@Valid`) | `@RequestBody` 23곳 중 10곳 | 방식 혼재로 둔다 — `PostCreateRequest`는 봇 경로(`FeedItemProcessor`)도 쓰므로 Service 검증이 어차피 필요하다 |
-| 모듈 순환 | [Spring Modulith 검증](https://docs.spring.io/spring-modulith/reference/verification.html), ArchUnit `slices().beFreeOfCycles()` | 허용 간선 9개(§9) | 새 순환만 막는다 |
+| 모듈 순환 | [Spring Modulith 검증](https://docs.spring.io/spring-modulith/reference/verification.html), ArchUnit `slices().beFreeOfCycles()` | 허용 간선 8개(§9) | 새 순환만 막는다 |
 | 관측성 | 구조화 로그·요청 상관 ID | 앱 로그는 logstash JSON 한 줄 + MDC `awsRequestId`(2026-10-26, `LambdaHandler`·`AsyncConfig`). Lambda LogFormat은 Text 유지 | 따른다 — 찾는 법은 `DEPLOY.md` "운영 로그 읽기" |
 | 지원 버전 | [Spring Boot 지원 일정](https://api.spring.io/projects/spring-boot/generations) — 3.5.x OSS 지원 2026-06-30 종료 | 3.5.16(OSS 마지막 패치, 2026-10-26). Dependabot이 Gradle minor·patch를 월간으로 올린다 | 4.x 이동은 "남은 것" |
 
@@ -711,11 +719,25 @@ for (id in ids) {
 
 이번 점검에서 찾았지만 통일·수정하지 않기로 한 것(되돌릴 근거가 생기면 다시 본다):
 
-- **방식 혼재**: 응답 `message` 언어(영어·한국어),
-  DTO 이름 어순(`PostCreateRequest` vs `CreateFolderRequest`), 엔티티 ID 생성 4종·시간 타입(`LocalDateTime`/`Instant`),
-  개수 세는 방식 3종, 커밋 뒤 처리 방식 3종(AFTER_COMMIT 리스너 · 인라인 `afterCommit` — `CommentService` 3회와 인증·재설정
-  메일 2곳 · 트랜잭션 밖 바로 디스패치), `@Valid`는 Auth·FCM 컨트롤러만,
-  Page 응답 DTO 수동 복제, 로거 선언 변형, 중복 상수(90초 마감 ×3, 이메일 정규화 ×4).
+- **통일하지 않기로 한 6건**(2026-10-26 사용자 결정 — 계약·FE·DB가 바뀌는데 사용자가 얻는 것이 없다):
+  - 응답 `message` 언어(영어 24곳·한국어 26곳) — FE는 성공 응답 `message`를 읽지 않는다.
+  - Request 이름 어순(`PostCreateRequest` vs `CreateFolderRequest`) — 바꾸면 OpenAPI 스키마 이름이 바뀐다.
+  - Page 응답 DTO 2벌(`PostPageResponse`·`MyCommentPageResponse`) — 제네릭으로 합치면 스키마 이름이 바뀐다.
+  - 시간 타입(`LocalDateTime` 18필드·`Instant` 11필드, `timestamptz`인데 `LocalDateTime`인 컬럼 4개) — 응답 JSON 형식이나 DB
+    마이그레이션이 걸린다. JVM 기본 시간대가 Asia/Seoul로 고정돼 있어(`LinkSphereBeApplication`) 지금 값은 일관된다.
+  - `@Valid` 확대(23곳 중 10곳) — `PostCreateRequest`는 봇 경로(`FeedItemProcessor`)도 써서 Service 검증이 어차피 필요하고,
+    폴더 이름 변경은 검사 순서가 바뀐다(소유 확인 403/404 → 입력 400). 대신 **제약을 단 DTO는 반드시 `@Valid`로 받는다**
+    (`제약 어노테이션이 있는 요청 본문은 @Valid로 받는다`).
+  - 201 `Location` 헤더 — 아래 항목.
+- **그대로 둔 방식 혼재**(각자 쓰임이 달라 하나로 합치지 않았다):
+  - 엔티티 ID 생성 4종 — §7-13이 이미 "바꾸지 않음"으로 정했다. 새 엔티티의 `@GeneratedValue`만 검사로 막는다
+    (`generatedIdsOnlyOnLegacyEntities`).
+  - 커밋 뒤 처리 3종 — 비동기 잡 발행은 AFTER_COMMIT 리스너(`CommentPostProcessService`·`PostAIService`), 메일·스토리지 삭제는
+    `TransactionCallbacks.afterCommit`(5곳), 트랜잭션이 없는 피드 크롤링은 바로 디스패치(`FeedCrawlService`). 2026-10-26에
+    합친 것은 인라인 `registerSynchronization` 복사본 5곳뿐이다.
+- **2026-10-26에 정리한 중복**: 커밋 뒤 처리 복사본(`TransactionCallbacks`), 비공개 글·이메일 인증 게이트(`PostVisibility`·
+  `EmailVerificationGate`), `CommentService` 검증 3벌·응답 변환 2벌, 90초 마감(`BatchJobLimits`)·이메일 정규화
+  (`EmailNormalizer`), 로거 변형 2곳, 메모리에서 세던 개수 3곳(GROUP BY로).
 - **검증하지 않은 위험 후보**: SSRF 검증과 실제 연결 사이의 DNS 재해석(`UrlMetadataExtractor`가 검증한 뒤 URL 문자열로
   다시 연결한다). JVM DNS 캐시(기본 30초)와 Lambda 안 Tomcat 포트 제거로 위험이 낮다. 해석 결과를 고정하려면 JDK 17에는
   리졸버 SPI가 없어(JEP 418은 18) https 소켓 래핑 같은 우회가 필요하다.
@@ -729,10 +751,13 @@ for (id in ids) {
   새 권고가 3.5.16에 걸리면 4.x(springdoc 3·Hibernate 7 동반)로 옮겨야 한다 — 따로 계획한다. Dependabot은 메이저를 무시한다.
 - **201의 `Location` 헤더**: `LambdaHandler`가 `/api`를 떼고 MockMvc에 넘겨 `ServletUriComponentsBuilder.fromCurrentRequest()`가
   틀린 경로를 만든다. FE는 쓰지 않는다.
-- **순환 해소 후보**: post·comment·interaction 사이 간선 3개(§9) — 목록 조립(`PostResponseAssembler`·`PostRepositoryImpl`의
-  필터 조인)을 별도 조회 패키지로 빼는 안. `member → auth`는 요청 DTO 2개를 옮기면 끊긴다.
-- **공용화·중복 후보**: 비공개 글 404 게이트 6곳(§7-10)과 이메일 인증 확인 4곳의 인라인 반복, `CommentService`의 입력 검증
-  3벌(등록·답글·수정)과 `CommentResponse` 변환 2벌(목록·단건).
+- **순환 해소 후보**(§9의 간선 중 도메인 사이 3개, 2026-10-26 사용자 결정으로 미룸):
+  - `interaction → comment`: 댓글 좋아요(`TableCommentReaction`·`CommentReactionRepository`·엔드포인트 2개)를 comment로 옮기면
+    `comment → interaction`과 함께 사라진다(약 13파일, 같은 `@Tag`·메서드명이면 스펙은 그대로).
+  - `post → comment·interaction`: "목록 조립을 별도 조회 패키지로" 빼는 것만으로는 끊기지 않는다 — `PostService`·
+    `BookmarkFolderService`가 조립기를 쓰고, `PostRepositoryImpl`은 Repository 인터페이스 패키지 밖으로 못 나간다. post에 포트
+    (묶음 통계·필터 서브쿼리·북마크 쓰기)를 두고 interaction·comment가 구현하는 의존 역전이 필요하다.
+  - `member → auth`는 2026-10-26에 요청 DTO 2개를 `member/MemberDTO.kt`로 옮겨 끊었다.
 - **정리 후보**: Lambda 환경변수 `JWT_SECRET` — 코드·tracked 설정 어디서도 읽지 않는다(2026-10-26, 변수 이름만 조회).
   환경변수를 API로 고치려면 다른 비밀값까지 다시 넘겨야 해서, 값이 노출되지 않게 콘솔에서 지운다. (쓰지 않던
   `spring-boot-starter-oauth2-client` 의존성, 호출 0건인 Repository 메서드 5개, HTTP로 도달할 수 없던 `createComment`의

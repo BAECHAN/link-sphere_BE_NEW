@@ -5,10 +5,10 @@ import com.example.linksphere.domain.comment.CommentService
 import com.example.linksphere.domain.interaction.BookmarkFolderItemRepository
 import com.example.linksphere.domain.interaction.BookmarkFolderRepository
 import com.example.linksphere.domain.interaction.BookmarkRepository
+import com.example.linksphere.domain.member.EmailVerificationGate
 import com.example.linksphere.domain.member.MemberRepository
 import com.example.linksphere.global.common.Paging
 import com.example.linksphere.global.exception.BookmarkFolderNotFoundException
-import com.example.linksphere.global.exception.EmailNotVerifiedException
 import com.example.linksphere.global.exception.ForbiddenException
 import com.example.linksphere.global.exception.PostNotFoundException
 import com.example.linksphere.infra.ai.GeminiService
@@ -44,9 +44,7 @@ class PostService(
         // 크롤링 등 비싼 작업을 하기 전에 먼저 확인한다 - 읽기·좋아요·북마크는 막지 않고
         // 글쓰기만 막는다(docs/plans/2026-09-28-auth-hardening.md "확정된 결정들" 참고).
         val member = memberRepository.findById(userId).orElseThrow { IllegalStateException("User not found") }
-        if (!member.emailVerified) {
-            throw EmailNotVerifiedException("Email verification required to create a post")
-        }
+        EmailVerificationGate.require(member, "create a post")
 
         val url = request.url.trim()
         validateUrl(url)
@@ -196,7 +194,7 @@ class PostService(
         val post = postRepository.findById(id).orElseThrow { PostNotFoundException(id) }
         // 목록/북마크 조회에는 있는 가시성 검증이 상세 조회에는 빠져 있었다.
         // 존재 여부를 알려주지 않도록 403이 아닌 404로 던진다.
-        if (post.isPrivate && post.userId != currentUserId) throw PostNotFoundException(id)
+        PostVisibility.assertVisible(post, currentUserId, id)
         postRepository.incrementViewCount(id)
         currentUserId?.let { postViewRepository.upsertView(it, id) }
         // incrementViewCount는 JPQL 벌크 UPDATE라 위에서 읽은 post 엔티티에는 반영되지 않아, 그대로 조립하면 상세는 증가 전
@@ -326,9 +324,7 @@ class PostService(
     @Transactional
     fun previewLink(userId: UUID, rawUrl: String): LinkPreviewResponse {
         val member = memberRepository.findById(userId).orElseThrow { IllegalStateException("User not found") }
-        if (!member.emailVerified) {
-            throw EmailNotVerifiedException("Email verification required to preview a link")
-        }
+        EmailVerificationGate.require(member, "preview a link")
 
         val url = rawUrl.trim()
         validateUrl(url)

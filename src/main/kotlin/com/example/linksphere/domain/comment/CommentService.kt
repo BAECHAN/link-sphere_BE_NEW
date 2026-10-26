@@ -1,14 +1,16 @@
 package com.example.linksphere.domain.comment
 
 import com.example.linksphere.domain.interaction.CommentReactionRepository
+import com.example.linksphere.domain.member.EmailVerificationGate
 import com.example.linksphere.domain.member.MemberRepository
 import com.example.linksphere.domain.member.TableMember
 import com.example.linksphere.domain.post.PostRepository
+import com.example.linksphere.domain.post.PostVisibility
 import com.example.linksphere.global.common.Paging
 import com.example.linksphere.global.common.SupabaseStorageService
+import com.example.linksphere.global.common.TransactionCallbacks
 import com.example.linksphere.global.exception.CommentDeletedException
 import com.example.linksphere.global.exception.CommentNotFoundException
-import com.example.linksphere.global.exception.EmailNotVerifiedException
 import com.example.linksphere.global.exception.ForbiddenException
 import com.example.linksphere.global.exception.InvalidInputException
 import com.example.linksphere.global.exception.PostNotFoundException
@@ -16,8 +18,6 @@ import org.springframework.context.ApplicationEventPublisher
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
-import org.springframework.transaction.support.TransactionSynchronization
-import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.time.LocalDateTime
 import java.util.UUID
 
@@ -60,16 +60,18 @@ class CommentService(
     fun getComments(postId: UUID, currentUserId: UUID?): List<CommentResponse> {
         val post = postRepository.findById(postId).orElseThrow { PostNotFoundException(postId) }
         // 비공개 글의 댓글도 상세 조회와 동일한 기준으로 소유자에게만 보여준다.
-        if (post.isPrivate && post.userId != currentUserId) throw PostNotFoundException(postId)
+        PostVisibility.assertVisible(post, currentUserId, postId)
 
         val comments = commentRepository.findAllByPostIdOrderByCreatedAtAsc(postId)
 
         val commentIds = comments.map { it.id }
+        // 좋아요 수는 DB에서 GROUP BY로 센다(docs/BE-ARCHITECTURE.md §7-8) - 예전에는 좋아요 행을 전부 읽어 메모리에서 셌다
         val likeCounts =
-            commentReactionRepository
-                .findAllByCommentIdIn(commentIds)
-                .groupingBy { it.commentId }
-                .eachCount()
+            if (commentIds.isEmpty()) {
+                emptyMap()
+            } else {
+                commentReactionRepository.countByCommentIdIn(commentIds).associate { it.commentId to it.count.toInt() }
+            }
 
         val userLikes =
             currentUserId?.let { uid ->
@@ -84,47 +86,10 @@ class CommentService(
         val commentDTOs =
             comments.map { comment ->
                 val author =
-                    comment.member?.let {
-                        CommentAuthor(
-                            it.id!!,
-                            it.publicNickname ?: DELETED_MEMBER_NICKNAME,
-                            it.publicImage,
-                        )
-                    }
-                        ?: CommentAuthor(
-                            UUID.randomUUID(),
-                            DELETED_MEMBER_NICKNAME,
-                            null,
-                        ) // Should not happen with consistent DB
+                    comment.member?.let { authorOf(it) }
+                        ?: CommentAuthor(UUID.randomUUID(), DELETED_MEMBER_NICKNAME, null) // Should not happen with consistent DB
 
-                CommentResponse(
-                    id = comment.id,
-                    content =
-                    if (comment.isDeleted) {
-                        DELETED_COMMENT_CONTENT
-                    } else {
-                        comment.content
-                    },
-                    isDeleted = comment.isDeleted,
-                    createdAt = comment.createdAt,
-                    author = author,
-                    // 삭제된(톰스톤) 댓글은 좋아요도 함께 지워지지만, 삭제와 좋아요가 동시에 일어나는
-                    // 경쟁 상황의 잔여값이 표현 계층까지 새지 않도록 여기서도 명시적으로 0/false로 고정한다.
-                    isLiked = !comment.isDeleted && userLikes.contains(comment.id),
-                    likeCount = if (comment.isDeleted) 0 else likeCounts[comment.id] ?: 0,
-                    linkMetadata = if (comment.isDeleted) {
-                        null
-                    } else {
-                        comment.linkUrl?.let {
-                            LinkMetadata(
-                                url = it,
-                                title = comment.linkTitle ?: it,
-                                description = comment.linkDescription,
-                                ogImage = comment.linkOgImage,
-                            )
-                        }
-                    },
-                )
+                toResponse(comment, author, isLiked = userLikes.contains(comment.id), likeCount = likeCounts[comment.id] ?: 0)
             }
 
         // Reconstruct hierarchy
@@ -164,29 +129,19 @@ class CommentService(
         content: String?,
         images: List<String>?,
     ): CommentResponse {
-        if (content.isNullOrBlank() && images?.isEmpty() ?: true) {
-            throw InvalidInputException("Content or image must be provided")
-        }
-        if ((images?.size ?: 0) > MAX_COMMENT_IMAGES) {
-            throw InvalidInputException("Comment images cannot exceed $MAX_COMMENT_IMAGES")
-        }
-        if ((content?.toByteArray(Charsets.UTF_8)?.size ?: 0) > MAX_COMMENT_CONTENT_BYTES) {
-            throw InvalidInputException("Comment content cannot exceed $MAX_COMMENT_CONTENT_BYTES bytes")
-        }
+        validateContent(content, images)
 
         val post =
             postRepository.findByIdOrNull(postId)
                 ?: throw PostNotFoundException(postId)
         // 조회·댓글 목록과 동일한 기준: 읽을 수 없는 비공개 글에는 댓글도 달 수 없다.
-        if (post.isPrivate && post.userId != userId) throw PostNotFoundException(postId)
+        PostVisibility.assertVisible(post, userId, postId)
         val member =
             memberRepository.findByIdOrNull(userId)
                 ?: throw IllegalStateException("User not found")
         // 읽기·좋아요·북마크는 막지 않고 글쓰기·댓글쓰기만 막는다(docs/plans/2026-09-28-auth-hardening.md
         // "확정된 결정들" 참고). 위에서 이미 조회한 member를 그대로 써 추가 쿼리가 없다.
-        if (!member.emailVerified) {
-            throw EmailNotVerifiedException("Email verification required to create a comment")
-        }
+        EmailVerificationGate.require(member, "create a comment")
 
         val finalContent = buildFinalContent(content, images)
 
@@ -216,15 +171,7 @@ class CommentService(
         content: String?,
         images: List<String>?,
     ): CommentResponse {
-        if (content.isNullOrBlank() && images?.isEmpty() ?: true) {
-            throw InvalidInputException("Content or image must be provided")
-        }
-        if ((images?.size ?: 0) > MAX_COMMENT_IMAGES) {
-            throw InvalidInputException("Comment images cannot exceed $MAX_COMMENT_IMAGES")
-        }
-        if ((content?.toByteArray(Charsets.UTF_8)?.size ?: 0) > MAX_COMMENT_CONTENT_BYTES) {
-            throw InvalidInputException("Comment content cannot exceed $MAX_COMMENT_CONTENT_BYTES bytes")
-        }
+        validateContent(content, images)
 
         val parent =
             commentRepository.findByIdOrNull(parentId)
@@ -241,14 +188,12 @@ class CommentService(
             postRepository.findByIdOrNull(parent.postId)
                 ?: throw PostNotFoundException(parent.postId)
         // 조회·댓글 목록과 동일한 기준: 읽을 수 없는 비공개 글에는 답글도 달 수 없다.
-        if (post.isPrivate && post.userId != userId) throw PostNotFoundException(parent.postId)
+        PostVisibility.assertVisible(post, userId, parent.postId)
 
         val member =
             memberRepository.findByIdOrNull(userId)
                 ?: throw IllegalStateException("User not found")
-        if (!member.emailVerified) {
-            throw EmailNotVerifiedException("Email verification required to create a reply")
-        }
+        EmailVerificationGate.require(member, "create a reply")
 
         val finalContent = buildFinalContent(content, images)
 
@@ -300,13 +245,7 @@ class CommentService(
         // 이미지 삭제는 반드시 커밋 이후에 실행한다 - updateComment와 동일한 이유: 위 DB 작업이
         // 실패해 트랜잭션이 롤백되면 댓글은 DB에 그대로 남았는데 파일만 사라진 상태가 된다.
         if (imageUrls.isNotEmpty()) {
-            TransactionSynchronizationManager.registerSynchronization(
-                object : TransactionSynchronization {
-                    override fun afterCommit() {
-                        supabaseStorageService.deleteObjectsByPublicUrls(imageUrls)
-                    }
-                },
-            )
+            TransactionCallbacks.afterCommit { supabaseStorageService.deleteObjectsByPublicUrls(imageUrls) }
         }
     }
 
@@ -325,13 +264,7 @@ class CommentService(
             .distinct()
             .filterNot { isReferencedOutsidePost(it, postId) }
         if (imageUrls.isNotEmpty()) {
-            TransactionSynchronizationManager.registerSynchronization(
-                object : TransactionSynchronization {
-                    override fun afterCommit() {
-                        supabaseStorageService.deleteObjectsByPublicUrls(imageUrls)
-                    }
-                },
-            )
+            TransactionCallbacks.afterCommit { supabaseStorageService.deleteObjectsByPublicUrls(imageUrls) }
         }
     }
 
@@ -358,15 +291,7 @@ class CommentService(
         content: String?,
         images: List<String>?,
     ): CommentResponse {
-        if (content.isNullOrBlank() && images?.isEmpty() ?: true) {
-            throw InvalidInputException("Content or image must be provided")
-        }
-        if ((images?.size ?: 0) > MAX_COMMENT_IMAGES) {
-            throw InvalidInputException("Comment images cannot exceed $MAX_COMMENT_IMAGES")
-        }
-        if ((content?.toByteArray(Charsets.UTF_8)?.size ?: 0) > MAX_COMMENT_CONTENT_BYTES) {
-            throw InvalidInputException("Comment content cannot exceed $MAX_COMMENT_CONTENT_BYTES bytes")
-        }
+        validateContent(content, images)
 
         val comment =
             commentRepository.findByIdOrNull(commentId)
@@ -400,13 +325,7 @@ class CommentService(
         val removedImageUrls = (previousImageUrls - extractManagedImageUrls(finalContent).toSet())
             .filterNot { isReferencedOutsideComment(it, commentId) }
         if (removedImageUrls.isNotEmpty()) {
-            TransactionSynchronizationManager.registerSynchronization(
-                object : TransactionSynchronization {
-                    override fun afterCommit() {
-                        supabaseStorageService.deleteObjectsByPublicUrls(removedImageUrls)
-                    }
-                },
-            )
+            TransactionCallbacks.afterCommit { supabaseStorageService.deleteObjectsByPublicUrls(removedImageUrls) }
         }
 
         // 알림은 보내지 않는다(수정은 알림 대상 아님) - 링크 프리뷰만 커밋 후 별도 Lambda에서 갱신.
@@ -439,19 +358,47 @@ class CommentService(
         .map { it.value }
         .firstOrNull { !supabaseStorageService.isManagedUrl(it) }
 
-    private fun toCommentResponse(comment: TableComment, member: TableMember) = CommentResponse(
+    // 등록·답글·수정 세 경로가 같은 입력 규칙을 쓴다
+    private fun validateContent(content: String?, images: List<String>?) {
+        if (content.isNullOrBlank() && images?.isEmpty() ?: true) {
+            throw InvalidInputException("Content or image must be provided")
+        }
+
+        if ((images?.size ?: 0) > MAX_COMMENT_IMAGES) {
+            throw InvalidInputException("Comment images cannot exceed $MAX_COMMENT_IMAGES")
+        }
+
+        if ((content?.toByteArray(Charsets.UTF_8)?.size ?: 0) > MAX_COMMENT_CONTENT_BYTES) {
+            throw InvalidInputException("Comment content cannot exceed $MAX_COMMENT_CONTENT_BYTES bytes")
+        }
+    }
+
+    // 등록·답글·수정의 응답 - 방금 쓴 댓글이라 좋아요는 아직 0이고(수정도 지금처럼 0/false로 낸다) 삭제 상태가 아니다
+    private fun toCommentResponse(comment: TableComment, member: TableMember) = toResponse(comment, authorOf(member), isLiked = false, likeCount = 0)
+
+    private fun authorOf(member: TableMember) = CommentAuthor(member.id!!, member.publicNickname ?: DELETED_MEMBER_NICKNAME, member.publicImage)
+
+    // 목록·단건이 함께 쓰는 변환. 삭제된(톰스톤) 댓글은 본문을 안내 문구로 바꾸고 좋아요·링크 미리보기를 싣지 않는다 - 삭제와
+    // 좋아요가 동시에 일어난 경쟁 상황의 잔여값이 표현 계층까지 새지 않도록 여기서도 명시적으로 0/false로 고정한다.
+    private fun toResponse(comment: TableComment, author: CommentAuthor, isLiked: Boolean, likeCount: Int) = CommentResponse(
         id = comment.id,
-        content = comment.content,
+        content = if (comment.isDeleted) DELETED_COMMENT_CONTENT else comment.content,
         isDeleted = comment.isDeleted,
         createdAt = comment.createdAt,
-        author = CommentAuthor(member.id!!, member.publicNickname ?: DELETED_MEMBER_NICKNAME, member.publicImage),
-        linkMetadata = comment.linkUrl?.let {
-            LinkMetadata(
-                url = it,
-                title = comment.linkTitle ?: it,
-                description = comment.linkDescription,
-                ogImage = comment.linkOgImage,
-            )
+        author = author,
+        isLiked = !comment.isDeleted && isLiked,
+        likeCount = if (comment.isDeleted) 0 else likeCount,
+        linkMetadata = if (comment.isDeleted) {
+            null
+        } else {
+            comment.linkUrl?.let {
+                LinkMetadata(
+                    url = it,
+                    title = comment.linkTitle ?: it,
+                    description = comment.linkDescription,
+                    ogImage = comment.linkOgImage,
+                )
+            }
         },
     )
 }

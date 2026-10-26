@@ -1,5 +1,6 @@
 package com.example.linksphere.domain.comment
 
+import com.example.linksphere.domain.interaction.CommentLikeCount
 import com.example.linksphere.domain.interaction.CommentReactionRepository
 import com.example.linksphere.domain.interaction.TableCommentReaction
 import com.example.linksphere.domain.member.MemberRepository
@@ -474,8 +475,15 @@ class CommentServiceTest {
 
         `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
         `when`(commentRepository.findAllByPostIdOrderByCreatedAtAsc(postId)).thenReturn(listOf(tombstoneComment))
-        `when`(commentReactionRepository.findAllByCommentIdIn(listOf(commentId)))
-            .thenReturn(listOf(TableCommentReaction(ownerId, commentId)))
+        `when`(commentReactionRepository.countByCommentIdIn(listOf(commentId)))
+            .thenReturn(
+                listOf(
+                    object : CommentLikeCount {
+                        override val commentId = commentId
+                        override val count = 1L
+                    },
+                ),
+            )
         `when`(commentReactionRepository.findAllByUserIdAndCommentIdIn(ownerId, listOf(commentId)))
             .thenReturn(listOf(TableCommentReaction(ownerId, commentId)))
 

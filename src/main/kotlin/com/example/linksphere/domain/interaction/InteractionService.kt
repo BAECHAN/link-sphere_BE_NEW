@@ -3,6 +3,7 @@ package com.example.linksphere.domain.interaction
 import com.example.linksphere.domain.comment.CommentRepository
 import com.example.linksphere.domain.post.PostLikeResponse
 import com.example.linksphere.domain.post.PostRepository
+import com.example.linksphere.domain.post.PostVisibility
 import com.example.linksphere.global.exception.BookmarkFolderNotFoundException
 import com.example.linksphere.global.exception.CommentNotFoundException
 import com.example.linksphere.global.exception.ForbiddenException
@@ -150,7 +151,7 @@ class InteractionService(
      */
     private fun assertPostVisible(postId: UUID, userId: UUID) {
         val post = postRepository.findByIdOrNull(postId) ?: throw PostNotFoundException(postId)
-        if (post.isPrivate && post.userId != userId) throw PostNotFoundException(postId)
+        PostVisibility.assertVisible(post, userId, postId)
     }
 
     private fun assertCommentLikeable(commentId: UUID, userId: UUID) {

@@ -1,6 +1,7 @@
 package com.example.linksphere.domain.auth
 
 import com.example.linksphere.domain.member.MemberService
+import com.example.linksphere.domain.member.SignupRequest
 import com.example.linksphere.domain.member.TableMember
 import com.example.linksphere.global.common.RateLimitService
 import com.example.linksphere.global.common.SecureToken

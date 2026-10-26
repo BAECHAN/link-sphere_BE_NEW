@@ -1,6 +1,7 @@
 package com.example.linksphere.domain.auth
 
 import com.example.linksphere.domain.member.MemberRepository
+import com.example.linksphere.global.common.BatchJobLimits
 import org.slf4j.LoggerFactory
 import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Service
@@ -25,7 +26,6 @@ class AccountPurgeService(
 
     companion object {
         private const val BATCH_SIZE = 200
-        private const val DEADLINE_MILLIS = 90_000L
     }
 
     data class PurgeSummary(val purged: Int, val skipped: Int, val failed: Int)
@@ -37,7 +37,7 @@ class AccountPurgeService(
         var purged = 0
         var skipped = 0
         var failed = 0
-        val deadline = System.currentTimeMillis() + DEADLINE_MILLIS
+        val deadline = System.currentTimeMillis() + BatchJobLimits.DEADLINE_MILLIS
 
         for (id in ids) {
             if (System.currentTimeMillis() > deadline) {

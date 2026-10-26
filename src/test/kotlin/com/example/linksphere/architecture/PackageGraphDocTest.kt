@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Test
 import java.io.File
 
 /**
- * 순환을 만들어도 되는 패키지 간선 — 이 9개를 빼면 패키지 그래프에 순환이 없다(docs/BE-ARCHITECTURE.md §9).
+ * 순환을 만들어도 되는 패키지 간선 — 이 8개를 빼면 패키지 그래프에 순환이 없다(docs/BE-ARCHITECTURE.md §9).
  * LayerSkeletonRulesTest의 순환 규칙이 이 목록만 무시하고, 아래 그래프 문서 검사가 이 간선을 점선으로 그린다.
  * 간선을 더하려면 §9에 이유를 적고 여기에 추가한다.
  */
@@ -22,8 +22,6 @@ internal val DOCUMENTED_CYCLE_EDGES: List<Pair<String, String>> =
         "infra.aws" to "domain.post",
         "infra.aws" to "domain.comment",
         "infra.aws" to "domain.feed",
-        // MemberService가 auth의 SignupRequest·UpdateAccountRequest를 그대로 받는다
-        "domain.member" to "domain.auth",
         // 글 목록 조립(PostResponseAssembler·PostRepositoryImpl)과 글 삭제가 댓글·반응·북마크를 읽고 지운다
         "domain.post" to "domain.comment",
         "domain.post" to "domain.interaction",
@@ -88,7 +86,17 @@ class PackageGraphDocTest {
         )
     }
 
-    private fun packageEdges(): Set<Pair<String, String>> {
+    // 허용 목록에 이미 없어진 간선이 남으면 그 간선이 다시 생겨도 순환 검사가 조용히 넘긴다 - 목록은 실제 간선만 담는다
+    // (2026-10-26 member → auth를 끊으며 추가). global.exception 간선은 그림에서 빼므로 전체 간선으로 본다.
+    @Test
+    fun `순환 허용 간선 목록의 간선은 모두 실제로 있다`() {
+        val edges = packageEdges(includeHidden = true)
+        val stale = DOCUMENTED_CYCLE_EDGES.filterNot { it in edges }
+
+        assertTrue(stale.isEmpty(), "DOCUMENTED_CYCLE_EDGES에 없어진 간선이 남아 있다 - 목록·§9 표·\"N개\" 문구에서 지운다: $stale")
+    }
+
+    private fun packageEdges(includeHidden: Boolean = false): Set<Pair<String, String>> {
         val classes = ClassFileImporter().withImportOption(ImportOption.DoNotIncludeTests()).importPackages("com.example.linksphere")
 
         return classes.flatMap { origin ->
@@ -97,7 +105,7 @@ class PackageGraphDocTest {
                 val to = packageOf(dependency.targetClass)
                 if (to == null || to == from) null else from to to
             }
-        }.filter { (from, to) -> from !in hiddenPackages && to !in hiddenPackages }.toSet()
+        }.filter { (from, to) -> includeHidden || (from !in hiddenPackages && to !in hiddenPackages) }.toSet()
     }
 
     private fun packageOf(javaClass: JavaClass): String? {
