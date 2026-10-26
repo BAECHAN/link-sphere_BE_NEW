@@ -294,6 +294,19 @@
 
 ### Changed
 
+- `log` 운영 앱 로그를 요청 ID가 붙은 한 줄 JSON으로
+  <details><summary>배경·구현</summary>
+
+  Lambda 앱 로그는 Boot 기본 텍스트 패턴이라 줄에 Lambda RequestId가 없었고(플랫폼 `START`·`REPORT` 줄에만 있었다), 예외 한
+  건의 스택이 CloudWatch 이벤트 약 110개로 쪼개졌다(2026-10-26 운영 로그). `LambdaHandler.handleRequest`가 MDC에
+  `awsRequestId`를 넣고 `finally`에서 지우며(같은 `main` 스레드를 다음 호출이 다시 쓴다), `AsyncConfig`의 TaskDecorator가
+  `@Async` 작업에 그 값을 넘긴다. 형식은 Lambda 기동 인자 `--logging.structured.format.console=logstash`(Spring Boot 3.5
+  structured logging)로 바꿔 스택이 `stack_trace` 한 필드에 들고, 키가 평평해 Logs Insights에서 `filter awsRequestId = …`로
+  요청 하나를 모은다. 로컬 로그와 Lambda LogFormat(Text, 플랫폼 줄)은 그대로다. 찾는 법은 `docs/DEPLOY.md` "운영 로그 읽기".
+  (`LambdaHandler.kt`, `AsyncConfig.kt`, 계획 `docs/plans/2026-10-26-be-remaining-cleanup.md` PR-3)
+
+  </details>
+
 - `api` 생성 API의 HTTP 상태를 201로, 댓글 좋아요 응답을 이름 있는 스키마로
   <details><summary>배경·구현</summary>
 
