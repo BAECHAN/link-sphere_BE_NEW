@@ -39,7 +39,7 @@ src/main/kotlin/com/example/linksphere/
 ├── LambdaHandler.kt                     # AWS Lambda 진입점 (MockMvc 기반)
 ├── LinkSphereBeApplication.kt           # 메인 애플리케이션
 ├── FunctionUrlOriginGuard.kt            # Function URL 직접 호출 차단(비밀 헤더 비교, 미설정이면 통과)
-├── MultipartRequestParser.kt            # Lambda 이벤트의 multipart 본문 파싱
+├── FunctionUrlResponse.kt               # MockMvc 응답 → Function URL 응답(cookies 배열·다중값 헤더)
 ├── domain/
 │   ├── auth/                            # 인증 도메인
 │   │   ├── AuthController.kt            # 회원가입, 로그인, 토큰 갱신, 로그아웃, 내 정보, 비밀번호 변경, 회원탈퇴

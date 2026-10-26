@@ -59,7 +59,7 @@ flowchart TD
 
 | 패키지 | 담는 것 | 의존해도 되는 곳 |
 |---|---|---|
-| 루트 | `LambdaHandler`(진입점·잡 분기), `FunctionUrlOriginGuard`, `MultipartRequestParser` | 전부 |
+| 루트 | `LambdaHandler`(진입점·잡 분기), `FunctionUrlOriginGuard`, `FunctionUrlResponse`(응답 직렬화) | 전부 |
 | `domain/<도메인>/` | 도메인별 평면 구조 — Controller·Service·Repository·`Table*` 엔티티·`*DTO.kt`와 그 도메인 전용 헬퍼 | 다른 도메인(§3), `global`, `infra` |
 | `global/common/` | 응답 래퍼, `SecurityUtils`, `SecureToken`, `ClientIpResolver`, `Paging`, `RateLimitService`, `SupabaseStorageService` | `domain` 금지(허용 3쌍 예외, §3) |
 | `global/config/` | Security·Swagger·Async 설정 | 위와 같음 |
@@ -716,9 +716,9 @@ for (id in ids) {
   개수 세는 방식 3종, 커밋 뒤 처리 방식 3종(AFTER_COMMIT 리스너 · 인라인 `afterCommit` — `CommentService` 3회와 인증·재설정
   메일 2곳 · 트랜잭션 밖 바로 디스패치), `@Valid`는 Auth·FCM 컨트롤러만,
   Page 응답 DTO 수동 복제, 로거 선언 변형, 중복 상수(90초 마감 ×3, 이메일 정규화 ×4).
-- **검증하지 않은 위험 후보**: Lambda 응답 헤더가 이름당 첫 값만 남음(`LambdaHandler`의 응답 직렬화 — 여러
-  `Set-Cookie`에서 문제), Lambda 안에서 Tomcat 기동 여부, `findFirstByIsBotTrue`의 `@Query` 단건 조회(봇이 둘이면 실패),
-  SSRF 검증과 실제 연결 사이의 DNS 재해석.
+- **검증하지 않은 위험 후보**: `findFirstByIsBotTrue`의 `@Query` 단건 조회(봇이 둘이면 실패),
+  SSRF 검증과 실제 연결 사이의 DNS 재해석. (응답 헤더가 이름당 첫 값만 남던 것과 Lambda 안의 Tomcat 8080 바인딩은
+  2026-10-26에 확인하고 고쳤다 — `FunctionUrlResponse`, `LambdaHandler`의 `--server.port=-1`.)
 - **확인해서 위험 후보에서 뺀 것**: "`deploy.yml`은 `integrationTest`를 돌리지 않음" — main 룰셋("Main Branch Protect")이
   `ci.yml`의 `check` 잡(`integrationTest` 포함)을 필수 체크로 요구한다(2026-10-26 `gh api …/rulesets` 확인). 다만
   `strict_required_status_checks_policy`가 `false`라 뒤처진 브랜치의 통과 결과로도 병합된다.
@@ -734,6 +734,6 @@ for (id in ids) {
   필터 조인)을 별도 조회 패키지로 빼는 안. `member → auth`는 요청 DTO 2개를 옮기면 끊긴다.
 - **공용화·중복 후보**: 비공개 글 404 게이트 6곳(§7-10)과 이메일 인증 확인 4곳의 인라인 반복, `CommentService`의 입력 검증
   3벌(등록·답글·수정)과 `CommentResponse` 변환 2벌(목록·단건).
-- **정리 후보**: 쓰는 엔드포인트가 없는 `MultipartRequestParser`, 쓰지 않는 의존성 `spring-boot-starter-oauth2-client`와
+- **정리 후보**: 쓰지 않는 의존성 `spring-boot-starter-oauth2-client`와
   `jwt.secret` 키, 쓰지 않는 Repository 메서드(`PostRepository.findByCategoriesSlug` 등 4개), HTTP로 도달할 수 없는
   `CommentService.createComment`의 `parentId` 분기, 파일명 `PostAiService.kt`와 클래스명 `PostAIService` 불일치.

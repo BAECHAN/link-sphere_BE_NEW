@@ -18,7 +18,6 @@ import org.springframework.boot.WebApplicationType
 import org.springframework.boot.web.servlet.context.AnnotationConfigServletWebServerApplicationContext
 import org.springframework.context.ConfigurableApplicationContext
 import org.springframework.http.HttpMethod
-import org.springframework.mock.web.MockMultipartFile
 import org.springframework.orm.ObjectOptimisticLockingFailureException
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder
@@ -33,7 +32,9 @@ import java.util.Base64
 /**
  * AWS Lambda SnapStart 핸들러.
  *
- * Tomcat 소켓을 사용하지 않고 MockMvc로 DispatcherServlet을 직접 호출한다.
+ * Tomcat 소켓을 사용하지 않고 MockMvc로 DispatcherServlet을 직접 호출한다. 서블릿 웹 컨텍스트(그 안의 내장 Tomcat 컨텍스트)는
+ * 만들지만 `--server.port=-1`이라 8080에 바인딩하지 않는다 — 기동·복원 때 임시 포트(0)에 잠깐 bind했다가 바로 닫으므로
+ * 요청을 처리하는 동안에는 리스닝 소켓이 없다(init 블록 주석 참고).
  *
  * Tomcat 방식을 사용하지 않는 이유:
  * - SnapStart CRaC 체크포인트는 열린 소켓(Tomcat 8080, HikariCP DB)이 있으면 State:Failed
@@ -75,7 +76,15 @@ class LambdaHandler : RequestStreamHandler {
                 override fun createApplicationContext(): ConfigurableApplicationContext = AnnotationConfigServletWebServerApplicationContext()
             }
             app.webApplicationType = WebApplicationType.SERVLET
-            val ctx = app.run()
+            // 요청은 MockMvc로 직접 처리하므로 Tomcat이 포트를 열 필요가 없다. 이 인자가 없으면 application.yml의
+            // server.port(8080)로 실제로 바인딩했다(운영 로그 "Tomcat started on port 8080"이 14일간 1,703회, 2026-10-26
+            // 확인) - init 비용이 들고, 같은 프로세스의 루프백 8080이 SSRF가 노릴 수 있는 대상으로 남는다. -1이면 autoStart가
+            // false가 되고(spring-boot 3.5.16 TomcatServletWebServerFactory:517 autoStart = port >= 0), start() 때 커넥터를
+            // 다시 붙이며 시작된 protocol handler를 곧바로 멈춘다(TomcatWebServer:304-316) - 커넥터 포트는 0이라 그 사이 임시
+            // 포트에 잠깐 bind했다가 닫고, 요청 처리 중에는 리스닝 소켓이 없다. Boot 문서도 "HTTP 엔드포인트는 끄고 WebApplicationContext는 만들려면
+            // server.port=-1"이라고 쓴다(번역, how-to/webserver.adoc). 커맨드라인 인자라 yml보다 우선하고, 로컬
+            // bootRun(LinkSphereBeApplication)에는 영향이 없다.
+            val ctx = app.run("--server.port=-1")
             applicationContext = ctx
             // webAppContextSetup()만으로는 FilterChainProxy(Spring Security)가 MockMvc 필터 체인에
             // 자동 포함되지 않는다. 명시적으로 추가해야 SessionAuthenticationFilter 등 보안 필터가 실행된다.
@@ -186,26 +195,10 @@ class LambdaHandler : RequestStreamHandler {
 
         val uri = if (rawQuery != null) URI.create("$path?$rawQuery") else URI.create(path)
 
-        // MockHttpServletRequest.getParts()는 raw body를 파싱하지 않고 사전 등록된 Part만 반환한다
-        // (spring-test 자체에 multipart 파싱 로직이 없음). 그래서 일반 request() 빌더에 raw 멀티파트
-        // 바이트를 .content()로 넣기만 하면 @RequestParam이 항상 null로 바인딩된다 — 클라이언트가
-        // 무엇을 보냈는지와 무관하게 매번 실패한다. multipart(...) 빌더로 Part/파라미터를 명시적으로
-        // 등록해야 하므로, MultipartRequestParser로 raw 바이트를 직접 파싱해 등록한다.
-        val contentTypeHeader = findHeader(event, "content-type")
-        val isMultipart = contentTypeHeader?.startsWith("multipart/", ignoreCase = true) == true
-
-        val requestBuilder: MockHttpServletRequestBuilder =
-            if (isMultipart && bytes != null) {
-                val parsed = MultipartRequestParser.parse(bytes, contentTypeHeader!!)
-                MockMvcRequestBuilders.multipart(HttpMethod.valueOf(method), uri).also { builder ->
-                    parsed.fields.forEach { (name, values) -> builder.param(name, *values.toTypedArray()) }
-                    parsed.files.forEach { file ->
-                        builder.file(MockMultipartFile(file.fieldName, file.filename, file.contentType, file.bytes))
-                    }
-                }
-            } else {
-                MockMvcRequestBuilders.request(HttpMethod.valueOf(method), uri)
-            }
+        // multipart 요청을 받는 엔드포인트는 없다(이미지는 서명 URL로 클라이언트가 직접 올린다) - raw 바이트를 그대로
+        // 본문에 싣는다. 예전에는 MultipartRequestParser로 파싱해 multipart 빌더에 등록했지만, 쓰는 곳이 없어진 뒤로는
+        // 깨진 본문이 인증 전에 파서 예외로 호출 자체를 실패시키는 경로만 남아 2026-10-26에 지웠다.
+        val requestBuilder: MockHttpServletRequestBuilder = MockMvcRequestBuilders.request(HttpMethod.valueOf(method), uri)
         // Function URL 트래픽은 항상 HTTPS다. 이 표시가 없으면 Spring Security의 HSTS
         // 헤더 작성기가 "보안 연결 아님"으로 보고 응답에 아예 헤더를 안 싣는다(F5,
         // docs/plans/2026-09-28-auth-hardening.md 참고).
@@ -238,27 +231,16 @@ class LambdaHandler : RequestStreamHandler {
             }
         }
 
-        if (!isMultipart && bytes != null) {
+        if (bytes != null) {
             requestBuilder.content(bytes)
         }
 
         val result = mockMvc.perform(requestBuilder).andReturn()
-        val response = result.response
-        val responseHeaders = response.headerNames.associateWith { response.getHeader(it) }
-
-        mapper.writeValue(
-            output,
-            mapOf(
-                "statusCode" to response.status,
-                "headers" to responseHeaders,
-                "body" to response.contentAsString,
-            ),
-        )
+        mapper.writeValue(output, FunctionUrlResponse.from(result.response))
     }
 
     // Lambda 이벤트의 headers 필드는 대소문자가 원본 그대로 들어오므로(예: X-Origin-Verify vs
-    // x-origin-verify) 매번 순회하며 대소문자 구분 없이 찾는다. content-type · X-Origin-Verify
-    // 둘 다 이 함수로 찾는다.
+    // x-origin-verify) 매번 순회하며 대소문자 구분 없이 찾는다(지금은 X-Origin-Verify만 이 함수로 찾는다).
     private fun findHeader(event: JsonNode, name: String): String? {
         val headers = event.get("headers") ?: return null
         val names = headers.fieldNames()

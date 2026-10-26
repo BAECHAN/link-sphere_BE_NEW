@@ -451,6 +451,21 @@
 
 ### Fixed
 
+- `lambda` Lambda 안에서 Tomcat이 8080에 바인딩하고, 다중값 응답 헤더가 첫 값만 나가던 문제
+  <details><summary>배경·구현</summary>
+
+  `LambdaHandler`는 요청을 MockMvc로 직접 처리하는데도 `application.yml`의 `server.port: 8080`으로 내장 Tomcat 커넥터를 실제로
+  시작했다 — 운영 로그에 `Tomcat started on port 8080`이 14일간 1,703회 찍혔고, 문서 4곳은 "Tomcat 없음"이라고 잘못 적고
+  있었다. init 비용이 들고 같은 프로세스의 루프백 8080이 SSRF가 노릴 수 있는 대상으로 남았다. `app.run("--server.port=-1")`로
+  8080에 바인딩하지 않는다 — spring-boot 3.5.16은 autoStart = port ≥ 0이라 커넥터가 임시 포트에 잠깐 bind했다가 곧바로 멈추고,
+  요청을 처리하는 동안에는 리스닝 소켓이 없다. 응답 직렬화는 헤더
+  이름마다 첫 값만 실어 CORS가 붙이는 `Vary` 세 값 중 `Origin`만 나갔고, `Set-Cookie`가 둘이 되면 하나가 조용히 사라질 구조였다.
+  새 `FunctionUrlResponse`가 `Set-Cookie`는 AWS 문서대로 응답의 `cookies` 배열로, 나머지 다중값은 `, `로 합쳐 보낸다. 쓰는
+  엔드포인트가 없던 `MultipartRequestParser`도 지웠다(깨진 multipart 본문이 인증 전에 호출을 실패시키는 경로만 남아 있었다).
+  (`LambdaHandler.kt`, `FunctionUrlResponse.kt`(신규), 계획 `docs/plans/2026-10-26-be-remaining-cleanup.md` PR-2)
+
+  </details>
+
 - `api` 지원하지 않는 메서드·Content-Type, 필수 파라미터 누락이 4xx가 아니라 500으로 나가던 문제
   <details><summary>배경·구현</summary>
 

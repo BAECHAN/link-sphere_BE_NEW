@@ -140,8 +140,8 @@ Google SRE 책은 과부하 대응으로 기능을 낮춰 응답하는 방법(gr
 ### 5-6. 동시 처리 한계는 Spring 설정이 아니라 Lambda 칸 수가 정한다
 
 일반 서버(EC2, 예전 App Runner)라면 Spring Boot의 `server.tomcat.threads.max`(기본 200)가 서버 한
-대의 동시 처리 수를 정한다. 이 레포의 Lambda에는 **Tomcat이 없다** — SnapStart 체크포인트 때문에
-소켓을 열 수 없어 `LambdaHandler`가 `DispatcherServlet`을 MockMvc로 직접 호출한다
+대의 동시 처리 수를 정한다. 이 레포의 Lambda에서는 **Tomcat이 요청을 받지 않는다** — 내장 Tomcat 컨텍스트는 만들지만
+8080을 열지 않고(`--server.port=-1`, 요청 처리 중 리스닝 소켓 없음), `LambdaHandler`가 `DispatcherServlet`을 MockMvc로 직접 호출한다
 ([`DEPLOY.md`](DEPLOY.md) "MockMvc 방식을 사용하는 이유"). 그리고 Lambda는 실행 환경(이하 "칸")
 하나에 요청을 한 번에 1건만 넣는다.
 
