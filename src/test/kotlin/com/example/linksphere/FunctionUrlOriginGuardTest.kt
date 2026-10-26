@@ -7,7 +7,7 @@ import kotlin.test.assertTrue
 /**
  * FunctionUrlOriginGuard.isAllowed()를 직접 검증한다. LambdaHandler의 companion object
  * init(전체 Spring Boot 부팅)을 거치지 않고도 순수 판정 로직만 빠르게 검증할 수 있다
- * (LambdaHandlerMultipartParsingTest와 동일한 이유).
+ * (FunctionUrlResponseTest와 같은 이유).
  */
 class FunctionUrlOriginGuardTest {
 

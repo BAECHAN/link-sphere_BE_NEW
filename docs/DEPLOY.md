@@ -45,7 +45,7 @@ API 요청 (linksphere.click, HTTPS)
           미설정이라 fail-open(항상 통과)이며, OAC가 사실상 이 자리를 대신한다(§5-1
           "Phase 0 관련 정정" 참고)
         → MockMvc.perform()
-          → Spring DispatcherServlet (Tomcat 소켓 없음)
+          → Spring DispatcherServlet (Tomcat은 8080을 열지 않음 — `--server.port=-1`)
             → 응답
 ```
 
@@ -69,7 +69,13 @@ SnapStart는 Lambda init phase를 스냅샷으로 저장해 cold start를 단축
 1. **CRaC 체크포인트 실패**: Tomcat이 8080 소켓을 열고 있는 상태에서 SnapStart 체크포인트를 시도하면 열린 소켓이 있어서 `State:Failed`가 된다.
 2. **restore 후 rebind 실패**: 체크포인트를 통과하더라도 복원 후 Tomcat이 8080 포트에 재바인딩하지 못해 요청을 처리할 수 없다.
 
-**해결책**: Tomcat을 아예 사용하지 않는다. `MockMvc`로 `DispatcherServlet`을 직접 호출하면 소켓이 전혀 열리지 않으므로 CRaC 체크포인트가 성공하고, 복원 후에도 바인딩 문제가 없다.
+**해결책**: 요청을 Tomcat 소켓이 아니라 `MockMvc`로 `DispatcherServlet`에 직접 넣는다. 서블릿 웹 컨텍스트에 필요한 내장 Tomcat
+컨텍스트는 만들지만 `LambdaHandler`가 `--server.port=-1`로 기동해 8080에 바인딩하지 않는다 — 기동·복원 때 커넥터가 임시
+포트(0)에 잠깐 bind했다가 바로 멈추므로(spring-boot 3.5.16 `TomcatWebServer.start`의 `stopProtocolHandler`) 요청을 처리하는
+동안에는 리스닝 소켓이 없다.
+2026-10-26 전에는 이 인자가 없어 실제로 8080에 바인딩했다 — 운영 로그에 `Tomcat started on port 8080`이 14일간 1,703회
+찍혔고, Spring의 SnapStart 수명주기 처리가 체크포인트 전에 커넥터를 멈췄다가 복원 때 다시 열었다(spring-framework 6.2
+`DefaultLifecycleProcessor` `beforeCheckpoint`·`afterRestore`). 문서는 그동안 "Tomcat 없음"이라고 잘못 적고 있었다.
 
 ### SnapStart 동작 흐름
 
@@ -993,7 +999,8 @@ Lambda에서는 이 파일 없이 환경변수로 동일한 값을 주입한다.
 
 crac로 체크포인트는 통과했지만, 복원 후 Tomcat이 8080 포트에 다시 바인딩하지 못하는 문제가 발생했다. Lambda 환경의 네트워크 제약으로 인한 것으로 추정.
 
-**해결**: Tomcat 자체를 사용하지 않는 MockMvc 방식으로 전환. `MockMvc`로 `DispatcherServlet`을 직접 호출하면 소켓이 전혀 필요 없다.
+**해결**: 요청을 Tomcat 소켓 대신 MockMvc로 `DispatcherServlet`에 직접 넣는 방식으로 전환. (정정 2026-10-26: 그 뒤로도 내장
+Tomcat 커넥터는 8080에 계속 바인딩하고 있었다 — 위 "핵심 동작 원리"와 `LambdaHandler`의 `--server.port=-1` 참고.)
 
 ### 4. WebApplicationType.NONE 감지 문제
 
