@@ -4,6 +4,11 @@ import org.springframework.data.domain.Page
 import java.time.LocalDateTime
 import java.util.UUID
 
+// 댓글 좋아요·취소(PUT·DELETE /comment/{commentId}/like)의 data - 요청 뒤의 상태만 돌려준다
+data class CommentLikeResponse(
+    val isLiked: Boolean,
+)
+
 data class LinkMetadata(
     val url: String,
     val title: String,

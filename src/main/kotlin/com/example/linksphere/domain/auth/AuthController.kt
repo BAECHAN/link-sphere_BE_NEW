@@ -24,6 +24,7 @@ import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
+import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
 
 @Tag(name = "인증", description = "회원가입·로그인·토큰 갱신·계정 조회")
@@ -50,8 +51,8 @@ class AuthController(
     )
     @SecurityRequirements
     @PostMapping("/signup")
-    fun signup(@Valid @RequestBody request: SignupRequest, httpRequest: HttpServletRequest): ResponseEntity<ApiResponse<AccountResponse>> = ResponseEntity.status(HttpStatus.CREATED)
-        .body(ApiResponse(HttpStatus.CREATED.value(), "Signup successful", authService.signup(request, ClientIpResolver.resolve(httpRequest))))
+    @ResponseStatus(HttpStatus.CREATED)
+    fun signup(@Valid @RequestBody request: SignupRequest, httpRequest: HttpServletRequest): ApiResponse<AccountResponse> = ApiResponse(HttpStatus.CREATED.value(), "Signup successful", authService.signup(request, ClientIpResolver.resolve(httpRequest)))
 
     @Operation(
         summary = "로그인",
@@ -145,9 +146,9 @@ class AuthController(
         description = "인증된 세션이 가리키는 회원 ID로 조회한다.",
     )
     @GetMapping("/account")
-    fun getAccount(authentication: Authentication): ResponseEntity<ApiResponse<AccountResponse>> {
+    fun getAccount(authentication: Authentication): ApiResponse<AccountResponse> {
         val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
-        return ResponseEntity.ok(ApiResponse(HttpStatus.OK.value(), "Account retrieved", authService.getAccount(userId)))
+        return ApiResponse(HttpStatus.OK.value(), "Account retrieved", authService.getAccount(userId))
     }
 
     @Operation(
@@ -159,9 +160,9 @@ class AuthController(
     fun updateAccount(
         @Valid @RequestBody request: UpdateAccountRequest,
         authentication: Authentication,
-    ): ResponseEntity<ApiResponse<AccountResponse>> {
+    ): ApiResponse<AccountResponse> {
         val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
-        return ResponseEntity.ok(ApiResponse(HttpStatus.OK.value(), "Account updated", authService.updateAccount(userId, request)))
+        return ApiResponse(HttpStatus.OK.value(), "Account updated", authService.updateAccount(userId, request))
     }
 
     @Operation(
@@ -222,9 +223,9 @@ class AuthController(
     fun requestPasswordReset(
         @Valid @RequestBody request: PasswordResetRequest,
         httpRequest: HttpServletRequest,
-    ): ResponseEntity<ApiResponse<Unit>> {
+    ): ApiResponse<Unit> {
         passwordResetService.requestReset(request.email, ClientIpResolver.resolve(httpRequest))
-        return ResponseEntity.ok(ApiResponse(HttpStatus.OK.value(), "Password reset email sent if the account exists", Unit))
+        return ApiResponse(HttpStatus.OK.value(), "Password reset email sent if the account exists", Unit)
     }
 
     @Operation(
@@ -234,9 +235,9 @@ class AuthController(
     )
     @SecurityRequirements
     @PostMapping("/password-reset/confirm")
-    fun confirmPasswordReset(@Valid @RequestBody request: PasswordResetConfirmRequest): ResponseEntity<ApiResponse<Unit>> {
+    fun confirmPasswordReset(@Valid @RequestBody request: PasswordResetConfirmRequest): ApiResponse<Unit> {
         passwordResetService.confirmReset(request.token, request.newPassword)
-        return ResponseEntity.ok(ApiResponse(HttpStatus.OK.value(), "Password reset", Unit))
+        return ApiResponse(HttpStatus.OK.value(), "Password reset", Unit)
     }
 
     @Operation(
@@ -249,9 +250,9 @@ class AuthController(
     fun requestEmailVerification(
         @Valid @RequestBody request: EmailVerificationRequest,
         httpRequest: HttpServletRequest,
-    ): ResponseEntity<ApiResponse<Unit>> {
+    ): ApiResponse<Unit> {
         authService.requestEmailVerification(request.email, ClientIpResolver.resolve(httpRequest))
-        return ResponseEntity.ok(ApiResponse(HttpStatus.OK.value(), "Verification email sent if applicable", Unit))
+        return ApiResponse(HttpStatus.OK.value(), "Verification email sent if applicable", Unit)
     }
 
     @Operation(
@@ -261,9 +262,9 @@ class AuthController(
     )
     @SecurityRequirements
     @PostMapping("/email-verification/confirm")
-    fun confirmEmailVerification(@Valid @RequestBody request: EmailVerificationConfirmRequest): ResponseEntity<ApiResponse<Unit>> {
+    fun confirmEmailVerification(@Valid @RequestBody request: EmailVerificationConfirmRequest): ApiResponse<Unit> {
         authService.confirmEmailVerification(request.token)
-        return ResponseEntity.ok(ApiResponse(HttpStatus.OK.value(), "Email verified", Unit))
+        return ApiResponse(HttpStatus.OK.value(), "Email verified", Unit)
     }
 
     // 마이페이지(로그인)와 가입 화면(비로그인) 둘 다에서 쓴다 - permitAll 경로라 인증 안 된
@@ -279,12 +280,10 @@ class AuthController(
     fun checkNicknameAvailability(
         @RequestParam @Size(max = 20) nickname: String,
         authentication: Authentication?,
-    ): ResponseEntity<ApiResponse<NicknameAvailabilityResponse>> = ResponseEntity.ok(
-        ApiResponse(
-            HttpStatus.OK.value(),
-            "Nickname availability checked",
-            authService.isNicknameAvailable(authentication.getUserId(), nickname),
-        ),
+    ): ApiResponse<NicknameAvailabilityResponse> = ApiResponse(
+        HttpStatus.OK.value(),
+        "Nickname availability checked",
+        authService.isNicknameAvailable(authentication.getUserId(), nickname),
     )
 
     @Operation(summary = "이메일 사용 가능 여부 확인", description = "가입 화면에서 쓰는 중복 검사. 대소문자를 구분하지 않는다.")
@@ -292,9 +291,7 @@ class AuthController(
     @GetMapping("/email-availability")
     fun checkEmailAvailability(
         @RequestParam @Size(max = 254) email: String,
-    ): ResponseEntity<ApiResponse<EmailAvailabilityResponse>> = ResponseEntity.ok(
-        ApiResponse(HttpStatus.OK.value(), "Email availability checked", authService.isEmailAvailable(email)),
-    )
+    ): ApiResponse<EmailAvailabilityResponse> = ApiResponse(HttpStatus.OK.value(), "Email availability checked", authService.isEmailAvailable(email))
 
     private fun createCookieResponse(
         authResult: AuthResult,

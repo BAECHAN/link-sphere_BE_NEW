@@ -43,10 +43,11 @@ class CommentController(private val commentService: CommentService) {
 
     @Operation(
         summary = "댓글 작성",
-        description = "HTTP 상태는 200 이고 본문 status 필드만 201 이다. " +
+        description = "HTTP 상태와 본문 status 모두 201 이다. " +
             "실패: 404 POST_NOT_FOUND · 400 INVALID_INPUT(content·images 가 둘 다 비어 있음, 이미지 개수·본문 길이 초과)",
     )
     @PostMapping("/post/{postId}/comment")
+    @ResponseStatus(HttpStatus.CREATED)
     fun createComment(
         @PathVariable postId: UUID,
         @RequestBody request: CreateCommentRequest,
@@ -59,11 +60,12 @@ class CommentController(private val commentService: CommentService) {
 
     @Operation(
         summary = "답글 작성",
-        description = "답글의 답글은 허용하지 않는다(최대 depth 1). HTTP 상태는 200 이고 본문 status " +
-            "필드만 201 이다. 실패: 404 COMMENT_NOT_FOUND(부모 댓글 없음) · " +
+        description = "답글의 답글은 허용하지 않는다(최대 depth 1). HTTP 상태와 본문 status 모두 201 이다. " +
+            "실패: 404 COMMENT_NOT_FOUND(부모 댓글 없음) · " +
             "400 INVALID_INPUT(content·images 가 둘 다 비어 있음, depth 초과, 이미지 개수·본문 길이 초과)",
     )
     @PostMapping("/comment/{commentId}/reply")
+    @ResponseStatus(HttpStatus.CREATED)
     fun createReply(
         @PathVariable commentId: UUID,
         @RequestBody request: CreateCommentRequest,

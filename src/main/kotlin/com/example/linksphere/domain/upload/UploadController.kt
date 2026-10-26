@@ -9,6 +9,7 @@ import org.springframework.http.HttpStatus
 import org.springframework.security.core.Authentication
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
+import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
 import java.time.Duration
 
@@ -32,6 +33,7 @@ class UploadController(
             "실패: 400 UNSUPPORTED_IMAGE_TYPE(허용되지 않은 확장자) · 429 RATE_LIMIT_EXCEEDED(회원당 시간당 발급 한도 초과)",
     )
     @PostMapping("/upload/signed-url")
+    @ResponseStatus(HttpStatus.CREATED)
     fun createSignedUploadUrl(
         @RequestBody request: UploadUrlRequest,
         authentication: Authentication,
