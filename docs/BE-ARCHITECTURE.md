@@ -4,10 +4,10 @@
 >
 > **대상 독자**: 이 레포 BE를 처음 보거나, 새 엔드포인트·도메인·배치 잡·외부 클라이언트를 추가하려는 사람과 Claude
 >
-> **읽고 나면**: 요청이 어느 코드를 거치는지 따라갈 수 있고, 자동 검사(§2)와 선례 패턴(§7)에 맞춰 새 코드를 쓸 수 있다.
+> **읽고 나면**: 요청이 어느 코드를 거치는지, 레이어끼리 무엇을 참조하고 어떤 타입을 주고받는지(§3) 따라갈 수 있고, 자동 검사(§2)와 선례 패턴(§7)에 맞춰 새 코드를 쓸 수 있다.
 > 지금 코드가 규칙과 어긋나는 곳은 §9에 모아 두었다 — 그쪽을 본떠 쓰지 않는다.
 >
-> **마지막 검토**: 2026-10-25
+> **마지막 검토**: 2026-10-26
 
 시스템 전체(CloudFront·S3·Lambda·배포 파이프라인)는 FE 레포
 [`docs/SYSTEM-ARCHITECTURE.md`](https://github.com/BAECHAN/link-sphere_FE_NEW/blob/main/docs/SYSTEM-ARCHITECTURE.md)가,
@@ -44,7 +44,7 @@ flowchart TD
 | `ai-analysis` | 글 등록·수정 커밋 뒤 `PostAIService.handlePostCreatedEvent` → `AiJobDispatcher` | `PostAIService.processAiJob` |
 | `comment-postprocess` | 댓글 등록·답글·수정 커밋 뒤 `CommentPostProcessService.handleCommentPostProcess` → `CommentJobDispatcher` | `CommentPostProcessService.processCommentJob`(FCM 알림·링크 프리뷰) |
 | `feed-crawl` | EventBridge `link-sphere-feed-crawl` 룰 | `FeedCrawlService.collectAndDispatch` → `FeedJobDispatcher` |
-| `feed-item` | `FeedCrawlService`(5건씩) | `FeedItemProcessor.processFeedItem` → `PostService.createPost` → 다시 `ai-analysis` |
+| `feed-item` | `FeedCrawlService`(5건씩) | `FeedCrawlService.processFeedItemJob` → 항목마다 `FeedItemProcessor.processFeedItem` → `PostService.createPost` → 다시 `ai-analysis` |
 | `account-purge` | 같은 EventBridge 룰 | `AccountPurgeService.purgeExpired` |
 | `orphan-image-gc` | 같은 EventBridge 룰(`dryRun` 지원) | `OrphanImageGcService.collect` |
 
@@ -70,6 +70,81 @@ flowchart TD
 도메인 안에는 서브패키지를 만들지 않는다(`infra/<기술>/dto/`만 예외). 도메인·`global` 하위는 단수 소문자
 (`post/`, `common/`), `infra` 하위는 기술·서비스명 그대로(`ai/`, `fcm/`, `youtube/`)다.
 
+### 실제 패키지 의존 그래프
+
+아래 그림은 손으로 그린 것이 아니다. `PackageGraphDocTest`가 바이트코드에서 패키지(`domain.post`처럼 두 단계) 사이
+간선을 계산해 이 블록과 비교하고, 다르면 실패하면서 붙여 넣을 새 블록을 출력한다 — 새 의존을 만들면 이 그림이 같은 PR에서
+바뀌어 리뷰에 드러난다. 점선은 순환을 만들지만 허용한 간선이다(§9의 9개 중 8개 — `global.exception → global.common`은
+아래처럼 그림에서 뺀 패키지라 보이지 않는다). 모든 패키지가 예외를 던지느라 의존하는 `global.exception`은 그림에서만
+뺐고 순환 검사에는 들어간다. 루트(`LambdaHandler` 등)와 `tools/`는 두 단계 패키지가 아니라 그림·순환 검사 모두에서 빠진다 —
+다른 패키지가 이들을 참조하는 곳이 없어(2026-10-26 확인) 순환에 낄 수 없다.
+
+<!-- package-graph:start -->
+```mermaid
+flowchart LR
+  subgraph domain
+    domain_auth["auth"]
+    domain_category["category"]
+    domain_comment["comment"]
+    domain_feed["feed"]
+    domain_interaction["interaction"]
+    domain_member["member"]
+    domain_post["post"]
+    domain_upload["upload"]
+  end
+  subgraph global
+    global_common["common"]
+    global_config["config"]
+  end
+  subgraph infra
+    infra_ai["ai"]
+    infra_aws["aws"]
+    infra_fcm["fcm"]
+    infra_mail["mail"]
+    infra_youtube["youtube"]
+  end
+  domain_auth --> domain_interaction
+  domain_auth --> domain_member
+  domain_auth --> domain_post
+  domain_auth --> global_common
+  domain_auth --> infra_fcm
+  domain_auth --> infra_mail
+  domain_category --> global_common
+  domain_comment --> domain_interaction
+  domain_comment --> domain_member
+  domain_comment --> domain_post
+  domain_comment --> global_common
+  domain_comment --> infra_aws
+  domain_comment --> infra_fcm
+  domain_feed --> domain_member
+  domain_feed --> domain_post
+  domain_feed --> infra_aws
+  domain_interaction -.-> domain_comment
+  domain_interaction --> domain_post
+  domain_interaction --> global_common
+  domain_interaction --> infra_ai
+  domain_member -.-> domain_auth
+  domain_post --> domain_category
+  domain_post -.-> domain_comment
+  domain_post -.-> domain_interaction
+  domain_post --> domain_member
+  domain_post --> global_common
+  domain_post --> infra_ai
+  domain_post --> infra_aws
+  domain_post --> infra_youtube
+  domain_upload --> domain_comment
+  domain_upload --> domain_member
+  domain_upload --> global_common
+  global_common -.-> domain_auth
+  global_config --> domain_auth
+  global_config --> global_common
+  infra_aws -.-> domain_comment
+  infra_aws -.-> domain_feed
+  infra_aws -.-> domain_post
+  infra_fcm --> global_common
+```
+<!-- package-graph:end -->
+
 ---
 
 ## 2. 자동 검사가 강제하는 규칙
@@ -93,26 +168,99 @@ flowchart TD
 | `엔드포인트는 Principal이나 @AuthenticationPrincipal로 사용자를 받지 않는다` | 사용자를 `Authentication` + `getUserId()` 밖의 방식으로 받음 | `architecture/ControllerSignatureRulesTest.kt` |
 | `Authentication 파라미터의 nullable은 @SecurityRequirements가 붙은 공개 엔드포인트에만 쓴다` | 인증 필수 엔드포인트의 `Authentication?` — Kotlin nullability를 봐야 해 리플렉션으로 검사 | 위와 같음 |
 | `엔드포인트는 ApiResponse 또는 ResponseEntity로 감싼 ApiResponse를 반환한다` | 응답 래퍼를 안 쓰는 엔드포인트(제네릭 반환형 검사) | 위와 같음 |
+| `controllersMustNotDependOnEntities` | `@RestController`가 `@Entity`(`Table*`)를 참조 | `architecture/LayerSkeletonRulesTest.kt` |
+| `nothingDependsOnControllers` | 컨트롤러 밖의 코드가 `@RestController`를 참조 | 위와 같음 |
+| `domainCodeMustNotDependOnWebTypes` | 컨트롤러·서블릿 필터 밖의 domain·infra 코드가 서블릿·`ResponseEntity`·`ApiResponse`·`ErrorResponse`·`web.bind.annotation`을 참조 | 위와 같음 |
+| `persistenceMustNotDependOnUpperLayers` | Repository·엔티티가 Service·`@Component`·Controller·DTO를 참조 | 위와 같음 |
+| `dtosMustNotDependOnBeans` | `*DTO.kt`의 클래스가 Service·`@Component`·Repository·Controller를 참조 | 위와 같음 |
+| `apiDtosLiveInDtoFiles` | domain의 `*Request`·`*Response`를 `*DTO.kt` 밖에 정의 | 위와 같음 |
+| `packagesMustBeFreeOfCyclesExceptDocumented` | 패키지 사이 새 순환 — 허용 간선 9개는 `PackageGraphDocTest.kt`의 `DOCUMENTED_CYCLE_EDGES`, 이유는 §9 | 위와 같음 |
+| `문서의 패키지 의존 그래프가 코드와 같다` | §1 "실제 패키지 의존 그래프"가 코드와 어긋남 | `architecture/PackageGraphDocTest.kt` |
 
 ArchUnit 규칙은 대상 클래스가 0개면 실패한다(`archRule.failOnEmptyShould` 기본값, 2026-10-25 빈 대상 규칙을 일부러
 넣어 확인) — 패키지가 바뀌어도 조용히 통과하지 않는다. 클래스패스 스캔 테스트는 최소 개수 하한선을 둔다.
 
-2026-10-25 점검에서 찾은 위반은 위 검사를 켜며 모두 고쳤다. 검사로 막을 수 없어 그대로 둔 곳은 §9에 있다.
+2026-10-25 점검에서 찾은 위반은 위 검사를 켜며 모두 고쳤다. 2026-10-26 골격 점검에서 더한 `LayerSkeletonRulesTest`
+7개는 켤 때 위반 0건이었고, 규칙마다 위반을 일부러 넣어 실패하는 것을 확인했다. 검사로 막을 수 없어 그대로 둔 곳은 §9에 있다.
 
 ---
 
 ## 3. 레이어 규칙과 허용 예외
 
+### 레이어 골격 — 누가 누구를 알고, 무엇을 주고받나
+
+요청 하나에서 타입은 아래 순서로 바뀐다. 엔티티(`Table*`)는 Service·Assembler 안에서만 응답 DTO로 바뀌고 컨트롤러로
+올라가지 않는다. 실패는 반환값이 아니라 예외로 흐른다.
+
+```mermaid
+sequenceDiagram
+  participant FE as FE (JSON)
+  participant C as Controller
+  participant S as Service · Assembler
+  participant R as Repository
+  participant H as GlobalExceptionHandler
+  FE->>C: JSON → *Request (@RequestBody)
+  C->>C: Authentication → UUID (getUserId)
+  C->>S: UUID, *Request (또는 그 필드)
+  S->>R: 조회 · 저장
+  R-->>S: Table* 엔티티
+  S->>S: Table* → *Response (직접 · Assembler · DTO의 from())
+  S-->>C: *Response (또는 스칼라)
+  C-->>FE: ApiResponse로 감싼 *Response → JSON
+  S--)H: 실패 — 예외 throw (§4 예외 선택 규칙)
+  H-->>FE: ErrorResponse(status, code, message)
+```
+
+허용하는 의존 방향과, 반대 방향을 막는 검사(§2)는 이렇다. 실선은 써도 되는 방향, 점선은 검사가 막는 방향이다.
+
+```mermaid
+flowchart TD
+  C["Controller<br/>@RestController"] -->|"위임"| S["Service · Assembler · 헬퍼<br/>@Service · @Component"]
+  S --> R["Repository<br/>JPA 인터페이스 · *RepositoryImpl"]
+  R --> E["Table* 엔티티<br/>@Entity"]
+  S --> E
+  C --> D["*DTO.kt<br/>*Request · *Response"]
+  S --> D
+  D -->|"from()"| E
+  C --> W["웹 입출력<br/>ApiResponse · ResponseEntity · 서블릿"]
+  C -.-x|"controllersMustNotDependOnEntities"| E
+  C -.-x|"controllersMustNotDependOnRepositories"| R
+  S -.-x|"domainCodeMustNotDependOnWebTypes"| W
+  S -.-x|"nothingDependsOnControllers"| C
+  R -.-x|"persistenceMustNotDependOnUpperLayers"| S
+  D -.-x|"dtosMustNotDependOnBeans"| S
+```
+
+같은 내용을 표로 보면:
+
+| 행이 열을 참조해도 되나 | Controller | Service류 | Repository | 엔티티 | DTO | 웹 입출력 타입 |
+|---|---|---|---|---|---|---|
+| **Controller** | — | ✅ | ❌ `controllersMustNotDependOnRepositories` | ❌ `controllersMustNotDependOnEntities` | ✅ | ✅ |
+| **Service류**(`@Service`·`@Component`·`*Assembler`·헬퍼) | ❌ `nothingDependsOnControllers` | ✅ 다른 도메인 것도. 순환만 금지(`servicesMustNotHaveCrossDomainCycles`, 패키지 순환 규칙) | ✅ 다른 도메인 것도(아래 "허용하는 것") | ✅ | ✅ | ❌ `domainCodeMustNotDependOnWebTypes` |
+| **Repository**·`*RepositoryImpl` | ❌ `nothingDependsOnControllers` | ❌ `persistenceMustNotDependOnUpperLayers` | ✅ | ✅ | ❌ 같은 규칙 | ❌ `domainCodeMustNotDependOnWebTypes` |
+| **엔티티**(`Table*`) | ❌ `nothingDependsOnControllers` | ❌ `persistenceMustNotDependOnUpperLayers` | ❌ 같은 규칙 | ✅ 연관관계 | ❌ 같은 규칙 | ❌ 위와 같음 |
+| **DTO**(`*DTO.kt`) | ❌ `dtosMustNotDependOnBeans` | ❌ 같은 규칙 | ❌ 같은 규칙 | ✅ `companion from()` | ✅ | ❌ `domainCodeMustNotDependOnWebTypes` |
+
+`tools/*Runner.kt`는 1회성 CLI라 Repository를 직접 써도 된다(§1). 서블릿 `Filter`(`SessionAuthenticationFilter`)는 웹 입출력
+계층이라 웹 타입 규칙에서 빠진다.
+
+### 파일별 역할
+
 | 파일 | 역할 | 하지 않는 것 |
 |---|---|---|
-| `*Controller.kt` | 인증 추출 → (필요하면) 레이트리밋 → Service 위임 → `ApiResponse` 반환 | Repository 참조, 비즈니스 분기, 숫자 상태코드 |
-| `*Service.kt` | 검증 · 권한 · 예외 throw · DTO 변환 · 트랜잭션 경계 | HTTP 개념(쿠키·헤더) |
+| `*Controller.kt` | 인증 추출 → (필요하면) 레이트리밋 → Service 위임 → `ApiResponse` 반환. Service가 돌려준 스칼라를 응답 DTO로 감싸는 것은 된다(아래 "허용하는 것") | Repository·엔티티 참조, 비즈니스 분기, 숫자 상태코드 |
+| `*Service.kt` | 검증 · 권한 · 예외 throw · 엔티티 → 응답 DTO 변환(직접, `*Assembler`, DTO의 `companion from()`) · 트랜잭션 경계 | HTTP 개념(쿠키·헤더·서블릿·`ApiResponse`) |
 | `*Repository.kt` | 쿼리 메서드(파생·JPQL·네이티브) | 예외 throw, 비즈니스 판단 |
 | `*RepositoryCustom` + `*RepositoryImpl` | Criteria API가 필요한 동적 검색(`PostRepositoryImpl`, `BookmarkRepositoryImpl`) | 위와 같음 |
 | `Table*.kt` | JPA 엔티티 | 비즈니스 규칙(§9에 예외 있음) |
 | `*DTO.kt` | 도메인별 Request/Response `data class` 모음 — 요청은 `*Request`, 응답은 `*Response` 접미사, nullable은 명시, 목록 기본값은 `= emptyList()` | 컨트롤러·서비스 파일 안에 DTO 정의 |
 
-**의도적으로 허용하는 것** (2026-10-25 점검에서 규칙을 코드에 맞춰 정정):
+**의도적으로 허용하는 것** (2026-10-25·26 점검에서 규칙을 코드에 맞춰 정정):
+
+- **컨트롤러가 Service의 스칼라 결과를 응답 DTO로 감싸기** — `AuthController`는 `AuthResult`를 쿠키(refresh 토큰)와
+  본문(`TokenResponse`)으로 가르고, `InteractionController`는 처리 건수를 `BatchResultResponse`로 감싼다. 엔티티를 만지지
+  않으므로 허용한다(2026-10-26 정정 — 그 전에는 "DTO 변환은 Service"라고만 적었다). 컨트롤러가 엔티티를 모른다는 경계는
+  `controllersMustNotDependOnEntities`가 막는다.
 
 - **컨트롤러 레이트리밋** — 한도는 사용자 요청 경로에만 걸어야 한다. 봇(`FeedItemProcessor`)은 `PostService`를 직접
   부르므로, 한도를 Service에 두면 봇까지 막힌다(`PostController` companion 주석). 그래서 글 등록·검색·링크 미리보기·
@@ -452,6 +600,24 @@ for (id in ids) {
 | 외부 클라이언트가 RestClient가 아니라 `RestTemplate` | `SupabaseStorageService` — 타임아웃(연결 3초·읽기 10초)은 설정돼 있다 | 바꾸지 않음 — 전환하면 호출부 3곳과 DELETE+본문 동작까지 바뀌어 회귀 범위가 크다 |
 | 엔티티 안의 표시 규칙 | `TableMember.isWithdrawn`·`publicNickname`·`publicImage`, `TableLinkPreview.toMetadata` | 바꾸지 않음(기록만) |
 | 상속받은 `delete(entity)` 3곳 | `PostService.deletePost`, `CommentService.deleteComment`, `BookmarkFolderService.deleteFolder` | 바꾸지 않음 — 409 `CONCURRENT_UPDATE` 안전망에 기댄다 |
+| 패키지 순환을 만드는 간선 9개 | 아래 표 | 바꾸지 않음(지금은) — 새 순환은 `packagesMustBeFreeOfCyclesExceptDocumented`가 막는다. 해소 후보는 "남은 것" |
+| Spring MVC 표준 예외(405·415·필수 파라미터 누락 등)가 500 | `GlobalExceptionHandler`의 `Exception` 안전망이 먼저 잡는다(운영 재현: `DELETE /api/common/category-option` → 500) | 정리 예정 — 예외가 들고 있는 상태·헤더를 쓰는 핸들러 하나 + 누락 감시 검사([계획](plans/2026-10-26-be-architecture-skeleton.md) PR-B) |
+| 생성 엔드포인트가 HTTP 200 + 본문 201 | `PostController.createPost`, `CommentController.createComment`·`createReply`, `BookmarkFolderController.createFolder`, `UploadController.createSignedUploadUrl` | 정리 예정 — `@ResponseStatus(HttpStatus.CREATED)`(같은 계획 PR-C) |
+| 응답 데이터가 이름 없는 `Map` | `InteractionController`의 댓글 좋아요·취소 | 정리 예정 — `CommentLikeResponse`(PR-C) |
+| 헤더를 붙이지 않는데 `ResponseEntity` | `AuthController`의 8곳(`getAccount` 등) — §4는 헤더가 필요한 곳만 쓴다고 적는다 | 정리 예정(PR-C) |
+
+**순환을 허용한 간선 9개** — `PackageGraphDocTest.kt`의 `DOCUMENTED_CYCLE_EDGES`가 정본이다. 이 간선을 빼면 패키지 그래프에
+순환이 없다(2026-10-26 계산).
+
+| 간선 | 대표 위치 | 이유 |
+|---|---|---|
+| `global.common → domain.auth` | `RateLimitService` → `AuthRateLimitRepository` | 범용 레이트리밋이 auth의 카운터 테이블을 쓴다(§3 global → domain 허용 쌍) |
+| `global.exception → global.common` | `GlobalExceptionHandler` → `ErrorResponse` | 핸들러가 응답 봉투를 쓰고, 반대로 `RateLimitService`가 `RateLimitExceededException`을 던진다 |
+| `infra.aws → domain.post`·`comment`·`feed` | `AiJobDispatcher` → `PostCreatedEvent` 등 | 커밋 뒤 디스패처가 도메인의 이벤트 DTO를 받는다(§1 패키지 역할) |
+| `domain.member → domain.auth` | `MemberService` → `SignupRequest`·`UpdateAccountRequest` | 가입·계정 수정 요청 DTO를 그대로 받는다 |
+| `domain.post → domain.comment` | `PostResponseAssembler` → `CommentRepository`, `PostService` → `CommentService` | 목록 응답의 댓글 수, 글 삭제 때 댓글 이미지 정리 |
+| `domain.post → domain.interaction` | `PostResponseAssembler`·`PostService`·`PostRepositoryImpl` → 반응·북마크 Repository·엔티티 | 목록 응답의 좋아요·북마크 상태와 `filter=isLiked` 같은 조인 |
+| `domain.interaction → domain.comment` | `InteractionService` → `CommentRepository` | 댓글 좋아요 때 댓글 존재·삭제 여부 확인 |
 
 2026-10-25 점검에서 의심만 하던 6건(가입 제약 위반 catch가 `save()` 지연으로 헛돎, 폴더 이름 동시 중복이
 `DUPLICATE_RESOURCE`로 나감, 인증·재설정 메일이 토큰 커밋 전에 나감, `FcmService`가 바깥 트랜잭션을 깨뜨림, 상세 조회
@@ -474,6 +640,8 @@ for (id in ids) {
 - [ ] `domain/<단수 소문자>/`에 평면 구조: `Table*` · `*Repository` · `*DTO` · `*Service` · `*Controller` (`/new-domain`)
 - [ ] 엔티티 PK는 앱에서 만든 UUID(§7-13), 새 테이블 SQL은 `src/main/resources/sql/`, 통합 테스트용 `schema.sql` 갱신
 - [ ] 다른 도메인 Service를 참조해 순환이 생기면 조립기로 뺀다(§3)
+- [ ] 다른 패키지를 새로 참조하면 §1 그래프가 바뀐다 — `PackageGraphDocTest` 실패 메시지의 블록으로 갱신한다. 순환이 생기면
+  `packagesMustBeFreeOfCyclesExceptDocumented`가 실패한다 — 간선을 허용 목록에 넣지 말고 먼저 의존 방향을 바꿀 수 있는지 본다
 
 ### 새 예외
 
@@ -492,18 +660,71 @@ for (id in ids) {
 
 ---
 
+## 11. 업계 표준 대비
+
+2026-10-26 점검에서 표준 문서·공식 문서가 권하는 방식과 이 레포를 나란히 놓았다. 따르지 않는 것은 이유를 적는다.
+
+| 항목 | 표준·공식 문서 | 이 레포 | 결정 |
+|---|---|---|---|
+| 에러 응답 형식 | [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) Problem Details. Spring은 `ProblemDetail`과 `ResponseEntityExceptionHandler`를 준다 | 자체 봉투 `ErrorResponse(status, code, message)` | 유지 — FE가 최상위 `code`로 분기한다. 전환하면 모든 에러 응답 모양이 바뀐다. Spring MVC 표준 예외는 상태·헤더를 그대로 쓰는 핸들러 하나로 맞춘다(§9 정리 예정) |
+| 생성 응답 | [RFC 9110 §9.3.3](https://www.rfc-editor.org/rfc/rfc9110#section-9.3.3) | 본문만 201, HTTP는 200(`signup` 제외) | 실제 HTTP 201로 맞춘다(§9). `Location`은 "남은 것" |
+| 405 응답 | [RFC 9110 §10.2.1](https://www.rfc-editor.org/rfc/rfc9110#section-10.2.1) | 500 | 405 + `Allow`(§9) |
+| 경계 입력 검증 | Bean Validation(`@Valid`) | `@RequestBody` 23곳 중 10곳 | 방식 혼재로 둔다 — `PostCreateRequest`는 봇 경로(`FeedItemProcessor`)도 쓰므로 Service 검증이 어차피 필요하다 |
+| 모듈 순환 | [Spring Modulith 검증](https://docs.spring.io/spring-modulith/reference/verification.html), ArchUnit `slices().beFreeOfCycles()` | 허용 간선 9개(§9) | 새 순환만 막는다 |
+| 관측성 | 구조화 로그·요청 상관 ID | Lambda 로그 형식 Text — 앱 로그 줄에 RequestId가 없다 | "남은 것" |
+| 지원 버전 | [Spring Boot 지원 일정](https://api.spring.io/projects/spring-boot/generations) — 3.5.x OSS 지원 2026-06-30 종료 | 3.5.8 | "남은 것" |
+
+표에 링크한 문서가 하는 말(모두 번역):
+
+- RFC 9110 §9.3.3은 _"POST 요청을 처리한 결과로 원 서버에 자원이 하나 이상 만들어졌다면, 원 서버는 만들어진 주 자원을
+  가리키는 Location 헤더와 함께 201 (Created) 응답을 보내야 한다(SHOULD)"_ 고 쓴다.
+- RFC 9110 §10.2.1은 _"원 서버는 405 (Method Not Allowed) 응답에 Allow 헤더를 반드시(MUST) 만들어야 한다"_ 고 쓴다.
+- Spring Framework 6.2 문서는 `ResponseEntityExceptionHandler`를 _"모든 Spring MVC 예외와 ErrorResponseException을 처리하고
+  본문 있는 오류 응답을 그리는 @ControllerAdvice용 편의 기반 클래스"_ 로 소개한다
+  ([Error Responses](https://docs.spring.io/spring-framework/reference/6.2/web/webmvc/mvc-ann-rest-exceptions.html)). 이 레포는
+  상속하지 않는다 — 우리 핸들러 4개(`MethodArgumentNotValidException` 등)와 같은 예외가 겹쳐 기동이 실패한다
+  (spring-web 6.2.14 `ExceptionHandlerMethodResolver.java:142-145`).
+- Spring Modulith 검증 문서는 _"애플리케이션 모듈 수준에 순환이 없다 — 모듈 사이 의존은 방향 있는 비순환 그래프여야 한다"_ 를
+  검증 항목으로 둔다.
+
+### 도구 선택
+
+| 도구 | 쓰는가 | 이유 |
+|---|---|---|
+| ArchUnit 1.5.0 | ✅ 이미 사용 | 바이트코드를 보므로 Kotlin도 그대로 검사한다. 필요한 API(`slices().ignoreDependency`, `Source.getFileName`)가 설치본에 있다 |
+| JUnit 리플렉션·소스 스캔 | ✅ 이미 사용 | Kotlin nullability(`ControllerSignatureRulesTest`)·상수 인자(`HttpStatusLiteralTest`)·문서 대조(`PackageGraphDocTest`)처럼 ArchUnit 규칙 문법으로 안 되는 것 |
+| Spring Modulith | ❌ | [Fundamentals](https://docs.spring.io/spring-modulith/reference/fundamentals.html)에 따르면 _"기본적으로 메인 패키지의 직계 하위 패키지 하나하나를 애플리케이션 모듈 패키지로 본다"_ (번역) — 이 레포에서는 `domain`·`global`·`infra`·`tools` 4덩어리가 돼 도메인을 구분하지 못한다. 도메인을 모듈로 나누려면 감지 방식을 따로 설정하고, 순환(§9)부터 풀어야 한다 |
+| Detekt | ❌ | 1.23.8은 Kotlin 2.0.21 기준이다([호환 표](https://detekt.dev/docs/introduction/compatibility/), 이 레포는 2.1.0). 스타일 검사는 ktlint와 겹친다 |
+| Konsist | ❌ | 이번에 강제한 규칙은 모두 바이트코드·리플렉션으로 된다 |
+
+---
+
 ## 남은 것
 
 이번 점검에서 찾았지만 통일·수정하지 않기로 한 것(되돌릴 근거가 생기면 다시 본다):
 
-- **방식 혼재**: 응답 `message` 언어(영어·한국어), 실제 HTTP 201은 `signup`만(나머지는 HTTP 200 + 본문 201),
+- **방식 혼재**: 응답 `message` 언어(영어·한국어),
   DTO 이름 어순(`PostCreateRequest` vs `CreateFolderRequest`), 엔티티 ID 생성 4종·시간 타입(`LocalDateTime`/`Instant`),
   개수 세는 방식 3종, 커밋 뒤 처리 방식 3종(AFTER_COMMIT 리스너 · 인라인 `afterCommit` — `CommentService` 3회와 인증·재설정
   메일 2곳 · 트랜잭션 밖 바로 디스패치), `@Valid`는 Auth·FCM 컨트롤러만,
   Page 응답 DTO 수동 복제, 로거 선언 변형, 중복 상수(90초 마감 ×3, 이메일 정규화 ×4).
 - **검증하지 않은 위험 후보**: Lambda 응답 헤더가 이름당 첫 값만 남음(`LambdaHandler`의 응답 직렬화 — 여러
   `Set-Cookie`에서 문제), Lambda 안에서 Tomcat 기동 여부, `findFirstByIsBotTrue`의 `@Query` 단건 조회(봇이 둘이면 실패),
-  SSRF 검증과 실제 연결 사이의 DNS 재해석, `deploy.yml`은 `integrationTest`를 돌리지 않음.
+  SSRF 검증과 실제 연결 사이의 DNS 재해석.
+- **확인해서 위험 후보에서 뺀 것**: "`deploy.yml`은 `integrationTest`를 돌리지 않음" — main 룰셋("Main Branch Protect")이
+  `ci.yml`의 `check` 잡(`integrationTest` 포함)을 필수 체크로 요구한다(2026-10-26 `gh api …/rulesets` 확인). 다만
+  `strict_required_status_checks_policy`가 `false`라 뒤처진 브랜치의 통과 결과로도 병합된다.
+- **관측성**(2026-10-26 운영 로그로 확인): Lambda 로그 형식이 `Text`라 앱 로그 줄에 RequestId가 없고(플랫폼 `START` 줄에만
+  있다), 예외 1건의 스택이 CloudWatch 이벤트 약 110개로 쪼개진다. 요청 처리 스레드가 모두 `main`이라
+  `context.awsRequestId`를 MDC에 넣는 방식이 가능하다 — 구조화 로그 전환과 묶어 따로 계획한다.
+- **지원 버전**: Spring Boot 3.5.x의 OSS 지원이 2026-06-30에 끝났다(설치 3.5.8, 2026-10-26 기준 최신 3.5.16·4.0.9·4.1.2).
+  Dependabot은 github-actions만 본다(`.github/dependabot.yml`) — 따로 계획한다.
+- **201의 `Location` 헤더**: `LambdaHandler`가 `/api`를 떼고 MockMvc에 넘겨 `ServletUriComponentsBuilder.fromCurrentRequest()`가
+  틀린 경로를 만든다. FE는 쓰지 않는다.
+- **순환 해소 후보**: post·comment·interaction 사이 간선 3개(§9) — 목록 조립(`PostResponseAssembler`·`PostRepositoryImpl`의
+  필터 조인)을 별도 조회 패키지로 빼는 안. `member → auth`는 요청 DTO 2개를 옮기면 끊긴다.
+- **공용화·중복 후보**: 비공개 글 404 게이트 6곳(§7-10)과 이메일 인증 확인 4곳의 인라인 반복, `CommentService`의 입력 검증
+  3벌(등록·답글·수정)과 `CommentResponse` 변환 2벌(목록·단건).
 - **정리 후보**: 쓰는 엔드포인트가 없는 `MultipartRequestParser`, 쓰지 않는 의존성 `spring-boot-starter-oauth2-client`와
   `jwt.secret` 키, 쓰지 않는 Repository 메서드(`PostRepository.findByCategoriesSlug` 등 4개), HTTP로 도달할 수 없는
   `CommentService.createComment`의 `parentId` 분기, 파일명 `PostAiService.kt`와 클래스명 `PostAIService` 불일치.

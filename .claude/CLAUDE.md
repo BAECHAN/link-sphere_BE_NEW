@@ -214,7 +214,7 @@ Plan mode로 계획을 세우고 구현한 작업은, PR을 열기 전에:
 ## Critical Rules
 
 - **Never** `Authentication.name`·`Principal.name` 직접 파싱 → 항상 `authentication.getUserId()` 확장 함수 사용 (`global/common/SecurityUtils.kt`). `Principal`·`@AuthenticationPrincipal` 파라미터도 쓰지 않는다 (`onlySecurityUtilsReadsPrincipalName`·`ControllerSignatureRulesTest`가 막는다)
-- **Never** Controller에서 비즈니스 로직 → 반드시 Service 레이어로 위임. 예외는 사용자 요청 경로에만 거는 레이트리밋(`rateLimitService.consume`)이다 — 봇(`FeedItemProcessor`)이 Service를 직접 부르므로 한도는 컨트롤러에서 건다(BE-ARCHITECTURE §3). Repository 직접 참조는 `controllersMustNotDependOnRepositories`가 막는다
+- **Never** Controller에서 비즈니스 로직 → 반드시 Service 레이어로 위임. 예외는 사용자 요청 경로에만 거는 레이트리밋(`rateLimitService.consume`)이다 — 봇(`FeedItemProcessor`)이 Service를 직접 부르므로 한도는 컨트롤러에서 건다(BE-ARCHITECTURE §3). Repository 직접 참조는 `controllersMustNotDependOnRepositories`, 엔티티 참조는 `controllersMustNotDependOnEntities`가 막는다
 - **Never** Repository에서 직접 예외 throw → Service에서 처리 (`repositoriesMustNotConstructExceptions`가 막는다)
 - **Never** `IllegalArgumentException` throw → 의미가 뭉개진다(예전에는 핸들러가 404 `NOT_FOUND`로 바꿔 빈 댓글 같은 입력 오류가 "없음"으로 나갔다). 입력 오류는 `InvalidInputException`, 대상 없음은 `*NotFoundException`, 내부 불변조건 위반은 `IllegalStateException`(BE-ARCHITECTURE §4). `appCodeMustNotConstructIllegalArgumentException`가 막는다
 - **Never** `GlobalExceptionHandler` 수정 없이 새 예외 클래스 추가 → 핸들러에 `@ExceptionHandler` 반드시 등록 (`ExceptionHandlerCoverageTest`가 막는다)
@@ -301,7 +301,9 @@ FE가 `docs/FE-ARCHITECTURE.md`를 정본으로 두고 CLAUDE.md에 요약표만
 | 패턴 | 정본 | 한 줄 요약 |
 | ---- | ---- | ---------- |
 | 정석 컨트롤러 | §5 | `LinkPreviewController` — non-null `Authentication` + `getUserId() ?: throw IllegalStateException`, `ApiResponse(HttpStatus.X.value(), …)` |
-| 레이어 규칙·허용 예외 | §3 | 컨트롤러 레이트리밋 허용, 다른 도메인 Repository 허용(금지는 Service 순환), global → domain은 허용 3쌍만 |
+| 레이어 골격 | §3 | 엔티티는 Service·Assembler 안에서만 응답 DTO로 바뀐다(컨트롤러는 엔티티를 모른다). 아래 계층은 위를 모른다 — `LayerSkeletonRulesTest` 7개 |
+| 레이어 규칙·허용 예외 | §3 | 컨트롤러 레이트리밋 허용, 다른 도메인 Repository 허용(금지는 Service 순환), global → domain은 허용 3쌍만, 컨트롤러가 Service 스칼라를 DTO로 감싸기 허용 |
+| 패키지 의존 그래프 | §1·§9 | 실제 그래프는 `PackageGraphDocTest`가 문서와 대조한다. 순환은 허용 간선 9개뿐(`packagesMustBeFreeOfCyclesExceptDocumented`) |
 | 예외 선택·code 표 | §4 | 입력 오류 `InvalidInputException`, 없음 `*NotFoundException`, 내부 불변조건 `IllegalStateException`, IAE 금지 |
 | 트랜잭션 | §6 | 새 코드는 클래스 `@Transactional(readOnly = true)` + 쓰기 메서드만 `@Transactional`. rollback-only·`saveAndFlush`·AFTER_COMMIT 예외 삼킴 주의 |
 | 멱등 insert + 상태 지정 API | §7-1 | `InteractionService.setPostLike` — 원하는 상태를 받아 `ON CONFLICT DO NOTHING` 또는 일괄 DELETE. 토글·`exists` 후 분기 금지 |
