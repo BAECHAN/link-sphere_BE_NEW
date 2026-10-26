@@ -352,7 +352,7 @@ SUMMARY:
 TAGS: AI, 학습, 미래 교육, 자기계발
 ```
 
-`PostAiService.kt`가 `analysisResult.summary.isNullOrBlank()`이면 곧바로
+`PostAIService.kt`가 `analysisResult.summary.isNullOrBlank()`이면 곧바로
 `throw`했는데, 태그·제목·설명·카테고리 저장 로직이 전부 그 아래에 있어 같은
 응답에서 얻은 값까지 통째로 버리고 `aiStatus=FAILED`로 남았다.
 

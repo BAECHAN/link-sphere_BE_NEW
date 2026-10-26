@@ -12,8 +12,6 @@ interface BookmarkFolderRepository : JpaRepository<TableBookmarkFolder, UUID> {
 
     fun existsByUserIdAndName(userId: UUID, name: String): Boolean
 
-    fun existsByIdAndUserId(id: UUID, userId: UUID): Boolean
-
     @Query("SELECT COALESCE(MAX(f.sortOrder), -1) FROM TableBookmarkFolder f WHERE f.userId = :userId")
     fun findMaxSortOrderByUserId(@Param("userId") userId: UUID): Int
 

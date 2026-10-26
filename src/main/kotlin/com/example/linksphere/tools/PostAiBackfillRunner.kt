@@ -24,7 +24,7 @@ import java.time.LocalDateTime
  * FeedCrawlRunner를 로컬(--commit)로 돌려 self-invoke가 스킵된 경우(aiStatus=PENDING
  * 고착, 봇 글) - FeedCrawlRunner 클래스 주석 참고. (3) self-invoke 전환(2026-07~08) 이전
  * 컨테이너 freeze 결함으로 사람이 등록한 글이 PENDING에 고착된 경우. (4) Gemini 응답이
- * 실패해(쿼터 초과 등) aiStatus=FAILED로 확정된 경우 - PostAiService의 판정 기준이
+ * 실패해(쿼터 초과 등) aiStatus=FAILED로 확정된 경우 - PostAIService의 판정 기준이
  * "뭐라도 건졌는가"로 바뀐 뒤에도(2026-09) 이미 FAILED로 저장된 과거 게시글은 저절로
  * 재분석되지 않으므로 이 러너가 재시도해야 한다. (5) 크롤링이 200을 받았지만 본문이 사실상
  * 껍데기(YouTube 푸터 358자 등)라 그것을 요약한 가짜 요약이 aiStatus=COMPLETED로 확정된

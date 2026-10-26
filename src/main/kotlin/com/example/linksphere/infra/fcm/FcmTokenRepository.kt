@@ -8,7 +8,6 @@ import java.util.UUID
 
 interface FcmTokenRepository : JpaRepository<TableFcmToken, UUID> {
     fun findAllByUserId(userId: UUID): List<TableFcmToken>
-    fun findByToken(token: String): TableFcmToken?
 
     // 삭제는 모두 일괄 DELETE — derived delete(엔티티를 읽어 지움)는 같은 행을 동시에 지우는 요청
     // (여러 탭 로그아웃, 겹친 알림 작업의 만료 토큰 정리)과 부딪히면 StaleObjectStateException을 낸다.
