@@ -13,6 +13,14 @@ data class FolderResponse(
     val sortOrder: Int,
     val bookmarkCount: Int,
     val lastUsedAt: LocalDateTime? = null, // 이 폴더에 마지막으로 저장한 시각 — 한 번도 저장 안 됐으면 null
+    val pinnedAt: LocalDateTime? = null, // 고정한 시각 — 고정하지 않았으면 null
+)
+
+// 고정·해제 응답 — 목록 캐시의 그 폴더 pinnedAt만 고친다. FolderResponse를 돌려주면 lastUsedAt이 비어 FE 캐시를 덮을 때
+// 최근 저장 순서가 깨진다
+data class FolderPinResponse(
+    val id: UUID,
+    val pinnedAt: LocalDateTime?,
 )
 
 // 폴더 목록 + 미분류(소속 0개) 북마크 수. 전체 배지는 없음 — 중복 없는 총합을 보여주려면

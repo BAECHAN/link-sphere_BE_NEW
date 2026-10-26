@@ -11,6 +11,23 @@
 
 ### Added
 
+- `bookmark` 북마크 폴더 고정 `PUT`/`DELETE /bookmark/folders/{id}/pin`, 목록 응답에 `pinnedAt`
+  <details><summary>배경·구현</summary>
+
+  "최근 저장한 폴더"는 3개뿐이라 예전에 쓰던 특정 폴더는 다시 찾기 어려웠다. 사용자가 직접 고른 폴더를 FE의 "고정한
+  폴더" 구획에 모으려고, 고정 상태를 `bookmark_folders.pinned_at`(고정한 시각, null이면 고정 안 함)에 저장한다 —
+  기기마다 같은 목록이 보이게 서버에 둔다. 좋아요·북마크와 같은 상태 지정형 멱등 API이고(`setFolderPinned`), 이미
+  고정된 폴더를 다시 고정해도 처음 시각을 유지해 구획 안 순서(`pinnedAt` 오름차순)가 흔들리지 않는다. 해제는 null,
+  `updatedAt`은 건드리지 않는다. 응답은 `{id, pinnedAt}`만 준다 — 단건 `FolderResponse`는 `lastUsedAt`이 비어 FE 목록
+  캐시를 덮으면 최근 순서가 깨진다. 실패는 기존 폴더 API와 같은 404 `FOLDER_NOT_FOUND`·403 `FORBIDDEN`이다. 고정 개수
+  상한은 두지 않는다(FE 사이드바가 구획을 모두 스크롤 영역에 둔다). 같은 폴더의 이름 변경과 고정이 겹치면 기본 UPDATE가
+  모든 컬럼을 써 한쪽 값을 덮는 것을 통합 테스트로 재현해 `TableBookmarkFolder`에 `@DynamicUpdate`를 붙였다. 아래
+  Migration의 SQL을 BE 배포 전에 실행해야 한다. 계획 `docs/plans/2026-10-26-bookmark-folder-pin.md`.
+  (`BookmarkFolderController.kt`, `BookmarkFolderService.kt`, `BookmarkFolderDTO.kt`, `TableBookmarkFolder.kt`,
+  `sql/add_bookmark_folders_pinned_at.sql`(신규), [PR #127](https://github.com/BAECHAN/link-sphere_BE_NEW/pull/127))
+
+  </details>
+
 - `auth` refresh 때 실린 토큰의 회원이 쿠키 주인과 다르면 발급하지 않음(409 `SESSION_MISMATCH`)
   <details><summary>배경·구현</summary>
 
@@ -1085,6 +1102,9 @@
 
 ### Migration
 
+- `sql/add_bookmark_folders_pinned_at.sql` **반드시 BE 코드 배포 전에 실행**(운영 적용 완료, 2026-10-26) —
+  `bookmark_folders.pinned_at` 컬럼(nullable)을 추가한다. 컬럼이 없으면 `TableBookmarkFolder` 매핑이 깨져
+  폴더 목록·생성·이름 변경 등 `bookmark_folders`를 읽는 API가 전부 실패한다.
 - `sql/add_fcm_session_family.sql` **반드시 BE 코드 배포 전에 실행** —
   `fcm_tokens.session_family_id` 컬럼과 인덱스를 추가한다. 컬럼이 없으면 FCM 토큰
   등록·발송 쿼리가 즉시 SQL 오류로 실패한다(`ddl-auto: none`이라 애플리케이션 기동

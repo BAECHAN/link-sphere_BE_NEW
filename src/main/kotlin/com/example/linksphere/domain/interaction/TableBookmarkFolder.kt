@@ -1,6 +1,7 @@
 package com.example.linksphere.domain.interaction
 
 import jakarta.persistence.*
+import org.hibernate.annotations.DynamicUpdate
 import java.time.LocalDateTime
 import java.util.UUID
 
@@ -25,6 +26,9 @@ import java.util.UUID
         ),
     ],
 )
+// 이름 변경과 고정은 같은 행의 다른 컬럼을 고친다. 기본 UPDATE는 모든 컬럼을 써서 겹친 요청끼리 서로의 값을 덮으므로 바뀐 컬럼만
+// 쓴다(BookmarkFolderRepositoryIntegrationTest에서 재현)
+@DynamicUpdate
 class TableBookmarkFolder(
     @Id
     @Column(name = "id", updatable = false, nullable = false)
@@ -44,4 +48,8 @@ class TableBookmarkFolder(
 
     @Column(name = "updated_at", nullable = false)
     var updatedAt: LocalDateTime = LocalDateTime.now(),
+
+    // 고정한 시각. null이면 고정하지 않은 폴더다 - 고정 구획은 이 시각 오름차순이라 새로 고정한 폴더가 아래에 붙는다
+    @Column(name = "pinned_at")
+    var pinnedAt: LocalDateTime? = null,
 )

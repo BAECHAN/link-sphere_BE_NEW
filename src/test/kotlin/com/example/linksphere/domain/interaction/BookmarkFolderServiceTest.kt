@@ -10,7 +10,9 @@ import com.example.linksphere.global.exception.InvalidInputException
 import com.example.linksphere.global.exception.PostNotFoundException
 import com.example.linksphere.infra.ai.GeminiService
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import org.mockito.ArgumentCaptor
@@ -184,6 +186,23 @@ class BookmarkFolderServiceTest {
         val result = bookmarkFolderService.getFolders(userId)
 
         assertEquals(null, result.folders.single().lastUsedAt)
+    }
+
+    @Test
+    fun `getFolders 는 폴더의 pinnedAt 을 그대로 매핑한다`() {
+        val userId = UUID.randomUUID()
+        val pinnedAt = LocalDateTime.of(2026, 10, 26, 12, 0)
+        val pinned = TableBookmarkFolder(userId = userId, name = "개발", pinnedAt = pinnedAt)
+        val unpinned = TableBookmarkFolder(userId = userId, name = "읽을거리", sortOrder = 1)
+
+        `when`(bookmarkFolderRepository.findByUserIdOrderBySortOrderAsc(userId)).thenReturn(listOf(pinned, unpinned))
+        `when`(bookmarkFolderItemRepository.countByUserIdGroupByFolderId(userId)).thenReturn(emptyList())
+        `when`(bookmarkFolderItemRepository.findLastUsedByUserIdGroupByFolderId(userId)).thenReturn(emptyList())
+        `when`(bookmarkRepository.countUncategorizedByUserId(userId)).thenReturn(0L)
+
+        val result = bookmarkFolderService.getFolders(userId)
+
+        assertEquals(listOf(pinnedAt, null), result.folders.map { it.pinnedAt })
     }
 
     // ── getBookmarkedPosts: folderKey 3-way 매핑 ────────────────────
@@ -484,6 +503,85 @@ class BookmarkFolderServiceTest {
         bookmarkFolderService.createFolder(UUID.randomUUID(), CreateFolderRequest(name = "😀".repeat(100)))
 
         assertEquals(100, captor.value.name.codePointCount(0, captor.value.name.length))
+    }
+
+    // ── setFolderPinned ──────────────────────────────────────────
+
+    @Test
+    fun `setFolderPinned 는 고정하면 지금 시각을 기록하고 updatedAt 은 건드리지 않는다`() {
+        val userId = UUID.randomUUID()
+        val updatedAt = LocalDateTime.of(2026, 10, 1, 9, 0)
+        val folder = TableBookmarkFolder(userId = userId, name = "개발", updatedAt = updatedAt)
+        `when`(bookmarkFolderRepository.findById(folder.id)).thenReturn(Optional.of(folder))
+        val before = LocalDateTime.now()
+
+        val result = bookmarkFolderService.setFolderPinned(userId, folder.id, pinned = true)
+
+        assertEquals(folder.id, result.id)
+        assertTrue(!result.pinnedAt!!.isBefore(before))
+        assertEquals(result.pinnedAt, folder.pinnedAt)
+        assertEquals(updatedAt, folder.updatedAt)
+    }
+
+    // 고정 구획은 pinnedAt 오름차순이라, 다시 고정할 때 시각이 바뀌면 그 폴더가 구획 맨 아래로 내려간다
+    @Test
+    fun `setFolderPinned 는 이미 고정된 폴더를 다시 고정해도 처음 고정한 시각을 유지한다`() {
+        val userId = UUID.randomUUID()
+        val pinnedAt = LocalDateTime.of(2026, 10, 26, 12, 0)
+        val folder = TableBookmarkFolder(userId = userId, name = "개발", pinnedAt = pinnedAt)
+        `when`(bookmarkFolderRepository.findById(folder.id)).thenReturn(Optional.of(folder))
+
+        val result = bookmarkFolderService.setFolderPinned(userId, folder.id, pinned = true)
+
+        assertEquals(pinnedAt, result.pinnedAt)
+        assertEquals(pinnedAt, folder.pinnedAt)
+    }
+
+    @Test
+    fun `setFolderPinned 는 해제하면 pinnedAt 이 null 이 되고, 이미 해제된 폴더도 null 그대로다`() {
+        val userId = UUID.randomUUID()
+        val pinned = TableBookmarkFolder(userId = userId, name = "개발", pinnedAt = LocalDateTime.of(2026, 10, 26, 12, 0))
+        val unpinned = TableBookmarkFolder(userId = userId, name = "읽을거리")
+        `when`(bookmarkFolderRepository.findById(pinned.id)).thenReturn(Optional.of(pinned))
+        `when`(bookmarkFolderRepository.findById(unpinned.id)).thenReturn(Optional.of(unpinned))
+
+        assertNull(bookmarkFolderService.setFolderPinned(userId, pinned.id, pinned = false).pinnedAt)
+        assertNull(bookmarkFolderService.setFolderPinned(userId, unpinned.id, pinned = false).pinnedAt)
+        assertNull(pinned.pinnedAt)
+    }
+
+    @Test
+    fun `setFolderPinned 는 없는 폴더면 BookmarkFolderNotFoundException`() {
+        val folderId = UUID.randomUUID()
+        `when`(bookmarkFolderRepository.findById(folderId)).thenReturn(Optional.empty())
+
+        assertThrows(BookmarkFolderNotFoundException::class.java) {
+            bookmarkFolderService.setFolderPinned(UUID.randomUUID(), folderId, pinned = true)
+        }
+    }
+
+    @Test
+    fun `setFolderPinned 는 타인 폴더면 ForbiddenException 이고 고정하지 않는다`() {
+        val folder = TableBookmarkFolder(userId = UUID.randomUUID(), name = "개발")
+        `when`(bookmarkFolderRepository.findById(folder.id)).thenReturn(Optional.of(folder))
+
+        assertThrows(ForbiddenException::class.java) {
+            bookmarkFolderService.setFolderPinned(UUID.randomUUID(), folder.id, pinned = true)
+        }
+        assertNull(folder.pinnedAt)
+    }
+
+    @Test
+    fun `updateFolder 응답은 이름만 바꾸고 pinnedAt 은 그대로 돌려준다`() {
+        val userId = UUID.randomUUID()
+        val pinnedAt = LocalDateTime.of(2026, 10, 26, 12, 0)
+        val folder = TableBookmarkFolder(userId = userId, name = "나중에", pinnedAt = pinnedAt)
+        `when`(bookmarkFolderRepository.findById(folder.id)).thenReturn(Optional.of(folder))
+
+        val result = bookmarkFolderService.updateFolder(userId, folder.id, UpdateFolderRequest(name = "읽을거리"))
+
+        assertEquals("읽을거리", result.name)
+        assertEquals(pinnedAt, result.pinnedAt)
     }
 
     private fun duplicateKey(constraint: String) = DataIntegrityViolationException("duplicate key value violates unique constraint \"$constraint\"")

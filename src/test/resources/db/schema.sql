@@ -10,12 +10,16 @@
 --   \restrict / \unrestrict  - pg_dump 17이 덤프마다 넣는 psql 전용 보호 명령(무작위 키). JDBC로는 실행되지 않는다
 --   CREATE SCHEMA public      - 컨테이너에 이미 있다
 --
+-- 덤프 뒤 손으로 넣은 것(읽기 전용 계정 adhoc_readonly는 members 권한이 없어 pg_dump가 막힌다 - BE docs/DEPLOY.md §12)
+--   2026-10-26 bookmark_folders.pinned_at - add_bookmark_folders_pinned_at.sql을 운영에 적용한 뒤 pg_catalog로 7번째 컬럼·
+--              timestamp without time zone·NULL 허용·기본값 없음을 확인하고 pg_dump가 내는 형식대로 넣었다
+--
 -- 아래 "테스트 전용 앞부분"은 운영(Supabase)에만 있는 것을 같은 이름으로 만들어 덤프 본문을 고치지 않는다
 --   extensions 스키마의 vector  - posts.embedding이 extensions.vector(768)다
 --   auth.uid()                  - bookmarks.user_id의 DEFAULT다(앱은 항상 user_id를 넣으므로 NULL을 돌려줘도 된다)
 --
 -- 갱신: 운영 스키마를 src/main/resources/sql/ 파일로 바꾸면 위 명령으로 다시 덤프해 아래 본문을 통째로 바꾸고,
--- 머리 주석의 날짜·버전과 "뺀 것"을 다시 확인한다(docs/plans/2026-10-14-integration-test.md).
+-- 머리 주석의 날짜·버전과 "뺀 것"을 다시 확인한다(docs/plans/2026-10-14-integration-test.md). 다시 덤프하면 "손으로 넣은 것"은 지운다.
 
 -- ── 테스트 전용 앞부분 ──────────────────────────────────────────
 CREATE SCHEMA IF NOT EXISTS extensions;
@@ -94,7 +98,8 @@ CREATE TABLE public.bookmark_folders (
     name character varying(100) NOT NULL,
     sort_order integer DEFAULT 0 NOT NULL,
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL
+    updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    pinned_at timestamp without time zone
 );
 
 
