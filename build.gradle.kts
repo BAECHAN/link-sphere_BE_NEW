@@ -1,7 +1,7 @@
 plugins {
     kotlin("jvm") version "2.1.0"
     kotlin("plugin.spring") version "2.1.0"
-    id("org.springframework.boot") version "3.5.8"
+    id("org.springframework.boot") version "3.5.16"
     id("io.spring.dependency-management") version "1.1.7"
     kotlin("plugin.jpa") version "2.1.0"
     id("com.github.johnrengelman.shadow") version "8.1.1"
@@ -92,9 +92,11 @@ dependencies {
     implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8")
     runtimeOnly("org.postgresql:postgresql")
 
-    // posts.embedding(pgvector) 컬럼을 FloatArray로 매핑 - Spring Boot 3.5.8이 관리하는
-    // hibernate-core 버전(6.6.36.Final, `./gradlew dependencies`로 확인)과 맞춘다.
-    implementation("org.hibernate.orm:hibernate-vector:6.6.36.Final")
+    // posts.embedding(pgvector) 컬럼을 FloatArray로 매핑. Boot BOM이 hibernate-vector는 관리하지 않아 버전을 직접
+    // 적어야 하는데, 숫자로 고정하면 Boot를 올릴 때 hibernate-core와 어긋난다(3.5.8 → 3.5.16에서 6.6.36 → 6.6.53).
+    // 그래서 BOM의 hibernate.version을 그대로 읽는다 - dependency-management 플러그인 문서 §5
+    // https://docs.spring.io/dependency-management-plugin/docs/1.1.7/reference/html/#accessing-properties
+    implementation("org.hibernate.orm:hibernate-vector:${dependencyManagement.importedProperties["hibernate.version"]}")
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
@@ -111,12 +113,12 @@ dependencies {
     testImplementation("org.testcontainers:postgresql")
 
     // SpringDoc OpenAPI (Swagger) 라이브러리 추가 — UI 에셋 제외한 API 스펙만 포함
-    implementation("org.springdoc:springdoc-openapi-starter-webmvc-api:2.7.0")
+    implementation("org.springdoc:springdoc-openapi-starter-webmvc-api:2.10.0")
 
     // Swagger UI 는 로컬 bootRun 전용이다. developmentOnly 는 shadowJar 가 쓰는
     // productionRuntimeClasspath 에 들어가지 않으므로 Lambda 아티팩트는 그대로다.
     // 로컬: http://localhost:8080/api/swagger-ui/index.html
-    developmentOnly("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.7.0")
+    developmentOnly("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.10.0")
 
     // Jsoup
     implementation("org.jsoup:jsoup:1.17.2")

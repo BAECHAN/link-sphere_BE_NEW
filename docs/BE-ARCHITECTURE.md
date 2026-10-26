@@ -680,7 +680,7 @@ for (id in ids) {
 | 경계 입력 검증 | Bean Validation(`@Valid`) | `@RequestBody` 23곳 중 10곳 | 방식 혼재로 둔다 — `PostCreateRequest`는 봇 경로(`FeedItemProcessor`)도 쓰므로 Service 검증이 어차피 필요하다 |
 | 모듈 순환 | [Spring Modulith 검증](https://docs.spring.io/spring-modulith/reference/verification.html), ArchUnit `slices().beFreeOfCycles()` | 허용 간선 9개(§9) | 새 순환만 막는다 |
 | 관측성 | 구조화 로그·요청 상관 ID | Lambda 로그 형식 Text — 앱 로그 줄에 RequestId가 없다 | "남은 것" |
-| 지원 버전 | [Spring Boot 지원 일정](https://api.spring.io/projects/spring-boot/generations) — 3.5.x OSS 지원 2026-06-30 종료 | 3.5.8 | "남은 것" |
+| 지원 버전 | [Spring Boot 지원 일정](https://api.spring.io/projects/spring-boot/generations) — 3.5.x OSS 지원 2026-06-30 종료 | 3.5.16(OSS 마지막 패치, 2026-10-26). Dependabot이 Gradle minor·patch를 월간으로 올린다 | 4.x 이동은 "남은 것" |
 
 표에 링크한 문서가 하는 말(모두 번역):
 
@@ -725,8 +725,9 @@ for (id in ids) {
 - **관측성**(2026-10-26 운영 로그로 확인): Lambda 로그 형식이 `Text`라 앱 로그 줄에 RequestId가 없고(플랫폼 `START` 줄에만
   있다), 예외 1건의 스택이 CloudWatch 이벤트 약 110개로 쪼개진다. 요청 처리 스레드가 모두 `main`이라
   `context.awsRequestId`를 MDC에 넣는 방식이 가능하다 — 구조화 로그 전환과 묶어 따로 계획한다.
-- **지원 버전**: Spring Boot 3.5.x의 OSS 지원이 2026-06-30에 끝났다(설치 3.5.8, 2026-10-26 기준 최신 3.5.16·4.0.9·4.1.2).
-  Dependabot은 github-actions만 본다(`.github/dependabot.yml`) — 따로 계획한다.
+- **Spring Boot 4 이동**: 2026-10-26에 OSS 마지막 3.5.x 패치(3.5.16)로 올렸지만 3.5.x OSS 지원은 2026-06-30에 끝났다 —
+  이후 3.5.x 보안 수정은 상용(enterprise) 빌드로만 나온다([api.spring.io](https://api.spring.io/projects/spring-boot/generations)).
+  새 권고가 3.5.16에 걸리면 4.x(springdoc 3·Hibernate 7 동반)로 옮겨야 한다 — 따로 계획한다. Dependabot은 메이저를 무시한다.
 - **201의 `Location` 헤더**: `LambdaHandler`가 `/api`를 떼고 MockMvc에 넘겨 `ServletUriComponentsBuilder.fromCurrentRequest()`가
   틀린 경로를 만든다. FE는 쓰지 않는다.
 - **순환 해소 후보**: post·comment·interaction 사이 간선 3개(§9) — 목록 조립(`PostResponseAssembler`·`PostRepositoryImpl`의

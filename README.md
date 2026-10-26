@@ -13,7 +13,7 @@
 | 구분           | 기술                                              |
 | -------------- | ------------------------------------------------- |
 | **Language**   | Kotlin 2.1.0                                      |
-| **Framework**  | Spring Boot 3.5.8                                 |
+| **Framework**  | Spring Boot 3.5.16                                |
 | **JDK**        | Java 17                                           |
 | **Build Tool** | Gradle 8.14.3 (Kotlin DSL) + Shadow JAR           |
 | **Database**   | Supabase (PostgreSQL)                             |
