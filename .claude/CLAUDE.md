@@ -301,9 +301,10 @@ FE가 `docs/FE-ARCHITECTURE.md`를 정본으로 두고 CLAUDE.md에 요약표만
 | 패턴 | 정본 | 한 줄 요약 |
 | ---- | ---- | ---------- |
 | 정석 컨트롤러 | §5 | `LinkPreviewController` — non-null `Authentication` + `getUserId() ?: throw IllegalStateException`, `ApiResponse(HttpStatus.X.value(), …)` |
-| 레이어 골격 | §3 | 엔티티는 Service·Assembler 안에서만 응답 DTO로 바뀐다(컨트롤러는 엔티티를 모른다). 아래 계층은 위를 모른다 — `LayerSkeletonRulesTest` 7개 |
+| 레이어 골격 | §3 | 엔티티는 Service·Assembler 안에서만 응답 DTO로 바뀐다(컨트롤러는 엔티티를 모른다). 아래 계층은 위를 모른다 — `LayerSkeletonRulesTest` |
+| 공용 헬퍼 | §7-6·§7-10·§7-12 | 커밋 뒤 부수효과는 `TransactionCallbacks.afterCommit`, 비공개 글 404는 `PostVisibility.assertVisible`, 이메일 인증은 `EmailVerificationGate.require`, 배치 마감은 `BatchJobLimits`, 이메일 정규화는 `EmailNormalizer` — 직접 복사하면 검사가 막는 것도 있다 |
 | 레이어 규칙·허용 예외 | §3 | 컨트롤러 레이트리밋 허용, 다른 도메인 Repository 허용(금지는 Service 순환), global → domain은 허용 3쌍만, 컨트롤러가 Service 스칼라를 DTO로 감싸기 허용 |
-| 패키지 의존 그래프 | §1·§9 | 실제 그래프는 `PackageGraphDocTest`가 문서와 대조한다. 순환은 허용 간선 9개뿐(`packagesMustBeFreeOfCyclesExceptDocumented`) |
+| 패키지 의존 그래프 | §1·§9 | 실제 그래프는 `PackageGraphDocTest`가 문서와 대조한다. 순환은 허용 간선 8개뿐(`packagesMustBeFreeOfCyclesExceptDocumented`) |
 | 예외 선택·code 표 | §4 | 입력 오류 `InvalidInputException`, 없음 `*NotFoundException`, 내부 불변조건 `IllegalStateException`, IAE 금지 |
 | 트랜잭션 | §6 | 새 코드는 클래스 `@Transactional(readOnly = true)` + 쓰기 메서드만 `@Transactional`. rollback-only·`saveAndFlush`·AFTER_COMMIT 예외 삼킴 주의 |
 | 멱등 insert + 상태 지정 API | §7-1 | `InteractionService.setPostLike` — 원하는 상태를 받아 `ON CONFLICT DO NOTHING` 또는 일괄 DELETE. 토글·`exists` 후 분기 금지 |

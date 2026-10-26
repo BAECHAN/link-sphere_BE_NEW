@@ -585,8 +585,8 @@ flowchart TD
     F --> H["pageContent 채워짐"]
     G --> I["pageContent = null<br/>resolvePageContent 1번 분기 실패"]
 
-    H --> J["aiStatus = PENDING<br/>PostService.kt:69"]
-    I --> K["aiStatus = NONE<br/>PostService.kt:69"]
+    H --> J["aiStatus = PENDING<br/>PostService.kt:76"]
+    I --> K["aiStatus = NONE<br/>PostService.kt:76"]
 
     J --> L["PostCreatedEvent 발행"]
     K --> M["이벤트 발행 안 함<br/>= Gemini 호출 자체가 없음<br/>그래서 에러 로그도 없었다"]

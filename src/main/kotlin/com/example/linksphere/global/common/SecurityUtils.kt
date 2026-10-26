@@ -4,7 +4,8 @@ import org.slf4j.LoggerFactory
 import org.springframework.security.core.Authentication
 import java.util.UUID
 
-private val logger = LoggerFactory.getLogger("SecurityUtils")
+// 파일 최상위 함수라 클래스가 없다 - 다른 로거와 같이 패키지를 포함한 이름을 쓴다(JSON 로그의 logger_name)
+private val logger = LoggerFactory.getLogger("com.example.linksphere.global.common.SecurityUtils")
 
 fun Authentication?.getUserId(): UUID? {
     if (this == null) return null

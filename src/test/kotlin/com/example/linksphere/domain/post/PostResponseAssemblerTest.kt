@@ -132,7 +132,7 @@ class PostResponseAssemblerTest {
         val member = TableMember(id = userId, email = "user@example.com", password = "enc", nickname = "user")
 
         `when`(memberRepository.findAllById(listOf(userId))).thenReturn(listOf(member))
-        `when`(bookmarkRepository.findAllByPostIdIn(listOf(postId1, postId2))).thenReturn(emptyList())
+        `when`(bookmarkRepository.countByPostIdIn(listOf(postId1, postId2))).thenReturn(emptyList())
         `when`(bookmarkRepository.findAllByUserIdAndPostIdIn(userId, listOf(postId1, postId2)))
             .thenReturn(emptyList())
         `when`(bookmarkFolderItemRepository.findAllByUserIdAndPostIdIn(userId, listOf(postId1, postId2)))
@@ -142,7 +142,7 @@ class PostResponseAssemblerTest {
                     TableBookmarkFolderItem(userId, postId1, folderId2),
                 ),
             )
-        `when`(postReactionRepository.findAllByPostIdIn(listOf(postId1, postId2)))
+        `when`(postReactionRepository.countByPostIdIn(listOf(postId1, postId2)))
             .thenReturn(emptyList())
         `when`(postReactionRepository.findAllByUserIdAndPostIdIn(userId, listOf(postId1, postId2)))
             .thenReturn(emptyList())
@@ -165,8 +165,8 @@ class PostResponseAssemblerTest {
         val member = TableMember(id = ownerId, email = "owner@example.com", password = "enc", nickname = "owner")
 
         `when`(memberRepository.findAllById(listOf(ownerId))).thenReturn(listOf(member))
-        `when`(bookmarkRepository.findAllByPostIdIn(listOf(postId))).thenReturn(emptyList())
-        `when`(postReactionRepository.findAllByPostIdIn(listOf(postId))).thenReturn(emptyList())
+        `when`(bookmarkRepository.countByPostIdIn(listOf(postId))).thenReturn(emptyList())
+        `when`(postReactionRepository.countByPostIdIn(listOf(postId))).thenReturn(emptyList())
         `when`(commentRepository.countByPostIdIn(listOf(postId))).thenReturn(emptyList())
 
         val result = assembler.buildResponsesFromPosts(listOf(post), null)

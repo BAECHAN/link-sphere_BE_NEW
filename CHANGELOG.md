@@ -294,6 +294,18 @@
 
 ### Changed
 
+- `post` 글·댓글 목록의 좋아요·북마크 수를 DB에서 GROUP BY로 센다
+  <details><summary>배경·구현</summary>
+
+  `PostResponseAssembler`(글 목록의 북마크·좋아요 수)와 `CommentService.getComments`(댓글 좋아요 수)가 반응 행을 전부 읽어
+  메모리에서 `groupingBy.eachCount`로 셌다 — 반응이 많을수록 읽는 행이 늘었다. 댓글 수에 이미 쓰던 형태(`countByPostIdIn`,
+  docs/BE-ARCHITECTURE.md §7-8)로 `PostReactionRepository`·`BookmarkRepository`·`CommentReactionRepository`에 GROUP BY 쿼리를
+  두고, 쓰지 않게 된 `findAllByPostIdIn`·`findAllByCommentIdIn`을 지웠다. 값은 같다 — 실제 Postgres의 같은 픽스처로 두 방식을
+  비교하는 테스트를 넣었다(`ReactionRepositoryIntegrationTest`). 같은 PR에서 중복 코드(커밋 뒤 처리 5곳, 비공개 글 게이트 6곳,
+  이메일 인증 4곳, 댓글 검증 3벌, 상수)를 공용 헬퍼로 모았다(동작 불변). (계획 `docs/plans/2026-10-26-be-remaining-cleanup.md` PR-5b)
+
+  </details>
+
 - `log` 운영 앱 로그를 요청 ID가 붙은 한 줄 JSON으로
   <details><summary>배경·구현</summary>
 

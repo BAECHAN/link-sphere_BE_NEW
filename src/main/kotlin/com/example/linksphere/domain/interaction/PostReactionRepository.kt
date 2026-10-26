@@ -6,6 +6,11 @@ import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import java.util.UUID
 
+interface PostLikeCount {
+    val postId: UUID
+    val count: Long
+}
+
 interface PostReactionRepository : JpaRepository<TablePostReaction, PostReactionId> {
     fun existsByUserIdAndPostId(userId: UUID, postId: UUID): Boolean
 
@@ -29,6 +34,9 @@ interface PostReactionRepository : JpaRepository<TablePostReaction, PostReaction
     @Query("DELETE FROM TablePostReaction r WHERE r.userId = :userId")
     fun deleteByUserId(@Param("userId") userId: UUID): Int
     fun countByPostId(postId: UUID): Long
-    fun findAllByPostIdIn(postIds: List<UUID>): List<TablePostReaction>
+
+    // 글 목록의 좋아요 수 - 행을 다 읽지 않고 DB에서 센다(docs/BE-ARCHITECTURE.md §7-8, CommentRepository.countByPostIdIn과 같은 형태)
+    @Query("SELECT r.postId as postId, COUNT(r.userId) as count FROM TablePostReaction r WHERE r.postId IN :postIds GROUP BY r.postId")
+    fun countByPostIdIn(@Param("postIds") postIds: List<UUID>): List<PostLikeCount>
     fun findAllByUserIdAndPostIdIn(userId: UUID, postIds: List<UUID>): List<TablePostReaction>
 }

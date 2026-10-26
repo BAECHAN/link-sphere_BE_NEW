@@ -5,6 +5,8 @@ import com.tngtech.archunit.core.domain.JavaMethod
 import com.tngtech.archunit.core.importer.ClassFileImporter
 import com.tngtech.archunit.core.importer.ImportOption
 import io.swagger.v3.oas.annotations.security.SecurityRequirements
+import jakarta.validation.Constraint
+import jakarta.validation.Valid
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.springframework.context.annotation.ClassPathScanningCandidateComponentProvider
@@ -14,6 +16,7 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.security.core.Authentication
 import org.springframework.security.core.annotation.AuthenticationPrincipal
+import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
@@ -119,6 +122,25 @@ class ControllerSignatureRulesTest {
                 .map { "${it.owner.simpleName}.${it.name}" }
 
         assertNoViolations(violations, "헤더를 붙이지 않으면 ApiResponse를 그대로 반환한다(상태는 @ResponseStatus)")
+    }
+
+    // DTO 필드에 제약(@NotBlank·@Size 등)을 달았는데 @Valid를 빼면 제약이 조용히 무시된다. 지금은 Auth·FCM의 10곳이 제약 + @Valid,
+    // 나머지 13곳은 제약 없이 Service에서 검증한다(BE-ARCHITECTURE "남은 것" — 통일 안 함, 2026-10-26 사용자 결정). 제약을 단
+    // DTO는 반드시 @Valid로 받게만 고정한다.
+    @Test
+    fun `제약 어노테이션이 있는 요청 본문은 @Valid로 받는다`() {
+        val violations =
+            endpoints().flatMap { (controller, method) ->
+                method.parameters
+                    .filter { it.isAnnotationPresent(RequestBody::class.java) && hasConstraints(it.type) && !it.isAnnotationPresent(Valid::class.java) }
+                    .map { "${controller.simpleName}.${method.name}(${it.type.simpleName})" }
+            }
+
+        assertNoViolations(violations, "요청 DTO에 제약을 달았으면 파라미터에 @Valid를 붙인다(없으면 제약이 검사되지 않는다)")
+    }
+
+    private fun hasConstraints(type: Class<*>): Boolean = type.declaredFields.any { field ->
+        field.annotations.any { it.annotationClass.java.isAnnotationPresent(Constraint::class.java) }
     }
 
     private fun setsResponseHeader(method: JavaMethod): Boolean = method.methodCallsFromSelf.any {

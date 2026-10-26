@@ -1,6 +1,7 @@
 package com.example.linksphere.domain.feed
 
 import com.example.linksphere.domain.member.MemberRepository
+import com.example.linksphere.global.common.BatchJobLimits
 import com.example.linksphere.infra.aws.FeedJobDispatcher
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
@@ -29,7 +30,6 @@ class FeedCrawlService(
         private const val MAX_ITEMS_PER_SOURCE = 1
         private const val MAX_ITEMS_TOTAL = 5
         private const val CHUNK_SIZE = 5
-        private const val DEADLINE_MILLIS = 90_000L
     }
 
     // Stage A: 피드 소스를 순회하며 후보 URL만 모으고 실제 게시글은 만들지 않는다.
@@ -42,7 +42,7 @@ class FeedCrawlService(
             return
         }
 
-        val deadline = System.currentTimeMillis() + DEADLINE_MILLIS
+        val deadline = System.currentTimeMillis() + BatchJobLimits.DEADLINE_MILLIS
         val candidates = mutableListOf<FeedCrawlItem>()
 
         // 소스 순회 순서를 매번 섞는다 - findAllByEnabledTrue()는 정렬이 없어 반환 순서가 사실상

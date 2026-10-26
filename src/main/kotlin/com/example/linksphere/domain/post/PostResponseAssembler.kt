@@ -50,8 +50,8 @@ class PostResponseAssembler(
                     id to UserSummary(id, m.publicNickname, m.publicImage)
                 }
 
-        val allBookmarks = bookmarkRepository.findAllByPostIdIn(postIds)
-        val bookmarkCountMap = allBookmarks.groupingBy { it.postId }.eachCount()
+        // 개수는 DB에서 GROUP BY로 센다(§7-8) - 예전에는 북마크·좋아요 행을 전부 읽어 메모리에서 셌다
+        val bookmarkCountMap = bookmarkRepository.countByPostIdIn(postIds).associate { it.postId to it.count.toInt() }
         val myBookmarks =
             if (currentUserId != null) {
                 bookmarkRepository.findAllByUserIdAndPostIdIn(currentUserId, postIds)
@@ -67,8 +67,7 @@ class PostResponseAssembler(
                 emptyMap()
             }
 
-        val allReactions = postReactionRepository.findAllByPostIdIn(postIds)
-        val reactionCountMap = allReactions.groupingBy { it.postId }.eachCount()
+        val reactionCountMap = postReactionRepository.countByPostIdIn(postIds).associate { it.postId to it.count.toInt() }
         val reactedPostIds =
             if (currentUserId != null) {
                 postReactionRepository

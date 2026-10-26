@@ -1,7 +1,5 @@
 package com.example.linksphere.domain.member
 
-import com.example.linksphere.domain.auth.SignupRequest
-import com.example.linksphere.domain.auth.UpdateAccountRequest
 import com.example.linksphere.global.exception.DuplicateMemberException
 import com.example.linksphere.global.exception.DuplicateNicknameException
 import org.springframework.dao.DataIntegrityViolationException
@@ -16,7 +14,7 @@ class MemberService(private val memberRepository: MemberRepository) {
 
     @Transactional
     fun signup(request: SignupRequest): TableMember {
-        val normalizedEmail = normalizeEmail(request.email)
+        val normalizedEmail = EmailNormalizer.normalize(request.email)
 
         // 예외 메시지에 제출값을 반사하지 않는다 - FE는 이 메시지를 표시하지 않고 code로만
         // 분기하므로 불필요하게 입력 이메일을 그대로 돌려줄 이유가 없다
@@ -71,12 +69,7 @@ class MemberService(private val memberRepository: MemberRepository) {
     // 다룬다. 예외로 알리면 이 클래스의 @Transactional 경계를 지나며 호출부 트랜잭션이
     // rollback-only로 표시돼, 호출부가 잡고 정상 종료해도 커밋 시점에
     // UnexpectedRollbackException(500)이 난다(docs/TRAFFIC-MANAGEMENT.md 시행착오 참고).
-    fun findByEmailOrNull(email: String): TableMember? = memberRepository.findByEmail(normalizeEmail(email))
-
-    // 이메일 대소문자·공백만 다른 계정이 별개로 생기는 것을 막는다 - Gmail/Outlook 등 주요
-    // 서비스도 저장 전 소문자로 정규화한다 (RFC 5321은 local-part를 대소문자 구분하도록
-    // 규정하지만, 같은 문서가 실제 활용은 상호운용성을 해치므로 권장하지 않는다고 명시한다)
-    private fun normalizeEmail(email: String): String = email.trim().lowercase()
+    fun findByEmailOrNull(email: String): TableMember? = memberRepository.findByEmail(EmailNormalizer.normalize(email))
 
     fun findById(id: UUID): TableMember = memberRepository.findById(id).orElseThrow { IllegalStateException("Member not found with id: $id") }
 
@@ -130,5 +123,5 @@ class MemberService(private val memberRepository: MemberRepository) {
 
     // 가입 화면 실시간 중복확인용 - Step 1의 정규화를 반드시 거쳐야 대소문자만 바꿔 검사를
     // 우회할 수 없다
-    fun isEmailAvailable(email: String): Boolean = !memberRepository.existsByEmail(normalizeEmail(email))
+    fun isEmailAvailable(email: String): Boolean = !memberRepository.existsByEmail(EmailNormalizer.normalize(email))
 }

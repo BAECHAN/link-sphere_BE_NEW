@@ -196,10 +196,10 @@ Google SRE 책은 과부하 대응으로 기능을 낮춰 응답하는 방법(gr
 | 업로드 URL 발급 | 회원당 1시간 30회 | `domain/upload/UploadController.kt:25-26` |
 | 링크 미리보기 | 회원당 1시간 60회 (URL 입력마다 1회 크롤링, 결과는 10분 캐시) | `domain/post/LinkPreviewController.kt:27-28` |
 | 목록 `size` | 최대 50 (글 목록·북마크 폴더 글·내 댓글) | `global/common/Paging.kt:12` |
-| 로그인 실패 | 이메일당 15분 5회, IP당 15분 20회 | `domain/auth/AuthService.kt:35-41` |
-| 가입 | IP당 1시간 5회 | `domain/auth/AuthService.kt:45-46` |
-| 인증메일 재발송 | 이메일당 1시간 3회, IP당 1시간 10회 | `domain/auth/AuthService.kt:49-52` |
-| 비밀번호 재설정 요청 | 이메일당 1시간 3회, IP당 1시간 10회 | `domain/auth/PasswordResetService.kt:36-39` |
+| 로그인 실패 | 이메일당 15분 5회, IP당 15분 20회 | `domain/auth/AuthService.kt:39-45` |
+| 가입 | IP당 1시간 5회 | `domain/auth/AuthService.kt:49-50` |
+| 인증메일 재발송 | 이메일당 1시간 3회, IP당 1시간 10회 | `domain/auth/AuthService.kt:53-56` |
+| 비밀번호 재설정 요청 | 이메일당 1시간 3회, IP당 1시간 10회 | `domain/auth/PasswordResetService.kt:38-41` |
 
 (경로는 `src/main/kotlin/com/example/linksphere/` 기준)
 

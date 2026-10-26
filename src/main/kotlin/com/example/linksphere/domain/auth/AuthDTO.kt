@@ -10,32 +10,6 @@ data class LoginRequest(
     val password: String, // Password is now required
 )
 
-data class SignupRequest(
-    @field:NotBlank
-    @field:Email
-    val email: String,
-    // 형식만 검증한다 - 실제 도달 가능한 주소인지는 가입 후 인증메일 확인으로 검증한다
-    // (미인증이어도 로그인은 되고, 글쓰기·댓글쓰기만 막힌다 - AuthService.signup 참고)
-    @field:Size(min = 8, max = 64)
-    @field:Pattern(
-        regexp = "^(?=.*[a-zA-Z])(?=.*[0-9])(?=.*[^a-zA-Z0-9]).*$",
-        message = "Password must contain at least one letter, one digit, and one special character",
-    )
-    // BCrypt는 72바이트를 넘는 입력을 자르고, 유니코드는 정규화 방식에 따라 같은 문자가
-    // 다른 바이트로 인코딩될 수 있어 "분명 같은 비밀번호인데 로그인이 안 되는" 버그로
-    // 이어질 수 있다 - 출력 가능 ASCII만 허용해 원천 차단한다(Microsoft Entra ID와 동일한
-    // 방식, docs/plans/2026-09-28-auth-hardening.md "확정된 결정들" 참고).
-    @field:Pattern(
-        regexp = "^[\\x20-\\x7E]*$",
-        message = "Password must contain only printable ASCII characters",
-    )
-    val password: String,
-    @field:NotBlank
-    @field:Size(min = 2, max = 20)
-    @field:Pattern(regexp = "^[a-zA-Z0-9가-힣_.-]*$")
-    val nickname: String,
-)
-
 data class ChangePasswordRequest(
     @field:NotBlank
     val currentPassword: String,
@@ -110,16 +84,6 @@ data class AccountResponse(
     // 로그인 여부와 무관하게 이메일만으로 호출하도록 설계돼 세션에서 유추하지 않는다 -
     // AuthController.requestEmailVerification 참고). 이 DTO의 다른 필드처럼 기본값을 둔다.
     val email: String = "",
-)
-
-data class UpdateAccountRequest(
-    // null 이면 그 필드는 유지한다(부분 수정) - SignupRequest.nickname과 동일한 형식 규칙이지만
-    // 여긴 선택 입력이라 @NotBlank는 붙이지 않는다.
-    @field:Size(min = 2, max = 20)
-    @field:Pattern(regexp = "^[a-zA-Z0-9가-힣_.-]*$")
-    val nickname: String? = null,
-    @field:Size(max = 2048)
-    val image: String? = null,
 )
 
 data class NicknameAvailabilityResponse(val available: Boolean)

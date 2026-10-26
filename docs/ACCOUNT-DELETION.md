@@ -130,7 +130,7 @@ AND deleted_at IS NULL` 조건)도 같은 파일에 있다.
 | 유예기간(14일) | `AccountDeletionService.kt:52` (`GRACE_PERIOD`) — FE `texts.ts`의 안내 문구에도 같은 값이 중복돼 있다(자동 동기화 없음, §11 참고) |
 | 정리 배치 실행 주기 | AWS 콘솔/CLI — 전용 EventBridge 룰이 아니라 기존 `link-sphere-feed-crawl` 룰(4일마다, `docs/DEPLOY.md` 8장)에 타겟만 추가했다(§10-2 시행착오 참고). 최악의 경우 유예 만료 후 최대 4일 더 지나야 실제 퍼지된다(14~18일) |
 | 퍼지 배치 한 번에 처리하는 최대 건수 | `AccountPurgeService.kt`의 `BATCH_SIZE`(200) |
-| 퍼지 배치 데드라인 | `AccountPurgeService.kt`의 `DEADLINE_MILLIS`(90초) — 넘기면 남은 건은 다음 실행으로 미룸 |
+| 퍼지 배치 데드라인 | `BatchJobLimits.kt:10`의 `DEADLINE_MILLIS`(90초, 피드 크롤링·고아 이미지 회수 배치와 공용) — 넘기면 남은 건은 다음 실행으로 미룸 |
 
 ## 8. 코드 지도와 자주 하는 수정
 
@@ -138,7 +138,7 @@ AND deleted_at IS NULL` 조건)도 같은 파일에 있다.
 | --- | --- | --- |
 | 탈퇴 신청(1단계) | `domain/auth/AccountDeletionService.kt`의 `requestDeletion` | 예 |
 | 탈퇴 신청 API | `domain/auth/AuthController.kt`의 `deleteAccount` | 예 |
-| 로그인 시 자동 복구 | `domain/auth/AuthService.kt:135-168`의 `login`(비밀번호 일치 후 `memberService.cancelPendingDeletion` 호출) | 예 |
+| 로그인 시 자동 복구 | `domain/auth/AuthService.kt:136-168`의 `login`(비밀번호 일치 후 `memberService.cancelPendingDeletion` 호출) | 예 |
 | 복구 여부를 FE에 전달 | `domain/auth/AuthDTO.kt`의 `TokenResponse.deletionCancelled` | 예 |
 | 경합 처리용 조건부 UPDATE 3개 | `domain/member/MemberRepository.kt:25-45`(`findIdsPendingPurge`·`cancelDeletionRequest`·`claimForPurge`) | 예 |
 | 유예 만료 확정 + 실제 익명화(2단계) | `domain/auth/AccountDeletionService.kt`의 `purge` | 예 |

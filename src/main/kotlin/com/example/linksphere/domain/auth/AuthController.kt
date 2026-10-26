@@ -1,5 +1,7 @@
 package com.example.linksphere.domain.auth
 
+import com.example.linksphere.domain.member.SignupRequest
+import com.example.linksphere.domain.member.UpdateAccountRequest
 import com.example.linksphere.global.common.ApiResponse
 import com.example.linksphere.global.common.ClientIpResolver
 import com.example.linksphere.global.common.getUserId

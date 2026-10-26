@@ -1,7 +1,13 @@
 package com.example.linksphere.architecture
 
+import com.example.linksphere.domain.category.TableCategory
+import com.example.linksphere.domain.member.EmailVerificationGate
+import com.example.linksphere.domain.member.TableMember
+import com.example.linksphere.domain.post.TablePost
 import com.example.linksphere.global.common.ApiResponse
 import com.example.linksphere.global.common.ErrorResponse
+import com.example.linksphere.global.common.TransactionCallbacks
+import com.example.linksphere.global.exception.EmailNotVerifiedException
 import com.tngtech.archunit.base.DescribedPredicate
 import com.tngtech.archunit.base.DescribedPredicate.describe
 import com.tngtech.archunit.base.DescribedPredicate.not
@@ -16,14 +22,18 @@ import com.tngtech.archunit.junit.ArchTest
 import com.tngtech.archunit.lang.ArchRule
 import com.tngtech.archunit.lang.conditions.ArchConditions.be
 import com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes
+import com.tngtech.archunit.lang.syntax.ArchRuleDefinition.fields
 import com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses
 import com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.slices
 import jakarta.persistence.Entity
+import jakarta.persistence.GeneratedValue
 import jakarta.servlet.Filter
 import org.springframework.data.repository.Repository
 import org.springframework.http.ResponseEntity
 import org.springframework.stereotype.Component
 import org.springframework.stereotype.Service
+import org.springframework.transaction.support.TransactionSynchronization
+import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.web.bind.annotation.RestController
 
 /**
@@ -105,7 +115,7 @@ class LayerSkeletonRulesTest {
             .should(be(declaredInDtoFile))
             .`as`("domain의 *Request·*Response는 그 도메인의 *DTO.kt에 둔다")
 
-    // 패키지(domain.post, global.common …) 사이 순환을 막는다. 지금 있는 순환은 DOCUMENTED_CYCLE_EDGES의 9개 간선뿐이고
+    // 패키지(domain.post, global.common …) 사이 순환을 막는다. 지금 있는 순환은 DOCUMENTED_CYCLE_EDGES의 8개 간선뿐이고
     // (PackageGraphDocTest.kt, 이유는 BE-ARCHITECTURE §9), 그 간선만 무시하면 순환이 없다. 이 규칙은 그 밖의 새 순환을
     // 막는다 — 기존 servicesMustNotHaveCrossDomainCycles는 *Service끼리만 묶어 Assembler·Repository를 거친 순환을 보지 못한다.
     @ArchTest
@@ -117,7 +127,32 @@ class LayerSkeletonRulesTest {
                 resideInAPackage("com.example.linksphere.$from.."),
                 resideInAPackage("com.example.linksphere.$to.."),
             )
-        }.`as`("패키지 사이에 문서화된 9개 간선 말고는 순환을 만들지 않는다")
+        }.`as`("패키지 사이에 문서화된 8개 간선 말고는 순환을 만들지 않는다")
+
+    // 커밋 뒤 부수 효과(파일 삭제·메일)는 TransactionCallbacks.afterCommit으로만 등록한다 - 복사본 5곳을 모은 헬퍼다(§7-6)
+    @ArchTest
+    val afterCommitGoesThroughTransactionCallbacks: ArchRule =
+        noClasses()
+            .that().doNotBelongToAnyOf(TransactionCallbacks::class.java)
+            .should().callMethod(TransactionSynchronizationManager::class.java, "registerSynchronization", TransactionSynchronization::class.java)
+            .`as`("커밋 뒤 작업은 TransactionCallbacks.afterCommit으로 등록한다")
+
+    // 글쓰기·댓글쓰기·링크 미리보기의 이메일 인증 확인은 EmailVerificationGate 하나로 한다 - 인라인 4곳을 모은 헬퍼다
+    @ArchTest
+    val emailVerificationGoesThroughGate: ArchRule =
+        noClasses()
+            .that().doNotBelongToAnyOf(EmailVerificationGate::class.java)
+            .should().callConstructor(EmailNotVerifiedException::class.java, String::class.java)
+            .`as`("EmailNotVerifiedException은 EmailVerificationGate에서만 만든다")
+
+    // 새 엔티티 PK는 앱에서 만든 UUID다(§7-13). @GeneratedValue는 예전부터 쓰던 세 엔티티에만 남긴다 - save()가 INSERT를
+    // 커밋까지 미뤄 제약 위반을 늦게 알게 되는 함정이 있었다(MemberServiceIntegrationTest)
+    @ArchTest
+    val generatedIdsOnlyOnLegacyEntities: ArchRule =
+        fields()
+            .that().areAnnotatedWith(GeneratedValue::class.java)
+            .should().beDeclaredInClassesThat().belongToAnyOf(TableMember::class.java, TablePost::class.java, TableCategory::class.java)
+            .`as`("새 엔티티에는 @GeneratedValue를 쓰지 않는다 - 앱에서 UUID를 만든다")
 
     private companion object {
         val repositoryLike: DescribedPredicate<JavaClass> =

@@ -1,6 +1,5 @@
 package com.example.linksphere.domain.member
 
-import com.example.linksphere.domain.auth.SignupRequest
 import com.example.linksphere.global.exception.DuplicateMemberException
 import com.example.linksphere.support.PostgresIntegrationTest
 import org.junit.jupiter.api.Assertions.assertThrows

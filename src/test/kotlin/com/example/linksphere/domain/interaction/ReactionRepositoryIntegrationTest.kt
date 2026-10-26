@@ -25,6 +25,8 @@ class ReactionRepositoryIntegrationTest {
 
     @Autowired private lateinit var commentReactionRepository: CommentReactionRepository
 
+    @Autowired private lateinit var bookmarkRepository: BookmarkRepository
+
     private val userId = UUID.randomUUID()
     private val postId = UUID.randomUUID()
     private val commentId = UUID.randomUUID()
@@ -85,6 +87,36 @@ class ReactionRepositoryIntegrationTest {
             // members를 지우면 posts → post_reactions·comments가 FK cascade로 함께 지워진다
             jdbc.update("DELETE FROM members WHERE id = ?", userId)
         }
+    }
+
+    // 목록 응답의 좋아요·북마크 수를 메모리 집계(행을 다 읽어 groupingBy.eachCount)에서 GROUP BY 쿼리로 바꿨다(2026-10-26).
+    // 같은 픽스처에서 두 방식이 같은 값을 내는지 본다 - 반응이 없는 글·댓글은 결과에 없고(호출부가 0으로 채운다), 요청하지 않은
+    // id는 세지 않는다.
+    @Test
+    fun `GROUP BY 개수 쿼리는 행을 다 읽어 센 값과 같다`() {
+        val users = List(3) { UUID.randomUUID() }
+        val posts = List(3) { UUID.randomUUID() }
+        val comments = List(2) { UUID.randomUUID() }
+        users.forEach { jdbc.update("INSERT INTO members (id) VALUES (?)", it) }
+        posts.forEach { jdbc.update("INSERT INTO posts (id, user_id, url, title) VALUES (?, ?, 'https://example.com', 't')", it, users[0]) }
+        comments.forEach { jdbc.update("INSERT INTO comments (id, post_id, user_id, content) VALUES (?, ?, ?, 'c')", it, posts[0], users[0]) }
+        users.forEach { postReactionRepository.insertIgnoreConflict(it, posts[0]) }
+        postReactionRepository.insertIgnoreConflict(users[1], posts[1])
+        users.take(2).forEach { bookmarkRepository.insertIgnoreConflict(it, posts[0]) }
+        bookmarkRepository.insertIgnoreConflict(users[2], posts[2])
+        users.forEach { commentReactionRepository.insertIgnoreConflict(it, comments[0]) }
+        val asked = posts.take(2)
+
+        val likeCounts = postReactionRepository.countByPostIdIn(asked).associate { it.postId to it.count.toInt() }
+        val bookmarkCounts = bookmarkRepository.countByPostIdIn(asked).associate { it.postId to it.count.toInt() }
+        val commentLikeCounts = commentReactionRepository.countByCommentIdIn(comments).associate { it.commentId to it.count.toInt() }
+
+        assertEquals(postReactionRepository.findAll().filter { it.postId in asked }.groupingBy { it.postId }.eachCount(), likeCounts)
+        assertEquals(bookmarkRepository.findAll().filter { it.postId in asked }.groupingBy { it.postId }.eachCount(), bookmarkCounts)
+        assertEquals(commentReactionRepository.findAll().filter { it.commentId in comments }.groupingBy { it.commentId }.eachCount(), commentLikeCounts)
+        assertEquals(mapOf(posts[0] to 3, posts[1] to 1), likeCounts)
+        assertEquals(mapOf(posts[0] to 2), bookmarkCounts)
+        assertEquals(mapOf(comments[0] to 3), commentLikeCounts)
     }
 
     private fun seed() {

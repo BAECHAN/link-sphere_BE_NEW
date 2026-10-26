@@ -21,7 +21,7 @@ class SupabaseStorageService(
     @Value("\${supabase.key}") private val supabaseKey: String,
     @Value("\${supabase.bucket}") private val bucketName: String,
 ) {
-    private val log = LoggerFactory.getLogger(javaClass)
+    private val logger = LoggerFactory.getLogger(SupabaseStorageService::class.java)
 
     // 기본 생성자 RestTemplate()은 연결·읽기 타임아웃이 없다(spring-web 6.2.14 SimpleClientHttpRequestFactory는
     // 값이 -1이면 설정하지 않는다) - Supabase가 응답을 멈추면 업로드 서명 요청이 Lambda 제한시간(120초)까지
@@ -84,7 +84,7 @@ class SupabaseStorageService(
                 publicUrl = "$supabaseUrl/storage/v1/object/public/$bucketName/$uniqueFileName",
             )
         } catch (e: org.springframework.web.client.HttpStatusCodeException) {
-            log.error(
+            logger.error(
                 "HTTP error while creating signed upload URL. Status: {}, Body: {}",
                 e.statusCode,
                 e.responseBodyAsString,
@@ -92,7 +92,7 @@ class SupabaseStorageService(
             )
             throw RuntimeException("Failed to create signed upload URL")
         } catch (e: Exception) {
-            log.error("Error while creating signed upload URL. Message: {}", e.message, e)
+            logger.error("Error while creating signed upload URL. Message: {}", e.message, e)
             throw RuntimeException("Failed to create signed upload URL: ${e.message}")
         }
     }
@@ -118,7 +118,7 @@ class SupabaseStorageService(
         try {
             restTemplate.exchange(deleteUrl, HttpMethod.DELETE, requestEntity, String::class.java)
         } catch (e: Exception) {
-            log.error("Failed to delete storage objects. fileNames: {}", fileNames, e)
+            logger.error("Failed to delete storage objects. fileNames: {}", fileNames, e)
         }
     }
 
@@ -158,7 +158,7 @@ class SupabaseStorageService(
                         Array<StorageObjectApiResponse>::class.java,
                     ).body?.toList() ?: emptyList()
                 } catch (e: Exception) {
-                    log.error("Failed to list storage objects. offset: {}", offset, e)
+                    logger.error("Failed to list storage objects. offset: {}", offset, e)
                     throw RuntimeException("Failed to list storage objects")
                 }
 

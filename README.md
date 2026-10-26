@@ -59,7 +59,10 @@ src/main/kotlin/com/example/linksphere/
 │   ├── member/                          # 회원 도메인
 │   │   ├── TableMember.kt
 │   │   ├── MemberRepository.kt
-│   │   └── MemberService.kt
+│   │   ├── MemberService.kt
+│   │   ├── MemberDTO.kt                 # 가입·계정 수정 요청(SignupRequest·UpdateAccountRequest)
+│   │   ├── EmailNormalizer.kt           # 이메일 비교·저장 전 정규화(trim·소문자)
+│   │   └── EmailVerificationGate.kt     # 이메일 인증 전 회원의 글·댓글·답글 작성과 링크 미리보기 차단
 │   ├── post/                            # 게시글 도메인
 │   │   ├── PostController.kt            # 게시글 CRUD + 비공개 토글
 │   │   ├── PostDTO.kt
@@ -67,6 +70,7 @@ src/main/kotlin/com/example/linksphere/
 │   │   ├── PostRepositoryCustom.kt      # 커스텀 쿼리 인터페이스
 │   │   ├── PostRepositoryImpl.kt        # JPA Criteria/JPQL 검색·필터 구현
 │   │   ├── PostService.kt
+│   │   ├── PostVisibility.kt            # 비공개 글을 작성자 외에는 404로 숨기는 게이트
 │   │   ├── PostAIService.kt             # AI 분석 비동기 처리
 │   │   ├── PostResponseAssembler.kt     # 목록·상세 응답 조립(작성자·좋아요·북마크·댓글수 batch fetch)
 │   │   ├── PostCategoryClassifier.kt    # AI 카테고리 분류
@@ -127,6 +131,8 @@ src/main/kotlin/com/example/linksphere/
 │   │   ├── ClientIpResolver.kt          # CloudFront-Viewer-Address 헤더에서 요청자 IP 추출
 │   │   ├── RateLimitService.kt          # bucketKey·limit·window 기반 범용 고정윈도 카운터
 │   │   ├── Paging.kt                    # 목록 size 상한(1~50)
+│   │   ├── BatchJobLimits.kt            # 예약 배치 3종 공용 마감(90초)
+│   │   ├── TransactionCallbacks.kt      # 커밋 뒤 실행 등록(afterCommit)
 │   │   └── SupabaseStorageService.kt    # Supabase 이미지 업로드
 │   ├── config/
 │   │   ├── AsyncConfig.kt               # 비동기 스레드풀 설정
