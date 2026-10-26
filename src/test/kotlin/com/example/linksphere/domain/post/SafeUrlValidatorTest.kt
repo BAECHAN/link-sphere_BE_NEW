@@ -43,6 +43,20 @@ class SafeUrlValidatorTest {
         assertThrows(InvalidUrlException::class.java) { safeUrlValidator.validate("http://192.168.1.1/") }
     }
 
+    // JDK isSiteLocalAddress가 보지 않는 대역 - IPv6 ULA(fc00::/7)와 CGNAT(100.64.0.0/10). 경계 바로 밖은 통과해야 한다
+    @Test
+    fun `validate rejects IPv6 unique local and carrier-grade NAT addresses`() {
+        assertThrows(InvalidUrlException::class.java) { safeUrlValidator.validate("http://[fd00::1]/") }
+        assertThrows(InvalidUrlException::class.java) { safeUrlValidator.validate("http://[fc00::1]/") }
+        assertThrows(InvalidUrlException::class.java) { safeUrlValidator.validate("http://100.64.0.1/") }
+        assertThrows(InvalidUrlException::class.java) { safeUrlValidator.validate("http://100.127.255.254/") }
+        assertDoesNotThrow { safeUrlValidator.validate("http://100.63.255.255/") }
+        assertDoesNotThrow { safeUrlValidator.validate("http://100.128.0.1/") }
+        assertDoesNotThrow { safeUrlValidator.validate("http://[fbff:ffff:ffff:ffff:ffff:ffff:ffff:ffff]/") }
+        assertDoesNotThrow { safeUrlValidator.validate("http://[fe00::1]/") }
+        assertDoesNotThrow { safeUrlValidator.validate("http://[2001:4860:4860::8888]/") }
+    }
+
     @Test
     fun `validate accepts a public IP address`() {
         // 리터럴 IP는 DNS 조회 없이 파싱되므로 네트워크 없는 환경에서도 안정적으로 검증 가능하다.

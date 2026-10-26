@@ -39,4 +39,17 @@ class BookmarkFolderRepositoryIntegrationTest {
         val exception = assertThrows(DataIntegrityViolationException::class.java) { bookmarkFolderRepository.flush() }
         assertTrue(exception.mostSpecificCause.message!!.contains("uk_bookmark_folders_user_name"))
     }
+
+    // DB 컬럼은 varchar(100)이다. 앱이 길이를 보지 않으면 101자 이름은 유니크 제약이 아닌 무결성 위반으로 flush에서 나고,
+    // 전역 안전망(GlobalExceptionHandler)이 그것을 409 DUPLICATE_RESOURCE "이미 존재하는 항목입니다."로 바꾼다 -
+    // BookmarkFolderService가 길이를 먼저 검사해야 하는 근거다(2026-10-26 재현).
+    @Test
+    fun `100자를 넘는 폴더 이름은 유니크 제약이 아닌 길이 위반으로 flush에서 난다`() {
+        val exception =
+            assertThrows(DataIntegrityViolationException::class.java) {
+                bookmarkFolderRepository.saveAndFlush(TableBookmarkFolder(userId = userId, name = "가".repeat(101)))
+            }
+
+        assertTrue(exception.mostSpecificCause.message!!.contains("value too long"))
+    }
 }

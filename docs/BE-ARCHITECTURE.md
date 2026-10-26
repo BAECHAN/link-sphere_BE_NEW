@@ -716,9 +716,11 @@ for (id in ids) {
   개수 세는 방식 3종, 커밋 뒤 처리 방식 3종(AFTER_COMMIT 리스너 · 인라인 `afterCommit` — `CommentService` 3회와 인증·재설정
   메일 2곳 · 트랜잭션 밖 바로 디스패치), `@Valid`는 Auth·FCM 컨트롤러만,
   Page 응답 DTO 수동 복제, 로거 선언 변형, 중복 상수(90초 마감 ×3, 이메일 정규화 ×4).
-- **검증하지 않은 위험 후보**: `findFirstByIsBotTrue`의 `@Query` 단건 조회(봇이 둘이면 실패),
-  SSRF 검증과 실제 연결 사이의 DNS 재해석. (응답 헤더가 이름당 첫 값만 남던 것과 Lambda 안의 Tomcat 8080 바인딩은
-  2026-10-26에 확인하고 고쳤다 — `FunctionUrlResponse`, `LambdaHandler`의 `--server.port=-1`.)
+- **검증하지 않은 위험 후보**: SSRF 검증과 실제 연결 사이의 DNS 재해석(`UrlMetadataExtractor`가 검증한 뒤 URL 문자열로
+  다시 연결한다). JVM DNS 캐시(기본 30초)와 Lambda 안 Tomcat 포트 제거로 위험이 낮다. 해석 결과를 고정하려면 JDK 17에는
+  리졸버 SPI가 없어(JEP 418은 18) https 소켓 래핑 같은 우회가 필요하다.
+  - 2026-10-26에 확인하고 고친 것: 응답 헤더가 이름당 첫 값만 남던 것(`FunctionUrlResponse`), Lambda 안 Tomcat의 8080 바인딩
+    (`--server.port=-1`), 봇 회원 조회의 단건 실패, SSRF 차단 대역 누락(IPv6 ULA·CGNAT), 100자 넘는 폴더 이름의 409.
 - **확인해서 위험 후보에서 뺀 것**: "`deploy.yml`은 `integrationTest`를 돌리지 않음" — main 룰셋("Main Branch Protect")이
   `ci.yml`의 `check` 잡(`integrationTest` 포함)을 필수 체크로 요구한다(2026-10-26 `gh api …/rulesets` 확인). 다만
   `strict_required_status_checks_policy`가 `false`라 뒤처진 브랜치의 통과 결과로도 병합된다.
