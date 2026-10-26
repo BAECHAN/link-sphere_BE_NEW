@@ -35,5 +35,7 @@ data class BatchFolderBookmarksRequest(val postIds: List<UUID>)
 // 다중 선택 일괄 삭제
 data class BatchDeleteBookmarksRequest(val postIds: List<UUID>)
 
-// batch 결과 — 실제로 처리된 row 수 (본인 북마크가 아닌 ID는 무시되어 count에 안 잡힘)
+// batch 결과 개수. 엔드포인트마다 세는 기준이 다르다(InteractionController의 Swagger 설명과 같음):
+// 폴더에 일괄 추가는 요청한 postId 개수 그대로(이미 있던 것도 센다), 폴더에서 일괄 제거·북마크 일괄 삭제는 실제로 지운 행 수
+// (본인 북마크가 아닌 ID는 무시돼 안 잡힌다).
 data class BatchResultResponse(val processedCount: Int)

@@ -2,6 +2,8 @@ package com.example.linksphere.domain.post
 
 import com.example.linksphere.global.exception.InvalidUrlException
 import org.springframework.stereotype.Component
+import java.net.Inet4Address
+import java.net.Inet6Address
 import java.net.InetAddress
 import java.net.URI
 import java.net.URISyntaxException
@@ -46,10 +48,26 @@ class SafeUrlValidator {
                     it.isSiteLocalAddress ||
                     it.isLinkLocalAddress ||
                     it.isAnyLocalAddress ||
-                    it.isMulticastAddress
+                    it.isMulticastAddress ||
+                    isUniqueLocalIpv6(it) ||
+                    isCarrierGradeNat(it)
             }
         if (isPrivate) {
             throw InvalidUrlException(InvalidUrlException.URL_NOT_ALLOWED, "URL points to a private network address: $url")
         }
+    }
+
+    // JDK의 isSiteLocalAddress는 IPv6에서 폐기된 fec0::/10만 사설로 본다(Inet6Address) - 지금 쓰는 사설 대역인
+    // ULA fc00::/7(RFC 4193)은 따로 막는다.
+    private fun isUniqueLocalIpv6(address: InetAddress): Boolean = address is Inet6Address && (address.address[0].toInt() and 0xFE) == 0xFC
+
+    // 100.64.0.0/10(RFC 6598, 통신사·클라우드 내부 공유 주소)은 isSiteLocalAddress가 보지 않는다.
+    private fun isCarrierGradeNat(address: InetAddress): Boolean {
+        if (address !is Inet4Address) {
+            return false
+        }
+
+        val bytes = address.address
+        return bytes[0].toInt() and 0xFF == 100 && (bytes[1].toInt() and 0xC0) == 64
     }
 }

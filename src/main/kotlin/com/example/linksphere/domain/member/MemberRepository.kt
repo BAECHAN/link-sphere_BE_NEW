@@ -21,8 +21,10 @@ interface MemberRepository : JpaRepository<TableMember, UUID> {
     fun existsByImage(image: String): Boolean
 
     // RSS 피드 자동 수집 봇 계정 조회. 파생 쿼리(findFirstByIsBotTrue)는 "Is" 접두어가
-    // 프로퍼티명(isBot)과 겹쳐 파싱이 모호해질 수 있어 명시적 @Query를 쓴다.
-    @Query("SELECT m FROM TableMember m WHERE m.isBot = true")
+    // 프로퍼티명(isBot)과 겹쳐 파싱이 모호해질 수 있어 명시적 @Query를 쓴다. @Query가 있으면 메서드 이름의 First는
+    // 무시되고 단건으로 실행된다(spring-data-jpa 3.5 AbstractJpaQuery) - LIMIT이 없으면 봇이 두 행일 때
+    // IncorrectResultSizeDataAccessException으로 피드 크롤링 전체가 실패한다. 가장 먼저 만든 봇 하나를 고른다.
+    @Query("SELECT m FROM TableMember m WHERE m.isBot = true ORDER BY m.createdAt ASC, m.id ASC LIMIT 1")
     fun findFirstByIsBotTrue(): TableMember?
 
     // AccountPurgeService가 4일마다 퍼지 대상을 고를 때 쓴다. WHERE를 claimForPurge와 정확히

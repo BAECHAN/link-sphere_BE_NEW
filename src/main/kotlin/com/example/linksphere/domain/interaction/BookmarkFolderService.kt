@@ -58,8 +58,7 @@ class BookmarkFolderService(
 
     @Transactional
     fun createFolder(userId: UUID, request: CreateFolderRequest): FolderResponse {
-        val name = request.name.trim()
-        if (name.isEmpty()) throw InvalidInputException("Folder name must not be blank")
+        val name = validFolderName(request.name)
 
         if (bookmarkFolderRepository.existsByUserIdAndName(userId, name)) {
             throw DuplicateFolderNameException(name)
@@ -97,8 +96,7 @@ class BookmarkFolderService(
             ?: throw BookmarkFolderNotFoundException(folderId)
         if (folder.userId != userId) throw ForbiddenException("Cannot update another user's folder")
 
-        val newName = request.name.trim()
-        if (newName.isEmpty()) throw InvalidInputException("Folder name must not be blank")
+        val newName = validFolderName(request.name)
 
         if (newName != folder.name && bookmarkFolderRepository.existsByUserIdAndName(userId, newName)) {
             throw DuplicateFolderNameException(newName)
@@ -286,9 +284,32 @@ class BookmarkFolderService(
         )
     }
 
+    // 앞뒤 공백을 뗀 이름을 돌려준다. 길이는 DB 컬럼(bookmark_folders.name varchar(100))과 같은 기준으로 센다 - Postgres
+    // varchar(n)은 문자(코드포인트) 수라 String.length(UTF-16)로 세면 이모지가 두 번 세진다. 길이를 보지 않으면 101자 이름이
+    // 저장 때 "value too long" 무결성 위반이 돼 전역 안전망이 409 DUPLICATE_RESOURCE("이미 존재하는 항목")로 바꿨다
+    // (BookmarkFolderRepositoryIntegrationTest, 2026-10-26 재현).
+    private fun validFolderName(raw: String): String {
+        val name = raw.trim()
+
+        if (name.isEmpty()) {
+            throw InvalidInputException("Folder name must not be blank")
+        }
+
+        if (name.codePointCount(0, name.length) > MAX_FOLDER_NAME_LENGTH) {
+            throw InvalidInputException("Folder name must be at most $MAX_FOLDER_NAME_LENGTH characters")
+        }
+
+        return name
+    }
+
     private fun DataIntegrityViolationException.asDuplicateFolderName(name: String): RuntimeException = if (mostSpecificCause.message?.contains("uk_bookmark_folders_user_name") == true) {
         DuplicateFolderNameException(name)
     } else {
         this
+    }
+
+    companion object {
+        // bookmark_folders.name varchar(100) - src/test/resources/db/schema.sql(운영 덤프)과 같은 값
+        private const val MAX_FOLDER_NAME_LENGTH = 100
     }
 }

@@ -464,6 +464,26 @@
 
 ### Fixed
 
+- `bookmark` 100자를 넘는 폴더 이름이 400이 아니라 409 "이미 존재하는 항목"으로 나가던 문제
+  <details><summary>배경·구현</summary>
+
+  폴더 이름 컬럼은 `varchar(100)`인데 앱이 길이를 보지 않아, 101자 이름은 저장 때 `value too long` 무결성 위반이 됐고 전역
+  안전망이 그것을 409 `DUPLICATE_RESOURCE`("이미 존재하는 항목입니다.")로 바꿨다(2026-10-26 실제 Postgres로 재현). FE 화면
+  문구는 상태와 무관한 일반 실패 문구라 그대로다. 생성·이름 변경에서 길이를 먼저 검사해 400 `INVALID_INPUT`으로 막는다. Postgres
+  `varchar(n)`처럼 코드포인트 수로 센다(이모지 100개는 통과). (`BookmarkFolderService.kt`, `BookmarkFolderRepositoryIntegrationTest`)
+
+  </details>
+
+- `feed` 봇 회원이 둘이 되면 피드 크롤링 전체가 실패할 수 있던 문제
+  <details><summary>배경·구현</summary>
+
+  `MemberRepository.findFirstByIsBotTrue`는 `@Query`라 메서드 이름의 `First`가 무시되고 단건으로 실행된다(spring-data-jpa 3.5
+  `SingleEntityExecution` → `getSingleResult`). 봇 행이 둘이면 `IncorrectResultSizeDataAccessException`이 나 `FeedCrawlService`가
+  멈춘다(실제 Postgres 재현: "2 results were returned"). 지금 봇은 하나지만 SQL로 하나 더 넣는 순간 깨지므로
+  `ORDER BY createdAt, id LIMIT 1`로 가장 먼저 만든 봇을 고른다. (`MemberRepository.kt`, `MemberRepositoryIntegrationTest`(신규))
+
+  </details>
+
 - `lambda` Lambda 안에서 Tomcat이 8080에 바인딩하고, 다중값 응답 헤더가 첫 값만 나가던 문제
   <details><summary>배경·구현</summary>
 
@@ -934,6 +954,16 @@
   </details>
 
 ### Security
+
+- `post` 링크 미리보기·글 등록의 내부망 차단에서 IPv6 ULA와 CGNAT 대역이 빠져 있던 문제
+  <details><summary>배경·구현</summary>
+
+  `SafeUrlValidator`는 JDK `isSiteLocalAddress` 등으로 사설 대역을 막는데, 이 함수는 IPv6에서 폐기된 `fec0::/10`만 사설로
+  보고 지금 쓰는 ULA `fc00::/7`(RFC 4193)과 `100.64.0.0/10`(RFC 6598 CGNAT)은 보지 않는다. 두 대역을 따로 막는다. 검증 뒤
+  연결 때 DNS를 다시 해석하는 틈(DNS rebinding)은 남아 있다 — JVM DNS 캐시와 Lambda 안 Tomcat 포트 제거로 위험이 낮아
+  BE-ARCHITECTURE "남은 것"에 기록만 한다. (`SafeUrlValidator.kt`, 계획 `docs/plans/2026-10-26-be-remaining-cleanup.md` PR-4)
+
+  </details>
 
 - `deps` 보안 권고 3건이 걸린 Spring Boot 3.5.8·springdoc 2.7.0을 3.5.16·2.10.0으로
   <details><summary>배경·구현</summary>
