@@ -52,6 +52,7 @@ class BookmarkFolderService(
                 sortOrder = folder.sortOrder,
                 bookmarkCount = countByFolderId[folder.id] ?: 0,
                 lastUsedAt = lastUsedByFolderId[folder.id],
+                pinnedAt = folder.pinnedAt,
             )
         }
         return FolderListResponse(folders = folderResponses, uncategorizedCount = uncategorizedCount)
@@ -88,6 +89,7 @@ class BookmarkFolderService(
             name = saved.name,
             sortOrder = saved.sortOrder,
             bookmarkCount = 0,
+            pinnedAt = saved.pinnedAt,
         )
     }
 
@@ -118,7 +120,28 @@ class BookmarkFolderService(
             name = folder.name,
             sortOrder = folder.sortOrder,
             bookmarkCount = bookmarkCount,
+            pinnedAt = folder.pinnedAt,
         )
+    }
+
+    /**
+     * 고정 상태를 지정한다(pinned=true면 고정, false면 해제) — 같은 요청을 여러 번 보내도 결과가 같다(멱등).
+     * 이미 고정된 폴더는 처음 고정한 시각을 유지해 고정 구획 안 순서가 흔들리지 않는다. 폴더 내용(이름)을 바꾸는 게 아니라서
+     * updatedAt은 건드리지 않는다.
+     */
+    @Transactional
+    fun setFolderPinned(userId: UUID, folderId: UUID, pinned: Boolean): FolderPinResponse {
+        val folder = bookmarkFolderRepository.findByIdOrNull(folderId)
+            ?: throw BookmarkFolderNotFoundException(folderId)
+        if (folder.userId != userId) throw ForbiddenException("Cannot pin another user's folder")
+
+        if (!pinned) {
+            folder.pinnedAt = null
+        } else if (folder.pinnedAt == null) {
+            folder.pinnedAt = LocalDateTime.now()
+        }
+
+        return FolderPinResponse(id = folder.id, pinnedAt = folder.pinnedAt)
     }
 
     @Transactional

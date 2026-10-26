@@ -56,6 +56,35 @@ class BookmarkFolderController(private val bookmarkFolderService: BookmarkFolder
     }
 
     @Operation(
+        summary = "북마크 폴더 고정",
+        description = "이미 고정된 상태여도 200 이다(멱등). 처음 고정한 시각을 유지한다 — 고정 구획은 이 시각 오름차순이다. " +
+            "실패: 404 FOLDER_NOT_FOUND · 403 FORBIDDEN(남의 폴더)",
+    )
+    @PutMapping("/{folderId}/pin")
+    fun putFolderPin(
+        @PathVariable folderId: UUID,
+        authentication: Authentication,
+    ): ApiResponse<FolderPinResponse> {
+        val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
+        val result = bookmarkFolderService.setFolderPinned(userId, folderId, pinned = true)
+        return ApiResponse(HttpStatus.OK.value(), "북마크 폴더 고정 성공", result)
+    }
+
+    @Operation(
+        summary = "북마크 폴더 고정 해제",
+        description = "고정 안 된 상태여도 200 이다(멱등). 실패: 404 FOLDER_NOT_FOUND · 403 FORBIDDEN(남의 폴더)",
+    )
+    @DeleteMapping("/{folderId}/pin")
+    fun deleteFolderPin(
+        @PathVariable folderId: UUID,
+        authentication: Authentication,
+    ): ApiResponse<FolderPinResponse> {
+        val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
+        val result = bookmarkFolderService.setFolderPinned(userId, folderId, pinned = false)
+        return ApiResponse(HttpStatus.OK.value(), "북마크 폴더 고정 해제 성공", result)
+    }
+
+    @Operation(
         summary = "북마크 폴더 삭제",
         description = "폴더 소속만 지워지고 북마크 자체(다른 폴더 소속분)는 유지된다. " +
             "실패: 404 FOLDER_NOT_FOUND · 403 FORBIDDEN(남의 폴더)",

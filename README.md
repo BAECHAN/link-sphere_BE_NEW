@@ -251,12 +251,16 @@ Bookmark Folder 섹션 참고.
 | `GET`    | `/bookmark/folders`                | 내 폴더 목록 (폴더별 소속 수 + 미분류 수)         | ✅   |
 | `POST`   | `/bookmark/folders`                | 폴더 생성                                         | ✅   |
 | `PATCH`  | `/bookmark/folders/{folderId}`     | 폴더 이름 수정                                    | ✅   |
+| `PUT`    | `/bookmark/folders/{folderId}/pin` | 폴더 고정 (멱등, 이미 고정이면 처음 고정한 시각 유지) | ✅   |
+| `DELETE` | `/bookmark/folders/{folderId}/pin` | 폴더 고정 해제 (멱등)                             | ✅   |
 | `DELETE` | `/bookmark/folders/{folderId}`     | 폴더 삭제 (그 폴더에만 있던 북마크만 미분류로)    | ✅   |
 | `GET`    | `/bookmark/folders/{folderKey}/posts` | 폴더별 게시글 조회. `folderKey`: `all` \| `uncategorized` \| 폴더 UUID | ✅   |
 
 **미분류** = 어느 폴더에도 소속되지 않은 상태(소속 row 0개), `folder_id IS NULL`이 아니다.
 **전체**(`all`)는 소속 폴더 수와 무관하게 북마크 하나당 한 번만 나온다(EXISTS 세미조인으로
 중복 방지).
+**고정**은 폴더의 `pinnedAt`(고정한 시각, 목록 응답에 포함)이다. 서버는 고정 여부로 목록을 거르거나 정렬하지 않고,
+"고정한 폴더" 구획(`pinnedAt` 오름차순)과 최근 구획에서의 제외는 FE가 계산한다.
 
 ### 📁 Category (`/common/category-option`)
 
