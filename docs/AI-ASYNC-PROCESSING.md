@@ -319,6 +319,9 @@ private fun handleAiJob(event: JsonNode, output: OutputStream) {
 
 ### 4.5 검증 (실제 프로덕션 로그)
 
+> 이 문서의 로그 발췌는 앱 로그가 텍스트였던 때의 모양이다. 2026-10-26부터 운영 앱 로그는 한 줄짜리 JSON이고 `message`
+> 필드에 같은 문구가 들어간다 — 찾는 법은 [`DEPLOY.md`](DEPLOY.md) "운영 로그 읽기".
+
 등록 직후 AI 처리가 끝나기 전에 게시글을 삭제해 재현:
 
 ```

@@ -13,6 +13,7 @@ import com.example.linksphere.domain.upload.OrphanImageGcService
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import jakarta.servlet.http.Cookie
+import org.slf4j.MDC
 import org.springframework.boot.SpringApplication
 import org.springframework.boot.WebApplicationType
 import org.springframework.boot.web.servlet.context.AnnotationConfigServletWebServerApplicationContext
@@ -60,6 +61,7 @@ class LambdaHandler : RequestStreamHandler {
         // 실제 매핑과 정확히 일치해야 한다 — 404가 나면 DispatcherServlet만 데워지고
         // 정작 중요한 Hibernate·HikariCP는 건너뛴다(CategoryController는 category-option 단수형).
         private val WARMUP_PATHS = listOf("/actuator/health", "/common/category-option")
+        private const val REQUEST_ID_MDC_KEY = "awsRequestId"
         private const val WARMUP_ITERATIONS = 3
 
         init {
@@ -84,7 +86,11 @@ class LambdaHandler : RequestStreamHandler {
             // 포트에 잠깐 bind했다가 닫고, 요청 처리 중에는 리스닝 소켓이 없다. Boot 문서도 "HTTP 엔드포인트는 끄고 WebApplicationContext는 만들려면
             // server.port=-1"이라고 쓴다(번역, how-to/webserver.adoc). 커맨드라인 인자라 yml보다 우선하고, 로컬
             // bootRun(LinkSphereBeApplication)에는 영향이 없다.
-            val ctx = app.run("--server.port=-1")
+            //
+            // 로그는 Lambda에서만 logstash JSON 한 줄로 낸다(spring-boot 3.5 structured logging). Text 로그는 RequestId가
+            // 없고 예외 1건의 스택이 CloudWatch 이벤트 약 110개로 쪼개졌다(2026-10-26 운영 로그). JSON은 스택을
+            // stack_trace 필드 한 줄에 담고 MDC(아래 handleRequest의 awsRequestId)를 최상위 키로 싣는다. 로컬 로그는 그대로다.
+            val ctx = app.run("--server.port=-1", "--logging.structured.format.console=logstash")
             applicationContext = ctx
             // webAppContextSetup()만으로는 FilterChainProxy(Spring Security)가 MockMvc 필터 체인에
             // 자동 포함되지 않는다. 명시적으로 추가해야 SessionAuthenticationFilter 등 보안 필터가 실행된다.
@@ -130,7 +136,19 @@ class LambdaHandler : RequestStreamHandler {
         }
     }
 
+    // 요청 하나의 앱 로그를 Lambda RequestId(플랫폼 START·REPORT 줄의 RequestId와 같은 값)로 묶는다. 실행 환경은 다음 호출에
+    // 같은 main 스레드를 다시 쓰므로 finally에서 반드시 지운다 - 안 지우면 다음 요청 로그에 이전 ID가 붙는다. @Async 작업은
+    // AsyncConfig의 TaskDecorator가 이 값을 넘겨받는다.
     override fun handleRequest(input: InputStream, output: OutputStream, context: Context) {
+        MDC.put(REQUEST_ID_MDC_KEY, context.awsRequestId)
+        try {
+            dispatch(input, output)
+        } finally {
+            MDC.remove(REQUEST_ID_MDC_KEY)
+        }
+    }
+
+    private fun dispatch(input: InputStream, output: OutputStream) {
         val event = mapper.readTree(input)
 
         // self-invoke(AiJobDispatcher·CommentJobDispatcher·FeedJobDispatcher)나 EventBridge 룰이 보낸 내부 작업이면

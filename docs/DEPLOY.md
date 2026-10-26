@@ -950,6 +950,35 @@ curl -sD - -o /dev/null https://<cloudfront-domain>/api/post/00000000-0000-0000-
 Lambda에 닿기도 전에 차단한 것이다 — 앱 예외 처리와 무관하다. 원인·현재 룰 구성·재적용 절차는
 FE `docs/DEPLOY.md`의 "CloudFront WAF (수동 관리)" 절 참고.
 
+### 운영 로그 읽기 (요청 ID · JSON)
+
+2026-10-26부터 Lambda의 앱 로그는 한 줄짜리 JSON(Spring Boot structured logging, `logstash` 형식)이다 — `LambdaHandler`가
+기동 인자 `--logging.structured.format.console=logstash`를 넘긴다(로컬 `bootRun` 로그는 그대로 텍스트). 키는 평평하다:
+`@timestamp`·`level`·`logger_name`·`thread_name`·`message`, 예외면 `stack_trace` 한 필드(예전에는 스택 한 건이 CloudWatch 이벤트
+약 110개로 쪼개졌다), 그리고 MDC의 `awsRequestId`. `awsRequestId`는 플랫폼 `START`·`REPORT` 줄의 `RequestId`와 같은 값이라,
+요청 하나의 로그를 이렇게 모은다. AWS 문서는 _"CloudWatch Logs Insights는 Lambda 로그의 필드를 자동으로 찾지만, 각 로그
+이벤트의 첫 번째 JSON 조각만 본다"_ 고 쓴다(번역,
+[Supported logs and discovered fields](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/CWL_AnalyzeLogData-discoverable-fields.html))
+— 이 레포의 앱 로그는 이벤트 하나가 JSON 한 줄이라 `awsRequestId`·`level`을 바로 필터에 쓴다:
+
+```
+fields @timestamp, level, logger_name, message, stack_trace
+| filter awsRequestId = "<START 줄의 RequestId>"
+| sort @timestamp asc
+```
+
+```
+fields @timestamp, awsRequestId, logger_name, message
+| filter level = "ERROR"
+| sort @timestamp desc
+| limit 50
+```
+
+Lambda 자체의 로그 형식(`LoggingConfig.LogFormat`)은 `Text` 그대로다 — JSON으로 바꾸면 플랫폼 `START`·`REPORT` 줄까지 JSON이
+돼 [`PERFORMANCE.md`](PERFORMANCE.md)의 `REPORT` 파싱 스크립트가 깨진다. `@Async` 작업(AI 분석의 Gemini 호출·카테고리
+분류)도 `AsyncConfig`의 TaskDecorator가 `awsRequestId`를 넘겨받는다. 메시지 부분 문자열로 찾는 기존 쿼리(예:
+`filter @message like /EAUTHTIMEOUT/`)는 그대로 동작한다.
+
 ---
 
 ## 로컬 개발 환경
