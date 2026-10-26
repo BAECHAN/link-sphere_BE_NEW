@@ -761,4 +761,5 @@ for (id in ids) {
 - **정리 후보**: Lambda 환경변수 `JWT_SECRET` — 코드·tracked 설정 어디서도 읽지 않는다(2026-10-26, 변수 이름만 조회).
   환경변수를 API로 고치려면 다른 비밀값까지 다시 넘겨야 해서, 값이 노출되지 않게 콘솔에서 지운다. (쓰지 않던
   `spring-boot-starter-oauth2-client` 의존성, 호출 0건인 Repository 메서드 5개, HTTP로 도달할 수 없던 `createComment`의
-  `parentId` 분기, 파일명 `PostAiService.kt` 불일치는 2026-10-26에 정리했다.)
+  `parentId` 분기, 파일명 `PostAiService.kt` 불일치는 2026-10-26에 정리했다. oauth2-client가 빠지자 켜진 Boot 기본 사용자
+  `UserDetailsServiceAutoConfiguration`은 `application.yml`의 `spring.autoconfigure.exclude`로 다시 껐다.)

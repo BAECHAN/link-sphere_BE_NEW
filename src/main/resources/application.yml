@@ -9,6 +9,11 @@ spring:
     name: link-sphere_BE
   profiles:
     active: secret  # 로컬: application-secret.yml 로딩 / Lambda: 환경변수로 오버라이드
+  autoconfigure:
+    # 인증은 SessionAuthenticationFilter만 한다. Boot 기본 사용자(InMemoryUserDetailsManager, 생성 비밀번호를 WARN으로 남김)는
+    # oauth2-client가 클래스패스에 있어 저절로 꺼져 있었다 - 그 의존성을 지운 뒤(2026-10-26) 직접 끈다. @SpringBootApplication의
+    # exclude가 아니라 이 속성인 이유: @WebMvcTest 슬라이스도 이 속성은 읽는다(SecurityAutoConfigurationTest)
+    exclude: org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
   datasource:
     driver-class-name: org.postgresql.Driver
     hikari:

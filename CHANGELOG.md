@@ -476,6 +476,19 @@
 
 ### Fixed
 
+- `auth` 쓰지 않는 Boot 기본 사용자가 생기고 그 개발용 비밀번호가 운영 로그에 찍히던 문제
+  <details><summary>배경·구현</summary>
+
+  2026-10-26 #124에서 쓰지 않는 `spring-boot-starter-oauth2-client`를 지웠다. 그러자 그 jar의 `ClientRegistrationRepository`가
+  클래스패스에 있어 물러나 있던 `UserDetailsServiceAutoConfiguration`이 켜졌다(Boot v3.5.16
+  `UserDetailsServiceAutoConfiguration.java:102-114`). `user` 계정과 무작위 비밀번호를 가진 `InMemoryUserDetailsManager`가 생겼고,
+  비밀번호가 WARN으로 CloudWatch에 찍혔다(#124 배포 뒤 13:09 UTC까지 12회, 그 전 14일간 0회). `httpBasic`·`formLogin`을 켜지 않아 이 계정으로 로그인할 경로는
+  없었다. `application.yml`의 `spring.autoconfigure.exclude`로 끈다. `@SpringBootApplication(exclude)`와 달리 이 속성은
+  `@WebMvcTest` 슬라이스도 읽어서(`ImportAutoConfigurationImportSelector.java:140`) 테스트로 고정한다. 의존성을 잠깐
+  되돌려 보니 oauth2-client가 있으면 통과, 없으면 실패했다. (`application.yml`, `SecurityAutoConfigurationTest`)
+
+  </details>
+
 - `bookmark` 100자를 넘는 폴더 이름이 400이 아니라 409 "이미 존재하는 항목"으로 나가던 문제
   <details><summary>배경·구현</summary>
 
