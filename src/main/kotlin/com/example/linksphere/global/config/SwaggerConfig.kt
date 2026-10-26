@@ -25,8 +25,7 @@ class SwaggerConfig {
                             "- 자물쇠가 붙은 API 는 Authorization: Bearer <accessToken> 이 필요하다. " +
                             "누락·만료·위조 시 401(NOT_LOGGED_IN / TOKEN_EXPIRED / INVALID_TOKEN)이다.\n" +
                             "- 처리되지 않은 예외는 500 INTERNAL_SERVER_ERROR 로 통일된다.\n" +
-                            "- 대부분의 API 는 ResponseEntity 를 쓰지 않아 **HTTP 상태가 항상 200** 이다. " +
-                            "본문 status 필드가 201 이어도 HTTP 는 200 이다(예외: POST /auth/signup 만 실제 201).",
+                            "- 성공 응답의 HTTP 상태는 본문 status 필드와 같다 - 자원을 만드는 POST 는 201, 그 밖은 200 이다.",
                     )
                     .version("1.0.0"),
             )

@@ -169,6 +169,9 @@ flowchart LR
 | `엔드포인트는 Principal이나 @AuthenticationPrincipal로 사용자를 받지 않는다` | 사용자를 `Authentication` + `getUserId()` 밖의 방식으로 받음 | `architecture/ControllerSignatureRulesTest.kt` |
 | `Authentication 파라미터의 nullable은 @SecurityRequirements가 붙은 공개 엔드포인트에만 쓴다` | 인증 필수 엔드포인트의 `Authentication?` — Kotlin nullability를 봐야 해 리플렉션으로 검사 | 위와 같음 |
 | `엔드포인트는 ApiResponse 또는 ResponseEntity로 감싼 ApiResponse를 반환한다` | 응답 래퍼를 안 쓰는 엔드포인트(제네릭 반환형 검사) | 위와 같음 |
+| `응답 데이터에 이름 없는 Map을 쓰지 않는다` | `ApiResponse<Map<…>>` | 위와 같음 |
+| `본문 status가 201인 엔드포인트는 HTTP 상태도 201이다` | 본문 `HttpStatus.CREATED`와 `@ResponseStatus(CREATED)` 중 하나만 있음(바이트코드의 상수 읽기를 본다) | 위와 같음 |
+| `ResponseEntity는 응답 헤더를 붙이는 엔드포인트만 반환한다` | 헤더 빌더(`header`·`headers`·`cacheControl`)를 부르지 않는데 `ResponseEntity` 반환 — 같은 클래스의 private 함수 한 단계까지 따라간다 | 위와 같음 |
 | `controllersMustNotDependOnEntities` | `@RestController`가 `@Entity`(`Table*`)를 참조 | `architecture/LayerSkeletonRulesTest.kt` |
 | `nothingDependsOnControllers` | 컨트롤러 밖의 코드가 `@RestController`를 참조 | 위와 같음 |
 | `domainCodeMustNotDependOnWebTypes` | 컨트롤러·서블릿 필터 밖의 domain·infra 코드가 서블릿·`ResponseEntity`·`ApiResponse`·`ErrorResponse`·`web.bind.annotation`을 참조 | 위와 같음 |
@@ -301,7 +304,12 @@ return ApiResponse(HttpStatus.OK.value(), "Link preview", postService.previewLin
 ```
 
 - status는 반드시 `HttpStatus.X.value()` — 숫자 리터럴을 쓰지 않는다(`HttpStatusLiteralTest`가 막는다).
-- 응답 헤더(쿠키·캐시)를 붙여야 하는 곳만 `ResponseEntity<ApiResponse<T>>`를 쓴다(`AuthController`, `CategoryController`의 목록).
+- **HTTP 상태는 본문 status와 같다.** 자원을 만드는 POST는 `@ResponseStatus(HttpStatus.CREATED)` + 본문 `HttpStatus.CREATED`,
+  그 밖은 200이다(`본문 status가 201인 엔드포인트는 HTTP 상태도 201이다`). 2026-10-26 전에는 생성 5곳이 본문만 201이었다.
+- 응답 헤더(쿠키·캐시)를 붙이는 곳만 `ResponseEntity<ApiResponse<T>>`를 쓴다 — `AuthController`의 쿠키 6곳(로그인·갱신·로그아웃·전체 로그아웃·비밀번호 변경·탈퇴),
+  `CategoryController`의 목록(`ResponseEntity는 응답 헤더를 붙이는 엔드포인트만 반환한다`). 상태만 바꿀 때는 `@ResponseStatus`다.
+- `data`는 `*DTO.kt`의 이름 있는 타입이다 — `Map`은 OpenAPI 스키마 이름이 생기지 않아 FE 생성 타입이 익명이 된다
+  (`응답 데이터에 이름 없는 Map을 쓰지 않는다`).
 - `message`는 FE가 화면에 쓰지 않는다(FE는 `TEXTS`로 문구를 정한다) — 언어가 섞여 있어도 계약 문제는 아니다.
 
 ### 실패 — 예외를 던지고 핸들러가 `ErrorResponse(status, code, message)`로 바꾼다
@@ -604,9 +612,6 @@ for (id in ids) {
 | 엔티티 안의 표시 규칙 | `TableMember.isWithdrawn`·`publicNickname`·`publicImage`, `TableLinkPreview.toMetadata` | 바꾸지 않음(기록만) |
 | 상속받은 `delete(entity)` 3곳 | `PostService.deletePost`, `CommentService.deleteComment`, `BookmarkFolderService.deleteFolder` | 바꾸지 않음 — 409 `CONCURRENT_UPDATE` 안전망에 기댄다 |
 | 패키지 순환을 만드는 간선 9개 | 아래 표 | 바꾸지 않음(지금은) — 새 순환은 `packagesMustBeFreeOfCyclesExceptDocumented`가 막는다. 해소 후보는 "남은 것" |
-| 생성 엔드포인트가 HTTP 200 + 본문 201 | `PostController.createPost`, `CommentController.createComment`·`createReply`, `BookmarkFolderController.createFolder`, `UploadController.createSignedUploadUrl` | 정리 예정 — `@ResponseStatus(HttpStatus.CREATED)`(같은 계획 PR-C) |
-| 응답 데이터가 이름 없는 `Map` | `InteractionController`의 댓글 좋아요·취소 | 정리 예정 — `CommentLikeResponse`(PR-C) |
-| 헤더를 붙이지 않는데 `ResponseEntity` | `AuthController`의 8곳(`getAccount` 등) — §4는 헤더가 필요한 곳만 쓴다고 적는다 | 정리 예정(PR-C) |
 
 **순환을 허용한 간선 9개** — `PackageGraphDocTest.kt`의 `DOCUMENTED_CYCLE_EDGES`가 정본이다. 이 간선을 빼면 패키지 그래프에
 순환이 없다(2026-10-26 계산).
@@ -632,6 +637,7 @@ for (id in ids) {
 ### 새 엔드포인트
 
 - [ ] 컨트롤러는 인증 추출(§5) → 필요하면 레이트리밋 → Service 위임 → `ApiResponse(HttpStatus.X.value(), …)`
+- [ ] 자원을 만드는 POST면 `@ResponseStatus(HttpStatus.CREATED)` + 본문 `HttpStatus.CREATED`(§4), `data`는 이름 있는 `*Response`
 - [ ] 인증 필수면 `Authentication`(non-null), 공개면 `Authentication?` + `@SecurityRequirements` + `SecurityConfig` 경로 추가
 - [ ] `@Operation(summary, description = "실패: 401 X · 429 Y")` (`SwaggerDocsCoverageTest`)
 - [ ] `@WebMvcTest` 컨트롤러 테스트, Service 단위 테스트
@@ -669,7 +675,7 @@ for (id in ids) {
 | 항목 | 표준·공식 문서 | 이 레포 | 결정 |
 |---|---|---|---|
 | 에러 응답 형식 | [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) Problem Details. Spring은 `ProblemDetail`과 `ResponseEntityExceptionHandler`를 준다 | 자체 봉투 `ErrorResponse(status, code, message)` | 유지 — FE가 최상위 `code`로 분기한다. 전환하면 모든 에러 응답 모양이 바뀐다. Spring MVC 표준 예외는 상태·헤더를 그대로 쓰는 핸들러 하나(`handleSpringMvcException`)로 맞췄다 |
-| 생성 응답 | [RFC 9110 §9.3.3](https://www.rfc-editor.org/rfc/rfc9110#section-9.3.3) | 본문만 201, HTTP는 200(`signup` 제외) | 실제 HTTP 201로 맞춘다(§9). `Location`은 "남은 것" |
+| 생성 응답 | [RFC 9110 §9.3.3](https://www.rfc-editor.org/rfc/rfc9110#section-9.3.3) | HTTP 201(`@ResponseStatus`, 2026-10-26 전에는 본문만 201) | 따른다. `Location`은 "남은 것" |
 | 405 응답 | [RFC 9110 §10.2.1](https://www.rfc-editor.org/rfc/rfc9110#section-10.2.1) | 405 + `Allow`(`handleSpringMvcException`, 2026-10-26 전에는 500) | 따른다 |
 | 경계 입력 검증 | Bean Validation(`@Valid`) | `@RequestBody` 23곳 중 10곳 | 방식 혼재로 둔다 — `PostCreateRequest`는 봇 경로(`FeedItemProcessor`)도 쓰므로 Service 검증이 어차피 필요하다 |
 | 모듈 순환 | [Spring Modulith 검증](https://docs.spring.io/spring-modulith/reference/verification.html), ArchUnit `slices().beFreeOfCycles()` | 허용 간선 9개(§9) | 새 순환만 막는다 |

@@ -62,7 +62,7 @@ class CommentControllerTest {
     }
 
     @Test
-    fun `유효 토큰으로 댓글을 작성하면 그 회원 id로 위임하고 본문 status는 201이다`() {
+    fun `유효 토큰으로 댓글을 작성하면 그 회원 id로 위임하고 HTTP 상태와 본문 status가 모두 201이다`() {
         val postId = UUID.randomUUID()
         val memberId = givenValidToken()
         `when`(commentService.createComment(postId, memberId, "내용", null)).thenReturn(comment(memberId))
@@ -73,7 +73,7 @@ class CommentControllerTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(jacksonObjectMapper().writeValueAsString(CreateCommentRequest(content = "내용"))),
         )
-            .andExpect(status().isOk)
+            .andExpect(status().isCreated)
             .andExpect(jsonPath("$.status").value(201))
 
         verify(commentService).createComment(postId, memberId, "내용", null)

@@ -294,6 +294,19 @@
 
 ### Changed
 
+- `api` 생성 API의 HTTP 상태를 201로, 댓글 좋아요 응답을 이름 있는 스키마로
+  <details><summary>배경·구현</summary>
+
+  글·댓글·답글·북마크 폴더 생성과 업로드 서명 URL 발급은 본문 status만 201이고 HTTP는 200이었다(가입만 실제 201).
+  `@ResponseStatus(HttpStatus.CREATED)`로 HTTP 상태도 201로 맞췄다 — RFC 9110 §9.3.3은 자원을 만든 POST에 201을 권한다.
+  FE는 `response.ok`로만 판정해 동작이 같다. 댓글 좋아요·취소의 data는 `Map`이라 OpenAPI 스키마가
+  `ApiResponseMapStringBoolean`이었는데 `CommentLikeResponse`로 바꿨다(JSON 모양 `{"isLiked": …}`은 같다 — FE 코드 생성 뒤
+  `interaction.dto.ts`의 별칭 1줄만 바뀐다). 헤더를 붙이지 않는 `AuthController` 8곳(계정 조회·수정, 재설정·인증 메일 등)은
+  `ResponseEntity` 대신 `ApiResponse`를 그대로 반환한다(동작 같음). 세 규칙은 `ControllerSignatureRulesTest`가 막는다.
+  (계획 `docs/plans/2026-10-26-be-architecture-skeleton.md` PR-C)
+
+  </details>
+
 - `fcm` FCM 토큰 등록·해제 응답을 다른 API와 같은 ApiResponse JSON으로
   <details><summary>배경·구현</summary>
 

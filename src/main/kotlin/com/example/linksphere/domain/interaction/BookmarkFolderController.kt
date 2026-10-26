@@ -25,10 +25,11 @@ class BookmarkFolderController(private val bookmarkFolderService: BookmarkFolder
 
     @Operation(
         summary = "북마크 폴더 생성",
-        description = "HTTP 상태는 200 이고 본문 status 필드만 201 이다(ResponseEntity 를 쓰지 않는다). " +
+        description = "HTTP 상태와 본문 status 모두 201 이다. " +
             "실패: 400 INVALID_INPUT(이름 공백) · 409 DUPLICATE_FOLDER_NAME",
     )
     @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
     fun createFolder(
         @RequestBody request: CreateFolderRequest,
         authentication: Authentication,

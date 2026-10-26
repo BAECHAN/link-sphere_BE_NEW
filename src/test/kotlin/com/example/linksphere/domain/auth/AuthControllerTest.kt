@@ -57,6 +57,24 @@ class AuthControllerTest {
 
     @MockitoBean private lateinit var passwordResetService: PasswordResetService
 
+    // ResponseEntity.status(CREATED)에서 @ResponseStatus(CREATED)로 바뀌어도 HTTP 상태와 본문 status가 함께 201인지 고정한다
+    @Test
+    @WithMockUser
+    fun `signup 성공은 HTTP 상태와 본문 status가 모두 201이다`() {
+        val request = SignupRequest("test@example.com", "password1!", "testuser")
+        `when`(authService.signup(request, null)).thenReturn(AccountResponse(id = "some-uuid", nickname = "testuser", image = null))
+
+        mockMvc.perform(
+            post("/auth/signup")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(jacksonObjectMapper().writeValueAsString(request))
+                .with(csrf()),
+        )
+            .andExpect(status().isCreated)
+            .andExpect(jsonPath("$.status").value(201))
+            .andExpect(jsonPath("$.data.nickname").value("testuser"))
+    }
+
     @Test
     @WithMockUser
     fun `signup returns 409 DUPLICATE_MEMBER when DuplicateMemberException is thrown`() {
@@ -416,7 +434,7 @@ class AuthControllerTest {
 
         val response = AuthController(authService, accountDeletionService, passwordResetService).checkNicknameAvailability("newNick", null)
 
-        assertEquals(true, response.body?.data?.available)
+        assertEquals(true, response.data.available)
     }
 
     @Test

@@ -1,5 +1,6 @@
 package com.example.linksphere.domain.interaction
 
+import com.example.linksphere.domain.comment.CommentLikeResponse
 import com.example.linksphere.domain.post.PostLikeResponse
 import com.example.linksphere.global.common.ApiResponse
 import com.example.linksphere.global.common.getUserId
@@ -56,10 +57,10 @@ class InteractionController(
     fun putCommentLike(
         @PathVariable commentId: UUID,
         authentication: Authentication,
-    ): ApiResponse<Map<String, Boolean>> {
+    ): ApiResponse<CommentLikeResponse> {
         val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
         val isLiked = interactionService.setCommentLike(commentId, userId, liked = true)
-        return ApiResponse(HttpStatus.OK.value(), "댓글 좋아요 성공", mapOf("isLiked" to isLiked))
+        return ApiResponse(HttpStatus.OK.value(), "댓글 좋아요 성공", CommentLikeResponse(isLiked))
     }
 
     @Operation(
@@ -71,10 +72,10 @@ class InteractionController(
     fun deleteCommentLike(
         @PathVariable commentId: UUID,
         authentication: Authentication,
-    ): ApiResponse<Map<String, Boolean>> {
+    ): ApiResponse<CommentLikeResponse> {
         val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
         val isLiked = interactionService.setCommentLike(commentId, userId, liked = false)
-        return ApiResponse(HttpStatus.OK.value(), "댓글 좋아요 취소 성공", mapOf("isLiked" to isLiked))
+        return ApiResponse(HttpStatus.OK.value(), "댓글 좋아요 취소 성공", CommentLikeResponse(isLiked))
     }
 
     @Operation(
