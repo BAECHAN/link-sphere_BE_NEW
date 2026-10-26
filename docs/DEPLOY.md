@@ -825,6 +825,25 @@ squash 병합한 뒤 워크플로별로 확인한다:
 | `prod-alias-drift-check.yml` | 6시간 예약 실행, 또는 `gh workflow run prod-alias-drift-check.yml --ref main` |
 | `history-dispatch.yml`·`release.yml` | 수동 실행이 없어 다음 실제 이벤트(소스 변경 push·`CHANGELOG.md` 갱신) 때 |
 
+### Gradle 의존성 업데이트 (Dependabot)
+
+[`.github/dependabot.yml`](../.github/dependabot.yml)의 `gradle` 항목이 한 달에 한 번 minor·patch 업데이트를 PR 하나로 묶어
+올린다. Spring Boot·springdoc 메이저(Boot 4·springdoc 3)는 무시해 따로 계획하고, 그 밖의 메이저는 그룹 밖 개별 PR로 온다. 2026-10-26에 추가했다: Spring Boot 3.5.8·springdoc
+2.7.0이 Spring Security CVE-2026-22732(critical)·springdoc GHSA-rhhx-6j8h-8cvw(high)·Boot CVE-2026-40973(high)에 걸린 채
+지나간 것을 그때 처음 알았다.
+
+`build.gradle.kts`는 `deploy.yml` 경로 필터에 있어 **병합이 곧 운영 배포·prod 승격**이다. 그래서 PR이 오면:
+
+1. CI(`check` — 단위·통합 테스트)가 녹색인지 본다.
+2. Spring Boot 패치가 들었으면 그 릴리스 노트의 "Attention Required"·회귀 항목을 읽는다(예: 3.5.12의 설정 덮어쓰기 회귀
+   #49724는 3.5.13에서 고쳐졌다).
+3. springdoc이 올랐으면 병합·배포 뒤 FE에서 `pnpm codegen:fetch`로 스펙 차이를 확인한다 — 바뀌었으면 FE 스냅샷 동기화 PR.
+4. 배포 뒤 운영 스모크: `GET /api/post` 200, `POST /api/auth/logout`(+ `x-amz-content-sha256`)의 `set-cookie`,
+   `GET /api/v3/api-docs` 200.
+
+`hibernate-vector`는 버전 숫자 대신 BOM의 `hibernate.version`을 읽어서(`build.gradle.kts`) Boot를 올리면 hibernate-core와
+함께 따라간다.
+
 ---
 
 ## 배포 흐름 (deploy.yml 단계별)

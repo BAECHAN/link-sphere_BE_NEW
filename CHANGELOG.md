@@ -907,6 +907,22 @@
 
 ### Security
 
+- `deps` 보안 권고 3건이 걸린 Spring Boot 3.5.8·springdoc 2.7.0을 3.5.16·2.10.0으로
+  <details><summary>배경·구현</summary>
+
+  2026-10-26 점검에서 GitHub 보안 권고로 확인했다. Spring Security 6.5.7이 CVE-2026-22732(critical, "HTTP 헤더가 일부
+  조건에서 안 써짐", 영향 `>= 6.5.0, < 6.5.9` — [GHSA-mf92-479x-3373](https://github.com/advisories/GHSA-mf92-479x-3373)),
+  springdoc 2.7.0이 Accept-Language별 OpenAPI 캐시가 무한히 커지는 메모리 고갈(high, `starter-common >= 2.0.0, < 2.9.1` —
+  [GHSA-rhhx-6j8h-8cvw](https://github.com/springdoc/springdoc-openapi/security/advisories/GHSA-rhhx-6j8h-8cvw), 운영에
+  `/v3/api-docs`가 공개돼 있음), Spring Boot 3.5.8이 CVE-2026-40973(high, 예측 가능한 임시 디렉터리, 영향 `< 3.5.14` —
+  [GHSA-wwpq-f5c3-7hvx](https://github.com/advisories/GHSA-wwpq-f5c3-7hvx))에 걸려 있었다. Boot 3.5.16(OSS 마지막 패치 —
+  Spring Security 6.5.11, Spring Framework 6.2.19, Hibernate 6.6.53, Jackson 2.21.4)과 springdoc 2.10.0(Boot 3.5.16 기준
+  빌드)으로 올렸다. `hibernate-vector`는 숫자 고정 대신 BOM의 `hibernate.version`을 읽어 core와 함께 올라간다. 다시
+  놓치지 않게 Dependabot에 Gradle을 추가했다(월간 minor·patch, 메이저 무시 — 처리 절차는 `docs/DEPLOY.md` "Gradle 의존성
+  업데이트"). (`build.gradle.kts`, `.github/dependabot.yml`, 계획 `docs/plans/2026-10-26-be-remaining-cleanup.md` PR-1)
+
+  </details>
+
 - `comment` 남의 이미지 URL을 붙여넣은 댓글을 지우면 원래 주인의 이미지 파일까지 지워지던 문제
   <details><summary>배경·구현</summary>
 

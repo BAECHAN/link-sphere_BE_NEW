@@ -13,3 +13,24 @@ updates:
     commit-message:
       prefix: ci
       include: scope
+
+  # Gradle 의존성(build.gradle.kts). 2026-10-26 점검에서 Spring Boot 3.5.8·springdoc 2.7.0이 보안 권고 3건(critical 1·
+  # high 2)에 걸린 채 지나간 것을 계기로 추가했다(docs/plans/2026-10-26-be-remaining-cleanup.md). build.gradle.kts는
+  # deploy.yml 경로 필터에 있어 이 PR을 병합하면 곧 운영 배포·prod 승격이다 - 처리 절차는 docs/DEPLOY.md
+  # "Gradle 의존성 업데이트". Boot·springdoc 메이저(Boot 4·springdoc 3 — 서로 묶여 움직이고 Hibernate 7이 따라온다)는
+  # 이 봇으로 올리지 않고 따로 계획한다. 그 밖의 메이저는 그룹 밖 개별 PR로 온다.
+  - package-ecosystem: gradle
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      gradle-minor-patch:
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: 'org.springframework.boot*'
+        update-types: ['version-update:semver-major']
+      - dependency-name: 'org.springdoc*'
+        update-types: ['version-update:semver-major']
+    commit-message:
+      prefix: build
+      include: scope
