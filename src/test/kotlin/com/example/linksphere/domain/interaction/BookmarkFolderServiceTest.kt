@@ -473,36 +473,36 @@ class BookmarkFolderServiceTest {
         }
     }
 
-    // DB 컬럼 varchar(100)보다 긴 이름은 저장 전에 400으로 막는다 - 예전에는 무결성 위반이 409 DUPLICATE_RESOURCE로 나갔다
+    // 15자(FE와 같은 상한)보다 긴 이름은 저장 전에 400으로 막는다
     @Test
-    fun `createFolder 는 100자를 넘는 이름을 InvalidInputException 으로 막고 저장하지 않는다`() {
+    fun `createFolder 는 15자를 넘는 이름을 InvalidInputException 으로 막고 저장하지 않는다`() {
         assertThrows(InvalidInputException::class.java) {
-            bookmarkFolderService.createFolder(UUID.randomUUID(), CreateFolderRequest(name = "가".repeat(101)))
+            bookmarkFolderService.createFolder(UUID.randomUUID(), CreateFolderRequest(name = "가".repeat(16)))
         }
 
         verifyNoInteractions(bookmarkFolderRepository)
     }
 
     @Test
-    fun `updateFolder 는 100자를 넘는 이름을 InvalidInputException 으로 막는다`() {
+    fun `updateFolder 는 15자를 넘는 이름을 InvalidInputException 으로 막는다`() {
         val userId = UUID.randomUUID()
         val folder = TableBookmarkFolder(userId = userId, name = "나중에")
         `when`(bookmarkFolderRepository.findById(folder.id)).thenReturn(Optional.of(folder))
 
         assertThrows(InvalidInputException::class.java) {
-            bookmarkFolderService.updateFolder(userId, folder.id, UpdateFolderRequest(name = "가".repeat(101)))
+            bookmarkFolderService.updateFolder(userId, folder.id, UpdateFolderRequest(name = "가".repeat(16)))
         }
     }
 
-    // 길이는 Postgres varchar처럼 문자(코드포인트) 수로 센다 - 이모지 100개는 UTF-16으로 200이지만 통과해야 한다
+    // 길이는 Postgres varchar·FE처럼 문자(코드포인트) 수로 센다 - 이모지 15개는 UTF-16으로 30이지만 통과해야 한다
     @Test
-    fun `createFolder 는 길이를 코드포인트로 세 이모지 100개 이름을 받는다`() {
+    fun `createFolder 는 길이를 코드포인트로 세 이모지 15개 이름을 받는다`() {
         val captor = ArgumentCaptor.forClass(TableBookmarkFolder::class.java)
         `when`(bookmarkFolderRepository.saveAndFlush(captor.capture())).thenAnswer { it.arguments[0] }
 
-        bookmarkFolderService.createFolder(UUID.randomUUID(), CreateFolderRequest(name = "😀".repeat(100)))
+        bookmarkFolderService.createFolder(UUID.randomUUID(), CreateFolderRequest(name = "😀".repeat(15)))
 
-        assertEquals(100, captor.value.name.codePointCount(0, captor.value.name.length))
+        assertEquals(15, captor.value.name.codePointCount(0, captor.value.name.length))
     }
 
     // ── setFolderPinned ──────────────────────────────────────────
