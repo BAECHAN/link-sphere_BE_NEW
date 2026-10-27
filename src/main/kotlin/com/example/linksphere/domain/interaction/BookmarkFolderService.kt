@@ -308,10 +308,9 @@ class BookmarkFolderService(
         )
     }
 
-    // 앞뒤 공백을 뗀 이름을 돌려준다. 길이는 DB 컬럼(bookmark_folders.name varchar(100))과 같은 기준으로 센다 - Postgres
-    // varchar(n)은 문자(코드포인트) 수라 String.length(UTF-16)로 세면 이모지가 두 번 세진다. 길이를 보지 않으면 101자 이름이
-    // 저장 때 "value too long" 무결성 위반이 돼 전역 안전망이 409 DUPLICATE_RESOURCE("이미 존재하는 항목")로 바꿨다
-    // (BookmarkFolderRepositoryIntegrationTest, 2026-10-26 재현).
+    // 앞뒤 공백을 뗀 이름을 돌려준다. 길이는 Postgres varchar(n)·FE와 같이 문자(코드포인트) 수로 센다 - String.length(UTF-16)로
+    // 세면 이모지가 두 번 세진다. 길이를 보지 않던 때는 101자 이름이 저장 때 "value too long" 무결성 위반이 돼 전역 안전망이
+    // 409 DUPLICATE_RESOURCE("이미 존재하는 항목")로 바꿨다(BookmarkFolderRepositoryIntegrationTest, 2026-10-26 재현).
     private fun validFolderName(raw: String): String {
         val name = raw.trim()
 
@@ -333,7 +332,9 @@ class BookmarkFolderService(
     }
 
     companion object {
-        // bookmark_folders.name varchar(100) - src/test/resources/db/schema.sql(운영 덤프)과 같은 값
-        private const val MAX_FOLDER_NAME_LENGTH = 100
+        // 화면에서 잘리지 않게 정한 상한 - FE BOOKMARK_FOLDER_NAME_MAX_LENGTH와 같은 값이다. 이름은 말줄임 없이 줄바꿈해 보여 주고,
+        // 15자면 가장 좁은 자리(360px 폰의 폴더 카드)에서도 보통 2줄에 들어간다(FE docs/BOOKMARK.md "폴더 이름 길이", 2026-10-27).
+        // DB 컬럼(bookmark_folders.name varchar(100))은 그대로라 이미 저장된 16~100자 이름도 읽을 수 있다.
+        private const val MAX_FOLDER_NAME_LENGTH = 15
     }
 }

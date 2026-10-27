@@ -311,6 +311,18 @@
 
 ### Changed
 
+- `bookmark` 폴더 이름 상한을 100자에서 15자로 낮춰 FE와 맞춘다
+  <details><summary>배경·구현</summary>
+
+  FE가 폴더 이름을 말줄임 없이 줄바꿈해 보여 주고, 15자부터 입력 아래에 이유를 띄워 막도록 바꿨다(FE #424, 2026-10-27).
+  한글·영문·공백은 폭이 달라 글자 수만으로는 화면 폭을 맞출 수 없어, 가장 좁은 자리(360px 폰의 폴더 카드)에서 보통 2줄에
+  들어가는 15자로 정했다 — 실측과 대안 비교는 FE `docs/BOOKMARK.md` "폴더 이름 길이". BE 상한 `MAX_FOLDER_NAME_LENGTH`도
+  같은 값으로 맞췄다. 셈법은 그대로 trim 뒤 코드포인트 수다. 생성·이름 변경에서 16자 이상은 400 `INVALID_INPUT`이다.
+  DB 컬럼(`varchar(100)`)은 바꾸지 않아 이미 저장된 16~100자 이름은 그대로 읽힌다. FE를 먼저 배포했다 — 옛 FE에서
+  16~100자를 넣으면 일반 실패 토스트로 끝나기 때문이다. (`BookmarkFolderService.kt`, `BookmarkFolderServiceTest.kt`)
+
+  </details>
+
 - `post` 글·댓글 목록의 좋아요·북마크 수를 DB에서 GROUP BY로 센다
   <details><summary>배경·구현</summary>
 
