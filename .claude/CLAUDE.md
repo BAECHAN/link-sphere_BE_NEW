@@ -385,9 +385,9 @@ FE가 `docs/FE-ARCHITECTURE.md`를 정본으로 두고 CLAUDE.md에 요약표만
    [`docs/VERSION-COMPATIBILITY.md`](https://github.com/BAECHAN/link-sphere_FE_NEW/blob/main/docs/VERSION-COMPATIBILITY.md)에도
    상대 레포 최소 버전 행 추가 — BE 자체 사본은 2026-09-14부로 폐지하고 안내
    문서로만 남겼다(경위: FE `docs/DECISIONS.md` 2026-09-14 항목)
-3. `chore(release): vX.Y.Z` 커밋 → `git push origin main`
+3. `chore(release): vX.Y.Z` 커밋을 워크트리 브랜치에 올려 **PR로 머지**한다(#129 방식). main 규칙셋이 필수 체크 `check`를 요구하고 관리자 예외가 없어 `git push origin main`은 거절된다(`GH013`, 2026-10-14부터 — `docs/CI-CHECK-GATE.md` §5 "main 브랜치 규칙셋"). 머지되면 아래 4번의 `release.yml`이 main push를 감지한다
 4. **태그·GitHub Release는 수동으로 만들지 않는다** — `.github/workflows/release.yml`이 `CHANGELOG.md` push를 감지해 최신 버전 섹션을 파싱, 동명 태그가 없으면 자동으로 태그 생성 + `gh release create`까지 수행한다(이미 있으면 스킵하는 멱등 동작). `git tag`/`gh release create`를 직접 실행할 필요 없음.
-- 현재 버전 기준점: `0.10.0` (정식 릴리즈 전 개발 단계 = `0.x`, `CHANGELOG.md`의 최신 버전 섹션 기준)
+- 버전 체계: 정식 릴리즈 전 개발 단계 = `0.x`. 현재 버전은 `CHANGELOG.md`의 최신 `## [X.Y.Z]` 섹션(또는 하단 compare 링크)에서 확인한다 — 릴리즈마다 바뀌는 값이라 여기 숫자로 적지 않는다(`0.10.0`으로 적혀 있다가 v0.11.0 릴리즈 뒤 낡았다, 2026-10-28. FE `changelog-release` skill과 같은 방식)
 
 ## 문서 파일 위치
 
