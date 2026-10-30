@@ -1,9 +1,9 @@
 plugins {
-    kotlin("jvm") version "2.1.0"
-    kotlin("plugin.spring") version "2.1.0"
+    kotlin("jvm") version "2.4.21"
+    kotlin("plugin.spring") version "2.4.21"
     id("org.springframework.boot") version "3.5.16"
     id("io.spring.dependency-management") version "1.1.7"
-    kotlin("plugin.jpa") version "2.1.0"
+    kotlin("plugin.jpa") version "2.4.21"
     id("com.github.johnrengelman.shadow") version "8.1.1"
     id("org.jlleitschuh.gradle.ktlint") version "14.2.0"
 }
@@ -103,7 +103,7 @@ dependencies {
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 
     // 아키텍처 규칙을 컴파일된 바이트코드로 검증 - DB·Spring 컨텍스트 없이 수십 ms 안에 끝난다.
-    testImplementation("com.tngtech.archunit:archunit-junit5:1.5.0")
+    testImplementation("com.tngtech.archunit:archunit-junit5:1.5.1")
 
     // 저장소 쿼리를 실제 Postgres(pgvector)로 검증하는 통합 테스트 - @Tag("integration")만 integrationTest
     // 태스크에서 돈다. Docker가 필요해 기본 test에서는 빠진다(docs/plans/2026-10-14-integration-test.md).
@@ -120,10 +120,10 @@ dependencies {
     developmentOnly("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.10.0")
 
     // Jsoup
-    implementation("org.jsoup:jsoup:1.17.2")
+    implementation("org.jsoup:jsoup:1.23.2")
 
     // Firebase Admin SDK (FCM 푸시 알림) — FCM만 사용하므로 불필요한 GCP 모듈 제외
-    implementation("com.google.firebase:firebase-admin:9.4.2") {
+    implementation("com.google.firebase:firebase-admin:9.11.0") {
         exclude(group = "com.google.cloud", module = "google-cloud-firestore")
         exclude(group = "com.google.cloud", module = "google-cloud-storage")
         exclude(group = "com.google.cloud", module = "google-cloud-bigquery")
@@ -132,7 +132,7 @@ dependencies {
     implementation("com.google.http-client:google-http-client-jackson2:1.44.2")
 
     // Lambda RequestStreamHandler 인터페이스
-    implementation("com.amazonaws:aws-lambda-java-core:1.2.3")
+    implementation("com.amazonaws:aws-lambda-java-core:1.4.1")
 
     // MockMvc로 DispatcherServlet을 직접 호출하기 위해 필요 (Tomcat 소켓 불사용)
     implementation("org.springframework:spring-test")
@@ -144,7 +144,7 @@ dependencies {
     // AI 분석을 별도 Lambda 호출로 위임(self-invoke)하기 위한 클라이언트.
     // url-connection-client는 커넥션 풀을 유지하지 않아(요청마다 새로 열고 닫음) SnapStart
     // 체크포인트 시점에 열린 소켓이 남지 않는다 — Apache/Netty 클라이언트는 풀링 때문에 위험하다.
-    implementation(platform("software.amazon.awssdk:bom:2.29.52"))
+    implementation(platform("software.amazon.awssdk:bom:2.57.4"))
     implementation("software.amazon.awssdk:lambda") {
         exclude(group = "software.amazon.awssdk", module = "netty-nio-client")
         exclude(group = "software.amazon.awssdk", module = "apache-client")
