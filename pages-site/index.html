@@ -1,0 +1,20 @@
+<!doctype html>
+<!--
+  이 저장소 GitHub Pages(https://baechan.github.io/link-sphere_BE_NEW/)의 첫 화면. 문서는 경로로 나눠 두고(지금은
+  api-docs/ 하나), 여기서는 api-docs/로 넘긴다. 2026-10-30 처음 올렸을 때는 Swagger UI가 이 루트에 있었으므로
+  그때 만든 링크(#/태그/operation)가 이어지도록 쿼리·해시를 붙여 넘긴다. 문서가 늘면 이 파일을 목록 페이지로 바꾼다.
+  배포는 api-docs-pages.yml, 배경은 docs/DEPLOY.md "공개 API 문서 (GitHub Pages)".
+-->
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <title>Link Sphere BE 문서</title>
+    <script>
+      location.replace('api-docs/' + location.search + location.hash);
+    </script>
+    <noscript><meta http-equiv="refresh" content="0; url=api-docs/" /></noscript>
+  </head>
+  <body>
+    <a href="api-docs/">API 문서</a>
+  </body>
+</html>

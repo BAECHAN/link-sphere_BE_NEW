@@ -287,7 +287,7 @@ Bookmark Folder 섹션 참고.
 
 ### 📚 Swagger UI
 
-**공개 API 문서**: <https://baechan.github.io/link-sphere_BE_NEW/> — `main` 코드의 스펙을
+**공개 API 문서**: <https://baechan.github.io/link-sphere_BE_NEW/api-docs/> — `main` 코드의 스펙을
 읽기 전용으로 보여 줍니다("Try it out" 없음, 이 페이지에서 운영 API로 요청이 나가지 않음).
 `src/main/**`·`build.gradle.kts` 등이 바뀐 `main` 병합마다 `api-docs-pages.yml`이 다시
 올립니다(운영 도메인이 아니라 GitHub Pages에 두는 이유와 설정은 `docs/DEPLOY.md`
