@@ -18,7 +18,7 @@
 | **Language**   | Kotlin 2.4.21                                     |
 | **Framework**  | Spring Boot 3.5.16                                |
 | **JDK**        | Java 17                                           |
-| **Build Tool** | Gradle 8.14.3 (Kotlin DSL) + Shadow JAR           |
+| **Build Tool** | Gradle 9.8.2 (Kotlin DSL) + Shadow JAR(`com.gradleup.shadow` 9.6.1) |
 | **Database**   | Supabase (PostgreSQL)                             |
 | **ORM**        | Spring Data JPA / Hibernate                       |
 | **Auth**       | 서버 관리 세션 토큰(access/refresh, member_sessions 테이블) + Spring Security |

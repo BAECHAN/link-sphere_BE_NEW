@@ -4,7 +4,7 @@ plugins {
     id("org.springframework.boot") version "3.5.16"
     id("io.spring.dependency-management") version "1.1.7"
     kotlin("plugin.jpa") version "2.4.21"
-    id("com.github.johnrengelman.shadow") version "8.1.1"
+    id("com.gradleup.shadow") version "9.6.1"
     id("org.jlleitschuh.gradle.ktlint") version "14.2.0"
 }
 
@@ -25,23 +25,38 @@ tasks.withType<com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar> {
     // 패키징 대상은 runtimeClasspath(기본값)가 아니라 productionRuntimeClasspath 다.
     // Spring Boot 플러그인이 runtimeClasspath.extendsFrom(developmentOnly) 를 걸어두기 때문에
     // 기본값을 쓰면 developmentOnly 의존성(Swagger UI)이 Lambda fat JAR 에 그대로 딸려 들어간다.
-    configurations = listOf<org.gradle.api.file.FileCollection>(
+    configurations = listOf(
         project.configurations.getByName("productionRuntimeClasspath"),
     )
-
-    // META-INF/services/** 병합 (SPI 서비스 로더용)
-    mergeServiceFiles()
 
     // mergeServiceFiles()는 spring.factories를 처리하지 않는다.
     // spring.factories에는 ApplicationContextFactory 등 Spring Boot 핵심 구현체가 등록되어 있으며,
     // 누락되면 ApplicationContext 생성 시 비웹 컨텍스트로 폴백된다.
     // Spring XML 네임스페이스 핸들러(handlers, schemas)와 자동 설정 목록도 동일하게 append로 병합한다.
-    append("META-INF/spring.factories")
-    append("META-INF/spring.handlers")
-    append("META-INF/spring.schemas")
-    append("META-INF/spring.tooling")
-    append("META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports")
-    append("META-INF/spring/org.springframework.boot.actuate.autoconfigure.web.ManagementContextConfiguration.imports")
+    val appendedFiles = listOf(
+        "META-INF/spring.factories",
+        "META-INF/spring.handlers",
+        "META-INF/spring.schemas",
+        "META-INF/spring.tooling",
+        "META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports",
+        "META-INF/spring/org.springframework.boot.actuate.autoconfigure.web.ManagementContextConfiguration.imports",
+    )
+
+    // Shadow 9는 같은 경로의 파일을 기본으로 먼저 들어온 하나만 남겨(EXCLUDE) 병합할 파일까지 첫 파일만 남는다 -
+    // 그대로 두면 자동 설정 목록이 295줄에서 2줄로 줄었다. 병합 대상만 INCLUDE로 열고 나머지는 Shadow 8처럼 먼저 들어온 것만
+    // 둔다(전부 INCLUDE면 commons-logging 클래스 등 20종이 JAR 안에 중복으로 들어간다). https://gradleup.com/shadow/changes/ 9.0.1
+    filesMatching(listOf("META-INF/services/**") + appendedFiles) {
+        duplicatesStrategy = DuplicatesStrategy.INCLUDE
+    }
+
+    // META-INF/services/** 병합 (SPI 서비스 로더용)
+    mergeServiceFiles()
+
+    appendedFiles.forEach { append(it) }
+
+    // Shadow 9는 의존성 중 하나라도 Multi-Release JAR면 Multi-Release: true를 넣는다. 그러면 Java 17 Lambda가
+    // META-INF/versions/의 버전별 클래스(Byte Buddy 등 약 3,000개)를 쓰기 시작한다 - Shadow 8로 만든 JAR와 같게 끈다.
+    addMultiReleaseAttribute = false
 
     // 2GB 초과 JAR 지원 (firebase-admin 등 포함 시 필요)
     isZip64 = true
@@ -179,7 +194,7 @@ tasks.test {
     useJUnitPlatform { excludeTags("integration", "openapi") }
 }
 
-val integrationTest by tasks.registering(Test::class) {
+tasks.register<Test>("integrationTest") {
     description = "실제 Postgres 컨테이너로 저장소 쿼리를 검증한다(Docker 필요)."
     group = "verification"
     testClassesDirs = sourceSets.test.get().output.classesDirs
@@ -190,7 +205,7 @@ val integrationTest by tasks.registering(Test::class) {
 
 // PR CI(api-compat.yml)가 운영 스펙과 비교할 현재 코드의 OpenAPI 스펙을 build/openapi/openapi.json으로 남긴다(Docker 필요).
 // 코드가 그대로여도 매번 새로 만든다 - 비교 대상인 운영 스펙이 바뀌므로 Gradle의 up-to-date 판정에 맡기지 않는다.
-val openApiSpec by tasks.registering(Test::class) {
+tasks.register<Test>("openApiSpec") {
     description = "현재 코드의 OpenAPI 스펙을 build/openapi/openapi.json으로 내보낸다(Docker 필요)."
     group = "documentation"
     testClassesDirs = sourceSets.test.get().output.classesDirs
@@ -205,7 +220,7 @@ val openApiSpec by tasks.registering(Test::class) {
 // springdoc을 올리면 함께 올라간다. webjar 안 경로(META-INF/resources/webjars/swagger-ui/<버전>/)는 떼고, 기본
 // swagger-initializer.js(petstore 예제 스펙을 부른다)는 빼고 api-docs-site/의 설정으로 바꿔 넣는다. 스펙(openapi.json)은
 // 워크플로가 openApiSpec 결과로 만들어 넣는다(docs/plans/2026-10-30-docs-to-github-pages.md).
-val swaggerUiSite by tasks.registering(Sync::class) {
+tasks.register<Sync>("swaggerUiSite") {
     description = "Swagger UI 정적 파일을 build/api-docs-site/로 모은다(공개 API 문서용)."
     group = "documentation"
     from(provider { configurations.runtimeClasspath.get().filter { it.name.startsWith("swagger-ui-") }.map { zipTree(it) } }) {
@@ -226,7 +241,7 @@ val swaggerUiSite by tasks.registering(Sync::class) {
 // 올렸을 때 컴파일러도 그 ktlint가 요청하는 버전을 따라간다.
 // eachDependency 규칙은 선언 순서대로 평가돼 마지막 useVersion이 이기고, requested는 앞 규칙이 바꿔도 원래 값 그대로다.
 // dependency-management의 규칙은 플러그인 적용 때(ktlint configuration이 생길 때) 먼저 등록되므로 이 블록은 그 뒤인 스크립트
-// 본문에 있어야 이긴다 - https://docs.gradle.org/8.14.3/javadoc/org/gradle/api/artifacts/ResolutionStrategy.html
+// 본문에 있어야 이긴다 - https://docs.gradle.org/9.8.2/javadoc/org/gradle/api/artifacts/ResolutionStrategy.html
 // ktlint-gradle이 Kotlin 2.4를 지원하는 ktlint 2.x를 쓸 수 있게 되면 이 블록이 아직 필요한지 다시 본다.
 configurations.matching { it.name.startsWith("ktlint") }.configureEach {
     resolutionStrategy.eachDependency {

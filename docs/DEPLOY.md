@@ -123,6 +123,22 @@ Shadow JAR 플러그인의 `mergeServiceFiles()`는 `META-INF/services/**` 파�
 
 따라서 `append("META-INF/spring.factories")`를 명시적으로 추가해야 한다. 추가로, `LambdaHandler`에서 `createApplicationContext()`를 오버라이드해 spring.factories 조회 자체를 우회하는 이중 방어도 적용되어 있다.
 
+**Shadow 9(`com.gradleup.shadow`)에서 더 필요한 설정** (2026-10-30, Gradle 9로 올리며 옛 `com.github.johnrengelman.shadow`
+8.1.1에서 옮김 — 8.1.1은 Gradle 9에서 JAR를 만들지 못한다):
+
+| 설정 (`build.gradle.kts` ShadowJar 블록) | 없으면 |
+| --- | --- |
+| 병합 대상(`META-INF/services/**`와 `append` 목록)만 `duplicatesStrategy = INCLUDE` | Shadow 9 기본값 `EXCLUDE`가 같은 경로의 첫 파일만 남겨 병합이 안 된다. 직접 빌드해 보니 자동 설정 목록이 295줄 → 2줄, `spring.factories`가 188줄 → 13줄이었다. 전부 `INCLUDE`로 하면 commons-logging 클래스 등 20종이 JAR 안에 중복된다 |
+| `addMultiReleaseAttribute = false` | `Multi-Release: true`가 붙어 Java 17 Lambda가 `META-INF/versions/`의 버전별 클래스(Byte Buddy 등 약 3,000개)를 쓰기 시작한다 |
+
+Shadow 공식 변경 내역은 9.0.1에서 _"대부분의 ResourceTransformer 사용자는 전략을 `INCLUDE`로 덮어써야 동작한다"_ (번역,
+[Shadow changes](https://gradleup.com/shadow/changes/))고 적는다. 옮길 때 두 JAR(Gradle 8 + Shadow 8.1.1, Gradle 9 + Shadow 9.6.1)를
+비교해 MANIFEST가 같고, 항목 약 59,760개의 CRC가 같은 것을 확인했다. 다른 것은 아래뿐이었다(직접 측정).
+- 주석만 다른 서비스 파일
+- `Properties`로 읽은 값과 순서가 같은 Spring 병합 파일 6개
+- 내장 Tomcat이 읽지 않는 `web-fragment.xml`
+- 빠진 `module-info.class` 2개
+
 ---
 
 ## AWS 초기 설정 (최초 1회)
