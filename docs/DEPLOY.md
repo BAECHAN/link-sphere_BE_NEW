@@ -139,6 +139,15 @@ Shadow 공식 변경 내역은 9.0.1에서 _"대부분의 ResourceTransformer �
 - 내장 Tomcat이 읽지 않는 `web-fragment.xml`
 - 빠진 `module-info.class` 2개
 
+이 설정들은 빠져도 빌드가 성공한다. 그래서 `verifyShadowJar` 태스크(`build.gradle.kts`, `shadowJar` 뒤에 자동으로 돎)가 만든 JAR를 열어
+세 가지를 확인하고, 어긋나면 빌드를 실패시킨다(2026-10-30 추가).
+- 같은 경로 항목이 두 번 들어가지 않았다
+- `META-INF/services/**`와 append 목록 파일이 의존성 JAR들의 같은 파일 줄(주석·빈 줄 제외)을 모두 담았다
+- `Multi-Release` 속성이 없다
+
+직접 측정: 병합 대상 `INCLUDE`를 지우고 `Multi-Release`를 켜면 자동 설정 목록 293줄 누락 등 15건으로 실패했다. 전체를 `INCLUDE`로
+바꾸면 중복 항목 20건으로 실패했다. 원래 설정에서는 병합 파일 37개를 확인하고 통과했고, 약 7초가 걸렸다.
+
 ---
 
 ## AWS 초기 설정 (최초 1회)
@@ -892,7 +901,7 @@ configuration에도 강제해 ktlint 1.5.0이 Kotlin 2.4 컴파일러로 깨지�
 | 2. JDK 17 | Amazon Corretto 설치 (Lambda 런타임과 동일 계열) |
 | 3. Gradle 캐시 | 의존성 캐시로 빌드 시간 단축 |
 | 4. Firebase JSON | GitHub Secret → `src/main/resources/firebase-service-account.json` (classpath 포함) |
-| 5. shadowJar 빌드 | `./gradlew ktlintCheck test shadowJar` → 스타일 검사·테스트 통과 후 모든 의존성 포함된 fat JAR |
+| 5. shadowJar 빌드 | `./gradlew ktlintCheck test shadowJar` → 스타일 검사·테스트 통과 후 모든 의존성 포함된 fat JAR, 이어서 `verifyShadowJar`가 중복 항목·병합 파일·`Multi-Release`를 확인 |
 | 6. JAR 검증 | 파일 존재 및 `LambdaHandler` 클래스 포함 여부 확인 |
 | 7. AWS 자격증명 | GitHub Secrets로 AWS 인증 |
 | 8. S3 업로드 | `deployments/YYYYMMDD-HHMMSS.jar` 키로 업로드 |
