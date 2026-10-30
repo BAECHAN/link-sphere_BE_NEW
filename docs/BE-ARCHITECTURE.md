@@ -317,6 +317,9 @@ return ApiResponse(HttpStatus.OK.value(), "Link preview", postService.previewLin
 - `data`는 `*DTO.kt`의 이름 있는 타입이다 — `Map`은 OpenAPI 스키마 이름이 생기지 않아 FE 생성 타입이 익명이 된다
   (`응답 데이터에 이름 없는 Map을 쓰지 않는다`).
 - `message`는 FE가 화면에 쓰지 않는다(FE는 `TEXTS`로 문구를 정한다) — 언어가 섞여 있어도 계약 문제는 아니다.
+- 성공 응답 스키마는 PR마다 `api-compat`가 운영 스펙과 비교한다 — FE를 깨는 변경(필드 삭제·타입 변경·필수 요청 필드 추가)이면
+  실패하고, 의도한 변경이면 PR에 `breaking-api` 라벨을 붙인다(`docs/CI-CHECK-GATE.md` §4.1). 오류 응답(`ErrorResponse`)은 스펙에
+  없어 비교되지 않는다.
 
 ### 실패 — 예외를 던지고 핸들러가 `ErrorResponse(status, code, message)`로 바꾼다
 
@@ -650,6 +653,7 @@ for (id in ids) {
 - [ ] `@Operation(summary, description = "실패: 401 X · 429 Y")` (`SwaggerDocsCoverageTest`)
 - [ ] `@WebMvcTest` 컨트롤러 테스트, Service 단위 테스트
 - [ ] README `## API 엔드포인트`, FE 코드 생성(`pnpm codegen:fetch && pnpm codegen`)
+- [ ] 기존 응답 필드를 지우거나 바꿨으면 PR의 `api-compat`가 실패한다 — 의도했으면 `breaking-api` 라벨을 붙이고 FE 동기화 PR을 함께 준비한다(§4)
 
 ### 새 도메인
 

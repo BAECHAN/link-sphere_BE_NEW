@@ -1,0 +1,97 @@
+name: API Compat
+
+# PR 코드가 내보내는 OpenAPI 스펙을 운영 스펙과 oasdiff로 비교해, FE를 깨는 변경(필드 삭제·타입 변경·필수 요청
+# 필드 추가 등)을 병합 전에 잡는다. 지금까지는 FE openapi-drift-check.yml(매일 cron)이 운영 배포 뒤에야 이슈로
+# 알려 줬다(docs/plans/2026-10-29-api-contract-checks.md, docs/CI-CHECK-GATE.md "API 호환성 게이트").
+#
+# ci.yml과 워크플로를 나눈 이유:
+# - 라벨을 붙이거나 떼면 다시 돌아야 해서 labeled·unlabeled 이벤트가 필요하다. ci.yml에 넣으면 라벨마다
+#   ktlint·테스트 전체가 다시 돈다.
+# - 필수 잡 check에 if:로 이 검사만 건너뛰게 하면 GitHub이 건너뛴 잡을 성공으로 보고해, 라벨 하나로 빨간 check가
+#   초록이 될 수 있다.
+on:
+  # ci.yml과 같은 이유로 base 브랜치·경로 필터를 두지 않는다 - 필수 체크에 경로 필터가 걸리면 해당 없는 PR이
+  # "Expected" 상태로 멈춘다
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+  workflow_dispatch:
+
+concurrency:
+  # 동시성 그룹은 레포 전체에서 공유된다 - ci.yml의 ci-${{ github.ref }}와 이름이 같으면 서로를 취소한다
+  group: api-compat-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  api-compat:
+    runs-on: ubuntu-latest
+    env:
+      # 액션이 아니라 이미지를 digest(멀티 아키텍처 인덱스)로 고정한다 - 로컬(arm64)·러너(amd64)가 같은 명령으로
+      # 같은 결과를 낸다. Dependabot이 올리지 않으므로 갱신은 docs/DEPLOY.md "액션 버전 관리"의 절차를 따른다
+      OASDIFF_IMAGE: tufin/oasdiff:v1.35.0@sha256:82b1840a77335562bb11ce95f77ad31745a0c6f3a770929333ed1c5ef466e400
+      PROD_SPEC_URL: https://linksphere.click/api/v3/api-docs
+      ACCEPT_BREAKING: ${{ contains(github.event.pull_request.labels.*.name, 'breaking-api') }}
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          java-version: '17'
+          distribution: 'corretto'
+
+      - name: Cache Gradle packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: ${{ runner.os }}-gradle-
+
+      # 앱 전체를 띄워 /v3/api-docs를 build/openapi/openapi.json으로 남긴다(OpenApiSpecExportTest, pgvector 컨테이너)
+      - name: PR 스펙 생성
+        run: chmod +x gradlew && ./gradlew openApiSpec --no-daemon
+
+      # springdoc은 요청받은 오리진을 servers에 채워 넣고 키 순서를 보장하지 않는다 - 양쪽에서 servers를 지우고 키를
+      # 정렬한다(FE scripts/lib/openapi-spec.js의 normalizeOpenApiSpec과 같은 정규화). 운영 스펙을 못 받으면 실패한다
+      - name: 운영 스펙과 PR 스펙 정규화
+        run: |
+          curl -fsS --retry 3 --retry-all-errors --max-time 30 "$PROD_SPEC_URL" -o "$RUNNER_TEMP/prod.raw.json"
+          jq -S 'del(.servers)' "$RUNNER_TEMP/prod.raw.json" > build/openapi/prod.json
+          jq -S 'del(.servers)' build/openapi/openapi.json > build/openapi/pr.json
+
+      - name: 변경 요약 (정보용)
+        continue-on-error: true
+        run: |
+          docker run --rm -v "$PWD/build/openapi:/specs:ro" "$OASDIFF_IMAGE" \
+            changelog /specs/prod.json /specs/pr.json --format markdown >> "$GITHUB_STEP_SUMMARY"
+
+      # 종료 코드: 0 = 깨지는 변경 없음, 1 = 깨지는 변경 있음, 그 밖(예: 102) = 스펙을 읽지 못함.
+      # breaking-api 라벨은 1만 통과시킨다 - 검사를 건너뛰는 게 아니라 "알고 병합한다"는 승인이라 보고는 그대로 남긴다
+      - name: 깨지는 변경 검사 (breaking-api 라벨이면 통과)
+        run: |
+          set +e
+          docker run --rm -v "$PWD/build/openapi:/specs:ro" "$OASDIFF_IMAGE" \
+            breaking /specs/prod.json /specs/pr.json --fail-on ERR --format githubactions
+          status=$?
+          set -e
+
+          if [ "$status" -eq 1 ] && [ "$ACCEPT_BREAKING" = 'true' ]; then
+            echo "::warning::breaking-api 라벨로 깨지는 변경을 승인했다 - FE 동기화 PR을 함께 준비한다"
+            exit 0
+          fi
+
+          exit "$status"
+
+      - name: PR 스펙 보관
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: openapi-pr-spec
+          path: build/openapi/pr.json
+          retention-days: 7
+          if-no-files-found: ignore
