@@ -138,6 +138,7 @@ flowchart TD
 | JDK 버전 | 17 (Corretto) | `ci.yml`·`deploy.yml` 공통, `deploy.yml`이 원본 |
 | Gradle 캐시 키 | `gradle-${{ hashFiles('**/*.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties') }}` | `ci.yml`·`deploy.yml` 공통 |
 | 배포 게이트 커맨드 | `./gradlew ktlintCheck test shadowJar --no-daemon` | `deploy.yml` "Ktlint check, test & Build Shadow JAR" 스텝 |
+| PR 검사 커맨드 | `./gradlew ktlintCheck test integrationTest shadowJar --no-daemon`. `shadowJar`는 배포할 fat JAR가 만들어지는지만 본다(2026-10-30 추가 — Gradle 9 wrapper PR #120은 테스트가 통과해 초록이었지만 Shadow 8.1.1이 Gradle 9에서 JAR를 못 만들어, 병합했다면 배포가 빌드 단계에서 멈췄다). JAR 내용 검증은 하지 않고 `deploy.yml`의 "Verify Shadow JAR"와 새 버전 5회 호출 검증이 맡는다 | `ci.yml` "Ktlint check, test, integration test & Build Shadow JAR" 스텝 |
 | CI에 필요한 시크릿 | 없음 (`firebase-service-account.json` 없이도 테스트 통과 확인) | 7장 |
 | API 호환성 게이트 트리거 | `pull_request` types `opened`·`synchronize`·`reopened`·`labeled`·`unlabeled`(필터 없음), 동시성 그룹 `api-compat-${{ github.ref }}`(ci.yml과 이름이 같으면 서로 취소한다) | `.github/workflows/api-compat.yml` |
 | 비교 기준 스펙 | `https://linksphere.click/api/v3/api-docs`(운영, curl 재시도 3회, 받지 못하면 실패) | `api-compat.yml`의 `PROD_SPEC_URL` |
