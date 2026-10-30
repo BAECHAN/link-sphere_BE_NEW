@@ -1,6 +1,6 @@
 # Link-Sphere BE — CI 검사 게이트 정비 (2026-09-03)
 
-> 마지막 검토: 2026-10-14
+> 마지막 검토: 2026-10-30
 
 ## 1. 쉬운 설명
 
@@ -78,6 +78,55 @@ Gradle 프로세스 안에서 컴파일 캐시를 공유하는 게 더 빠르고
 ("Ktlint check & Build Shadow JAR")이 이미 "빌드 전 검사"라는 의도를 담고
 있어서 자연스럽게 확장했다.
 
+### 4.1 API 호환성 게이트 `api-compat` (2026-10-30 추가)
+
+FE를 깨는 API 변경(응답 필드 삭제·타입 변경·필수 요청 필드 추가 등)을 병합 전에 잡는다. 그 전까지는 FE
+`openapi-drift-check.yml`(매일 cron)이 운영에 배포된 **뒤에** 이슈로 알려 줬다. 계획과 대안 비교는
+`docs/plans/2026-10-29-api-contract-checks.md`.
+
+```mermaid
+flowchart TD
+  pr["PR 열림·푸시·라벨 변경"] --> gen["./gradlew openApiSpec<br/>OpenApiSpecExportTest가 앱을 띄워<br/>build/openapi/openapi.json 생성"]
+  gen --> norm["운영 /api/v3/api-docs curl<br/>양쪽 jq -S 'del(.servers)'"]
+  norm --> sum["oasdiff changelog → Job Summary (정보용)"]
+  sum --> brk{"oasdiff breaking --fail-on ERR"}
+  brk -- "0: 깨지는 변경 없음" --> ok["✅"]
+  brk -- "1 + breaking-api 라벨" --> warn["경고 남기고 ✅"]
+  brk -- "1, 라벨 없음" --> fail["❌"]
+  brk -- "그 밖(102 = 스펙 못 읽음)" --> fail
+```
+
+- **스펙 생성**: `OpenApiSpecExportTest`(`@Tag("openapi")`)가 `@SpringBootTest`로 앱 전체를 띄우고 MockMvc로
+  `/v3/api-docs`를 받아 파일로 쓴다. CI에는 `application-secret.yml`이 없어 `@ActiveProfiles("openapi-spec")`가
+  yml의 `secret` 프로필을 대신하고, 기본값 없는 `gemini.*`·`supabase.*`는 더미 값으로 채운다. DB는 통합 테스트의
+  pgvector 컨테이너(`PostgresTestContainers`)를 쓴다. `test`·`integrationTest`에서는 이 태그를 빼고
+  `./gradlew openApiSpec`에서만 돈다.
+- **비교 기준은 운영 스펙**이다. main 병합이 곧 배포라 운영이 main과 같다. 정규화(`servers` 삭제·키 정렬)는 FE
+  `scripts/lib/openapi-spec.js`와 같다.
+- **`breaking-api` 라벨**은 검사를 건너뛰지 않는다. 깨지는 변경 보고는 그대로 남기고, 종료 코드 1(깨지는 변경
+  있음)만 통과시킨다. 102처럼 스펙을 못 읽은 경우는 라벨이 있어도 실패한다. 의도한 깨지는 변경이면 라벨을 붙이고
+  FE 동기화 PR을 함께 준비한다.
+- **`ci.yml`과 워크플로를 나눈 이유**: 라벨을 붙이고 뗄 때 다시 돌려면 `labeled`·`unlabeled` 이벤트가 필요한데,
+  `ci.yml`에 넣으면 라벨마다 ktlint·테스트 전체가 다시 돈다. 필수 잡 `check`에 `if:`로 이 검사만 건너뛰게 하면
+  GitHub이 건너뛴 잡을 성공으로 보고해 라벨 하나로 빨간 `check`가 초록이 될 수 있다.
+- **oasdiff는 액션이 아니라 이미지 digest로 고정**한다. 공식 액션(`oasdiff/oasdiff-action`)도 `review: false`로
+  외부 업로드를 끄면 쓸 수 있지만, 이미지 digest는 바뀌지 않고 로컬에서 같은 `docker run` 명령으로 재현된다. 대신
+  Dependabot이 올리지 않아 갱신은 `docs/DEPLOY.md` "액션 버전 관리"의 수동 절차를 따른다.
+- **로컬 재현**: `./gradlew openApiSpec` 뒤 아래를 실행한다(파일은 `build/openapi/`에 둔다).
+
+  ```bash
+  curl -fsS https://linksphere.click/api/v3/api-docs | jq -S 'del(.servers)' > build/openapi/prod.json
+  jq -S 'del(.servers)' build/openapi/openapi.json > build/openapi/pr.json
+  docker run --rm -v "$PWD/build/openapi:/specs:ro" \
+    tufin/oasdiff:v1.35.0@sha256:82b1840a77335562bb11ce95f77ad31745a0c6f3a770929333ed1c5ef466e400 \
+    breaking /specs/prod.json /specs/pr.json --fail-on ERR
+  ```
+
+- **보지 못하는 것**: 오류 응답(`ErrorResponse`)은 스펙에 없어 비교되지 않는다. 경로 변수 이름만 바뀌는 변경
+  (`{id}` → `{postId}`)은 요청 URL이 그대로라 기본 설정에서 깨지는 변경으로 보지 않는다 — 직접 측정(2026-10-30, v1.35.0):
+  운영 스펙의 `/post/{id}`를 `/post/{postId}`로 바꾼 사본은 기본 설정에서 `No breaking changes to report` exit 0,
+  `--include-path-params`를 주면 `api-path-removed-without-deprecation` 3건으로 exit 1이었다.
+
 ## 5. 운영 파라미터
 
 | 파라미터 | 값 | 실제 위치 |
@@ -90,7 +139,12 @@ Gradle 프로세스 안에서 컴파일 캐시를 공유하는 게 더 빠르고
 | Gradle 캐시 키 | `gradle-${{ hashFiles('**/*.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties') }}` | `ci.yml`·`deploy.yml` 공통 |
 | 배포 게이트 커맨드 | `./gradlew ktlintCheck test shadowJar --no-daemon` | `deploy.yml` "Ktlint check, test & Build Shadow JAR" 스텝 |
 | CI에 필요한 시크릿 | 없음 (`firebase-service-account.json` 없이도 테스트 통과 확인) | 7장 |
-| main 브랜치 규칙셋 | `Main Branch Protect`(2026-10-13): 브랜치 삭제 금지·강제 push 금지, 우회 없음(관리자에게도 적용). 만든 뒤 임시 브랜치를 대상에 잠깐 넣어 강제 push(`Cannot force-push to this branch`)와 삭제(`Cannot delete this branch`)가 거절되는 것을 확인했다. 2026-10-14부터 필수 상태 검사 `check`(출처를 GitHub Actions로 고정, 최신 main 기준 재실행 요구는 끔)를 건다 — `check`가 초록이어야 PR이 머지되고, 관리자 예외가 없어 `main` 직접 push(릴리즈 커밋 포함)도 `GH013`으로 거절된다. 되돌리려면 이 규칙셋을 `PUT`해 `required_status_checks` 규칙을 뺀다 | GitHub 설정(코드 아님, 규칙셋 id 25000908) — 적용 규칙: `gh api repos/BAECHAN/link-sphere_BE_NEW/rules/branches/main`, 대상·우회 목록: `gh api repos/BAECHAN/link-sphere_BE_NEW/rulesets/25000908` |
+| API 호환성 게이트 트리거 | `pull_request` types `opened`·`synchronize`·`reopened`·`labeled`·`unlabeled`(필터 없음), 동시성 그룹 `api-compat-${{ github.ref }}`(ci.yml과 이름이 같으면 서로 취소한다) | `.github/workflows/api-compat.yml` |
+| 비교 기준 스펙 | `https://linksphere.click/api/v3/api-docs`(운영, curl 재시도 3회, 받지 못하면 실패) | `api-compat.yml`의 `PROD_SPEC_URL` |
+| oasdiff 버전 | `tufin/oasdiff:v1.35.0` 멀티 아키텍처 인덱스 digest 고정, `breaking --fail-on ERR` | `api-compat.yml`의 `OASDIFF_IMAGE` |
+| 깨지는 변경 승인 라벨 | `breaking-api` — 종료 코드 1만 통과, 경고 주석을 남김 | `api-compat.yml` "깨지는 변경 검사" 스텝 |
+| 스펙 생성 태스크 | `./gradlew openApiSpec` → `build/openapi/openapi.json`, 경로 하한 30개(2026-10 기준 37개) | `build.gradle.kts`의 `openApiSpec`, `OpenApiSpecExportTest.kt` |
+| main 브랜치 규칙셋 | `Main Branch Protect`(2026-10-13): 브랜치 삭제 금지·강제 push 금지, 우회 없음(관리자에게도 적용). 만든 뒤 임시 브랜치를 대상에 잠깐 넣어 강제 push(`Cannot force-push to this branch`)와 삭제(`Cannot delete this branch`)가 거절되는 것을 확인했다. 2026-10-14부터 필수 상태 검사 `check`(출처를 GitHub Actions로 고정, 최신 main 기준 재실행 요구는 끔)를 건다 — `check`가 초록이어야 PR이 머지되고, 관리자 예외가 없어 `main` 직접 push(릴리즈 커밋 포함)도 `GH013`으로 거절된다. 2026-10-30부터 필수 체크에 `api-compat`(§4.1)를 더했다 — 같은 규칙의 `required_status_checks` 배열에 `{"context": "api-compat", "integration_id": 15368}`을 넣어 `PUT`했다. 되돌리려면 이 규칙셋을 `PUT`해 `required_status_checks` 규칙을 뺀다 | GitHub 설정(코드 아님, 규칙셋 id 25000908) — 적용 규칙: `gh api repos/BAECHAN/link-sphere_BE_NEW/rules/branches/main`, 대상·우회 목록: `gh api repos/BAECHAN/link-sphere_BE_NEW/rulesets/25000908` |
 
 ## 6. 검증 결과
 
@@ -211,6 +265,9 @@ upstream(`org.jlleitschuh.gradle.ktlint` 14.2.0, 최신)도 이 문제가 있고
   확인) 실제 PR 이벤트 트리거는 확인 완료됐다
 - ktlint·test가 실패했을 때 PR 화면에 어떻게 노출되는지(체크 실패 UI)는
   아직 실제로 본 적 없음 — 다음 실패 케이스에서 확인 필요
+- `api-compat`(§4.1)는 운영 스펙과 비교하므로, `breaking-api` 라벨로 병합한 변경이 배포되기 전까지(또는 배포가
+  실패하면) 다른 PR에서도 같은 깨지는 변경이 다시 보고된다. 배포가 끝난 뒤 재실행하면 사라진다. 이런 일이 잦으면
+  베이스 브랜치 코드로 스펙을 하나 더 만들어 비교하는 방식으로 바꾼다(CI 시간이 약 2배가 된다)
 
 ## 관련 문서
 

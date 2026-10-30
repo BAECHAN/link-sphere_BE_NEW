@@ -174,8 +174,9 @@ allOpen {
 
 // 통합 테스트(@Tag("integration"))는 Docker가 필요해 기본 test에서 빼고 integrationTest로만 돌린다.
 // 로컬·배포의 test는 지금처럼 Docker 없이 돌고, CI check 잡이 둘 다 돌린다.
+// 스펙 내보내기(@Tag("openapi"))도 Docker가 필요하고 검증이 아니라 산출물을 만드는 일이라 openApiSpec으로만 돌린다.
 tasks.test {
-    useJUnitPlatform { excludeTags("integration") }
+    useJUnitPlatform { excludeTags("integration", "openapi") }
 }
 
 val integrationTest by tasks.registering(Test::class) {
@@ -185,4 +186,16 @@ val integrationTest by tasks.registering(Test::class) {
     classpath = sourceSets.test.get().runtimeClasspath
     useJUnitPlatform { includeTags("integration") }
     shouldRunAfter(tasks.test)
+}
+
+// PR CI(api-compat.yml)가 운영 스펙과 비교할 현재 코드의 OpenAPI 스펙을 build/openapi/openapi.json으로 남긴다(Docker 필요).
+// 코드가 그대로여도 매번 새로 만든다 - 비교 대상인 운영 스펙이 바뀌므로 Gradle의 up-to-date 판정에 맡기지 않는다.
+val openApiSpec by tasks.registering(Test::class) {
+    description = "현재 코드의 OpenAPI 스펙을 build/openapi/openapi.json으로 내보낸다(Docker 필요)."
+    group = "documentation"
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    useJUnitPlatform { includeTags("openapi") }
+    systemProperty("openapi.outputFile", layout.buildDirectory.file("openapi/openapi.json").get().asFile.absolutePath)
+    outputs.upToDateWhen { false }
 }

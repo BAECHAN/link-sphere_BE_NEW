@@ -830,6 +830,13 @@ squash 병합한 뒤 워크플로별로 확인한다:
 | `deploy.yml` | 병합 직후 자동(자기 파일이 경로 필터에 있음) — 같은 코드로 새 버전 발행·검증·prod 승격까지 한 번 돈다 |
 | `prod-alias-drift-check.yml` | 6시간 예약 실행, 또는 `gh workflow run prod-alias-drift-check.yml --ref main` |
 | `history-dispatch.yml`·`release.yml` | 수동 실행이 없어 다음 실제 이벤트(소스 변경 push·`CHANGELOG.md` 갱신) 때 |
+| `api-compat.yml` | 그 PR의 API Compat |
+
+**oasdiff 이미지는 Dependabot이 올리지 않는다** — `api-compat.yml`은 액션이 아니라 `docker run`으로 oasdiff를 부르고,
+이미지를 태그가 아니라 멀티 아키텍처 인덱스 digest로 고정한다(`OASDIFF_IMAGE`, 이유는 `docs/CI-CHECK-GATE.md` §4.1).
+올릴 때는 [릴리스 목록](https://github.com/oasdiff/oasdiff/releases)에서 버전을 고르고
+`docker buildx imagetools inspect tufin/oasdiff:<버전>`의 맨 위 `Digest:` 값을 `<버전>@sha256:…`으로 바꾼 뒤, §4.1의 로컬 재현
+명령으로 운영 스펙과 같은 스펙을 비교해 `No changes detected`가 나오는지 확인한다.
 
 ### Gradle 의존성 업데이트 (Dependabot)
 
@@ -843,7 +850,8 @@ squash 병합한 뒤 워크플로별로 확인한다:
 1. CI(`check` — 단위·통합 테스트)가 녹색인지 본다.
 2. Spring Boot 패치가 들었으면 그 릴리스 노트의 "Attention Required"·회귀 항목을 읽는다(예: 3.5.12의 설정 덮어쓰기 회귀
    #49724는 3.5.13에서 고쳐졌다).
-3. springdoc이 올랐으면 병합·배포 뒤 FE에서 `pnpm codegen:fetch`로 스펙 차이를 확인한다 — 바뀌었으면 FE 스냅샷 동기화 PR.
+3. springdoc이 올랐으면 병합 전에 그 PR의 API Compat 실행 요약(Job Summary)에서 스펙 차이를 본다. 병합·배포 뒤 FE에서
+   `pnpm codegen:fetch`로 같은 차이를 확인한다 — 바뀌었으면 FE 스냅샷 동기화 PR.
 4. 배포 뒤 운영 스모크: `GET /api/post` 200, `POST /api/auth/logout`(+ `x-amz-content-sha256`)의 `set-cookie`,
    `GET /api/v3/api-docs` 200.
 
