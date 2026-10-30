@@ -858,6 +858,11 @@ squash 병합한 뒤 워크플로별로 확인한다:
 `hibernate-vector`는 버전 숫자 대신 BOM의 `hibernate.version`을 읽어서(`build.gradle.kts`) Boot를 올리면 hibernate-core와
 함께 따라간다.
 
+Kotlin 플러그인을 올려도 ktlint가 쓰는 Kotlin 컴파일러는 따라 오르지 않는다 — dependency-management가 `kotlin.version`을 ktlint
+configuration에도 강제해 ktlint 1.5.0이 Kotlin 2.4 컴파일러로 깨지던 것(#118)을 `build.gradle.kts` 끝의 블록이 ktlint가 요청한
+버전으로 되돌린다. 그래서 Kotlin 2.4에서 정식이 된 context parameters 문법을 쓰기 시작하면 ktlint 1.5.0이 그 코드를 파싱하지
+못한다 — 그때 ktlint를 올리면(1.8.0이면 컴파일러 2.2.21) 컴파일러도 저절로 따라간다.
+
 ---
 
 ## 배포 흐름 (deploy.yml 단계별)
