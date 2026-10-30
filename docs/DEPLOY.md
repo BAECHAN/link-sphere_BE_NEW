@@ -1,6 +1,6 @@
 # AWS Lambda SnapStart 배포 가이드
 
-> 마지막 검토: 2026-10-16
+> 마지막 검토: 2026-10-30
 
 ## 아키텍처 개요
 
@@ -831,6 +831,7 @@ squash 병합한 뒤 워크플로별로 확인한다:
 | `prod-alias-drift-check.yml` | 6시간 예약 실행, 또는 `gh workflow run prod-alias-drift-check.yml --ref main` |
 | `history-dispatch.yml`·`release.yml` | 수동 실행이 없어 다음 실제 이벤트(소스 변경 push·`CHANGELOG.md` 갱신) 때 |
 | `api-compat.yml` | 그 PR의 API Compat |
+| `api-docs-pages.yml` | 병합 직후 자동(자기 파일이 경로 필터에 있음), 또는 `gh workflow run api-docs-pages.yml --ref main` |
 
 **oasdiff 이미지는 Dependabot이 올리지 않는다** — `api-compat.yml`은 액션이 아니라 `docker run`으로 oasdiff를 부르고,
 이미지를 태그가 아니라 멀티 아키텍처 인덱스 digest로 고정한다(`OASDIFF_IMAGE`, 이유는 `docs/CI-CHECK-GATE.md` §4.1).
@@ -852,6 +853,8 @@ squash 병합한 뒤 워크플로별로 확인한다:
    #49724는 3.5.13에서 고쳐졌다).
 3. springdoc이 올랐으면 병합 전에 그 PR의 API Compat 실행 요약(Job Summary)에서 스펙 차이를 본다. 병합·배포 뒤 FE에서
    `pnpm codegen:fetch`로 같은 차이를 확인한다 — 바뀌었으면 FE 스냅샷 동기화 PR.
+   공개 API 문서의 Swagger UI도 springdoc이 끌어오는 webjar라 함께 올라간다 — 병합 뒤 "API Docs Deploy (GitHub Pages)" 성공과
+   화면을 확인한다("공개 API 문서 (GitHub Pages)" 절).
 4. 배포 뒤 운영 스모크: `GET /api/post` 200, `POST /api/auth/logout`(+ `x-amz-content-sha256`)의 `set-cookie`,
    `GET /api/v3/api-docs` 200.
 
@@ -991,6 +994,52 @@ Lambda 자체의 로그 형식(`LoggingConfig.LogFormat`)은 `Text` 그대로다
 돼 [`PERFORMANCE.md`](PERFORMANCE.md)의 `REPORT` 파싱 스크립트가 깨진다. `@Async` 작업(AI 분석의 Gemini 호출·카테고리
 분류)도 `AsyncConfig`의 TaskDecorator가 `awsRequestId`를 넘겨받는다. 메시지 부분 문자열로 찾는 기존 쿼리(예:
 `filter @message like /EAUTHTIMEOUT/`)는 그대로 동작한다.
+
+---
+
+## 공개 API 문서 (GitHub Pages)
+
+`main` 코드의 OpenAPI 스펙을 읽기 전용 Swagger UI로 이 저장소의 GitHub Pages에 올린다(2026-10-30 도입).
+
+- 주소: <https://baechan.github.io/link-sphere_BE_NEW/> (스펙 파일은 같은 폴더의 `openapi.json`)
+- 워크플로: [`.github/workflows/api-docs-pages.yml`](../.github/workflows/api-docs-pages.yml)(`API Docs Deploy (GitHub Pages)`)
+- 트리거: `main` push 중 `src/main/**`·`build.gradle.kts`·`settings.gradle.kts`·`gradle/**`·`api-docs-site/**`·자기 파일이
+  바뀐 때, 또는 `gh workflow run api-docs-pages.yml --repo BAECHAN/link-sphere_BE_NEW --ref main`. 소스가 바뀌면 Lambda
+  배포(`deploy.yml`)와 함께 돈다 — 둘은 서로 기다리지 않는다
+
+**운영 도메인이 아니라 github.io에 두는 이유** — `linksphere.click`과 같은 출처에서 도는 스크립트는 `POST /api/auth/refresh`를
+불러 refresh 쿠키(`__Host-refreshToken`, `Path=/`)가 붙은 응답에서 access token을 읽을 수 있다. 그래서 그 출처에는 앱 말고 다른
+코드(Swagger UI와 그 의존성)를 두지 않는다. `github.io`는 Public Suffix List에 있어 `baechan.github.io`는 다른 사이트이고, BE CORS
+허용 목록에도 없다. FE Storybook도 같은 이유로 FE 저장소 Pages로 옮겼다(FE `docs/DECISIONS.md` 2026-10-30, 계획
+[`docs/plans/2026-10-30-docs-to-github-pages.md`](plans/2026-10-30-docs-to-github-pages.md)).
+
+**무엇으로 만드나**
+
+| 조각 | 출처 |
+| --- | --- |
+| Swagger UI 정적 파일 | `./gradlew swaggerUiSite` — springdoc이 끌어오는 swagger-ui webjar(`developmentOnly` → `runtimeClasspath`)에서 꺼내 `build/api-docs-site/`에 모은다. springdoc을 올리면 함께 올라간다. 운영 jar(`productionRuntimeClasspath`)는 그대로다 |
+| 화면 설정 | [`api-docs-site/swagger-initializer.js`](../api-docs-site/swagger-initializer.js) — "Try it out" 끔(`supportedSubmitMethods: []`), 외부 검증기 호출 끔(`validatorUrl: null`), 상단 URL 입력창 없음, 쿼리 문자열 설정·인가 정보 저장 끔. 이 파일만 바꾸면 Lambda는 다시 배포되지 않는다 |
+| 스펙 | `./gradlew openApiSpec`(Docker 필요, `api-compat.yml`과 같은 태스크) 결과에서 `servers`만 `https://linksphere.click/api`로 바꿔 넣는다 |
+
+**저장소 설정 (최초 1회, 2026-10-30 적용)** — Pages 소스는 "GitHub Actions"다. `configure-pages`의 자동 활성화는 `GITHUB_TOKEN`이 아닌
+토큰을 요구해서 워크플로 밖에서 켰다:
+
+```bash
+gh api -X POST repos/BAECHAN/link-sphere_BE_NEW/pages -f build_type=workflow
+# github-pages 환경이 main만 배포하는지 확인
+gh api repos/BAECHAN/link-sphere_BE_NEW/environments/github-pages/deployment-branch-policies
+```
+
+**배포 뒤 확인**
+
+```bash
+curl -sI https://baechan.github.io/link-sphere_BE_NEW/ | head -1                       # 200
+curl -s https://baechan.github.io/link-sphere_BE_NEW/openapi.json | jq -c '.servers'   # [{"url":"https://linksphere.click/api"}]
+```
+
+**되돌리기·끄기** — Pages는 마지막으로 성공한 배포를 계속 보여 준다. 이전 상태로 되돌리려면 원인 커밋을 `main`에서 revert해 다시
+돌게 한다(`workflow_dispatch`는 `main`의 최신 커밋을 올리므로 그 자체로는 되돌리지 못한다). 사이트를 내리려면
+`gh api -X DELETE repos/BAECHAN/link-sphere_BE_NEW/pages`(다시 켤 때는 위 POST).
 
 ---
 

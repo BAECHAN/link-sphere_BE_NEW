@@ -24,7 +24,7 @@
 | **Push**       | Firebase Cloud Messaging (firebase-admin 9.4.2)  |
 | **Storage**    | Supabase Storage (이미지 업로드)                  |
 | **Mail**       | AWS SES (비밀번호 찾기·이메일 인증)               |
-| **API Docs**   | SpringDoc OpenAPI 2.7.0 (Swagger UI는 로컬 전용)       |
+| **API Docs**   | SpringDoc OpenAPI 2.7.0 (Swagger UI: 로컬, GitHub Pages 읽기 전용) |
 | **Infra**      | AWS Lambda (SnapStart) + CRaC                     |
 | **기타**       | Jsoup (HTML 파싱), Jackson, Spring Boot Actuator  |
 
@@ -287,9 +287,15 @@ Bookmark Folder 섹션 참고.
 
 ### 📚 Swagger UI
 
-Swagger UI는 `developmentOnly` 의존성이라 **로컬 `bootRun`에서만** 뜹니다 — 운영
-Lambda 아티팩트(shadowJar)에는 포함되지 않습니다. 로컬 서버 실행 후 아래 주소에서
-확인할 수 있습니다(context-path `/api` 포함):
+**공개 API 문서**: <https://baechan.github.io/link-sphere_BE_NEW/> — `main` 코드의 스펙을
+읽기 전용으로 보여 줍니다("Try it out" 없음, 이 페이지에서 운영 API로 요청이 나가지 않음).
+`src/main/**`·`build.gradle.kts` 등이 바뀐 `main` 병합마다 `api-docs-pages.yml`이 다시
+올립니다(운영 도메인이 아니라 GitHub Pages에 두는 이유와 설정은 `docs/DEPLOY.md`
+"공개 API 문서 (GitHub Pages)").
+
+운영 Lambda에는 Swagger UI가 없습니다 — `developmentOnly` 의존성이라 운영 Lambda
+아티팩트(shadowJar)에는 포함되지 않습니다. 요청을 직접 보내 보려면 로컬 서버 실행 후
+아래 주소를 씁니다(context-path `/api` 포함):
 
 ```
 http://localhost:8080/api/swagger-ui/index.html
