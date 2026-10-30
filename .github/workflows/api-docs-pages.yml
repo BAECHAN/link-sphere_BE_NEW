@@ -1,0 +1,79 @@
+name: API Docs Deploy (GitHub Pages)
+
+# 현재 main 코드의 OpenAPI 스펙을 읽기 전용 Swagger UI로 이 저장소의 GitHub Pages(https://baechan.github.io/link-sphere_BE_NEW/)에
+# 올린다. 운영 Lambda에는 Swagger UI가 없다(developmentOnly, build.gradle.kts).
+#
+# 운영 도메인(linksphere.click)이 아니라 github.io에 올리는 이유: 같은 출처에서 도는 스크립트는 refresh 쿠키를 붙여
+# /api/auth/refresh를 부를 수 있어, 앱이 아닌 코드(Swagger UI)를 그 출처에 두지 않는다. FE Storybook도 같은 이유로
+# FE 저장소 Pages에 있다(docs/plans/2026-10-30-docs-to-github-pages.md).
+#
+# - 파일: swaggerUiSite 태스크가 swagger-ui webjar(springdoc이 끌어옴)와 api-docs-site/의 설정을 build/api-docs-site/에 모은다
+# - 스펙: openApiSpec(api-compat.yml과 같은 태스크, Docker 필요)으로 만들고 servers만 운영 주소로 바꾼다
+on:
+  push:
+    branches: ['main']
+    paths:
+      - 'src/main/**'
+      - 'build.gradle.kts'
+      - 'settings.gradle.kts'
+      - 'gradle/**'
+      - 'api-docs-site/**'
+      - '.github/workflows/api-docs-pages.yml'
+  workflow_dispatch:
+
+concurrency:
+  # GitHub 공식 Pages 예제(actions/starter-workflows pages/static.yml)와 같다 - 진행 중인 게시를 취소하지 않고
+  # 순서대로 처리한다.
+  group: pages
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pages: write # Pages 게시
+  id-token: write # deploy-pages가 게시 요청을 OIDC 토큰으로 증명한다
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # 저장소 Pages 소스가 "GitHub Actions"일 때 쓰는 환경 - main만 배포하도록 보호 규칙이 걸려 있다(docs/DEPLOY.md)
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          java-version: '17'
+          distribution: 'corretto'
+
+      - name: Cache Gradle packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: ${{ runner.os }}-gradle-
+
+      - name: 스펙 생성과 Swagger UI 파일 모으기
+        run: chmod +x gradlew && ./gradlew openApiSpec swaggerUiSite --no-daemon
+
+      # springdoc은 요청받은 오리진을 servers에 채운다(OpenApiSpecExportTest는 MockMvc라 http://localhost). 화면에 보이는
+      # 주소를 운영 API 기준 주소로 바꾼다.
+      # swaggerUiSite는 Sync라 출력 폴더에 없는 파일을 지우므로, 스펙은 그 뒤에 넣는다
+      - name: 스펙 넣기
+        run: |
+          jq '.servers = [{"url": "https://linksphere.click/api"}]' build/openapi/openapi.json > build/api-docs-site/openapi.json
+          test -s build/api-docs-site/swagger-ui-bundle.js
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: build/api-docs-site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

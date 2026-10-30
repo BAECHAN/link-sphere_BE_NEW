@@ -200,6 +200,24 @@ val openApiSpec by tasks.registering(Test::class) {
     outputs.upToDateWhen { false }
 }
 
+// 공개 API 문서(api-docs-pages.yml → GitHub Pages)에 올릴 Swagger UI 정적 파일을 build/api-docs-site/에 모은다.
+// 파일은 springdoc-openapi-starter-webmvc-ui가 끌어오는 swagger-ui webjar(developmentOnly → runtimeClasspath)에서 꺼내므로
+// springdoc을 올리면 함께 올라간다. webjar 안 경로(META-INF/resources/webjars/swagger-ui/<버전>/)는 떼고, 기본
+// swagger-initializer.js(petstore 예제 스펙을 부른다)는 빼고 api-docs-site/의 설정으로 바꿔 넣는다. 스펙(openapi.json)은
+// 워크플로가 openApiSpec 결과로 만들어 넣는다(docs/plans/2026-10-30-docs-to-github-pages.md).
+val swaggerUiSite by tasks.registering(Sync::class) {
+    description = "Swagger UI 정적 파일을 build/api-docs-site/로 모은다(공개 API 문서용)."
+    group = "documentation"
+    from(provider { configurations.runtimeClasspath.get().filter { it.name.startsWith("swagger-ui-") }.map { zipTree(it) } }) {
+        include("META-INF/resources/webjars/swagger-ui/*/**")
+        exclude("**/*.map", "**/oauth2-redirect.*", "**/swagger-initializer.js")
+        eachFile { relativePath = RelativePath(true, *relativePath.segments.drop(5).toTypedArray()) }
+        includeEmptyDirs = false
+    }
+    from("api-docs-site")
+    into(layout.buildDirectory.dir("api-docs-site"))
+}
+
 // ktlint는 Kotlin 컴파일러(kotlin-compiler-embeddable)를 품고 도는데, Spring Boot 플러그인이 kotlin.version을 Kotlin 플러그인
 // 버전으로 잡고 dependency-management가 그 값을 모든 configuration에 강제해 ktlint의 컴파일러까지 바뀐다. ktlint 1.8.0 이하
 // (ktlint-gradle 14.2.0 기본값 1.5.0)는 Kotlin 2.4 컴파일러로 초기화하지 못해 "Extensions storage is not registered"로 실패한다

@@ -339,6 +339,7 @@ FE가 `docs/FE-ARCHITECTURE.md`를 정본으로 두고 CLAUDE.md에 요약표만
 ./gradlew test             # 단위·아키텍처 테스트 (integration 태그 제외)
 ./gradlew integrationTest  # 실제 Postgres 통합 테스트 (Docker 필요, PR CI에서 실행)
 ./gradlew openApiSpec      # 현재 코드의 OpenAPI 스펙을 build/openapi/openapi.json으로 (Docker 필요, PR CI api-compat가 운영과 비교)
+./gradlew swaggerUiSite    # 공개 API 문서용 Swagger UI 정적 파일을 build/api-docs-site/로 (스펙은 api-docs-pages.yml이 넣음)
 ./gradlew ktlintCheck      # 코드 스타일 검사
 ./gradlew ktlintFormat     # 코드 스타일 자동 수정
 ```
