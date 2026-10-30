@@ -129,7 +129,7 @@ dependencies {
         exclude(group = "com.google.cloud", module = "google-cloud-bigquery")
     }
     // firebase-admin이 의존하는 JacksonFactory가 classpath에서 누락되는 문제 해결
-    implementation("com.google.http-client:google-http-client-jackson2:1.44.2")
+    implementation("com.google.http-client:google-http-client-jackson2:2.2.0")
 
     // Lambda RequestStreamHandler 인터페이스
     implementation("com.amazonaws:aws-lambda-java-core:1.4.1")
