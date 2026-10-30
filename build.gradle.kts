@@ -1,3 +1,7 @@
+import java.util.jar.JarFile
+import java.util.zip.ZipEntry
+import java.util.zip.ZipFile
+
 plugins {
     kotlin("jvm") version "2.4.21"
     kotlin("plugin.spring") version "2.4.21"
@@ -16,6 +20,20 @@ tasks.assemble {
     dependsOn("shadowJar")
 }
 
+// mergeServiceFiles()는 spring.factories를 처리하지 않는다.
+// spring.factories에는 ApplicationContextFactory 등 Spring Boot 핵심 구현체가 등록되어 있으며,
+// 누락되면 ApplicationContext 생성 시 비웹 컨텍스트로 폴백된다.
+// Spring XML 네임스페이스 핸들러(handlers, schemas)와 자동 설정 목록도 동일하게 append로 병합한다.
+// 아래 verifyShadowJar도 이 목록으로 병합 결과를 확인한다.
+val shadowAppendedFiles = listOf(
+    "META-INF/spring.factories",
+    "META-INF/spring.handlers",
+    "META-INF/spring.schemas",
+    "META-INF/spring.tooling",
+    "META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports",
+    "META-INF/spring/org.springframework.boot.actuate.autoconfigure.web.ManagementContextConfiguration.imports",
+)
+
 tasks.withType<com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar> {
     archiveClassifier.set("all")
     manifest {
@@ -29,30 +47,17 @@ tasks.withType<com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar> {
         project.configurations.getByName("productionRuntimeClasspath"),
     )
 
-    // mergeServiceFiles()는 spring.factories를 처리하지 않는다.
-    // spring.factories에는 ApplicationContextFactory 등 Spring Boot 핵심 구현체가 등록되어 있으며,
-    // 누락되면 ApplicationContext 생성 시 비웹 컨텍스트로 폴백된다.
-    // Spring XML 네임스페이스 핸들러(handlers, schemas)와 자동 설정 목록도 동일하게 append로 병합한다.
-    val appendedFiles = listOf(
-        "META-INF/spring.factories",
-        "META-INF/spring.handlers",
-        "META-INF/spring.schemas",
-        "META-INF/spring.tooling",
-        "META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports",
-        "META-INF/spring/org.springframework.boot.actuate.autoconfigure.web.ManagementContextConfiguration.imports",
-    )
-
     // Shadow 9는 같은 경로의 파일을 기본으로 먼저 들어온 하나만 남겨(EXCLUDE) 병합할 파일까지 첫 파일만 남는다 -
     // 그대로 두면 자동 설정 목록이 295줄에서 2줄로 줄었다. 병합 대상만 INCLUDE로 열고 나머지는 Shadow 8처럼 먼저 들어온 것만
     // 둔다(전부 INCLUDE면 commons-logging 클래스 등 20종이 JAR 안에 중복으로 들어간다). https://gradleup.com/shadow/changes/ 9.0.1
-    filesMatching(listOf("META-INF/services/**") + appendedFiles) {
+    filesMatching(listOf("META-INF/services/**") + shadowAppendedFiles) {
         duplicatesStrategy = DuplicatesStrategy.INCLUDE
     }
 
     // META-INF/services/** 병합 (SPI 서비스 로더용)
     mergeServiceFiles()
 
-    appendedFiles.forEach { append(it) }
+    shadowAppendedFiles.forEach { append(it) }
 
     // Shadow 9는 의존성 중 하나라도 Multi-Release JAR면 Multi-Release: true를 넣는다. 그러면 Java 17 Lambda가
     // META-INF/versions/의 버전별 클래스(Byte Buddy 등 약 3,000개)를 쓰기 시작한다 - Shadow 8로 만든 JAR와 같게 끈다.
@@ -78,6 +83,68 @@ tasks.withType<com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar> {
     exclude("google/api/**")
     // Swagger UI 정적 에셋 (API 스펙 JSON만 사용, UI HTML/JS 불필요)
     exclude("META-INF/resources/webjars/**")
+
+    finalizedBy("verifyShadowJar")
+}
+
+// 위 설정이 지켜졌는지 만든 JAR를 열어 확인한다. shadowJar 뒤에 자동으로 돌아 로컬·PR CI(ci.yml)·배포(deploy.yml)가 같은
+// 검사를 쓴다. Shadow 9로 옮길 때 기본값 하나로 자동 설정 목록이 295줄에서 2줄이 됐는데도 빌드는 성공했다 - 이런 조용한 손상을
+// 배포 전에 막는다(docs/DEPLOY.md "Shadow JAR에서 spring.factories를 append하는 이유").
+// - 같은 경로 항목이 두 번 들어가지 않았다(병합 대상 밖까지 INCLUDE면 생긴다)
+// - META-INF/services/**와 shadowAppendedFiles가 의존성 JAR들의 같은 파일 줄(주석·빈 줄 제외)을 모두 담았다
+// - Multi-Release 속성이 없다(addMultiReleaseAttribute = false)
+tasks.register("verifyShadowJar") {
+    description = "shadowJar가 만든 JAR의 중복 항목·병합 파일·Multi-Release 속성을 확인한다."
+    group = "verification"
+    val fatJar = tasks.named<com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar>("shadowJar").flatMap { it.archiveFile }
+    val dependencyJars: FileCollection = configurations.productionRuntimeClasspath.get()
+    val appendedFiles = shadowAppendedFiles
+    inputs.file(fatJar)
+    inputs.files(dependencyJars)
+    doLast {
+        fun isMergedEntry(name: String) = (name.startsWith("META-INF/services/") && !name.endsWith("/")) || name in appendedFiles
+        fun meaningfulLines(zip: ZipFile, entry: ZipEntry) = zip.getInputStream(entry).bufferedReader().readLines()
+            .map { it.substringBefore('#').trim() }
+            .filter { it.isNotEmpty() }
+            .toSet()
+
+        val expected = mutableMapOf<String, MutableSet<String>>()
+
+        dependencyJars.filter { it.name.endsWith(".jar") }.forEach { jar ->
+            ZipFile(jar).use { zip ->
+                zip.entries().asSequence().filter { isMergedEntry(it.name) }.forEach { entry ->
+                    expected.getOrPut(entry.name) { mutableSetOf() }.addAll(meaningfulLines(zip, entry))
+                }
+            }
+        }
+
+        val problems = mutableListOf<String>()
+
+        JarFile(fatJar.get().asFile).use { jar ->
+            jar.entries().asSequence().map { it.name }.groupingBy { it }.eachCount()
+                .filterValues { it > 1 }.keys
+                .forEach { problems += "중복 항목: $it" }
+
+            expected.forEach { (name, lines) ->
+                val merged = jar.getJarEntry(name)?.let { meaningfulLines(jar, it) }.orEmpty()
+                val missing = lines - merged
+
+                if (missing.isNotEmpty()) {
+                    problems += "$name: 의존성에 있는 ${missing.size}줄이 빠졌다(예: ${missing.first()})"
+                }
+            }
+
+            if (jar.manifest?.mainAttributes?.getValue("Multi-Release") != null) {
+                problems += "MANIFEST에 Multi-Release 속성이 있다"
+            }
+        }
+
+        if (problems.isNotEmpty()) {
+            throw GradleException("Shadow JAR 검사 실패 ${problems.size}건:\n" + problems.joinToString("\n"))
+        }
+
+        logger.lifecycle("Shadow JAR 검사 통과: 병합 파일 ${expected.size}개, 중복 항목 없음, Multi-Release 없음")
+    }
 }
 
 tasks.build {
