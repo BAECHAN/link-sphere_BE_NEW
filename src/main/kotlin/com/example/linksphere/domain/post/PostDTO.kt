@@ -1,6 +1,7 @@
 package com.example.linksphere.domain.post
 
 import com.example.linksphere.domain.category.CategoryResponse
+import com.fasterxml.jackson.annotation.JsonProperty
 import org.springframework.data.domain.Page
 import java.time.LocalDateTime
 import java.util.UUID
@@ -39,6 +40,7 @@ data class PostStats(
 
 data class PostLikeResponse(
     val isLiked: Boolean,
+    @get:JsonProperty("likes")
     val likeCount: Int,
 )
 
