@@ -199,3 +199,21 @@ val openApiSpec by tasks.registering(Test::class) {
     systemProperty("openapi.outputFile", layout.buildDirectory.file("openapi/openapi.json").get().asFile.absolutePath)
     outputs.upToDateWhen { false }
 }
+
+// ktlint는 Kotlin 컴파일러(kotlin-compiler-embeddable)를 품고 도는데, Spring Boot 플러그인이 kotlin.version을 Kotlin 플러그인
+// 버전으로 잡고 dependency-management가 그 값을 모든 configuration에 강제해 ktlint의 컴파일러까지 바뀐다. ktlint 1.8.0 이하
+// (ktlint-gradle 14.2.0 기본값 1.5.0)는 Kotlin 2.4 컴파일러로 초기화하지 못해 "Extensions storage is not registered"로 실패한다
+// (Kotlin 2.1.0 → 2.4.21로 올린 Dependabot #118에서 재현) - https://github.com/ktlint/ktlint/issues/3403
+// 그래서 ktlint configuration에서만 org.jetbrains.kotlin을 ktlint가 요청한 버전으로 되돌린다. 숫자로 고정하지 않아야 ktlint를
+// 올렸을 때 컴파일러도 그 ktlint가 요청하는 버전을 따라간다.
+// eachDependency 규칙은 선언 순서대로 평가돼 마지막 useVersion이 이기고, requested는 앞 규칙이 바꿔도 원래 값 그대로다.
+// dependency-management의 규칙은 플러그인 적용 때(ktlint configuration이 생길 때) 먼저 등록되므로 이 블록은 그 뒤인 스크립트
+// 본문에 있어야 이긴다 - https://docs.gradle.org/8.14.3/javadoc/org/gradle/api/artifacts/ResolutionStrategy.html
+// ktlint-gradle이 Kotlin 2.4를 지원하는 ktlint 2.x를 쓸 수 있게 되면 이 블록이 아직 필요한지 다시 본다.
+configurations.matching { it.name.startsWith("ktlint") }.configureEach {
+    resolutionStrategy.eachDependency {
+        if (requested.group == "org.jetbrains.kotlin") {
+            useVersion(requested.version!!)
+        }
+    }
+}
