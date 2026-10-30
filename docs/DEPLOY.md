@@ -1001,10 +1001,10 @@ Lambda 자체의 로그 형식(`LoggingConfig.LogFormat`)은 `Text` 그대로다
 
 `main` 코드의 OpenAPI 스펙을 읽기 전용 Swagger UI로 이 저장소의 GitHub Pages에 올린다(2026-10-30 도입).
 
-- 주소: <https://baechan.github.io/link-sphere_BE_NEW/> (스펙 파일은 같은 폴더의 `openapi.json`)
+- 주소: <https://baechan.github.io/link-sphere_BE_NEW/api-docs/> (스펙 파일은 같은 폴더의 `openapi.json`)
 - 워크플로: [`.github/workflows/api-docs-pages.yml`](../.github/workflows/api-docs-pages.yml)(`API Docs Deploy (GitHub Pages)`)
-- 트리거: `main` push 중 `src/main/**`·`build.gradle.kts`·`settings.gradle.kts`·`gradle/**`·`api-docs-site/**`·자기 파일이
-  바뀐 때, 또는 `gh workflow run api-docs-pages.yml --repo BAECHAN/link-sphere_BE_NEW --ref main`. 소스가 바뀌면 Lambda
+- 트리거: `main` push 중 `src/main/**`·`build.gradle.kts`·`settings.gradle.kts`·`gradle/**`·`api-docs-site/**`·`pages-site/**`·
+  자기 파일이 바뀐 때, 또는 `gh workflow run api-docs-pages.yml --repo BAECHAN/link-sphere_BE_NEW --ref main`. 소스가 바뀌면 Lambda
   배포(`deploy.yml`)와 함께 돈다 — 둘은 서로 기다리지 않는다
 
 **운영 도메인이 아니라 github.io에 두는 이유** — `linksphere.click`과 같은 출처에서 도는 스크립트는 `POST /api/auth/refresh`를
@@ -1020,6 +1020,14 @@ Lambda 자체의 로그 형식(`LoggingConfig.LogFormat`)은 `Text` 그대로다
 | Swagger UI 정적 파일 | `./gradlew swaggerUiSite` — springdoc이 끌어오는 swagger-ui webjar(`developmentOnly` → `runtimeClasspath`)에서 꺼내 `build/api-docs-site/`에 모은다. springdoc을 올리면 함께 올라간다. 운영 jar(`productionRuntimeClasspath`)는 그대로다 |
 | 화면 설정 | [`api-docs-site/swagger-initializer.js`](../api-docs-site/swagger-initializer.js) — "Try it out" 끔(`supportedSubmitMethods: []`), 외부 검증기 호출 끔(`validatorUrl: null`), 상단 URL 입력창 없음, 쿼리 문자열 설정·인가 정보 저장 끔. 이 파일만 바꾸면 Lambda는 다시 배포되지 않는다 |
 | 스펙 | `./gradlew openApiSpec`(Docker 필요, `api-compat.yml`과 같은 태스크) 결과에서 `servers`만 `https://linksphere.click/api`로 바꿔 넣는다 |
+| 사이트 첫 화면 | [`pages-site/index.html`](../pages-site/index.html) — 워크플로의 "사이트 조립" 단계가 이 폴더를 사이트 루트에, 위 결과를 `api-docs/`에 넣는다 |
+
+**주소 구조** — 저장소 하나에 Pages 사이트는 하나뿐이라 문서마다 하위 경로(`api-docs/`)를 쓰고, 루트 첫 화면은 지금 문서가 하나라
+`api-docs/`로 넘긴다. 쿼리·해시를 그대로 붙여 루트에 Swagger UI가 있던 첫 배포(2026-10-30) 때의 링크(`#/태그/operation`)도 이어진다.
+Pages 배포는 사이트 전체를 바꾼다 — deploy-pages 기여자는 _"모든 콘텐츠를 배포 시점에 줘야 한다. 나중 배포가 모든 것을
+대체한다"_ 고 답했다(번역, [actions/deploy-pages#50 댓글](https://github.com/actions/deploy-pages/issues/50#issuecomment-1252593074)).
+그래서 문서를 더할 때는 다른 워크플로로 따로 올리지 않고 이 워크플로의 "사이트 조립" 단계에서 함께 만들어 `build/pages-site/<경로>/`에
+넣고, 첫 화면을 목록 페이지로 바꾼다. FE 저장소 Pages도 같은 구조다(Storybook은 `/link-sphere_FE_NEW/storybook/`).
 
 **저장소 설정 (최초 1회, 2026-10-30 적용)** — Pages 소스는 "GitHub Actions"다. `configure-pages`의 자동 활성화는 `GITHUB_TOKEN`이 아닌
 토큰을 요구해서 워크플로 밖에서 켰다:
@@ -1033,8 +1041,8 @@ gh api repos/BAECHAN/link-sphere_BE_NEW/environments/github-pages/deployment-bra
 **배포 뒤 확인**
 
 ```bash
-curl -sI https://baechan.github.io/link-sphere_BE_NEW/ | head -1                       # 200
-curl -s https://baechan.github.io/link-sphere_BE_NEW/openapi.json | jq -c '.servers'   # [{"url":"https://linksphere.click/api"}]
+curl -sI https://baechan.github.io/link-sphere_BE_NEW/api-docs/ | head -1                       # 200
+curl -s https://baechan.github.io/link-sphere_BE_NEW/api-docs/openapi.json | jq -c '.servers'   # [{"url":"https://linksphere.click/api"}]
 ```
 
 **되돌리기·끄기** — Pages는 마지막으로 성공한 배포를 계속 보여 준다. 이전 상태로 되돌리려면 원인 커밋을 `main`에서 revert해 다시
