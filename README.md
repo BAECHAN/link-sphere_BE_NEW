@@ -6,6 +6,9 @@
 임베딩(pgvector)으로도 색인되어, 게시글 목록 검색은 키워드 매칭과 의미
 기반 검색을 함께 쓰는 하이브리드 방식으로 동작합니다.
 
+**공개 API 문서(Swagger UI, 읽기 전용)**: <https://baechan.github.io/link-sphere_BE_NEW/api-docs/> — `main` 병합마다
+갱신됩니다. 자세한 내용은 아래 [📚 Swagger UI](#-swagger-ui) 절을 참고하세요.
+
 ---
 
 ## 기술 스택
