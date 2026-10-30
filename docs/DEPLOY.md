@@ -848,7 +848,7 @@ squash 병합한 뒤 워크플로별로 확인한다:
 
 `build.gradle.kts`는 `deploy.yml` 경로 필터에 있어 **병합이 곧 운영 배포·prod 승격**이다. 그래서 PR이 오면:
 
-1. CI(`check` — 단위·통합 테스트)가 녹색인지 본다.
+1. CI(`check` — 단위·통합 테스트, 배포할 Shadow JAR 빌드)가 녹색인지 본다.
 2. Spring Boot 패치가 들었으면 그 릴리스 노트의 "Attention Required"·회귀 항목을 읽는다(예: 3.5.12의 설정 덮어쓰기 회귀
    #49724는 3.5.13에서 고쳐졌다).
 3. springdoc이 올랐으면 병합 전에 그 PR의 API Compat 실행 요약(Job Summary)에서 스펙 차이를 본다. 병합·배포 뒤 FE에서

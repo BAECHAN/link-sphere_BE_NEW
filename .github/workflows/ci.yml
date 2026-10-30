@@ -54,5 +54,7 @@ jobs:
           restore-keys: ${{ runner.os }}-gradle-
 
       # integrationTest는 실제 Postgres 컨테이너(Testcontainers)를 띄운다 - GitHub 호스팅 러너의 Docker를 쓴다
-      - name: Ktlint check, test & integration test
-        run: chmod +x gradlew && ./gradlew ktlintCheck test integrationTest --no-daemon
+      # shadowJar는 deploy.yml이 배포하는 fat JAR를 PR에서도 만들어 본다. 이게 없을 때 Gradle 9 wrapper PR(#120)이
+      # 테스트는 통과했지만 Shadow 8.1.1이 Gradle 9에서 JAR를 못 만들어 병합했다면 배포가 빌드 단계에서 멈췄다.
+      - name: Ktlint check, test, integration test & Build Shadow JAR
+        run: chmod +x gradlew && ./gradlew ktlintCheck test integrationTest shadowJar --no-daemon
