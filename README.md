@@ -15,7 +15,7 @@
 
 | 구분           | 기술                                              |
 | -------------- | ------------------------------------------------- |
-| **Language**   | Kotlin 2.1.0                                      |
+| **Language**   | Kotlin 2.4.21                                     |
 | **Framework**  | Spring Boot 3.5.16                                |
 | **JDK**        | Java 17                                           |
 | **Build Tool** | Gradle 8.14.3 (Kotlin DSL) + Shadow JAR           |
@@ -24,10 +24,10 @@
 | **Auth**       | 서버 관리 세션 토큰(access/refresh, member_sessions 테이블) + Spring Security |
 | **AI**         | Google Gemini API (gemini-2.5-flash, 실패 시 gemini-3.1-flash-lite로 폴백) |
 | **검색/임베딩** | Gemini Embedding (gemini-embedding-2) + pgvector(hibernate-vector), 키워드+의미 하이브리드 검색 |
-| **Push**       | Firebase Cloud Messaging (firebase-admin 9.4.2)  |
+| **Push**       | Firebase Cloud Messaging (firebase-admin 9.11.0) |
 | **Storage**    | Supabase Storage (이미지 업로드)                  |
 | **Mail**       | AWS SES (비밀번호 찾기·이메일 인증)               |
-| **API Docs**   | SpringDoc OpenAPI 2.7.0 (Swagger UI: 로컬, GitHub Pages 읽기 전용) |
+| **API Docs**   | SpringDoc OpenAPI 2.10.0 (Swagger UI: 로컬, GitHub Pages 읽기 전용) |
 | **Infra**      | AWS Lambda (SnapStart) + CRaC                     |
 | **기타**       | Jsoup (HTML 파싱), Jackson, Spring Boot Actuator  |
 
