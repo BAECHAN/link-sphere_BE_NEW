@@ -1047,12 +1047,15 @@ Lambda 자체의 로그 형식(`LoggingConfig.LogFormat`)은 `Text` 그대로다
 | 스펙 | `./gradlew openApiSpec`(Docker 필요, `api-compat.yml`과 같은 태스크) 결과에서 `servers`만 `https://linksphere.click/api`로 바꿔 넣는다 |
 | 사이트 첫 화면 | [`pages-site/index.html`](../pages-site/index.html) — 워크플로의 "사이트 조립" 단계가 이 폴더를 사이트 루트에, 위 결과를 `api-docs/`에 넣는다 |
 
-**주소 구조** — 저장소 하나에 Pages 사이트는 하나뿐이라 문서마다 하위 경로(`api-docs/`)를 쓰고, 루트 첫 화면은 지금 문서가 하나라
-`api-docs/`로 넘긴다. 쿼리·해시를 그대로 붙여 루트에 Swagger UI가 있던 첫 배포(2026-10-30) 때의 링크(`#/태그/operation`)도 이어진다.
+**주소 구조** — 저장소 하나에 Pages 사이트는 하나뿐이라 문서마다 하위 경로(`api-docs/`)를 쓰고, 루트 첫 화면은 FE·BE 저장소 Pages의
+문서(FE Storybook, 이 API 문서)를 카드로 함께 보여 준다. FE 저장소 첫 화면(`pages-site/index.html`)도 같은 목록이라 문서를 더하거나
+옮기면 두 저장소의 파일을 같이 고친다 — 저장소를 넘는 링크는 자동 검사가 없다. 2026-10-31 전까지는 첫 화면이 `api-docs/`로 바로
+넘겼다. 그때 루트에 Swagger UI가 있던 첫 배포(2026-10-30) 때의 링크(`#/태그/operation`)는 이제 넘기지 않고 첫 화면을 보여 준다
+(2026-10-31 사용자 결정, FE PR [#465](https://github.com/BAECHAN/link-sphere_FE_NEW/pull/465)에서 시안 비교).
 Pages 배포는 사이트 전체를 바꾼다 — deploy-pages 기여자는 _"모든 콘텐츠를 배포 시점에 줘야 한다. 나중 배포가 모든 것을
 대체한다"_ 고 답했다(번역, [actions/deploy-pages#50 댓글](https://github.com/actions/deploy-pages/issues/50#issuecomment-1252593074)).
 그래서 문서를 더할 때는 다른 워크플로로 따로 올리지 않고 이 워크플로의 "사이트 조립" 단계에서 함께 만들어 `build/pages-site/<경로>/`에
-넣고, 첫 화면을 목록 페이지로 바꾼다. FE 저장소 Pages도 같은 구조다(Storybook은 `/link-sphere_FE_NEW/storybook/`).
+넣는다. FE 저장소 Pages도 같은 구조다(Storybook은 `/link-sphere_FE_NEW/storybook/`).
 
 **저장소 설정 (최초 1회, 2026-10-30 적용)** — Pages 소스는 "GitHub Actions"다. `configure-pages`의 자동 활성화는 `GITHUB_TOKEN`이 아닌
 토큰을 요구해서 워크플로 밖에서 켰다:

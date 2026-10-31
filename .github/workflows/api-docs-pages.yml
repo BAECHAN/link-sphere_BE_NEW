@@ -1,8 +1,8 @@
 name: API Docs Deploy (GitHub Pages)
 
 # 현재 main 코드의 OpenAPI 스펙을 읽기 전용 Swagger UI로 이 저장소의 GitHub Pages(https://baechan.github.io/link-sphere_BE_NEW/api-docs/)에
-# 올린다. 운영 Lambda에는 Swagger UI가 없다(developmentOnly, build.gradle.kts). 사이트 루트는 pages-site/(첫 화면, 지금은
-# api-docs/로 넘김)이고 문서마다 하위 경로를 쓴다.
+# 올린다. 운영 Lambda에는 Swagger UI가 없다(developmentOnly, build.gradle.kts). 사이트 루트는 pages-site/(첫 화면, FE·BE
+# Pages 문서 목록)이고 문서마다 하위 경로를 쓴다.
 #
 # 운영 도메인(linksphere.click)이 아니라 github.io에 올리는 이유: 같은 출처에서 도는 스크립트는 refresh 쿠키를 붙여
 # /api/auth/refresh를 부를 수 있어, 앱이 아닌 코드(Swagger UI)를 그 출처에 두지 않는다. FE Storybook도 같은 이유로
