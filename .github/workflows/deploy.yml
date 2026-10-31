@@ -62,12 +62,14 @@ jobs:
             > src/main/resources/firebase-service-account.json
 
       # ─────────────────────────────────────────────
-      # 5. Ktlint 코드 스타일 검사 + 테스트 실행 후 Shadow JAR 빌드 (fat JAR — 모든 의존성 포함)
+      # 5. Ktlint 코드 스타일 검사 + 단위·통합 테스트 실행 후 Shadow JAR 빌드 (fat JAR — 모든 의존성 포함)
       #    스타일 위반이나 테스트 실패가 있으면 빌드/배포 전에 실패한다.
       #    firebase-service-account.json 없이도 테스트가 통과함을 확인함 (2026-09-03).
+      #    integrationTest는 PR CI(ci.yml)와 같은 명령으로 한 번 더 돈다 - 룰셋 strict가 꺼져 있어 뒤처진 브랜치의
+      #    CI 결과로도 병합되므로, 병합된 main 기준으로 다시 확인한다 (2026-10-31, docs/CI-CHECK-GATE.md).
       # ─────────────────────────────────────────────
-      - name: Ktlint check, test & Build Shadow JAR
-        run: chmod +x gradlew && ./gradlew ktlintCheck test shadowJar --no-daemon
+      - name: Ktlint check, test, integration test & Build Shadow JAR
+        run: chmod +x gradlew && ./gradlew ktlintCheck test integrationTest shadowJar --no-daemon
 
       # ─────────────────────────────────────────────
       # 6. JAR 파일 유효성 확인

@@ -392,7 +392,7 @@ git config core.hooksPath .githooks
 - `integrationTest`는 `@PostgresIntegrationTest`(`src/test/kotlin/com/example/linksphere/support/PostgresIntegrationTest.kt`)를
   붙인 테스트만 돌린다. 운영과 같은 스키마(`src/test/resources/db/schema.sql`, 운영 덤프)를 pgvector Postgres 17
   컨테이너에 올려 네이티브 SQL·일괄 DELETE·FK cascade·동시 요청을 실제로 실행한다.
-- CI `check` 잡은 둘 다 돌리고, 배포 워크플로는 `test`만 돌린다.
+- CI `check` 잡과 배포 워크플로 모두 둘 다 돌린다.
 - 운영 스키마를 바꾸면(`src/main/resources/sql/`) `schema.sql` 머리 주석의 방법으로 다시 덤프해 본문을 바꾼다.
 
 ---
@@ -426,7 +426,7 @@ git config core.hooksPath .githooks
 ### 배포 프로세스 요약
 
 1. **GitHub Push**: `main` 브랜치에 코드가 푸시됩니다.
-2. **GitHub Actions**: `./gradlew ktlintCheck test shadowJar`로 검사·테스트 통과 후 fat JAR를 빌드하고 **AWS S3**에 업로드합니다.
+2. **GitHub Actions**: `./gradlew ktlintCheck test integrationTest shadowJar`로 검사·단위 테스트·통합 테스트 통과 후 fat JAR를 빌드하고 **AWS S3**에 업로드합니다.
 3. **Lambda 코드 업데이트**: S3의 새 JAR를 참조하도록 Lambda 함수를 업데이트합니다.
 4. **버전 발행**: `publish-version`으로 **SnapStart 스냅샷**을 생성합니다.
 5. **연속 호출 검증**: 방금 발행한 버전을 5회 연속 직접 호출해 전부 `statusCode 200`인지 확인합니다. 하나라도 실패하면 아래 승격 없이 워크플로우가 실패합니다.
