@@ -901,7 +901,7 @@ configuration에도 강제해 ktlint 1.5.0이 Kotlin 2.4 컴파일러로 깨지�
 | 2. JDK 17 | Amazon Corretto 설치 (Lambda 런타임과 동일 계열) |
 | 3. Gradle 캐시 | 의존성 캐시로 빌드 시간 단축 |
 | 4. Firebase JSON | GitHub Secret → `src/main/resources/firebase-service-account.json` (classpath 포함) |
-| 5. shadowJar 빌드 | `./gradlew ktlintCheck test shadowJar` → 스타일 검사·테스트 통과 후 모든 의존성 포함된 fat JAR, 이어서 `verifyShadowJar`가 중복 항목·병합 파일·`Multi-Release`를 확인 |
+| 5. shadowJar 빌드 | `./gradlew ktlintCheck test integrationTest shadowJar` → 스타일 검사·단위 테스트·통합 테스트(Testcontainers Postgres, 러너의 Docker 사용) 통과 후 모든 의존성 포함된 fat JAR, 이어서 `verifyShadowJar`가 중복 항목·병합 파일·`Multi-Release`를 확인 |
 | 6. JAR 검증 | 파일 존재 및 `LambdaHandler` 클래스 포함 여부 확인 |
 | 7. AWS 자격증명 | GitHub Secrets로 AWS 인증 |
 | 8. S3 업로드 | `deployments/YYYYMMDD-HHMMSS.jar` 키로 업로드 |

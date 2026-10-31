@@ -598,6 +598,10 @@ for (id in ids) {
 
 ## 8. 테스트 패턴
 
+FE와 BE가 같은 테스트 원칙을 쓰면서 층 구성과 도구를 다르게 가져가는 이유와 업계 모델(피라미드·트로피)과의 비교는 FE
+[`docs/TESTING.md` "FE와 BE의 테스트 구성"](https://github.com/BAECHAN/link-sphere_FE_NEW/blob/main/docs/TESTING.md#fe와-be의-테스트-구성-업계-기준과-비교)에
+있다. 이 절은 BE 테스트의 형태만 다룬다.
+
 | 종류 | 형태 | 정석 |
 |---|---|---|
 | Service 단위 | `@ExtendWith(MockitoExtension::class)` + `@Mock` + `@InjectMocks` (MockK·AssertJ는 쓰지 않음) | `domain/interaction/InteractionServiceTest.kt` |
@@ -609,7 +613,7 @@ for (id in ids) {
 | 아키텍처 | ArchUnit `@AnalyzeClasses` + `@ArchTest` | `architecture/AppWideArchitectureRulesTest.kt` |
 
 - 테스트 이름은 백틱 한국어 문장이다.
-- `./gradlew test`는 `integration` 태그를 빼고 돈다. `./gradlew integrationTest`(Docker 필요)는 PR CI(`ci.yml`)에서만 돈다.
+- `./gradlew test`는 `integration` 태그를 빼고 돈다. `./gradlew integrationTest`(Docker 필요)는 PR CI(`ci.yml`)와 배포(`deploy.yml`)에서 돈다.
 - 쿼리·제약·트랜잭션 경계가 걸린 버그는 Mockito로 재현되지 않는다 — 실제 Postgres 테스트로 재현한다.
 
 ---
@@ -747,9 +751,11 @@ for (id in ids) {
   리졸버 SPI가 없어(JEP 418은 18) https 소켓 래핑 같은 우회가 필요하다.
   - 2026-10-26에 확인하고 고친 것: 응답 헤더가 이름당 첫 값만 남던 것(`FunctionUrlResponse`), Lambda 안 Tomcat의 8080 바인딩
     (`--server.port=-1`), 봇 회원 조회의 단건 실패, SSRF 차단 대역 누락(IPv6 ULA·CGNAT), 100자 넘는 폴더 이름의 409.
-- **확인해서 위험 후보에서 뺀 것**: "`deploy.yml`은 `integrationTest`를 돌리지 않음" — main 룰셋("Main Branch Protect")이
-  `ci.yml`의 `check` 잡(`integrationTest` 포함)을 필수 체크로 요구한다(2026-10-26 `gh api …/rulesets` 확인). 다만
-  `strict_required_status_checks_policy`가 `false`라 뒤처진 브랜치의 통과 결과로도 병합된다.
+- **2026-10-31에 고친 것**: "`deploy.yml`은 `integrationTest`를 돌리지 않음". 2026-10-26에는 main 룰셋("Main Branch
+  Protect")이 `ci.yml`의 `check` 잡(`integrationTest` 포함)을 필수 체크로 요구해서 위험 후보에서 뺐다. 그런데
+  `strict_required_status_checks_policy`가 `false`라 뒤처진 브랜치의 통과 결과로도 병합되고, 최근 병합 30개 중 2개(#117,
+  #119)가 실제로 그랬다. 그래서 배포도 PR CI와 같은 명령으로 `integrationTest`를 돌린다(`docs/CI-CHECK-GATE.md` "배포 게이트
+  커맨드").
 - **Spring Boot 4 이동**: 2026-10-26에 OSS 마지막 3.5.x 패치(3.5.16)로 올렸지만 3.5.x OSS 지원은 2026-06-30에 끝났다 —
   이후 3.5.x 보안 수정은 상용(enterprise) 빌드로만 나온다([api.spring.io](https://api.spring.io/projects/spring-boot/generations)).
   새 권고가 3.5.16에 걸리면 4.x(springdoc 3·Hibernate 7 동반)로 옮겨야 한다 — 따로 계획한다. Dependabot은 메이저를 무시한다.
