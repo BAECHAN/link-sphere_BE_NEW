@@ -770,6 +770,8 @@ aws events put-targets \
 | `~/.pg_service.conf` | `[linksphere-ro]` 서비스: 풀러 호스트, **세션 모드 5432**, `dbname=postgres`, `user=adhoc_readonly.<ref>`, `sslmode=require` |
 | `~/.pgpass` (권한 600) | 같은 호스트·포트·DB·사용자의 비밀번호 한 줄. [PostgreSQL 문서](https://www.postgresql.org/docs/current/libpq-pgpass.html)는 그룹·기타 사용자 접근을 막아야 한다며 _"권한이 이보다 느슨하면 파일을 무시한다"_ (번역)고 쓴다 |
 
+**`password authentication failed`가 나면** 비밀번호를 바꾸기 전에 그 터미널에 `PGPASSWORD`가 있는지부터 본다(`env | grep -o '^PG[A-Z]*='`, 값은 찍히지 않는다). [같은 문서](https://www.postgresql.org/docs/current/libpq-pgpass.html)는 `.pgpass`의 비밀번호를 _"연결에 비밀번호가 필요하고 다른 방법으로 지정되지 않았을 때"_ (번역) 쓴다고 해, 환경변수가 있으면 이 파일을 보지 않는다 — 2026-10-31 예전에 export해 둔 값 때문에 난 이 오류를 `.pgpass` 불일치로 오진해 비밀번호를 두 번 바꿨고, `unset PGPASSWORD` 뒤 바로 접속됐다.
+
 **왜 따로 두나 — 2026-10-05 사건.** 11장의 고아 이미지 대조를 하던 세션이 앱 계정으로 6543에 붙어
 `SET default_transaction_read_only = on`을 건 뒤 조회했다(04:58 UTC). Supavisor 트랜잭션 모드는 서버 커넥션을
 여러 클라이언트가 돌려 쓰고 세션 상태를 초기화하지 않아, 이 설정이 앱과 같은 풀의 커넥션에 남았다. 1분 뒤부터
