@@ -387,12 +387,15 @@ git config core.hooksPath .githooks
 ```bash
 ./gradlew test             # 단위 테스트 - DB·Docker 없이 돈다
 ./gradlew integrationTest  # 저장소 통합 테스트 - Docker 필요(실제 Postgres 컨테이너)
+./gradlew coverageReport   # 위 둘을 돌린 뒤 합친 커버리지 → build/reports/jacoco/coverageReport/html/index.html
 ```
 
 - `integrationTest`는 `@PostgresIntegrationTest`(`src/test/kotlin/com/example/linksphere/support/PostgresIntegrationTest.kt`)를
   붙인 테스트만 돌린다. 운영과 같은 스키마(`src/test/resources/db/schema.sql`, 운영 덤프)를 pgvector Postgres 17
   컨테이너에 올려 네이티브 SQL·일괄 DELETE·FK cascade·동시 요청을 실제로 실행한다.
 - CI `check` 잡과 배포 워크플로 모두 둘 다 돌린다.
+- PR CI는 바뀐 `src/main/kotlin` 파일의 커버리지와 테스트가 실행하지 않는 줄을 PR 댓글로 보인다(정보용, 머지를 막지
+  않음 — `docs/CI-CHECK-GATE.md` §4.2).
 - 운영 스키마를 바꾸면(`src/main/resources/sql/`) `schema.sql` 머리 주석의 방법으로 다시 덤프해 본문을 바꾼다.
 
 ---

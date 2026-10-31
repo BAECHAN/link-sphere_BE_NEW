@@ -18,6 +18,10 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
+    # pull-requests: write는 "커버리지 보고" 스텝이 결과 댓글을 달고 갱신하는 데 필요하다(FE ci.yml mutation 잡과 같은 이유)
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - name: Checkout source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -58,3 +62,41 @@ jobs:
       # 테스트는 통과했지만 Shadow 8.1.1이 Gradle 9에서 JAR를 못 만들어 병합했다면 배포가 빌드 단계에서 멈췄다.
       - name: Ktlint check, test, integration test & Build Shadow JAR
         run: chmod +x gradlew && ./gradlew ktlintCheck test integrationTest shadowJar --no-daemon
+
+      - name: 커버리지 보고 (정보용 — 실패해도 잡은 통과)
+        # 이 PR이 바꾼 src/main/kotlin 파일의 커버리지와, 바꾼 줄 중 테스트가 실행하지 않은 줄을 Step Summary와 PR 댓글로
+        # 보인다(FE ci.yml mutation 잡과 같은 모양, docs/CI-CHECK-GATE.md "커버리지 보고"). 위 스텝이 통과했을 때만 돈다 -
+        # 테스트가 실패하면 실행 데이터가 모자라 비율이 틀린다. 리포트는 대상이 있을 때만 만든다.
+        # 댓글은 PR마다 하나다 - 맨 앞 표식 주석으로 이전 댓글을 찾아 갱신하고, 없으면 대상이 있을 때만 새로 단다.
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          targets="$RUNNER_TEMP/coverage-targets.txt"
+          report="$RUNNER_TEMP/coverage-report.md"
+          comment="$RUNNER_TEMP/coverage-comment.md"
+          marker='<!-- coverage-report -->'
+
+          python3 scripts/coverage-report.py --targets "$BASE_SHA" > "$targets"
+          cat "$targets"
+
+          if [ -s "$targets" ]; then
+            ./gradlew coverageReport --no-daemon
+          fi
+
+          python3 scripts/coverage-report.py --report build/reports/jacoco/coverageReport/coverageReport.xml "$targets" "$BASE_SHA" > "$report"
+          cat "$report" >> "$GITHUB_STEP_SUMMARY"
+          { echo "$marker"; cat "$report"; } > "$comment"
+
+          comment_id=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --paginate \
+            --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$marker\"))) | .id" \
+            | head -n 1)
+
+          if [ -n "$comment_id" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$comment_id" -F body=@"$comment" > /dev/null
+          elif [ -s "$targets" ]; then
+            gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file "$comment"
+          fi
