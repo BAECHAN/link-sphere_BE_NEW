@@ -10,6 +10,7 @@ plugins {
     kotlin("plugin.jpa") version "2.4.21"
     id("com.gradleup.shadow") version "9.6.1"
     id("org.jlleitschuh.gradle.ktlint") version "14.2.0"
+    jacoco
 }
 
 // Lambda는 fat JAR(shadowJar)로 배포한다. bootJar와 plain jar는 사용하지 않는다.
@@ -268,6 +269,23 @@ tasks.register<Test>("integrationTest") {
     classpath = sourceSets.test.get().runtimeClasspath
     useJUnitPlatform { includeTags("integration") }
     shouldRunAfter(tasks.test)
+}
+
+// PR CI(ci.yml "커버리지 보고")가 바뀐 파일의 커버리지를 PR에 보이려고, 단위·통합 테스트의 실행 데이터를 합친 리포트를 만든다.
+// 머지를 막지 않는 정보용이라 목표치(violationRules)를 두지 않는다. 플러그인이 test·integrationTest에 에이전트를 붙여
+// 배포의 테스트도 실행 데이터를 남기지만 리포트는 이 태스크를 부를 때만 만든다(2026-10-31 1회 측정, claude-base docs/METRICS.md).
+jacoco { toolVersion = "0.8.16" }
+
+tasks.register<JacocoReport>("coverageReport") {
+    description = "단위·통합 테스트를 합친 커버리지 리포트(XML·HTML)를 만든다."
+    group = "verification"
+    executionData(tasks.test.get(), tasks.named<Test>("integrationTest").get())
+    sourceSets(sourceSets.main.get())
+    reports {
+        xml.required = true
+        html.required = true
+        csv.required = false
+    }
 }
 
 // PR CI(api-compat.yml)가 운영 스펙과 비교할 현재 코드의 OpenAPI 스펙을 build/openapi/openapi.json으로 남긴다(Docker 필요).

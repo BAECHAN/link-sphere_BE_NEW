@@ -1,6 +1,6 @@
 # Link-Sphere BE — CI 검사 게이트 정비 (2026-09-03)
 
-> 마지막 검토: 2026-10-30
+> 마지막 검토: 2026-10-31
 
 ## 1. 쉬운 설명
 
@@ -127,6 +127,36 @@ flowchart TD
   운영 스펙의 `/post/{id}`를 `/post/{postId}`로 바꾼 사본은 기본 설정에서 `No breaking changes to report` exit 0,
   `--include-path-params`를 주면 `api-path-removed-without-deprecation` 3건으로 exit 1이었다.
 
+### 4.2 커버리지 보고 (2026-10-31 추가, 정보용)
+
+PR이 바꾼 Kotlin 파일 중 테스트가 실행하지 않는 줄을 PR에서 보이게 한다. 머지를 막지 않는다 — 목표치(violationRules)도
+없다. FE `ci.yml`의 `mutation` 잡(바뀐 로직 파일만, Step Summary와 PR 댓글 하나)과 같은 모양이다. BE는 뮤테이션을 쓰지
+않는다 — Kotlin용 PIT는 상용 플러그인이 필요하다(claude-base `DECISIONS.md` 2026-10-13).
+
+```mermaid
+flowchart TD
+  t["check 잡: ktlintCheck test integrationTest shadowJar<br/>(jacoco 에이전트가 실행 데이터를 남김)"] -->|"통과 + pull_request"| tg["scripts/coverage-report.py --targets base SHA<br/>바뀐 src/main/kotlin/**/*.kt"]
+  tg -->|"대상 있음"| rep["./gradlew coverageReport<br/>test.exec + integrationTest.exec → XML·HTML"]
+  tg -->|"대상 없음"| md
+  rep --> md["--report: 파일별 line·branch %<br/>바꾼 줄 중 안 닿음·갈래 일부만 지남"]
+  md --> out["Step Summary + PR 댓글 1개(표식 주석으로 갱신)"]
+```
+
+- **왜 두나**: 2026-10-31 1회 측정(claude-base `docs/METRICS.md` "커버리지 1회 측정")에서 북마크 목록 조회
+  `BookmarkRepositoryImpl.findBookmarkedPosts`(90줄)를 단위·통합 어느 테스트도 실행하지 않는 것을 찾았다. 서비스 단위
+  테스트는 저장소를 목으로 바꿔서 이런 공백이 테스트 개수로는 보이지 않는다.
+- **무엇을 보나**: 파일 전체 비율보다 **이 PR이 바꾼 줄 중 안 닿은 줄**이 본론이다. 비율은 목표가 아니다(claude-base
+  `CLAUDE.md` `## 테스트`).
+- **실패해도 통과**: 스텝이 `continue-on-error`라 리포트 생성·댓글이 실패해도 `check`는 초록이다. 테스트가 실패하면 이
+  스텝은 돌지 않는다(실행 데이터가 모자라 비율이 틀린다). Dependabot PR은 토큰이 읽기 전용이라 댓글은 실패하고 Step
+  Summary만 남는다.
+- **배포에도 에이전트가 붙는다**: `jacoco` 플러그인은 `test`·`integrationTest` 태스크 자체에 붙어 `deploy.yml`의
+  테스트도 실행 데이터를 남긴다. 1회 측정 기준 `test` 27~28초 → 30초, `integrationTest` 16~18초 → 19초(로컬 Java 21,
+  CI는 Corretto 17). 리포트는 `coverageReport`를 부를 때만 만든다.
+- **로컬 재현**: `./gradlew test integrationTest coverageReport` → `build/reports/jacoco/coverageReport/html/index.html`.
+  PR과 같은 마크다운은 `python3 scripts/coverage-report.py --targets origin/main > /tmp/t.txt` 뒤
+  `python3 scripts/coverage-report.py --report build/reports/jacoco/coverageReport/coverageReport.xml /tmp/t.txt origin/main`.
+
 ## 5. 운영 파라미터
 
 | 파라미터 | 값 | 실제 위치 |
@@ -140,6 +170,9 @@ flowchart TD
 | 배포 게이트 커맨드 | `./gradlew ktlintCheck test integrationTest shadowJar --no-daemon` — PR 검사 커맨드와 같다. `integrationTest`는 2026-10-31에 더했다: 룰셋 `strict_required_status_checks_policy`가 `false`라 뒤처진 브랜치의 CI 결과로도 병합되는데, 최근 병합 PR 30개 중 2개(#117, #119 — #119는 `build.gradle.kts` 의존성 변경)가 그렇게 병합돼 통합 테스트 없이 배포됐다. 이를 막는 merge queue는 조직 소유 저장소 전용이라([GitHub Docs](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue)) 이 개인 저장소에서는 쓸 수 없다. 늘어나는 시간은 PR CI 5회 실측 24.7~40.8초다 | `deploy.yml` "Ktlint check, test, integration test & Build Shadow JAR" 스텝 |
 | PR 검사 커맨드 | `./gradlew ktlintCheck test integrationTest shadowJar --no-daemon`. `shadowJar`는 배포할 fat JAR가 만들어지는지만 본다(2026-10-30 추가 — Gradle 9 wrapper PR #120은 테스트가 통과해 초록이었지만 Shadow 8.1.1이 Gradle 9에서 JAR를 못 만들어, 병합했다면 배포가 빌드 단계에서 멈췄다). 같은 날 `shadowJar` 뒤에 자동으로 도는 `verifyShadowJar`를 더해 JAR 안의 중복 항목·병합 파일·`Multi-Release` 속성도 본다(배포도 같은 검사를 거친다, `docs/DEPLOY.md` "Shadow JAR에서 spring.factories를 append하는 이유"). 앱이 실제로 뜨는지는 `deploy.yml`의 새 버전 5회 호출 검증이 맡는다 | `ci.yml` "Ktlint check, test, integration test & Build Shadow JAR" 스텝 |
 | CI에 필요한 시크릿 | 없음 (`firebase-service-account.json` 없이도 테스트 통과 확인) | 7장 |
+| 커버리지 도구 | JaCoCo `0.8.16`(Gradle 내장 `jacoco` 플러그인), 리포트 태스크 `coverageReport`(단위·통합 실행 데이터 합침, XML·HTML) | `build.gradle.kts`의 `jacoco { toolVersion }`·`coverageReport` |
+| 커버리지 보고 대상 | 이 PR이 바꾼 `src/main/kotlin/**/*.kt`(삭제 제외), 기준은 `github.event.pull_request.base.sha` | `scripts/coverage-report.py`의 `SOURCE_ROOT`·`list_targets` |
+| 커버리지 보고 길이 상한 | 60,000자 — 넘으면 파일별 목록을 빼고 표만 남긴다(PR 댓글 한도 65,536자) | `scripts/coverage-report.py`의 `MAX_REPORT_LENGTH` |
 | API 호환성 게이트 트리거 | `pull_request` types `opened`·`synchronize`·`reopened`·`labeled`·`unlabeled`(필터 없음), 동시성 그룹 `api-compat-${{ github.ref }}`(ci.yml과 이름이 같으면 서로 취소한다) | `.github/workflows/api-compat.yml` |
 | 비교 기준 스펙 | `https://linksphere.click/api/v3/api-docs`(운영, curl 재시도 3회, 받지 못하면 실패) | `api-compat.yml`의 `PROD_SPEC_URL` |
 | oasdiff 버전 | `tufin/oasdiff:v1.35.0` 멀티 아키텍처 인덱스 digest 고정, `breaking --fail-on ERR` | `api-compat.yml`의 `OASDIFF_IMAGE` |

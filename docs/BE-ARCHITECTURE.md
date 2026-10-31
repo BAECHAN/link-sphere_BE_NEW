@@ -615,6 +615,9 @@ FE와 BE가 같은 테스트 원칙을 쓰면서 층 구성과 도구를 다르�
 - 테스트 이름은 백틱 한국어 문장이다.
 - `./gradlew test`는 `integration` 태그를 빼고 돈다. `./gradlew integrationTest`(Docker 필요)는 PR CI(`ci.yml`)와 배포(`deploy.yml`)에서 돈다.
 - 쿼리·제약·트랜잭션 경계가 걸린 버그는 Mockito로 재현되지 않는다 — 실제 Postgres 테스트로 재현한다.
+- 커버리지는 JaCoCo로 단위·통합 실행 데이터를 합쳐 잰다(`./gradlew test integrationTest coverageReport`). PR CI는 바뀐
+  파일 중 테스트가 실행하지 않는 줄을 정보용으로 보인다(머지를 막지 않음, `docs/CI-CHECK-GATE.md` §4.2). Service 단위
+  테스트는 저장소를 목으로 바꾸므로 저장소 구현(`*RepositoryImpl`)은 통합 테스트로만 실행된다.
 
 ---
 
