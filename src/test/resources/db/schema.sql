@@ -17,6 +17,9 @@
 -- 아래 "테스트 전용 앞부분"은 운영(Supabase)에만 있는 것을 같은 이름으로 만들어 덤프 본문을 고치지 않는다
 --   extensions 스키마의 vector  - posts.embedding이 extensions.vector(768)다
 --   auth.uid()                  - bookmarks.user_id의 DEFAULT다(앱은 항상 user_id를 넣으므로 NULL을 돌려줘도 된다)
+--   역할의 search_path          - 앱 역할 postgres(풀러 사용자 postgres.<ref>)가 "$user", public, extensions라 운영 쿼리는
+--                                 vector·<=>를 스키마 없이 쓴다(PostSearchQuery.resolveSemanticMatches). 2026-10-31 운영
+--                                 pg_db_role_setting으로 확인했다(SQL Editor 조회, 사용자 실행)
 --
 -- 갱신: 운영 스키마를 src/main/resources/sql/ 파일로 바꾸면 위 명령으로 다시 덤프해 아래 본문을 통째로 바꾸고,
 -- 머리 주석의 날짜·버전과 "뺀 것"을 다시 확인한다(docs/plans/2026-10-14-integration-test.md). 다시 덤프하면 "손으로 넣은 것"은 지운다.
@@ -26,6 +29,7 @@ CREATE SCHEMA IF NOT EXISTS extensions;
 CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA extensions;
 CREATE SCHEMA IF NOT EXISTS auth;
 CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS 'SELECT NULL::uuid';
+ALTER ROLE CURRENT_USER SET search_path = "$user", public, extensions;
 
 -- ── 운영 덤프 본문 ──────────────────────────────────────────────
 --
