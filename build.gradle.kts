@@ -227,7 +227,7 @@ dependencies {
     // AI 분석을 별도 Lambda 호출로 위임(self-invoke)하기 위한 클라이언트.
     // url-connection-client는 커넥션 풀을 유지하지 않아(요청마다 새로 열고 닫음) SnapStart
     // 체크포인트 시점에 열린 소켓이 남지 않는다 — Apache/Netty 클라이언트는 풀링 때문에 위험하다.
-    implementation(platform("software.amazon.awssdk:bom:2.57.4"))
+    implementation(platform("software.amazon.awssdk:bom:2.57.6"))
     implementation("software.amazon.awssdk:lambda") {
         exclude(group = "software.amazon.awssdk", module = "netty-nio-client")
         exclude(group = "software.amazon.awssdk", module = "apache-client")
