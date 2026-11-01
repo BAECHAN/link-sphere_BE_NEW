@@ -1,0 +1,10 @@
+{
+  "label": "link-sphere BE",
+  "worktreeRequired": true,
+  "rulesRef": ".claude/CLAUDE.md Critical Rules",
+  "deploy": {
+    "github": "BAECHAN/link-sphere_BE_NEW",
+    "defaultBranch": "main",
+    "workflows": ["Deploy to AWS Lambda (SnapStart)", "API Docs Deploy (GitHub Pages)"]
+  }
+}
