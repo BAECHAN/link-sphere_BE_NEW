@@ -206,6 +206,21 @@ class AuthControllerTest {
 
     @Test
     @WithMockUser
+    fun `signup returns 400 INVALID_INPUT when password has no special character`() {
+        val request = SignupRequest("test@example.com", "password12", "testuser")
+
+        mockMvc.perform(
+            post("/auth/signup")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(jacksonObjectMapper().writeValueAsString(request))
+                .with(csrf()),
+        )
+            .andExpect(status().isBadRequest)
+            .andExpect(jsonPath("$.code").value("INVALID_INPUT"))
+    }
+
+    @Test
+    @WithMockUser
     fun `signup returns 400 INVALID_INPUT when nickname is too short`() {
         val request = SignupRequest("test@example.com", "password1!", "a")
 

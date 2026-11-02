@@ -1,5 +1,9 @@
 package com.example.linksphere.domain.comment
 
+import io.swagger.v3.oas.annotations.extensions.Extension
+import io.swagger.v3.oas.annotations.extensions.ExtensionProperty
+import io.swagger.v3.oas.annotations.media.ArraySchema
+import io.swagger.v3.oas.annotations.media.Schema
 import org.springframework.data.domain.Page
 import java.time.LocalDateTime
 import java.util.UUID
@@ -31,8 +35,18 @@ data class CommentResponse(
 
 data class CommentAuthor(val id: UUID, val nickname: String, val image: String?)
 
+// 등록·답글·수정이 같이 쓴다. 아래 스키마 어노테이션은 스펙에 한도를 싣기만 한다 - 검사는 CommentService.validateContent가 한다
 data class CreateCommentRequest(
+    // JSON Schema에 바이트 키워드가 없어 확장 필드로 싣는다(maxLength는 문자 수라 다른 규칙이 된다)
+    @field:Schema(
+        extensions = [
+            Extension(
+                properties = [ExtensionProperty(name = "x-max-bytes", value = "${CommentLimits.MAX_CONTENT_BYTES}", parseValue = true)],
+            ),
+        ],
+    )
     val content: String? = null,
+    @field:ArraySchema(maxItems = CommentLimits.MAX_IMAGES)
     val images: List<String>? = null,
 )
 

@@ -1,11 +1,19 @@
 package com.example.linksphere.domain.interaction
 
+import io.swagger.v3.oas.annotations.media.Schema
 import java.time.LocalDateTime
 import java.util.UUID
 
-data class CreateFolderRequest(val name: String)
+// 스키마 어노테이션은 스펙에 한도를 싣기만 한다 - 검사(앞뒤 공백 제거 뒤 코드포인트 수)는 BookmarkFolderService.validFolderName이 한다
+data class CreateFolderRequest(
+    @field:Schema(maxLength = BookmarkFolderLimits.MAX_NAME_LENGTH)
+    val name: String,
+)
 
-data class UpdateFolderRequest(val name: String)
+data class UpdateFolderRequest(
+    @field:Schema(maxLength = BookmarkFolderLimits.MAX_NAME_LENGTH)
+    val name: String,
+)
 
 data class FolderResponse(
     val id: UUID,
