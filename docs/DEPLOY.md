@@ -825,7 +825,7 @@ grant select (id, user_id, platform, created_at, updated_at, session_family_id) 
 - **백업은 이 계정으로 하지 않는다** — `members`·`fcm_tokens`가 컬럼 단위 권한이라 pg_dump가 막힌다. 백업은 전용 계정
   `backup_reader`(13장)가 한다.
 
-### 13. DB·Storage 백업과 복구 (2026-11-02 도입)
+### 13. DB·Storage 백업과 복구 — 적용 완료 (2026-11-02)
 
 [`db-backup.yml`](../.github/workflows/db-backup.yml)이 매일 03:23 KST에 운영 DB(public 스키마)와 Storage 이미지를 비공개
 S3 버킷 `link-sphere-db-backup`에 백업한다. 받은 덤프는 그 자리에서 빈 컨테이너에 복원해 쓸 수 있는지까지 확인한다. 그 전에는
@@ -887,25 +887,50 @@ alter default privileges for role postgres in schema public grant select on sequ
 - `default_transaction_read_only`: 쓰기를 못 하게 하는 보조 장치. 실제로는 권한(SELECT만)이 막는다.
 - 시퀀스 SELECT: 덤프가 시퀀스의 현재 값을 읽는다.
 
-② **GitHub 시크릿** — 값을 대화·파일에 남기지 않도록 프롬프트에 붙여넣는다.
+② **GitHub 시크릿·Variable** — 로컬 터미널(`gh` 로그인 상태)에서. 채울 값은 아래에서 찾는다.
+
+| 자리 | 찾는 곳 |
+| --- | --- |
+| `<ref>` | `~/.pg_service.conf` `[linksphere-ro]`의 `user=adhoc_readonly.` 뒷부분. 대시보드 Project Settings → General → Project ID와 같다 |
+| `<풀러 호스트>` | 같은 파일의 `host=` 줄. 대시보드 상단 Connect → Session pooler에도 있다 |
+| `<비밀번호>` | ①에서 정한 값. DB에는 해시만 남아 다시 읽을 수 없다 — 잃었으면 SQL Editor에서 `alter role backup_reader with password '<새 값>';`으로 새로 정한다(권한은 그대로다) |
+| `<버킷 이름>`, `SUPABASE_URL` 값 | Lambda 환경변수 `SUPABASE_BUCKET`·`SUPABASE_URL`(4장). 아래처럼 두 키만 읽는다 — 환경변수 전체를 찍으면 DB 비밀번호·`SUPABASE_KEY`까지 화면에 나온다 |
 
 ```bash
-gh secret set BACKUP_DATABASE_URL --repo BAECHAN/link-sphere_BE_NEW
-# 붙여넣을 값: postgresql://backup_reader.<ref>:<비밀번호>@<풀러 호스트>:5432/postgres?sslmode=require
+aws lambda get-function-configuration --region ap-northeast-1 --function-name link-sphere-api:prod --query 'Environment.Variables.[SUPABASE_URL,SUPABASE_BUCKET]' --output text
 ```
 
-`<ref>`·`<풀러 호스트>`는 `~/.pg_service.conf`의 `[linksphere-ro]`와 같다. 포트는 세션 모드 5432다 — 덤프는 세션 설정을
-쓰므로 트랜잭션 모드 6543에 붙지 않는다(12장 "왜 따로 두나").
+1. **(선택) 비밀번호 확인** — 실행하면 `Password:`가 뜬다. 비밀번호를 넣어 `backup_reader | on`이 나오면 맞고,
+   `password authentication failed`면 틀린 것이다. 앞의 `env -u PGPASSWORD`는 터미널에 `PGPASSWORD`가 있을 때 그 값이
+   프롬프트 대신 쓰이는 걸 막는다.
 
-이미지 백업이 "우리 버킷 URL"을 GC와 같은 접두사(`SUPABASE_URL` + `/storage/v1/object/public/` + `SUPABASE_BUCKET` + `/`)로
-가리도록, Lambda 환경변수(4장)와 같은 값을 레포 Variable로도 둔다. 둘 다 이미지 공개 URL에 그대로 보이는 값이라 Variable(평문)이다.
+   ```bash
+   env -u PGPASSWORD /opt/homebrew/opt/libpq/bin/psql "host=<풀러 호스트> port=5432 dbname=postgres user=backup_reader.<ref> sslmode=require" -W -c "select current_user, current_setting('default_transaction_read_only')"
+   ```
 
-```bash
-gh variable set SUPABASE_URL --repo BAECHAN/link-sphere_BE_NEW --body 'https://<ref>.supabase.co'
-gh variable set SUPABASE_BUCKET --repo BAECHAN/link-sphere_BE_NEW --body '<버킷 이름>'
-```
+2. **시크릿** — 실행하면 `Paste your secret`이 뜬다. 거기에 아래 접속 주소를 붙여넣는데, `<…>` 자리는 **꺾쇠까지 지우고**
+   실제 값을 넣는다. `✓ Set Actions secret BACKUP_DATABASE_URL …`이 나오면 끝이다. 값을 `--body`로 넘기지 않는다(셸 기록에
+   남는다).
 
-③ **버킷** — CloudShell(ap-northeast-1)에서 한 줄씩.
+   ```bash
+   gh secret set BACKUP_DATABASE_URL --repo BAECHAN/link-sphere_BE_NEW
+   ```
+
+   붙여넣을 값: `postgresql://backup_reader.<ref>:<비밀번호>@<풀러 호스트>:5432/postgres?sslmode=require`
+
+   포트는 세션 모드 5432다 — 덤프는 세션 설정을 쓰므로 트랜잭션 모드 6543에 붙지 않는다(12장 "왜 따로 두나").
+
+3. **Variable 2개** — 이미지 백업이 "우리 버킷 URL"을 GC와 같은 접두사(`SUPABASE_URL` + `/storage/v1/object/public/` +
+   `SUPABASE_BUCKET` + `/`)로 가리는 데 쓴다. 둘 다 이미지 공개 URL에 그대로 보이는 값이라 시크릿이 아니라 Variable(평문)이다.
+   `SUPABASE_URL` 끝에는 `/`를 붙이지 않는다.
+
+   ```bash
+   gh variable set SUPABASE_URL --repo BAECHAN/link-sphere_BE_NEW --body 'https://<ref>.supabase.co'
+   gh variable set SUPABASE_BUCKET --repo BAECHAN/link-sphere_BE_NEW --body '<버킷 이름>'
+   ```
+
+③ **버킷** — CloudShell(ap-northeast-1)에서 한 줄씩. 첫 줄은 `"Location"`이 나오면 성공이고, 나머지 세 줄은 아무것도 나오지
+않으면 성공이다.
 
 ```bash
 aws s3api create-bucket --bucket link-sphere-db-backup --region ap-northeast-1 --create-bucket-configuration LocationConstraint=ap-northeast-1
@@ -916,22 +941,40 @@ aws s3api put-bucket-lifecycle-configuration --bucket link-sphere-db-backup --li
 
 ④ **역할 권한** — 배포 역할 `link-sphere-be-deploy`(1장)에 인라인 정책 `db-backup`을 붙인다. 쓰기(PutObject)와 `storage/`
 목록 조회만 주고 읽기·삭제는 주지 않는다 — 역할이 새도 백업을 읽거나 지울 수 없다(덮어쓰기는 버전 관리가 막는다).
-**정책 이름을 `deploy`로 쓰면 기존 배포 정책을 통째로 덮어쓴다.**
+**정책 이름을 `deploy`로 쓰면 기존 배포 정책을 통째로 덮어쓴다.** CloudShell에서 실행하고, 아무것도 나오지 않으면 성공이다.
 
 ```bash
 aws iam put-role-policy --role-name link-sphere-be-deploy --policy-name db-backup --policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:PutObject","Resource":["arn:aws:s3:::link-sphere-db-backup/db/*","arn:aws:s3:::link-sphere-db-backup/storage/*"]},{"Effect":"Allow","Action":"s3:ListBucket","Resource":"arn:aws:s3:::link-sphere-db-backup","Condition":{"StringLike":{"s3:prefix":"storage/*"}}}]}'
 ```
 
-⑤ **확인**
+⑤ **확인** — 권한 확인은 CloudShell에서 한다(로컬 `link-sphere-user`에는 IAM 권한이 없다, 1장).
 
 ```bash
 aws iam simulate-principal-policy --policy-source-arn "arn:aws:iam::$(aws sts get-caller-identity --query Account --output text):role/link-sphere-be-deploy" --action-names s3:PutObject s3:GetObject s3:DeleteObject --resource-arns arn:aws:s3:::link-sphere-db-backup/db/test.dump --query 'EvaluationResults[].[EvalActionName,EvalDecision]' --output text
+```
+
+아래처럼 나와야 한다. 올리기만 되고 읽기·지우기는 막혀 있다는 뜻이다.
+
+```
+s3:PutObject     allowed
+s3:GetObject     implicitDeny
+s3:DeleteObject  implicitDeny
+```
+
+`db-backup.yml`이 main에 병합된 뒤 로컬 터미널에서 한 번 수동으로 돌린다. 성공하면 `db/`에 덤프 1개, `storage/comments/`에
+참조 이미지들이 생긴다.
+
+```bash
 gh workflow run "DB Backup" --repo BAECHAN/link-sphere_BE_NEW --ref main
 aws s3 ls s3://link-sphere-db-backup/ --recursive
 ```
 
-`simulate-principal-policy`는 PutObject만 `allowed`, 나머지는 `implicitDeny`여야 한다. 수동 실행이 성공하면 `db/`에 덤프
-1개, `storage/comments/`에 참조 이미지들이 생긴다.
+**적용 기록** — 2026-11-02에 ①~⑤를 마쳤다.
+
+- 첫 수동 실행([run 41391701937](https://github.com/BAECHAN/link-sphere_BE_NEW/actions/runs/41391701937))이 약 2분 20초에
+  성공했다. `db/2026-11-02.dump` 1.5MB, `storage/comments/` 이미지 33개가 생겼고 실패 이슈는 없었다. 로그에는 통과 문구만 있다.
+- 같은 날 그 덤프로 13-3 리허설을 했다. 세 테이블을 뺀 15개 테이블의 행 수가 운영과 모두 같았고, 세션 테이블은 0행이었다.
+- 상세: [#149 검증 댓글](https://github.com/BAECHAN/link-sphere_BE_NEW/pull/149#issuecomment-6569535571)
 
 #### 13-2. 복구 (DB나 Storage를 잃었을 때)
 
@@ -971,20 +1014,25 @@ aws s3 ls s3://link-sphere-db-backup/ --recursive
 #### 13-3. 로컬 복원 리허설
 
 덤프가 실제로 쓸 수 있는지 사람이 한 번씩 확인하는 절차다(워크플로도 매번 같은 복원을 하지만 행 수는 남기지 않는다).
-13-2의 1로 받은 덤프가 있는 디렉터리에서:
+덤프에는 이메일·bcrypt 해시가 들어 있어 **디스크에 받지 않고 컨테이너 안으로 바로 받는다** — 컨테이너를 지우면 같이 사라진다.
+버킷을 읽을 수 있는 자격증명이 필요하다(로컬 `link-sphere-user`로 된다, 2026-11-02 확인. 배포 역할은 읽지 못한다).
+`<날짜>`는 `aws s3 ls s3://link-sphere-db-backup/db/`에서 고른다. 로컬 터미널에서 한 줄씩:
 
 ```bash
-docker run -d --name bk-rehearsal -e POSTGRES_PASSWORD=postgres -v "$PWD:/backup:ro" pgvector/pgvector:pg17
-docker exec bk-rehearsal pg_isready -h 127.0.0.1 -U postgres
+docker run -d --name bk-rehearsal -e POSTGRES_PASSWORD=postgres pgvector/pgvector:pg17
+aws s3 cp --only-show-errors s3://link-sphere-db-backup/db/<날짜>.dump - | docker exec -i bk-rehearsal sh -c 'cat > /tmp/db.dump'
+until docker exec bk-rehearsal pg_isready -q -h 127.0.0.1 -U postgres; do sleep 2; done
 docker exec bk-rehearsal psql -q -U postgres -v ON_ERROR_STOP=1 -c "CREATE SCHEMA extensions; CREATE EXTENSION vector WITH SCHEMA extensions; CREATE SCHEMA auth; CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS 'SELECT NULL::uuid'; DROP SCHEMA public CASCADE;"
-docker exec bk-rehearsal pg_restore -U postgres -d postgres --exit-on-error --single-transaction --no-owner --no-privileges /backup/<날짜>.dump
-docker exec bk-rehearsal psql -U postgres -At -c "select count(*) from public.posts"
-/opt/homebrew/opt/libpq/bin/psql "service=linksphere-ro" -At -c "select count(*) from public.posts"
+docker exec bk-rehearsal pg_restore -U postgres -d postgres --exit-on-error --single-transaction --no-owner --no-privileges /tmp/db.dump
+Q="select tablename || ' ' || (xpath('/row/c/text()', query_to_xml(format('select count(*) as c from %I.%I', schemaname, tablename), false, true, '')))[1]::text from pg_tables where schemaname = 'public' and tablename not in ('member_sessions', 'member_action_tokens', 'auth_rate_limits') and has_any_column_privilege(format('%I.%I', schemaname, tablename), 'SELECT') order by 1"
+diff <(docker exec bk-rehearsal psql -U postgres -At -c "$Q") <(/opt/homebrew/opt/libpq/bin/psql "service=linksphere-ro" -At -c "$Q") && echo "행 수 모두 같음"
 docker rm -f bk-rehearsal
 ```
 
-`pg_isready`가 `accepting connections`가 될 때까지 반복한다(초기화 중에는 TCP를 열지 않는다). 두 행 수는 백업 뒤 바뀐
-만큼만 달라야 한다.
+- `until` 줄은 진짜 서버가 TCP를 열 때까지 기다린다(초기화 중에 뜨는 임시 서버는 소켓만 연다).
+- `pg_restore`는 성공하면 아무것도 출력하지 않는다.
+- 마지막 비교는 데이터를 덤프하지 않는 세 테이블을 뺀 테이블마다 행 수를 세어 운영과 나란히 본다. 운영은 12장 읽기 전용
+  계정으로만 읽는다. 백업 뒤에 바뀐 테이블만 다르게 나와야 한다. 행 수는 화면에서만 보고 이슈·PR에 옮기지 않는다(공개 레포).
 
 #### 13-4. 실패했을 때와 바꿀 때
 
