@@ -1,6 +1,7 @@
 package com.example.linksphere.domain.auth
 
 import com.example.linksphere.domain.member.MemberRepository
+import com.example.linksphere.domain.member.MemberRole
 import com.example.linksphere.domain.member.TableMember
 import com.example.linksphere.global.common.RateLimitService
 import com.example.linksphere.global.common.SecureToken
@@ -108,6 +109,17 @@ class PasswordResetServiceTest {
             org.mockito.ArgumentMatchers.anyString(),
             org.mockito.ArgumentMatchers.anyString(),
         )
+    }
+
+    // 비밀번호를 공개한 데모 계정은 수신함 없는 주소라 반송만 쌓인다 - 응답은 없는 이메일과 같다
+    @Test
+    fun `requestReset은 공유 계정(데모)이면 토큰도 메일도 없이 조용히 끝난다`() {
+        val member = TableMember(id = UUID.randomUUID(), email = "test@example.com", password = "enc", role = MemberRole.DEMO)
+        `when`(memberRepository.findByEmail("test@example.com")).thenReturn(member)
+
+        service.requestReset("test@example.com", "203.0.113.1")
+
+        verifyNoInteractions(mailService, memberActionTokenRepository)
     }
 
     @Test

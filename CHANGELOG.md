@@ -9,6 +9,27 @@
 
 ## [Unreleased]
 
+### Added
+
+- `auth` 역할·권한 체계, `DEMO` 역할은 계정 설정 4개 API가 403 `ACCESS_DENIED`
+  <details><summary>배경·구현</summary>
+
+  README에 공개한 테스트 계정은 비밀번호가 공개돼 누구나 비밀번호를 바꾸거나 탈퇴시켜 계정을 뺏을 수 있었다. 포트폴리오
+  데모 계정을 따로 두고 계정 설정만 막으려고, 기존 `members.role` 열(전부 `USER`)을 `MemberRole` enum으로 읽기 전용
+  매핑하고 역할 → 권한(`Permission`) 표를 만들었다. 세션 조회가 `members`와 조인해 역할까지 한 번에 읽고(요청당 쿼리
+  추가 없음), 인증 필터가 역할의 권한을 authorities로 싣는다. `@EnableMethodSecurity`를 켜고 `logout-all`·계정 수정·
+  비밀번호 변경·탈퇴에 `@PreAuthorize("hasAuthority(...)")`를 달았다 — `USER`는 4종 전부, `DEMO`는 없음. 메서드 보안의
+  거부는 `GlobalExceptionHandler`가 403 `ACCESS_DENIED`로 바꾼다(처리기를 잠시 빼고 보안 테스트를 돌리면 500으로
+  나가는 것을 확인했다 — 500이면 App5xx 알람이 울린다). 인증 전 요청인 로그인·비밀번호 재설정은 역할 속성
+  `sharedCredentials`(`DEMO`만 true)로 나눠, 공유 계정의 비밀번호 오답은 이메일 잠금에 쌓지 않고(IP 버킷만) 재설정 메일은 보내지 않는다(응답은 그대로 200). `GET
+  /auth/account`의 `role`은 고정값 `"USER"` 대신 실제 역할을 준다. 글·댓글·북마크는 그대로다. 역할은 운영 DB에서 SQL로만
+  바꾼다. 계획 `docs/plans/2026-11-02-safety-net-top3.md` Phase D, 구조는 `docs/BE-ARCHITECTURE.md` §5 "역할·권한".
+  (`MemberRole.kt`·`Permission.kt`(신규), `TableMember.kt`, `MemberSessionRepository.kt`, `MemberSessionService.kt`,
+  `SessionAuthenticationFilter.kt`, `SecurityConfig.kt`, `AuthController.kt`, `GlobalExceptionHandler.kt`, `AuthService.kt`,
+  `PasswordResetService.kt`, [PR #151](https://github.com/BAECHAN/link-sphere_BE_NEW/pull/151))
+
+  </details>
+
 ## [0.11.0] - 2026-10-28
 
 ### Added

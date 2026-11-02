@@ -1,5 +1,6 @@
 package com.example.linksphere.domain.auth
 
+import com.example.linksphere.domain.member.MemberRole
 import com.example.linksphere.domain.member.MemberService
 import com.example.linksphere.domain.member.SignupRequest
 import com.example.linksphere.domain.member.TableMember
@@ -117,6 +118,32 @@ class AuthServiceTest {
 
         verify(rateLimitService).recordHit(emailBucket, Duration.ofMinutes(15))
         verify(rateLimitService).recordHit(ipBucket, Duration.ofMinutes(15))
+    }
+
+    // 비밀번호를 공개한 공유 계정은 이메일 잠금을 걸지 않는다(MemberRole.sharedCredentials) - IP 버킷은 그대로다
+    @Test
+    fun `login은 데모 계정의 비밀번호가 틀리면 IP 버킷에만 실패를 기록한다`() {
+        val request = LoginRequest("test@example.com", "wrongpassword")
+        val member = TableMember(id = UUID.randomUUID(), email = request.email, password = "encoded", role = MemberRole.DEMO)
+        `when`(memberService.findByEmailOrNull(request.email)).thenReturn(member)
+        `when`(passwordEncoder.matches(request.password, member.password)).thenReturn(false)
+
+        assertThrows(InvalidCredentialsException::class.java) {
+            authService.login(request, "203.0.113.1")
+        }
+
+        verify(rateLimitService).recordHit(ipBucket, Duration.ofMinutes(15))
+        verify(rateLimitService, never()).recordHit(emailBucket, Duration.ofMinutes(15))
+    }
+
+    // 응답 role은 예전 고정값 "USER"가 아니라 회원 역할이다
+    @Test
+    fun `getAccount는 회원 역할을 응답 role에 담는다`() {
+        val memberId = UUID.randomUUID()
+        `when`(memberService.findById(memberId))
+            .thenReturn(TableMember(id = memberId, email = "demo@example.com", password = "encoded", role = MemberRole.DEMO))
+
+        assertEquals("DEMO", authService.getAccount(memberId).role)
     }
 
     @Test

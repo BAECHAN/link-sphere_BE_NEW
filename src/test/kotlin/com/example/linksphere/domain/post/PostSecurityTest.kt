@@ -9,6 +9,7 @@ import com.example.linksphere.domain.auth.MemberSessionService
 import com.example.linksphere.domain.auth.PasswordResetService
 import com.example.linksphere.domain.comment.CommentController
 import com.example.linksphere.domain.comment.CommentService
+import com.example.linksphere.domain.member.MemberRole
 import com.example.linksphere.global.common.RateLimitService
 import com.example.linksphere.global.config.SecurityConfig
 import com.example.linksphere.global.config.security.CustomAccessDeniedHandler
@@ -92,7 +93,7 @@ class PostSecurityTest {
     @Test
     fun `유효 토큰으로 조회하면 본인 기준으로 목록을 준다`() {
         val memberId = UUID.randomUUID()
-        `when`(memberSessionService.checkAccessToken("valid-token")).thenReturn(AccessTokenCheck.Valid(memberId, UUID.randomUUID()))
+        `when`(memberSessionService.checkAccessToken("valid-token")).thenReturn(AccessTokenCheck.Valid(memberId, UUID.randomUUID(), MemberRole.USER))
         `when`(postService.getAllPosts(null, null, "isPrivate", null, 0, 10, memberId, true)).thenReturn(emptyPage)
 
         mockMvc.perform(get("/post").param("filter", "isPrivate").header("X-Access-Token", "valid-token"))

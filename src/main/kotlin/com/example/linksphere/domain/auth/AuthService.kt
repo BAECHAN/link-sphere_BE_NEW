@@ -146,7 +146,14 @@ class AuthService(
         }
 
         if (!passwordEncoder.matches(request.password, member.password)) {
-            recordLoginFailure(emailBucket, ipBucket)
+            // 비밀번호를 공개한 공유 계정(데모)은 이메일 잠금을 걸지 않는다 - 누구나 아는 비밀번호라 잠그면 방문자만 막힌다.
+            // IP 버킷은 그대로 기록해 한 IP의 반복 대입은 계속 막는다(MemberRole.sharedCredentials).
+            if (member.role.sharedCredentials) {
+                rateLimitService.recordHit(ipBucket, LOGIN_FAIL_IP_WINDOW)
+            } else {
+                recordLoginFailure(emailBucket, ipBucket)
+            }
+
             throw InvalidCredentialsException("Invalid email or password")
         }
 
@@ -223,6 +230,7 @@ class AuthService(
     private fun toAccountResponse(member: TableMember): AccountResponse = AccountResponse(
         id = member.id.toString(),
         nickname = member.nickname,
+        role = member.role.name,
         image = member.image,
         emailVerified = member.emailVerified,
         email = member.email,

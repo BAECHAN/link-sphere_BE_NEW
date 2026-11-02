@@ -374,9 +374,10 @@ return ApiResponse(HttpStatus.OK.value(), "Link preview", postService.previewLin
 | Spring `NoResourceFoundException` | 404 | `NOT_FOUND` |
 | Spring `HttpMediaTypeNotAcceptableException` | 406 | (본문 없음) |
 | 그 밖의 Spring MVC 표준 예외(`ErrorResponse` 구현 — 405 메서드·415 Content-Type·400 필수 파라미터 누락 등) | 예외가 정한 상태(405는 `Allow` 헤더 포함) | 400이면 `INVALID_INPUT`, 그 밖은 상태 이름(`METHOD_NOT_ALLOWED`, `UNSUPPORTED_MEDIA_TYPE` …) |
+| Spring Security `AccessDeniedException`(메서드 보안 `@PreAuthorize` 거부, §5 "역할·권한") | 403 | `ACCESS_DENIED` |
 | 그 밖의 `Exception` | 500 | `INTERNAL_SERVER_ERROR` |
 | 보안 진입점(`CustomAuthenticationEntryPoint`) | 401 | `TOKEN_EXPIRED` / `INVALID_TOKEN` / `NOT_LOGGED_IN` |
-| 보안 거부(`CustomAccessDeniedHandler`) | 403 | `ACCESS_DENIED` |
+| 보안 거부(`CustomAccessDeniedHandler`, URL 단계) | 403 | `ACCESS_DENIED` |
 
 ---
 
@@ -409,6 +410,51 @@ fun getPosts(authentication: Authentication?, ...): ApiResponse<PostPageResponse
   돌려 FE가 갱신하게 한다(#104, [`plans/2026-10-20-public-get-expired-token-401.md`](plans/2026-10-20-public-get-expired-token-401.md)).
 - 세션 토큰·액션 토큰은 `SecureToken`으로 만들고 **DB에는 sha256 해시만** 저장한다. 세션 회전·재사용 탐지는
   `MemberSessionService.rotate`(§7-2).
+
+### 역할·권한
+
+회원마다 역할(`members.role`)이 하나 있고, 역할이 가진 권한만 그 엔드포인트를 부를 수 있다. 지금 권한으로 막는 곳은
+계정 설정 4개뿐이다 — 글·댓글·북마크는 막을 역할이 없어 권한 표에 넣지 않았다
+([`plans/2026-11-02-safety-net-top3.md`](plans/2026-11-02-safety-net-top3.md) Phase D).
+
+```
+요청 + X-Access-Token
+  → SessionAuthenticationFilter: 세션 조회가 members와 조인해 role까지 한 번에 읽는다
+  → role.permissions를 authorities로 싣는다
+  → 컨트롤러 @PreAuthorize("hasAuthority('<권한>')")
+       ├ 있음 → 서비스(기존 그대로)
+       └ 없음 → AccessDeniedException → GlobalExceptionHandler 403 ACCESS_DENIED
+```
+
+| 역할 | 계정 권한 | 공유 계정(`sharedCredentials`) | 누구 |
+|---|---|---|---|
+| `USER` | 4종 전부 | false | 데모를 뺀 모든 회원(기본값) |
+| `DEMO` | 없음 | true | README에 비밀번호를 공개하는 포트폴리오 데모 계정 |
+
+| 권한 | 엔드포인트 |
+|---|---|
+| `ACCOUNT_PROFILE_UPDATE` | `PATCH /auth/account` |
+| `ACCOUNT_PASSWORD_CHANGE` | `PATCH /auth/account/password` |
+| `ACCOUNT_DELETE` | `DELETE /auth/account` |
+| `SESSION_LOGOUT_ALL` | `POST /auth/logout-all` |
+
+- 정본은 `domain/member/MemberRole.kt`(역할 → 권한)와 `domain/member/Permission.kt`다 — 위 두 표는 그 파생본이다.
+- `TableMember.role`은 읽기 전용 매핑이다(`insertable = false, updatable = false`). 가입하면 DB 기본값 `USER`가
+  들어가고, 역할은 운영 DB에서 SQL로만 바꾼다. 세션을 매 요청 DB로 확인하므로 바꾸면 다음 요청부터 반영된다.
+- 로그인·비밀번호 재설정은 인증 *전* 요청이라 권한 목록이 없다 — 여기서는 권한이 아니라 역할 속성
+  `sharedCredentials`로 나눈다. 공유 계정은 비밀번호 오답이 이메일 버킷 잠금에 쌓이지 않고(IP 버킷만,
+  `AuthService.login`), 재설정 메일을 보내지 않는다(응답은 없는 이메일과 같은 200, `PasswordResetService.requestReset`).
+- 권한 거부를 `GlobalExceptionHandler`가 403으로 바꾸지 않으면 `Exception` 전체 처리기가 500 + ERROR 로그로 내보내
+  App5xx 알람이 울린다. `AccountPermissionSecurityTest`가 실제 보안 체인으로 403을 단정한다.
+
+**권한·역할을 추가하려면**
+
+- **엔드포인트를 권한으로 막으려면**: `Permission`에 값을 추가 → 가질 역할의 `permissions`에 넣기 → 컨트롤러 메서드에
+  `@PreAuthorize("hasAuthority('<권한>')")` → `@Operation` 설명에 `403 ACCESS_DENIED` → `AccountPermissionSecurityTest`
+  형태로 역할별 통과·403 테스트. `@PreAuthorize`는 `@EnableMethodSecurity`(`SecurityConfig`)가 켜 둔 상태다.
+- **역할을 추가하려면**: `MemberRole`에 값을 추가하고, 운영 DB에 CHECK 제약 `members_role_check`를 만들어 뒀다면
+  같은 값으로 넓힌다 — enum에 없는 값이 DB에 들어가면 그 회원을 읽을 때 enum 변환이 실패한다. 이 제약은 데모 계정을
+  만들 때 권장 SQL로 추가한다(위 계획 파일 Phase D "사용자" 행).
 
 ---
 

@@ -15,6 +15,7 @@ import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseCookie
 import org.springframework.http.ResponseEntity
+import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.security.core.Authentication
 import org.springframework.validation.annotation.Validated
 import org.springframework.web.bind.annotation.CookieValue
@@ -124,8 +125,10 @@ class AuthController(
     @Operation(
         summary = "로그아웃 (전체 기기)",
         description = "이 계정의 모든 세션을 서버에서 즉시 폐기한다(다른 브라우저·기기에 남아있던 로그인 " +
-            "포함). 이 요청을 보낸 기기의 쿠키도 함께 만료시킨다.",
+            "포함). 이 요청을 보낸 기기의 쿠키도 함께 만료시킨다. " +
+            "실패: 403 ACCESS_DENIED(데모 계정처럼 이 권한이 없는 역할)",
     )
+    @PreAuthorize("hasAuthority('SESSION_LOGOUT_ALL')")
     @PostMapping("/logout-all")
     fun logoutAll(authentication: Authentication): ResponseEntity<ApiResponse<Unit>> {
         val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
@@ -156,8 +159,9 @@ class AuthController(
     @Operation(
         summary = "내 계정 수정",
         description = "nickname·image 만 부분 수정한다(null 인 필드는 유지). " +
-            "실패: 409 DUPLICATE_NICKNAME(닉네임 중복)",
+            "실패: 409 DUPLICATE_NICKNAME(닉네임 중복) · 403 ACCESS_DENIED(데모 계정처럼 이 권한이 없는 역할)",
     )
+    @PreAuthorize("hasAuthority('ACCOUNT_PROFILE_UPDATE')")
     @PatchMapping("/account")
     fun updateAccount(
         @Valid @RequestBody request: UpdateAccountRequest,
@@ -171,8 +175,10 @@ class AuthController(
         summary = "비밀번호 변경",
         description = "현재 비밀번호 확인 후 변경한다. 성공하면 이 기기를 포함한 모든 세션이 폐기되고 " +
             "이 기기에는 새 세션이 발급된다(쿠키도 새로 세팅됨) - 다른 기기는 재로그인이 필요하다. " +
-            "실패: 400 INVALID_INPUT · 401 INVALID_CREDENTIALS(현재 비밀번호 불일치)",
+            "실패: 400 INVALID_INPUT · 401 INVALID_CREDENTIALS(현재 비밀번호 불일치) · " +
+            "403 ACCESS_DENIED(데모 계정처럼 이 권한이 없는 역할)",
     )
+    @PreAuthorize("hasAuthority('ACCOUNT_PASSWORD_CHANGE')")
     @PatchMapping("/account/password")
     fun changePassword(
         @Valid @RequestBody request: ChangePasswordRequest,
@@ -193,8 +199,10 @@ class AuthController(
             "푸시 중단). 작성한 글·댓글은 이 시점부터 '탈퇴한 사용자'로 표시된다. 14일 안에 다시 " +
             "로그인하면 신청이 자동 취소되고 닉네임 등이 그대로 복구된다(POST /auth/login 참고). " +
             "14일이 지나면 예약 작업이 계정을 익명화하고, 그때 북마크·좋아요·조회기록도 실제로 " +
-            "삭제된다. 실패: 401 INVALID_CREDENTIALS(비밀번호 불일치)",
+            "삭제된다. 실패: 401 INVALID_CREDENTIALS(비밀번호 불일치) · " +
+            "403 ACCESS_DENIED(데모 계정처럼 이 권한이 없는 역할)",
     )
+    @PreAuthorize("hasAuthority('ACCOUNT_DELETE')")
     @DeleteMapping("/account")
     fun deleteAccount(
         @Valid @RequestBody request: DeleteAccountRequest,

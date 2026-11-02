@@ -522,7 +522,7 @@ aws events put-targets \
 
 - 피드 소스 추가/제거는 재배포 없이 `feed_sources` 테이블에 직접 SQL로 한다
   (관리자 API 없음 — `tools/OrphanImageCleanupRunner.kt`와 같은 이유, 이 코드베이스에
-  admin/role 개념이 없어 REST로 노출하면 SSRF 게이트가 된다)
+  관리자 역할이 없어 REST로 노출하면 SSRF 게이트가 된다 — 역할 체계는 `docs/BE-ARCHITECTURE.md` §5 "역할·권한")
 - 결과 확인: `SELECT p.title, p.ai_status FROM posts p JOIN members m ON m.id = p.user_id
   WHERE m.is_bot ORDER BY p.created_at DESC LIMIT 20;`
 - `ai_status = FAILED`가 절반 이상이면 Gemini RPM 초과 — `FeedCrawlService`의

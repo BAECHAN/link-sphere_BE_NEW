@@ -1,5 +1,6 @@
 package com.example.linksphere.domain.auth
 
+import com.example.linksphere.domain.member.MemberRole
 import com.example.linksphere.global.common.SecureToken
 import com.example.linksphere.global.exception.InvalidTokenException
 import com.example.linksphere.global.exception.SessionMismatchException
@@ -21,7 +22,8 @@ sealed interface AccessTokenCheck {
     // familyId: 이 access 토큰이 속한 세션의 회전 계열. FcmTokenController가 토큰 등록 시
     // 이 값을 fcm_tokens.session_family_id에 실어, 나중에 이 세션이 죽으면(로그아웃·
     // 재사용탐지·비밀번호변경) 그 기기의 FCM 토큰도 함께 무효화되게 한다.
-    data class Valid(val memberId: UUID, val familyId: UUID) : AccessTokenCheck
+    // role: 그 회원의 역할. SessionAuthenticationFilter가 역할의 권한을 Authentication에 싣는다(MemberRole).
+    data class Valid(val memberId: UUID, val familyId: UUID, val role: MemberRole) : AccessTokenCheck
 
     data object Expired : AccessTokenCheck
 
@@ -209,8 +211,8 @@ class MemberSessionService(private val memberSessionRepository: MemberSessionRep
 
     /** SessionAuthenticationFilter가 매 요청마다 access 토큰을 판정할 때 쓴다. */
     fun checkAccessToken(rawAccessToken: String): AccessTokenCheck {
-        val session =
-            memberSessionRepository.findByAccessTokenHash(SecureToken.hash(rawAccessToken))
+        val (session, role) =
+            memberSessionRepository.findWithRoleByAccessTokenHash(SecureToken.hash(rawAccessToken))
                 ?: return AccessTokenCheck.Invalid
         if (session.accessExpiresAt.isBefore(Instant.now())) return AccessTokenCheck.Expired
         // revoke는 로그아웃·재사용탐지처럼 "확실히 죽었다"뿐 아니라, 다른 탭이 refresh를
@@ -222,6 +224,6 @@ class MemberSessionService(private val memberSessionRepository: MemberSessionRep
         // 실패해 결국 로그인 화면으로 수렴한다 - 보안 결과는 같고 UX만 나아진다(PR #42
         // 리뷰에서 발견: 회전 시 다른 탭의 아직 유효한 access가 즉시 로그아웃당하던 문제).
         if (session.revokedAt != null) return AccessTokenCheck.Expired
-        return AccessTokenCheck.Valid(session.memberId, session.familyId)
+        return AccessTokenCheck.Valid(session.memberId, session.familyId, role)
     }
 }

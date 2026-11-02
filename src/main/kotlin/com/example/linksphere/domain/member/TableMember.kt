@@ -40,6 +40,12 @@ class TableMember(
     // deleted_at이 채워지기 전까지는 로그인 자체는 막지 않는다(AccountDeletionService).
     // sql/add_member_deletion_requested_at.sql이 컬럼을 추가한다.
     @Column(name = "deletion_requested_at") var deletionRequestedAt: Instant? = null,
+    // 역할(MemberRole). 가입하면 DB 기본값 'USER'가 들어가고 앱은 읽기만 한다 - 데모 계정은 운영자가 SQL로 바꾼다
+    // (docs/BE-ARCHITECTURE.md "역할·권한"). 요청마다 하는 권한 판정은 이 엔티티가 아니라 세션 조회(MemberSessionRepository.
+    // findWithRoleByAccessTokenHash)에서 함께 읽는다.
+    @Enumerated(EnumType.STRING)
+    @Column(name = "role", nullable = false, insertable = false, updatable = false)
+    val role: MemberRole = MemberRole.USER,
 ) {
     // 익명화 완료(퍼지) 또는 유예 중(퍼지 대기) 둘 다 "남에게는 탈퇴한 것처럼 보여야 한다"는
     // 점에서 같다 - CommentService·PostResponseAssembler·CommentPostProcessService·닉네임
