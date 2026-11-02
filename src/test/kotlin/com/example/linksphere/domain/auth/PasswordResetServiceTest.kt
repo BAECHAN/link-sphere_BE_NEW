@@ -104,10 +104,11 @@ class PasswordResetServiceTest {
         }
 
         verify(memberActionTokenRepository).save(any())
+        // 링크는 FE 라우트(route-paths.ts의 AUTH.RESET_PASSWORD)와 같아야 한다 - 2026-11-02까지 /auth가 빠져 404였다
         verify(mailService).send(
             org.mockito.ArgumentMatchers.anyString(),
             org.mockito.ArgumentMatchers.anyString(),
-            org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.contains("https://test.example/auth/reset-password?token="),
         )
     }
 

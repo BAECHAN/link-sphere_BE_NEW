@@ -16,6 +16,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentMatchers.any
 import org.mockito.ArgumentMatchers.anyString
+import org.mockito.ArgumentMatchers.contains
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
@@ -293,7 +294,8 @@ class AuthServiceTest {
         afterCommitOf { authService.signup(request, "203.0.113.1") }
 
         verify(memberActionTokenRepository).save(any())
-        verify(mailService).send(anyString(), anyString(), anyString())
+        // 링크는 FE 라우트(route-paths.ts의 AUTH.VERIFY_EMAIL)와 같아야 한다 - 2026-11-02까지 /auth가 빠져 404였다
+        verify(mailService).send(anyString(), anyString(), contains("https://test.example/auth/verify-email?token="))
     }
 
     @Test
