@@ -28,7 +28,7 @@
 
 ```mermaid
 flowchart TD
-    A["탈퇴 신청<br/>DELETE /auth/account"] --> B["1단계: 즉시 동결<br/>세션 전부 폐기 · FCM 토큰 삭제<br/>deletion_requested_at = now"]
+    A["탈퇴 신청<br/>POST /auth/account/deletion"] --> B["1단계: 즉시 동결<br/>세션 전부 폐기 · FCM 토큰 삭제<br/>deletion_requested_at = now"]
     B --> C["다른 사용자에게는<br/>즉시 '탈퇴한 사용자'로 표시"]
     C --> D{"14일 안에<br/>로그인?"}
     D -->|"예(비밀번호 일치)"| E["신청 취소<br/>조건부 UPDATE로 원자적 확정<br/>닉네임 등 즉시 복구"]

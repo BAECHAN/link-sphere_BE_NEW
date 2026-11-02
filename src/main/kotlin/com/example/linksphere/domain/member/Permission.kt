@@ -8,6 +8,6 @@ package com.example.linksphere.domain.member
 enum class Permission {
     ACCOUNT_PROFILE_UPDATE, // PATCH /auth/account
     ACCOUNT_PASSWORD_CHANGE, // PATCH /auth/account/password
-    ACCOUNT_DELETE, // DELETE /auth/account
+    ACCOUNT_DELETE, // POST /auth/account/deletion
     SESSION_LOGOUT_ALL, // POST /auth/logout-all
 }

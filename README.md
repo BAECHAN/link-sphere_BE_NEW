@@ -190,7 +190,7 @@ src/main/kotlin/com/example/linksphere/
 | `GET`    | `/auth/account`                          | 내 계정 정보 조회                             | ✅   |
 | `PATCH`  | `/auth/account`                          | 닉네임·이미지 수정                            | ✅   |
 | `PATCH`  | `/auth/account/password`                 | 비밀번호 변경                                 | ✅   |
-| `DELETE` | `/auth/account`                          | 회원탈퇴 신청 (14일 유예, 로그인 시 자동 복구)| ✅   |
+| `POST`   | `/auth/account/deletion`                 | 회원탈퇴 신청 (14일 유예, 로그인 시 자동 복구)| ✅   |
 | `GET`    | `/auth/account/nickname-availability`    | 닉네임 사용 가능 여부                         | ❌   |
 | `GET`    | `/auth/email-availability`               | 이메일 사용 가능 여부                         | ❌   |
 | `POST`   | `/auth/password-reset/request`           | 비밀번호 찾기 요청 (항상 200)                 | ❌   |
@@ -277,10 +277,10 @@ Bookmark Folder 섹션 참고.
 
 ### 🔔 FCM Token (`/fcm`)
 
-| Method   | Endpoint     | 설명                | 인증 |
-| -------- | ------------ | ------------------- | ---- |
-| `POST`   | `/fcm/token` | FCM 토큰 등록       | ✅   |
-| `DELETE` | `/fcm/token` | FCM 토큰 해제       | ✅   |
+| Method   | Endpoint              | 설명                | 인증 |
+| -------- | --------------------- | ------------------- | ---- |
+| `POST`   | `/fcm/token`          | FCM 토큰 등록       | ✅   |
+| `POST`   | `/fcm/token/deletion` | FCM 토큰 해제       | ✅   |
 
 ### 📤 Upload (`/upload`)
 

@@ -35,7 +35,7 @@ class FcmTokenController(private val fcmTokenService: FcmTokenService) {
         summary = "FCM 토큰 해제",
         description = "data 는 비어 있다.",
     )
-    @DeleteMapping("/token")
+    @PostMapping("/token/deletion")
     fun deleteToken(
         authentication: Authentication,
         @Valid @RequestBody request: DeleteFcmTokenRequest,
