@@ -64,6 +64,7 @@ src/main/kotlin/com/example/linksphere/
 │   │   ├── MemberRepository.kt
 │   │   ├── MemberService.kt
 │   │   ├── MemberDTO.kt                 # 가입·계정 수정 요청(SignupRequest·UpdateAccountRequest)
+│   │   ├── PasswordPattern.kt           # 가입·비밀번호 변경·재설정이 공유하는 비밀번호 정규식
 │   │   ├── EmailNormalizer.kt           # 이메일 비교·저장 전 정규화(trim·소문자)
 │   │   └── EmailVerificationGate.kt     # 이메일 인증 전 회원의 글·댓글·답글 작성과 링크 미리보기 차단
 │   ├── post/                            # 게시글 도메인
@@ -87,6 +88,7 @@ src/main/kotlin/com/example/linksphere/
 │   │   ├── CommentDTO.kt
 │   │   ├── CommentRepository.kt
 │   │   ├── CommentService.kt            # 댓글·답글 CRUD (알림·링크프리뷰는 CommentPostProcessService가 커밋 후 별도 처리)
+│   │   ├── CommentLimits.kt             # 댓글 이미지 5장·본문 6,000바이트(서비스 검사, 스펙에도 실림)
 │   │   ├── CommentPostProcessService.kt # 커밋 뒤 self-invoke 잡: FCM 알림·링크 프리뷰
 │   │   └── TableComment.kt
 │   ├── interaction/                     # 좋아요·북마크(폴더 다중 소속 포함) 도메인
@@ -95,6 +97,7 @@ src/main/kotlin/com/example/linksphere/
 │   │   ├── BookmarkFolderController.kt  # 폴더 CRUD·폴더별 게시글 조회
 │   │   ├── BookmarkFolderService.kt
 │   │   ├── BookmarkFolderDTO.kt
+│   │   ├── BookmarkFolderLimits.kt      # 폴더 이름 15자(서비스 검사, 스펙에도 실림)
 │   │   ├── BookmarkRepository.kt
 │   │   ├── BookmarkRepositoryCustom.kt
 │   │   ├── BookmarkRepositoryImpl.kt    # 폴더 필터 EXISTS/NOT EXISTS 세미조인

@@ -11,7 +11,7 @@ package com.example.linksphere.domain.member
  *
  * 두 규칙을 정규식 하나로 합친 이유: 같은 필드에 `@Pattern`을 두 개 달면 Kotlin이 `@Pattern.List` 하나로 컴파일하는데,
  * swagger-core 2.2.55가 단일 `@Pattern`만 읽어 OpenAPI 스펙에서 규칙이 통째로 빠졌다(2026-11-02 확인). FE가 스펙에서
- * 상수를 생성해 쓰므로 스펙에 실려야 한다.
+ * 생성한 패턴으로 자기 비밀번호 검증과 같은 판정인지 테스트하므로 스펙에 실려야 한다.
  */
 object PasswordPattern {
 
