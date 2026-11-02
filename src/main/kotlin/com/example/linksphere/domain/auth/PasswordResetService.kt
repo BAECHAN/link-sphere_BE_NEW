@@ -69,7 +69,8 @@ class PasswordResetService(
             ),
         )
 
-        val link = "$frontendUrl/reset-password?token=$raw"
+        // 경로는 FE 라우트(FE src/shared/config/route-paths.ts의 AUTH.RESET_PASSWORD)와 같아야 한다
+        val link = "$frontendUrl/auth/reset-password?token=$raw"
         // 메일은 토큰이 커밋된 뒤에 보낸다 - 같은 트랜잭션 안에서 먼저 보내면 커밋이 실패했을 때 DB에 없는 토큰의 링크가
         // 이미 나가 있다. MailService는 실패해도 로그만 남겨 커밋 뒤 예외가 새지 않는다(AuthService.sendVerificationEmail,
         // CommentService의 이미지 삭제와 같은 방식, docs/plans/2026-10-25-be-architecture-audit.md PR5).

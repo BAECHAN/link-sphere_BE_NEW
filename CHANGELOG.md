@@ -48,6 +48,15 @@
 
   </details>
 
+### Fixed
+
+- `auth` 이메일 인증·비밀번호 재설정 메일 링크가 FE 404 화면으로 가던 문제
+  <details><summary>배경·구현</summary>
+
+  메일 링크가 `/verify-email`·`/reset-password`였는데 FE 화면 경로는 처음부터 `/auth/verify-email`·`/auth/reset-password`(FE `src/shared/config/route-paths.ts`)라, 링크를 누르면 "페이지를 찾을 수 없어요"가 떴다. 2026-09-28 메일 기능을 넣을 때부터 어긋났지만, Lambda 역할에 SES 발송 권한이 빠져 메일 발송이 실패하고 있어 드러나지 않았다(2026-11-02 권한을 붙인 뒤 받은 첫 인증 메일에서 발견). 링크에 `/auth`를 붙이고, 기존 테스트가 본문을 `anyString()`으로만 보던 것을 링크 경로까지 확인하도록 바꿨다. 이미 보낸 옛 링크는 주소에 `/auth`를 붙이면 그대로 쓸 수 있다(인증 24시간, 재설정 1시간 유효). (`AuthService.kt`, `PasswordResetService.kt`, [PR #153](https://github.com/BAECHAN/link-sphere_BE_NEW/pull/153))
+
+  </details>
+
 ## [0.11.0] - 2026-10-28
 
 ### Added
