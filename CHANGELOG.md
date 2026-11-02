@@ -30,6 +30,24 @@
 
   </details>
 
+### Changed
+
+- `config` OpenAPI 스펙에 요청 입력 한도를 싣고 비밀번호 형식 규칙을 정규식 하나로 합침
+  <details><summary>배경·구현</summary>
+
+  FE가 BE 검증 값(폴더 이름 15자, 댓글 이미지 5장, 댓글 6,000바이트)을 손으로 복제하고 "BE와 같은 값" 주석으로만
+  맞추고 있었다. FE가 스펙에서 상수를 생성해 쓰도록(orval zod) 서비스에서 검사하던 한도를 스펙에도 싣는다 — DTO에 문서
+  전용 `@Schema(maxLength)`·`@ArraySchema(maxItems)`, 바이트 상한은 `x-max-bytes` 확장. 검사는 서비스가 그대로 해서 셈법
+  (폴더 이름은 trim 뒤 코드포인트)과 에러 순서가 바뀌지 않는다. 한도는 서비스와 DTO가 같이 참조하도록
+  `CommentLimits`·`BookmarkFolderLimits` object로 옮겼다. 비밀번호의 `@Pattern` 두 개는 Kotlin이 `@Pattern.List`로
+  컴파일해 swagger-core가 스펙에서 통째로 빠뜨려서 `PasswordPattern` 정규식 하나로 합쳤다 — 허용 범위는 같고, 형식 위반
+  응답 메시지만 두 문구에서 한 문구로 바뀐다(FE는 서버 메시지를 화면에 쓰지 않는다). HTTP 보안 스킴의 `name`(apiKey
+  전용 필드)은 OpenAPI 3.1 스키마 검증에서 거부돼 지웠다. 계획 `docs/plans/2026-11-02-orval-zod-constraints.md`.
+  (`CommentLimits.kt`·`BookmarkFolderLimits.kt`·`PasswordPattern.kt`(신규), `CommentDTO.kt`, `CommentService.kt`,
+  `BookmarkFolderDTO.kt`, `BookmarkFolderService.kt`, `MemberDTO.kt`, `AuthDTO.kt`, `SwaggerConfig.kt`)
+
+  </details>
+
 ## [0.11.0] - 2026-10-28
 
 ### Added

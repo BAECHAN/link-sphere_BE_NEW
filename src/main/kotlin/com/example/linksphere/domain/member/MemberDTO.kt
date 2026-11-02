@@ -15,18 +15,8 @@ data class SignupRequest(
     // 형식만 검증한다 - 실제 도달 가능한 주소인지는 가입 후 인증메일 확인으로 검증한다
     // (미인증이어도 로그인은 되고, 글쓰기·댓글쓰기만 막힌다 - AuthService.signup 참고)
     @field:Size(min = 8, max = 64)
-    @field:Pattern(
-        regexp = "^(?=.*[a-zA-Z])(?=.*[0-9])(?=.*[^a-zA-Z0-9]).*$",
-        message = "Password must contain at least one letter, one digit, and one special character",
-    )
-    // BCrypt는 72바이트를 넘는 입력을 자르고, 유니코드는 정규화 방식에 따라 같은 문자가
-    // 다른 바이트로 인코딩될 수 있어 "분명 같은 비밀번호인데 로그인이 안 되는" 버그로
-    // 이어질 수 있다 - 출력 가능 ASCII만 허용해 원천 차단한다(Microsoft Entra ID와 동일한
-    // 방식, docs/plans/2026-09-28-auth-hardening.md "확정된 결정들" 참고).
-    @field:Pattern(
-        regexp = "^[\\x20-\\x7E]*$",
-        message = "Password must contain only printable ASCII characters",
-    )
+    // 영문·숫자·특수문자 조합 + 출력 가능 ASCII 전용(근거는 PasswordPattern)
+    @field:Pattern(regexp = PasswordPattern.REGEXP, message = PasswordPattern.MESSAGE)
     val password: String,
     @field:NotBlank
     @field:Size(min = 2, max = 20)

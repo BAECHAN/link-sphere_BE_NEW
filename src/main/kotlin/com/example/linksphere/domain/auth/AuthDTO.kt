@@ -1,5 +1,6 @@
 package com.example.linksphere.domain.auth
 
+import com.example.linksphere.domain.member.PasswordPattern
 import jakarta.validation.constraints.Email
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Pattern
@@ -16,14 +17,7 @@ data class ChangePasswordRequest(
     // SignupRequest.password와 같은 규칙(길이·조합·ASCII 전용) - 비밀번호 확인 칸은
     // FE 전용 UX 가드다(SignUpForm의 confirmPassword와 같은 이유로 서버에는 안 보낸다).
     @field:Size(min = 8, max = 64)
-    @field:Pattern(
-        regexp = "^(?=.*[a-zA-Z])(?=.*[0-9])(?=.*[^a-zA-Z0-9]).*$",
-        message = "Password must contain at least one letter, one digit, and one special character",
-    )
-    @field:Pattern(
-        regexp = "^[\\x20-\\x7E]*$",
-        message = "Password must contain only printable ASCII characters",
-    )
+    @field:Pattern(regexp = PasswordPattern.REGEXP, message = PasswordPattern.MESSAGE)
     val newPassword: String,
 )
 
@@ -43,14 +37,7 @@ data class PasswordResetConfirmRequest(
     val token: String,
     // SignupRequest.password와 같은 규칙(길이·조합·ASCII 전용)
     @field:Size(min = 8, max = 64)
-    @field:Pattern(
-        regexp = "^(?=.*[a-zA-Z])(?=.*[0-9])(?=.*[^a-zA-Z0-9]).*$",
-        message = "Password must contain at least one letter, one digit, and one special character",
-    )
-    @field:Pattern(
-        regexp = "^[\\x20-\\x7E]*$",
-        message = "Password must contain only printable ASCII characters",
-    )
+    @field:Pattern(regexp = PasswordPattern.REGEXP, message = PasswordPattern.MESSAGE)
     val newPassword: String,
 )
 

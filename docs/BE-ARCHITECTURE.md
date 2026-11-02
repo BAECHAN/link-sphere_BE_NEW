@@ -624,11 +624,20 @@ for (id in ids) {
 
 - **언제**: 한도·기간·크기처럼 바꿀 수 있는 숫자를 코드에 둘 때.
 - **정석**: 서비스 `companion object`의 `private const val` + **왜 그 값인지 주석**
-  (`CommentService.MAX_COMMENT_CONTENT_BYTES` — WAF 8KB 벽과 FE 상수와의 동기화 이유).
+  (`AuthService.LOGIN_FAIL_EMAIL_LIMIT` — 계정당 15분 5회가 정상 사용자를 막지 않는 이유).
 - 외부 키·URL만 `@Value`로 주입한다. `@ConfigurationProperties`는 쓰지 않는다.
 - 다른 클래스가 참조해야 하는 값만 공개 상수로 둔다(`AccountDeletionService.GRACE_PERIOD`).
 - 여러 클래스가 같은 제약을 공유하면 그 제약을 이름으로 가진 `object`에 둔다 — 배치 잡 90초 마감은
-  `BatchJobLimits.DEADLINE_MILLIS`(Lambda 120초 타임아웃 근거), 이메일 정규화는 `EmailNormalizer.normalize`.
+  `BatchJobLimits.DEADLINE_MILLIS`(Lambda 120초 타임아웃 근거), 이메일 정규화는 `EmailNormalizer.normalize`,
+  댓글 한도는 `CommentLimits`(WAF 8KB 벽 근거), 폴더 이름 길이는 `BookmarkFolderLimits`, 비밀번호 형식은 `PasswordPattern`.
+- **요청 입력 한도는 OpenAPI 스펙에도 싣는다** — FE가 스펙에서 상수를 생성해 폼 검증에 쓴다(FE `docs/OPENAPI-CODEGEN.md`).
+  Bean Validation(`@Size`·`@Pattern`)으로 검사하는 필드는 springdoc이 알아서 싣는다. 서비스에서 검사하는 한도는 DTO 필드에
+  문서 전용 `@field:Schema(maxLength = …)`·`@field:ArraySchema(maxItems = …)`를 달고 서비스와 같은 `…Limits` 상수를 참조한다
+  (`CreateFolderRequest`, `CreateCommentRequest`). JSON Schema에 없는 규칙(바이트 수)은 `x-` 확장으로 값만 싣는다
+  (`x-max-bytes`). `@Schema`·`@ArraySchema`는 `@Constraint`가 아니라 `@Valid`를 요구하지 않고 검사 순서도 바꾸지 않는다.
+  `@Size`로 옮기지 않는 이유: UTF-16 길이로 세고(폴더 이름은 trim 뒤 코드포인트), `@Valid`가 붙어 소유 확인(403/404)보다 400이 먼저 나간다(아래 "남은 것"의 `@Valid` 확대 항목, 2026-10-26).
+- 같은 필드에 `@Pattern`을 두 개 달지 않는다 — Kotlin이 `@Pattern.List`로 컴파일해 swagger-core 2.2.55가 스펙에서 규칙을 통째로
+  빠뜨린다. 정규식 하나로 합친다(`PasswordPattern`, 2026-11-02).
 - **안티패턴**: 근거 주석 없는 매직 넘버, 같은 값을 여러 파일에 따로 선언(2026-10-26 전에는 90초 마감 3곳·이메일 정규화 4곳).
 
 ### 7-13. 엔티티 PK와 시간

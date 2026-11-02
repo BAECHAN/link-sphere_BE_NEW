@@ -318,8 +318,8 @@ class BookmarkFolderService(
             throw InvalidInputException("Folder name must not be blank")
         }
 
-        if (name.codePointCount(0, name.length) > MAX_FOLDER_NAME_LENGTH) {
-            throw InvalidInputException("Folder name must be at most $MAX_FOLDER_NAME_LENGTH characters")
+        if (name.codePointCount(0, name.length) > BookmarkFolderLimits.MAX_NAME_LENGTH) {
+            throw InvalidInputException("Folder name must be at most ${BookmarkFolderLimits.MAX_NAME_LENGTH} characters")
         }
 
         return name
@@ -329,12 +329,5 @@ class BookmarkFolderService(
         DuplicateFolderNameException(name)
     } else {
         this
-    }
-
-    companion object {
-        // 화면에서 잘리지 않게 정한 상한 - FE BOOKMARK_FOLDER_NAME_MAX_LENGTH와 같은 값이다. 이름은 말줄임 없이 줄바꿈해 보여 주고,
-        // 15자면 가장 좁은 자리(360px 폰의 폴더 카드)에서도 보통 2줄에 들어간다(FE docs/BOOKMARK.md "폴더 이름 길이", 2026-10-27).
-        // DB 컬럼(bookmark_folders.name varchar(100))은 그대로라 이미 저장된 16~100자 이름도 읽을 수 있다.
-        private const val MAX_FOLDER_NAME_LENGTH = 15
     }
 }
