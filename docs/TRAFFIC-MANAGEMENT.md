@@ -6,7 +6,7 @@
 >
 > **읽고 나면**: 요청 한도 값을 바꾸거나 새 엔드포인트에 한도를 걸 수 있고, WAF·알람 콘솔 작업을 이 문서만 보고 할 수 있다
 >
-> **마지막 검토**: 2026-10-12
+> **마지막 검토**: 2026-11-02
 
 ## 1. 쉬운 설명
 
@@ -32,7 +32,7 @@ flowchart TD
   T -->|"한도 안"| G["Gemini 임베딩 + 키워드 검색"]
   T -->|"초과"| K["키워드 검색만 (에러 아님)"]
   P -->|"GET 목록 API의 size"| Z["Paging.pageRequest<br/>size를 최대 50으로 자름"]
-  M["CloudWatch 알람 · AWS Budgets<br/>(콘솔, 운영자 메일)"] -.감시.-> L
+  M["CloudWatch 알람 3개: 앱 500·Errors·Throttles<br/>(SNS → 운영자 메일)"] -.감시.-> L
 ```
 
 ## 2. 전제 지식
@@ -214,11 +214,12 @@ Google SRE 책은 과부하 대응으로 기능을 낮춰 응답하는 방법(gr
 | Hikari 풀 | 인스턴스당 5 → 최대 10×5=50 DB 연결 | `src/main/resources/application.yml:17` | — |
 | WAF rate-based rule | IP당 5분 1000회, **Block** (8-1 런북) | WAF Web ACL `CreatedByCloudFront-bcd729fb` (CLI로만 수정 가능, 8-1) | 권장 · 추가 비용 없음(Free 플랜 규칙 5개 안). 막는 범위가 좁다 — 8-1 |
 | WAF 요청 로깅 | **꺼짐** (`get-logging-configuration`이 `WAFNonexistentItemException`) | 같은 Web ACL의 로깅 설정 | 선택 · 비용 미확인 — 아래 |
-| CloudWatch 알람 (`Throttles`) | 8-2 런북 참고 | CloudWatch 콘솔 (ap-northeast-1) | 선택 · 무료(프리티어 알람 10개 안) |
+| CloudWatch 알람 3개 (앱 500·`Errors`·`Throttles`) | 8-2 런북 참고 | CloudWatch (ap-northeast-1), SNS `link-sphere-alerts` | 권장 · 무료(프리티어 알람 10개 안) |
 | AWS Budgets | 8-3 런북 참고 | Billing 콘솔 | 선택(우선순위 낮음) · 무료(알림만) |
 
 필요도는 2026-10-03 실측(9장)으로 판단했다. 적용 상태(2026-10-11): WAF IP 제한은 **적용(Block)** —
-2026-10-03 Count로 넣고 1주 관찰 뒤 2026-10-11 Block으로 전환. Throttles 알람·Budgets는 미적용(선택).
+2026-10-03 Count로 넣고 1주 관찰 뒤 2026-10-11 Block으로 전환. Budgets는 미적용(선택). CloudWatch 알람은
+2026-11-02 런북(8-2)을 한 줄 명령으로 바꿨다 — 실제 생성 여부는 `describe-alarms`로 확인한다(8-2 "확인").
 
 **WAF 요청 로깅은 꺼둔 채로 둔다(2026-10-12 결정).** 로깅은 막는 기능이 아니라 기록하는 기능이라
 꺼져 있어도 방어는 그대로다. 잃는 건 차단 급증을 봤을 때 IP·경로를 바로 확인하는 능력뿐이고, 그건
@@ -329,22 +330,85 @@ WAF 차단은 429가 아니라 **403**으로 나간다. FE는 이를 `EDGE_BLOCK
 
 ### 8-2. 런북: CloudWatch 알람
 
-1. SNS 주제 하나(예: `link-sphere-alerts`)를 만들고 운영자 이메일을 구독시킨 뒤 메일에서 승인한다
-2. CloudWatch(ap-northeast-1) → Alarms → Create alarm:
+알람 3개가 SNS 주제 `link-sphere-alerts`로 운영자 메일을 보낸다. 2026-11-02 전까지는 알람이 0개였다 —
+도메인 정지로 4시간 전체가 멈췄을 때도 자동으로 알아챈 장치가 없었다(FE `docs/DEPLOY.md`의 clientHold 절).
 
-| 알람 | 지표 | 조건 | 의미 |
+| 알람 | 지표 | 조건 | 잡는 것 |
 |---|---|---|---|
+| `link-sphere-api-app-5xx` | `LinkSphere/App5xx` (아래 로그 지표), Sum | 5분 동안 ≥ 1 | 컨트롤러까지 온 요청이 500으로 끝났다 |
+| `link-sphere-api-errors` | Lambda `Errors` (FunctionName=link-sphere-api), Sum | 5분 동안 ≥ 1 | 함수 자체가 예외로 끝났다 — 백그라운드 잡 실패, 인증 필터의 DB 예외, 타임아웃 |
 | `link-sphere-api-throttles` | Lambda `Throttles` (FunctionName=link-sphere-api), Sum | 5분 동안 ≥ 1 | 동시 실행 10칸이 다 찼다 — 한도 상향 요청을 검토할 신호 |
 
-누락된 데이터 처리는 "양호로 처리"로 둔다(요청 없는 시간대에 경보 상태가 되지 않게).
+**왜 두 가지(앱 500 · `Errors`)가 다 필요한가.** `Errors`는 함수 자체가 실패한 경우만 센다 — Spring은
+500도 정상 HTTP 응답으로 돌려주므로 세지지 않는다. 실제로 2026-10-03 실측 중 500이 4건 났는데도 30일
+내내 `Errors`는 0이었다. 그래서 앱 500은 로그 기반 지표(metric filter)로 따로 센다. 반대로 `Errors`에만
+잡히는 실패도 있다:
 
-**Lambda `Errors` 알람은 만들지 않는다.** 이 지표는 함수 자체가 실패한 경우만 센다 — Spring은
-500도 정상 HTTP 응답으로 돌려주므로 세지지 않는다. 실제로 2026-10-03 실측 중 500이 4건 났는데도
-30일 내내 `Errors`는 0이었다. 앱 500을 잡으려면 로그 기반 지표(metric filter)가 따로 필요하다.
+- 백그라운드 잡(`LambdaHandler.dispatch`의 `ai-analysis`·`comment-postprocess`·`feed-crawl`·`feed-item`·
+  `account-purge`·`orphan-image-gc`)은 예외를 잡지 않아 그대로 함수 밖으로 나간다
+  (`src/main/kotlin/com/example/linksphere/LambdaHandler.kt:157-182`). 비동기 호출은 두 번 재시도하므로 실패 1건이
+  `Errors`를 최대 3번 올리지만, 임계값이 1이라 메일은 같다.
+- 인증 필터(`SessionAuthenticationFilter`)에서 난 예외는 `GlobalExceptionHandler`를 거치지 않아 로그 지표에
+  안 잡히고, 함수 실패로 끝난다.
+- 타임아웃도 여기에 든다 — Lambda 문서는 `Errors`에 _"런타임이 던지는 예외"_ 가 포함되고 _"런타임은 타임아웃·설정
+  오류 같은 문제에 오류를 돌려준다"_ (번역, [Lambda 지표](https://docs.aws.amazon.com/lambda/latest/dg/monitoring-metrics-types.html))고
+  쓴다.
+
+예전 판단("`Errors` 알람은 만들지 않는다", 2026-10-03)은 "앱 500은 안 잡힌다"는 사실에서 나왔는데, 그 사실은
+그대로이고 위 두 경우를 놓쳤던 것이다(2026-11-02 정정).
+
+**로그 지표 패턴.** Lambda 로그는 한 줄에 JSON 하나다(Spring Boot logstash 형식, `LambdaHandler.kt:90-93` —
+키는 `@timestamp`·`level`·`logger_name`·`message`·`stack_trace`·`awsRequestId` 등). 앱 500은
+`GlobalExceptionHandler`가 ERROR로 남기는 두 줄뿐이라(`Spring MVC error`·`Unhandled exception`) 그 로거로
+좁힌다. 모든 ERROR에 걸면 FCM·Gemini·메일의 일상적인 실패(각 서비스가 ERROR로 남기고 계속 진행)로 메일이
+쏟아진다. 2026-11-02 Logs Insights로 지난 30일을 세어 보니 ERROR는 1건(`PostAIService`)이었고
+`GlobalExceptionHandler`는 0건이었다.
+
+**적용 (CloudShell, ap-northeast-1).** 한 줄씩 붙여넣는다(여러 줄 스크립트는 깨진 적이 있다 — 8-1). 이메일은
+변수로만 쓰고 레포에 남기지 않는다. 첫 줄은 로그 형식 확인이다 — 최근 하루의 로그 한 줄을 받아 `level`·
+`logger_name` 키가 그대로인지 본다. ERROR는 드물어(위 측정) 금방 끝나는 INFO 줄로 본다. 키 이름이 바뀌었으면
+아래 지표 패턴도 고쳐야 한다.
+
+```bash
+aws logs filter-log-events --region ap-northeast-1 --log-group-name /aws/lambda/link-sphere-api --start-time $(( ($(date +%s) - 86400) * 1000 )) --filter-pattern '{ $.level = "INFO" }' --max-items 1 --query 'events[0].message' --output text
+ALERT_EMAIL='운영자 메일 주소'
+TOPIC_ARN=$(aws sns create-topic --region ap-northeast-1 --name link-sphere-alerts --query TopicArn --output text)
+aws sns subscribe --region ap-northeast-1 --topic-arn "$TOPIC_ARN" --protocol email --notification-endpoint "$ALERT_EMAIL"
+aws logs put-metric-filter --region ap-northeast-1 --log-group-name /aws/lambda/link-sphere-api --filter-name app-5xx --filter-pattern '{ ($.level = "ERROR") && ($.logger_name = "com.example.linksphere.global.exception.GlobalExceptionHandler") }' --metric-transformations metricName=App5xx,metricNamespace=LinkSphere,metricValue=1
+aws cloudwatch put-metric-alarm --region ap-northeast-1 --alarm-name link-sphere-api-app-5xx --namespace LinkSphere --metric-name App5xx --statistic Sum --period 300 --evaluation-periods 1 --threshold 1 --comparison-operator GreaterThanOrEqualToThreshold --treat-missing-data notBreaching --alarm-actions "$TOPIC_ARN"
+aws cloudwatch put-metric-alarm --region ap-northeast-1 --alarm-name link-sphere-api-errors --namespace AWS/Lambda --metric-name Errors --dimensions Name=FunctionName,Value=link-sphere-api --statistic Sum --period 300 --evaluation-periods 1 --threshold 1 --comparison-operator GreaterThanOrEqualToThreshold --treat-missing-data notBreaching --alarm-actions "$TOPIC_ARN"
+aws cloudwatch put-metric-alarm --region ap-northeast-1 --alarm-name link-sphere-api-throttles --namespace AWS/Lambda --metric-name Throttles --dimensions Name=FunctionName,Value=link-sphere-api --statistic Sum --period 300 --evaluation-periods 1 --threshold 1 --comparison-operator GreaterThanOrEqualToThreshold --treat-missing-data notBreaching --alarm-actions "$TOPIC_ARN"
+```
+
+`subscribe` 직후 받은 메일에서 "Confirm subscription"을 눌러야 알림이 간다. 누락된 데이터는 "양호"로
+처리한다(요청 없는 시간대에 경보 상태가 되지 않게). 복구(OK) 메일은 받지 않는다 — 세 지표 모두 실패 횟수라,
+OK는 "지난 5분에 실패가 없었다"는 뜻일 뿐 복구 확인이 아니고 사건마다 메일이 2통이 된다. 같은 명령을 다시
+실행해도 같은 이름의 주제·지표·알람을 덮어쓸 뿐이라 안전하다.
+
+**확인.**
+
+```bash
+aws sns list-subscriptions-by-topic --region ap-northeast-1 --topic-arn "$TOPIC_ARN" --query 'Subscriptions[].SubscriptionArn' --output text
+aws logs test-metric-filter --region ap-northeast-1 --filter-pattern '{ ($.level = "ERROR") && ($.logger_name = "com.example.linksphere.global.exception.GlobalExceptionHandler") }' --log-event-messages '{"level":"ERROR","logger_name":"com.example.linksphere.global.exception.GlobalExceptionHandler","message":"Unhandled exception"}' '{"level":"ERROR","logger_name":"com.example.linksphere.domain.post.PostAIService","message":"x"}'
+aws cloudwatch set-alarm-state --region ap-northeast-1 --alarm-name link-sphere-api-app-5xx --state-value ALARM --state-reason "manual test"
+aws lambda invoke --region ap-northeast-1 --function-name link-sphere-api:prod --cli-binary-format raw-in-base64-out --payload '{"linksphereJob":"comment-postprocess","event":{}}' /tmp/errors-test.json
+aws cloudwatch describe-alarms --region ap-northeast-1 --alarm-name-prefix link-sphere-api --query 'MetricAlarms[].[AlarmName,StateValue]' --output text
+```
+
+1. 구독 ARN이 `PendingConfirmation`이 아니면 승인된 것이다.
+2. `test-metric-filter`는 첫 줄(eventNumber 1)만 맞아야 한다. 지난 30일에 실제 앱 500 로그 줄이 없어(위 측정)
+   형식 확인에서 본 키 이름으로 만든 줄로 시험한다.
+3. `set-alarm-state`는 실제 지표와 상관없이 상태만 바꿔 메일 경로를 시험한다 — 경보 메일이 오고, 다음 평가(최대
+   5분)에 조용히 OK로 돌아온다. 나머지 두 알람도 이름만 바꿔 같은 방법으로 시험한다.
+4. `lambda invoke`는 `Errors`를 실제로 한 번 올린다. 빈 `event`는 `CommentPostProcessEvent`의 필수 값
+   `commentId`가 없어 역직렬화(`LambdaHandler.kt:296`)에서 실패하므로 서비스는 호출되지 않는다(부작용 없음).
+   동기 호출이라 재시도도 없다. 응답에 `"FunctionError": "Unhandled"`가 찍히고 5분 안에 errors 알람 메일이 온다.
 
 비용: CloudWatch 표준 알람은 지표 10개까지 무료이고 넘으면 개당 월 $0.10이다
-([CloudWatch 가격](https://aws.amazon.com/cloudwatch/pricing/)). SNS 이메일의 무료 한도는 가격
-페이지에서 숫자를 확인하지 못했다(미확인) — 알람 메일은 문제 시에만 오므로 실질 비용은 0에 가깝다.
+([CloudWatch 가격](https://aws.amazon.com/cloudwatch/pricing/)). 같은 페이지의 무료 한도에는 _"지표 10개(사용자
+지정 지표와 세부 모니터링 지표)"_ (번역)도 있다 — 로그 지표 `App5xx`가 여기에 세지는지는 페이지에 따로 적혀 있지
+않지만(미확인), 세진다 해도 1개라 한도 안이다. SNS 이메일의 무료 한도는 가격 페이지에서 숫자를 확인하지 못했다(미확인) — 알람 메일은 문제 시에만
+오므로 실질 비용은 0에 가깝다.
 
 Lambda 문서에 따르면 throttle된 요청은 `Invocations`에도 `Errors`에도 세지 않는다
 ([Lambda 지표](https://docs.aws.amazon.com/lambda/latest/dg/monitoring-metrics-types.html)) — 그래서
@@ -483,7 +547,7 @@ CloudFront 보안 대시보드에서 10-02부터 차단이 늘고 국가가 다�
 
 ## 11. 남은 것
 
-- Throttles 알람·Budgets는 선택 — 7-2 표
+- Budgets는 선택 — 7-2 표
 - WAF 요청 로깅은 꺼둠(2026-10-12) — Free 플랜에서 켜지는지·비용은 미확인. 다음에 차단 급증을 IP로
   가려야 할 때 켜 보고 결과를 7-2에 적는다
 - Lambda 동시 실행 한도 상향 요청 검토 (Service Quotas, 무료) — 5-6, 9-2
