@@ -154,7 +154,7 @@ Shadow 공식 변경 내역은 9.0.1에서 _"대부분의 ResourceTransformer �
 
 ### 1. GitHub Actions용 IAM 역할 (OIDC)
 
-`deploy.yml`·`prod-alias-drift-check.yml`은 IAM 사용자의 영구 키가 아니라, GitHub OIDC로 맡는 역할
+`deploy.yml`·`prod-alias-drift-check.yml`·`db-backup.yml`은 IAM 사용자의 영구 키가 아니라, GitHub OIDC로 맡는 역할
 `link-sphere-be-deploy`로 AWS에 접근한다(2026-10-13 전환 — 그 전엔 `AWS_ACCESS_KEY_ID`/`SECRET` 시크릿).
 job마다 임시 자격증명을 받아 기본 1시간 뒤 만료되므로 교체할 키가 없다.
 
@@ -210,6 +210,9 @@ job마다 임시 자격증명을 받아 기본 1시간 뒤 만료되므로 교�
 > 권한이 필요 없었다. `lambda:GetFunctionUrlConfig`(deploy.yml 마지막 "Function URL 출력"
 > 스텝)와 `lambda:ListVersionsByFunction`(prod-alias-drift-check.yml)은 옛 IAM 사용자 정책
 > 문서에서 빠져 있던 것을 OIDC 역할로 옮기면서 채웠다.
+
+이 역할에는 백업용 인라인 정책 `db-backup`(백업 버킷 쓰기·`storage/` 목록 조회만, 13장)도 붙어 있다. `put-role-policy`는
+같은 이름의 정책을 통째로 바꾸므로 정책을 고칠 때 이름을 헷갈리지 않는다.
 
 ### 2. S3 버킷 생성
 
@@ -819,6 +822,186 @@ grant select (id, user_id, platform, created_at, updated_at, session_family_id) 
   adhoc_readonly;`를 같이 넣는다. 빠뜨리면 이 계정에서 그 컬럼만 안 보인다(쓰기·앱에는 영향 없음).
 - **되돌리기:** `alter default privileges for role postgres in schema public revoke select on tables from adhoc_readonly;
   drop owned by adhoc_readonly; drop role adhoc_readonly;` 후 로컬 두 파일에서 해당 줄을 지운다.
+- **백업은 이 계정으로 하지 않는다** — `members`·`fcm_tokens`가 컬럼 단위 권한이라 pg_dump가 막힌다. 백업은 전용 계정
+  `backup_reader`(13장)가 한다.
+
+### 13. DB·Storage 백업과 복구 (2026-11-02 도입)
+
+[`db-backup.yml`](../.github/workflows/db-backup.yml)이 매일 03:23 KST에 운영 DB(public 스키마)와 Storage 이미지를 비공개
+S3 버킷 `link-sphere-db-backup`에 백업한다. 받은 덤프는 그 자리에서 빈 컨테이너에 복원해 쓸 수 있는지까지 확인한다. 그 전에는
+레포 어디에도 백업이 없었고, 고아 이미지 GC(11장)는 Storage 객체를 되돌릴 수 없게 지운다.
+
+Supabase가 대신 해 주지 않는 이유는 [Supabase 백업 문서](https://supabase.com/docs/guides/platform/backups)에 있다:
+
+> Pro·Team·Enterprise 플랜 프로젝트는 매일 자동으로 백업한다. (...) Free 플랜 프로젝트는 Supabase CLI의 `db dump`
+> 명령으로 데이터를 정기적으로 내보내고 다른 곳에 백업을 보관하기를 권한다. (...) 데이터베이스 백업에는 Storage API로
+> 저장한 객체가 들어가지 않는다 — 데이터베이스에는 그 객체의 메타데이터만 있기 때문이다. (번역)
+>
+> — Supabase Docs, [Database Backups](https://supabase.com/docs/guides/platform/backups)
+
+이 프로젝트는 Free 플랜이다(2026-11-02 사용자 확인).
+
+```mermaid
+flowchart TD
+  T["매일 18:23 UTC (03:23 KST)<br/>또는 수동 실행"] --> D["pg_dump (backup_reader, 세션 풀러 5432)<br/>public 스키마, 세션·토큰·rate limit 데이터 제외"]
+  D --> R["빈 pgvector 컨테이너에 pg_restore<br/>테이블 수 = 덤프 목차, 핵심 4테이블 행 있음"]
+  R -->|실패| F["job 실패 → 이슈(라벨 db-backup)"]
+  R -->|통과| U["S3 db/UTC날짜.dump 업로드"]
+  U --> S["복원한 DB에서 참조 이미지 URL 추출<br/>storage/에 없는 것만 받아 올림"]
+  S -->|통과| OK["열린 db-backup 이슈 닫기"]
+  S -->|실패| F
+```
+
+| 대상 | 위치 | 보관 |
+| --- | --- | --- |
+| DB public 스키마 전체(구조 + 데이터). 단 `member_sessions`·`member_action_tokens`·`auth_rate_limits`는 구조만 | `s3://link-sphere-db-backup/db/<UTC 날짜>.dump`(pg_dump custom 형식) | 30일. 버전 관리라 지운 뒤에도 이전 버전으로 30일 더 남는다 |
+| Storage `comments` 버킷 중 댓글 본문·회원 아바타가 참조하는 이미지 | `s3://link-sphere-db-backup/storage/comments/<파일>` | 무기한 — GC가 원본을 지워도 남는다 |
+
+- **빼는 것**: 세 테이블의 데이터는 계속 바뀌고 토큰 해시를 백업에 남기지 않으려고 뺀다. 그래서 복원하면 모두 다시
+  로그인한다. 역할(`adhoc_readonly`·`backup_reader`)은 DB 전체 수준이라 public 덤프에 들어가지 않는다. 참조되지 않는
+  이미지(GC가 지울 고아)도 뺀다.
+- **공개 레포라 덤프를 artifact로 올리지 않는다** — 덤프에는 bcrypt 해시와 이메일이 들어 있다. 로그에도 행 수·데이터를
+  남기지 않고 통과/실패만 찍는다. 복원 실패 메시지는 행 데이터(COPY 줄)가 섞일 수 있어 로그에서 뺀다.
+- **크기**: public 스키마 전체가 약 4MB다(2026-11-02 `pg_total_relation_size` 합, 직접 측정). custom 덤프는 압축이라 그보다 작다.
+- **복구 시점 목표(RPO)**: 하루 한 번이라 최대 24시간 치를 잃을 수 있다.
+- **멈출 수 있는 경우**: GitHub 문서는 _"공개 레포에서 60일 동안 활동이 없으면 예약 워크플로가 자동으로 꺼진다"_ (번역,
+  [GitHub Docs](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule))고
+  쓴다. 오래 쉬었다면 Actions 탭에서 다시 켠다.
+
+#### 13-1. 준비 (최초 1회, 사용자)
+
+① **백업 계정** — Supabase SQL Editor에서 `postgres`로 실행한다. 비밀번호는 `openssl rand -hex 24`처럼 따옴표·콜론이 없는
+값으로 한다(접속 문자열에 그대로 넣는다).
+
+```sql
+create role backup_reader with login password '<비밀번호>' bypassrls;
+alter role backup_reader set default_transaction_read_only = on;
+grant usage on schema public to backup_reader;
+grant select on all tables in schema public to backup_reader;
+grant select on all sequences in schema public to backup_reader;
+alter default privileges for role postgres in schema public grant select on tables to backup_reader;
+alter default privileges for role postgres in schema public grant select on sequences to backup_reader;
+```
+
+- `bypassrls`: public 테이블 전부 RLS가 켜져 있고 정책이 0개라 없으면 0행이 덤프된다(12장 표와 같은 이유).
+- `default_transaction_read_only`: 쓰기를 못 하게 하는 보조 장치. 실제로는 권한(SELECT만)이 막는다.
+- 시퀀스 SELECT: 덤프가 시퀀스의 현재 값을 읽는다.
+
+② **GitHub 시크릿** — 값을 대화·파일에 남기지 않도록 프롬프트에 붙여넣는다.
+
+```bash
+gh secret set BACKUP_DATABASE_URL --repo BAECHAN/link-sphere_BE_NEW
+# 붙여넣을 값: postgresql://backup_reader.<ref>:<비밀번호>@<풀러 호스트>:5432/postgres?sslmode=require
+```
+
+`<ref>`·`<풀러 호스트>`는 `~/.pg_service.conf`의 `[linksphere-ro]`와 같다. 포트는 세션 모드 5432다 — 덤프는 세션 설정을
+쓰므로 트랜잭션 모드 6543에 붙지 않는다(12장 "왜 따로 두나").
+
+이미지 백업이 "우리 버킷 URL"을 GC와 같은 접두사(`SUPABASE_URL` + `/storage/v1/object/public/` + `SUPABASE_BUCKET` + `/`)로
+가리도록, Lambda 환경변수(4장)와 같은 값을 레포 Variable로도 둔다. 둘 다 이미지 공개 URL에 그대로 보이는 값이라 Variable(평문)이다.
+
+```bash
+gh variable set SUPABASE_URL --repo BAECHAN/link-sphere_BE_NEW --body 'https://<ref>.supabase.co'
+gh variable set SUPABASE_BUCKET --repo BAECHAN/link-sphere_BE_NEW --body '<버킷 이름>'
+```
+
+③ **버킷** — CloudShell(ap-northeast-1)에서 한 줄씩.
+
+```bash
+aws s3api create-bucket --bucket link-sphere-db-backup --region ap-northeast-1 --create-bucket-configuration LocationConstraint=ap-northeast-1
+aws s3api put-public-access-block --bucket link-sphere-db-backup --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
+aws s3api put-bucket-versioning --bucket link-sphere-db-backup --versioning-configuration Status=Enabled
+aws s3api put-bucket-lifecycle-configuration --bucket link-sphere-db-backup --lifecycle-configuration '{"Rules":[{"ID":"db-30d","Filter":{"Prefix":"db/"},"Status":"Enabled","Expiration":{"Days":30},"NoncurrentVersionExpiration":{"NoncurrentDays":30}}]}'
+```
+
+④ **역할 권한** — 배포 역할 `link-sphere-be-deploy`(1장)에 인라인 정책 `db-backup`을 붙인다. 쓰기(PutObject)와 `storage/`
+목록 조회만 주고 읽기·삭제는 주지 않는다 — 역할이 새도 백업을 읽거나 지울 수 없다(덮어쓰기는 버전 관리가 막는다).
+**정책 이름을 `deploy`로 쓰면 기존 배포 정책을 통째로 덮어쓴다.**
+
+```bash
+aws iam put-role-policy --role-name link-sphere-be-deploy --policy-name db-backup --policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:PutObject","Resource":["arn:aws:s3:::link-sphere-db-backup/db/*","arn:aws:s3:::link-sphere-db-backup/storage/*"]},{"Effect":"Allow","Action":"s3:ListBucket","Resource":"arn:aws:s3:::link-sphere-db-backup","Condition":{"StringLike":{"s3:prefix":"storage/*"}}}]}'
+```
+
+⑤ **확인**
+
+```bash
+aws iam simulate-principal-policy --policy-source-arn "arn:aws:iam::$(aws sts get-caller-identity --query Account --output text):role/link-sphere-be-deploy" --action-names s3:PutObject s3:GetObject s3:DeleteObject --resource-arns arn:aws:s3:::link-sphere-db-backup/db/test.dump --query 'EvaluationResults[].[EvalActionName,EvalDecision]' --output text
+gh workflow run "DB Backup" --repo BAECHAN/link-sphere_BE_NEW --ref main
+aws s3 ls s3://link-sphere-db-backup/ --recursive
+```
+
+`simulate-principal-policy`는 PutObject만 `allowed`, 나머지는 `implicitDeny`여야 한다. 수동 실행이 성공하면 `db/`에 덤프
+1개, `storage/comments/`에 참조 이미지들이 생긴다.
+
+#### 13-2. 복구 (DB나 Storage를 잃었을 때)
+
+1. **덤프 받기** — 버킷을 읽을 수 있는 자격증명(콘솔 CloudShell 등)으로: `aws s3 ls s3://link-sphere-db-backup/db/` →
+   `aws s3 cp s3://link-sphere-db-backup/db/<날짜>.dump .`
+2. **대상 DB 준비** — 새 Supabase 프로젝트(또는 같은 프로젝트의 비운 public)의 SQL Editor에서
+   `create extension if not exists vector with schema extensions;`. `posts.embedding`이 `extensions.vector`다.
+   `bookmarks.user_id`의 기본값 `auth.uid()`는 Supabase 프로젝트에 원래 있다(운영 스키마가 이미 이 함수를 쓴다).
+3. **복원** — Supabase에는 public 스키마가 이미 있어 덤프 목차에서 스키마 항목만 빼고 복원한다(2026-11-02 public이 있는
+   DB로 로컬 리허설해 18개 테이블 복원 확인). 접속은 새 프로젝트의 세션 풀러 5432, `postgres` 사용자다.
+
+   ```bash
+   docker run --rm -v "$PWD:/backup" pgvector/pgvector:pg17 sh -c "pg_restore --list /backup/<날짜>.dump | grep -vE 'SCHEMA - public|COMMENT - SCHEMA public' > /backup/toc.list"
+   docker run --rm -e DATABASE_URL='<새 DB 접속 문자열>' -v "$PWD:/backup:ro" pgvector/pgvector:pg17 sh -c 'pg_restore --dbname="$DATABASE_URL" --use-list=/backup/toc.list --no-owner --no-privileges --exit-on-error --single-transaction /backup/<날짜>.dump'
+   ```
+
+4. **권한·RLS 확인** — 역할은 덤프에 없으니 12장 `adhoc_readonly`와 13-1의 `backup_reader` SQL을 다시 실행한다. RLS
+   켜짐은 덤프에 들어 있어 복원된다. 아래 조회가 0행이어야 한다(RLS가 꺼진 테이블은 anon 키로 읽힌다):
+   `select relname from pg_class where relnamespace = 'public'::regnamespace and relkind = 'r' and not relrowsecurity;`
+5. **Storage** — DB만 잃었으면 원본 객체는 그대로다. 프로젝트가 바뀌었으면 공개 버킷 `comments`를 만들고
+   `aws s3 sync s3://link-sphere-db-backup/storage/comments ./comments`로 받은 파일을 같은 이름으로 올린다(대시보드
+   Storage). 그다음 DB 안 URL의 프로젝트 주소를 바꾼다:
+   `update comments set content = replace(content, 'https://<옛 ref>.supabase.co', 'https://<새 ref>.supabase.co');`,
+   `update members set image = replace(image, 'https://<옛 ref>.supabase.co', 'https://<새 ref>.supabase.co');`
+6. **앱 전환** — Lambda 콘솔 → Configuration → Environment variables에서 `SPRING_DATASOURCE_URL`·`USERNAME`·`PASSWORD`
+   (프로젝트가 바뀌었으면 `SUPABASE_URL`·`SUPABASE_KEY`도, 4장 표)를 바꾼다. 설정은 버전에 묶이므로 새 버전을 발행해
+   `prod`를 옮긴다(`docs/LAMBDA-CONFIG-ROLLBACK.md` "롤백 커맨드" 2번 주석과 같은 이유):
+
+   ```bash
+   aws lambda wait function-updated --function-name link-sphere-api
+   V=$(aws lambda publish-version --function-name link-sphere-api --query Version --output text)
+   aws lambda update-alias --function-name link-sphere-api --name prod --function-version "$V"
+   ```
+
+7. **결과** — 세션이 비어 모두 다시 로그인한다. 마지막 백업 뒤의 변경(최대 24시간)은 잃는다.
+
+#### 13-3. 로컬 복원 리허설
+
+덤프가 실제로 쓸 수 있는지 사람이 한 번씩 확인하는 절차다(워크플로도 매번 같은 복원을 하지만 행 수는 남기지 않는다).
+13-2의 1로 받은 덤프가 있는 디렉터리에서:
+
+```bash
+docker run -d --name bk-rehearsal -e POSTGRES_PASSWORD=postgres -v "$PWD:/backup:ro" pgvector/pgvector:pg17
+docker exec bk-rehearsal pg_isready -h 127.0.0.1 -U postgres
+docker exec bk-rehearsal psql -q -U postgres -v ON_ERROR_STOP=1 -c "CREATE SCHEMA extensions; CREATE EXTENSION vector WITH SCHEMA extensions; CREATE SCHEMA auth; CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS 'SELECT NULL::uuid'; DROP SCHEMA public CASCADE;"
+docker exec bk-rehearsal pg_restore -U postgres -d postgres --exit-on-error --single-transaction --no-owner --no-privileges /backup/<날짜>.dump
+docker exec bk-rehearsal psql -U postgres -At -c "select count(*) from public.posts"
+/opt/homebrew/opt/libpq/bin/psql "service=linksphere-ro" -At -c "select count(*) from public.posts"
+docker rm -f bk-rehearsal
+```
+
+`pg_isready`가 `accepting connections`가 될 때까지 반복한다(초기화 중에는 TCP를 열지 않는다). 두 행 수는 백업 뒤 바뀐
+만큼만 달라야 한다.
+
+#### 13-4. 실패했을 때와 바꿀 때
+
+실패하면 라벨 `db-backup` 이슈가 열리고(이미 열려 있으면 생략) 다음 성공 때 닫힌다. 실패한 스텝으로 원인을 좁힌다:
+
+| 실패한 스텝 | 먼저 볼 것 |
+| --- | --- |
+| 덤프 | 시크릿 값(비밀번호·`backup_reader.<ref>`·5432), Supabase 상태. `permission denied`면 그 테이블을 `postgres`가 아닌 역할이 만들어 기본 권한이 안 붙은 것 — `grant select on <테이블> to backup_reader;` |
+| 복원 검증 | 운영에 새 의존(다른 확장·스키마)이 생겼다 — 13-3 리허설로 재현하고 워크플로의 사전 준비 SQL에 더한다 |
+| 덤프 업로드 | 버킷·정책 이름 — 13-1 ⑤의 `simulate-principal-policy` |
+| Storage 이미지 백업 | 레포 Variable `SUPABASE_URL`·`SUPABASE_BUCKET`이 없거나 틀렸다(13-1 ②). 아니면 DB가 참조하는 이미지가 Storage에 없다(깨진 이미지) — 실패 개수만 로그에 있다 |
+
+- **덤프 이미지 바꾸기**: 워크플로의 `PG_IMAGE`는 다이제스트로 고정돼 있다(DB 접속 문자열을 받는 컨테이너라 태그가 바뀌어도
+  모르게 다른 이미지가 돌지 않게). 올릴 때는 `docker buildx imagetools inspect pgvector/pgvector:pg17`의 `Digest` 값으로
+  바꾼다. pg_dump는 서버보다 메이저 버전이 같거나 높아야 하므로, Supabase가 Postgres 18로 올라가면 태그도 `pg18`로 바꾼다.
+- **새 테이블**: `postgres`로 만들면 기본 권한으로 자동으로 백업된다. 세션처럼 계속 바뀌는 데이터면 워크플로의
+  `--exclude-table-data`에 더한다.
 
 ---
 
@@ -829,6 +1012,7 @@ grant select (id, user_id, platform, created_at, updated_at, session_family_id) 
 | Secret 이름 | 설명 |
 |-------------|------|
 | `AWS_ROLE_ARN` | OIDC로 맡을 IAM 역할 ARN (위 "AWS 초기 설정" 1번) |
+| `BACKUP_DATABASE_URL` | `db-backup.yml`의 덤프 접속 문자열 — 읽기 전용 `backup_reader`, 세션 풀러 5432 (위 13-1) |
 | `FIREBASE_SERVICE_ACCOUNT_JSON` | Firebase 서비스 계정 JSON 전문 |
 | `HISTORY_DISPATCH_TOKEN` | `history-dispatch.yml`이 FE 레포에 `repository_dispatch`(`be-history-update`)를 보낼 때 쓰는 개인 액세스 토큰 — 기본 `GITHUB_TOKEN`은 다른 레포에 쓸 수 없어서 따로 둔다. classic 토큰이면 `repo` 범위가 필요하다([GitHub REST 문서](https://docs.github.com/en/rest/repos/repos#create-a-repository-dispatch-event)) |
 
@@ -839,6 +1023,8 @@ grant select (id, user_id, platform, created_at, updated_at, session_family_id) 
 | `AWS_REGION` | `ap-northeast-1` |
 | `AWS_S3_BUCKET` | `link-sphere-lambda-deploy` |
 | `LAMBDA_FUNCTION_NAME` | `link-sphere-api` |
+| `SUPABASE_URL` | `https://<ref>.supabase.co` — `db-backup.yml`이 이미지 URL을 가릴 때 쓴다(Lambda 같은 이름 환경변수와 같은 값, 13-1 ②) |
+| `SUPABASE_BUCKET` | Storage 버킷 이름 — 위와 같은 용도 |
 
 ### 액션 버전 관리 (SHA 고정 + Dependabot)
 

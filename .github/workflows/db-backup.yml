@@ -1,0 +1,178 @@
+name: DB Backup
+
+# 운영 Supabase DB(public 스키마)와 Storage 이미지를 매일 비공개 S3 버킷에 백업하고, 받은 덤프를 빈 컨테이너에 복원해
+# 쓸 수 있는지까지 확인한다(docs/DEPLOY.md 13장). Supabase Free 플랜은 자동 백업이 없고, 어느 플랜이든 DB 백업에
+# Storage 객체가 들어가지 않는다. 레포가 공개라 덤프는 artifact로 올리지 않고, 로그에는 행 수·데이터 없이 통과/실패만 남긴다.
+# 형태는 prod-alias-drift-check.yml(배포와 같은 OIDC 역할, 라벨 이슈 열고 닫기)을 따른다.
+on:
+  schedule:
+    - cron: '23 18 * * *' # 매일 18:23 UTC = 03:23 KST. 정각은 예약 실행이 몰려 늦어질 수 있어 피한다
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: db-backup
+  cancel-in-progress: false
+
+env:
+  # 덤프·복원 모두 이 이미지로 한다(pg_dump 17.11 - 운영 서버 17.6보다 메이저가 같거나 높아야 한다). DB 접속 문자열을
+  # 받는 컨테이너라 태그가 아니라 다이제스트로 고정한다. 올리는 법은 docs/DEPLOY.md 13-4.
+  PG_IMAGE: pgvector/pgvector:pg17@sha256:7d0a41464797aeb9862dfdc0bbf1526b82cfd324cdd8036df19e3545f4a9ccb8
+  BACKUP_BUCKET: link-sphere-db-backup
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      id-token: write # AWS OIDC 인증(아래 AWS 자격증명 설정)에 필요하다.
+      contents: read
+    steps:
+      - name: AWS 자격증명 설정
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          # deploy.yml과 같은 역할을 OIDC로 맡는다. 백업 버킷에는 인라인 정책 db-backup으로 쓰기와 storage/ 목록 조회만
+          # 있고 읽기·삭제는 없다(docs/DEPLOY.md 13-1).
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: 덤프 (public 스키마, 세션·토큰·rate limit 데이터 제외)
+        env:
+          DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+        # 접속 문자열은 환경변수로만 컨테이너에 넘기고 명령줄 인자로 펼치지 않는다.
+        run: |
+          mkdir -p "$RUNNER_TEMP/backup"
+          docker run --rm -e DATABASE_URL -v "$RUNNER_TEMP/backup:/backup" "$PG_IMAGE" \
+            sh -c 'exec pg_dump --dbname="$DATABASE_URL" --format=custom --schema=public --no-owner --no-privileges \
+              --exclude-table-data=public.member_sessions \
+              --exclude-table-data=public.member_action_tokens \
+              --exclude-table-data=public.auth_rate_limits \
+              --file=/backup/db.dump'
+
+      - name: 복원 검증 (빈 컨테이너에 복원 후 테이블 수·핵심 테이블 확인)
+        run: |
+          docker run -d --name restore -e POSTGRES_PASSWORD=postgres -v "$RUNNER_TEMP/backup:/backup:ro" "$PG_IMAGE" > /dev/null
+
+          # 초기화 중에 뜨는 임시 서버는 소켓만 연다 - TCP(127.0.0.1)로 물어야 진짜 서버가 뜬 뒤에 통과한다.
+          for _ in $(seq 1 30); do
+            if docker exec restore pg_isready -q -h 127.0.0.1 -U postgres; then
+              break
+            fi
+
+            sleep 2
+          done
+
+          # 운영(Supabase)에만 있는 extensions 스키마의 vector와 auth.uid()를 같은 이름으로 만들고, 덤프가 public 스키마를
+          # 직접 만들므로 기본 public은 지운다(src/test/resources/db/schema.sql 머리의 "테스트 전용 앞부분"과 같은 이유).
+          docker exec restore psql -q -U postgres -v ON_ERROR_STOP=1 -c "CREATE SCHEMA extensions; CREATE EXTENSION vector WITH SCHEMA extensions; CREATE SCHEMA auth; CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS 'SELECT NULL::uuid'; DROP SCHEMA public CASCADE;"
+
+          # 실패 메시지에 행 데이터(COPY 줄)가 섞일 수 있어 stderr는 로그에 남기지 않는다.
+          if ! docker exec restore pg_restore -U postgres -d postgres --exit-on-error --single-transaction --no-owner --no-privileges /backup/db.dump 2> "$RUNNER_TEMP/restore.err"; then
+            echo "::error::덤프 복원 실패 - 오류 내용은 행 데이터가 섞일 수 있어 남기지 않는다. docs/DEPLOY.md 13-3 리허설로 로컬에서 재현한다"
+            exit 1
+          fi
+
+          tables=$(docker exec restore pg_restore --list /backup/db.dump | grep -cE '^[0-9]+; [0-9]+ [0-9]+ TABLE public ' || true)
+          ok=$(printf '%s\n' "select (select count(*) from pg_tables where schemaname = 'public') = :expected and exists (select 1 from public.members) and exists (select 1 from public.posts) and exists (select 1 from public.comments) and exists (select 1 from public.categories);" \
+            | docker exec -i restore psql -U postgres -At -v ON_ERROR_STOP=1 -v expected="$tables")
+
+          if [ "$tables" -eq 0 ] || [ "$ok" != "t" ]; then
+            echo "::error::복원 검증 실패 - 테이블 수가 덤프 목차와 다르거나 핵심 테이블(members·posts·comments·categories)이 비었다"
+            exit 1
+          fi
+
+          echo "복원 검증 통과"
+
+      - name: 덤프 업로드
+        run: aws s3 cp --only-show-errors "$RUNNER_TEMP/backup/db.dump" "s3://$BACKUP_BUCKET/db/$(date -u +%F).dump"
+
+      # DB를 먼저 올린 뒤에 한다 - 이미지 하나가 실패해도 그날 덤프는 남는다.
+      - name: Storage 이미지 백업 (DB가 참조하는 것 중 아직 없는 것만)
+        env:
+          # Lambda 환경변수와 같은 이름·값의 레포 Variable(docs/DEPLOY.md 13-1 ②).
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_BUCKET: ${{ vars.SUPABASE_BUCKET }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_BUCKET" ]; then
+            echo "::error::레포 Variable SUPABASE_URL·SUPABASE_BUCKET이 없다(docs/DEPLOY.md 13-1 ②)"
+            exit 1
+          fi
+
+          # 고아 이미지 GC(OrphanImageGcService)가 남기는 것 = 댓글 본문·회원 아바타가 참조하는 우리 버킷 URL. 같은 규칙
+          # (https?://\S+ 중 SupabaseStorageService.isManagedUrl의 접두사로 시작하는 것)으로 뽑는다.
+          prefix="$SUPABASE_URL/storage/v1/object/public/$SUPABASE_BUCKET/"
+          printf '%s\n' "select content from public.comments union all select image from public.members where image is not null;" \
+            | docker exec -i restore psql -U postgres -At -v ON_ERROR_STOP=1 > "$RUNNER_TEMP/refs.txt"
+          { grep -oE 'https?://[^[:space:]]+' "$RUNNER_TEMP/refs.txt" || true; } \
+            | awk -v p="$prefix" 'index($0, p) == 1' \
+            | sort -u > "$RUNNER_TEMP/urls.txt"
+
+          aws s3api list-objects-v2 --bucket "$BACKUP_BUCKET" --prefix storage/ --query 'Contents[].Key' --output text \
+            | tr '\t' '\n' > "$RUNNER_TEMP/existing.txt"
+
+          failed=0
+
+          while IFS= read -r url <&3; do
+            key="storage/${url#*/storage/v1/object/public/}"
+
+            if grep -qxF -- "$key" "$RUNNER_TEMP/existing.txt"; then
+              continue
+            fi
+
+            if ! { curl -fsS --max-time 60 -o "$RUNNER_TEMP/object" "$url" && aws s3 cp --only-show-errors "$RUNNER_TEMP/object" "s3://$BACKUP_BUCKET/$key"; }; then
+              failed=$((failed + 1))
+            fi
+          done 3< "$RUNNER_TEMP/urls.txt"
+
+          if [ "$failed" -gt 0 ]; then
+            echo "::error::참조된 이미지 ${failed}개를 받거나 올리지 못했다"
+            exit 1
+          fi
+
+          echo "Storage 이미지 백업 통과"
+
+  # 이슈 쓰기 권한은 AWS 자격증명·DB 접속 문자열을 다루는 job과 분리한다(FE cloudfront-drift-check.yml과 같은 형태).
+  report:
+    needs: backup
+    if: always() && (needs.backup.result == 'success' || needs.backup.result == 'failure')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # checkout을 안 해서 gh CLI가 git remote로 레포를 추론할 수 없다 - 명시한다.
+      GH_REPO: ${{ github.repository }}
+      BACKUP_LABEL: db-backup
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: 라벨 존재 보장 (멱등)
+        run: |
+          gh label create "$BACKUP_LABEL" --color d73a4a \
+            --description "운영 DB·Storage 백업 실패" --force
+
+      - name: 실패하면 이슈 열기 (이미 열려 있으면 생략)
+        if: needs.backup.result == 'failure'
+        run: |
+          existing=$(gh issue list --label "$BACKUP_LABEL" --state open --json number -q '.[0].number')
+
+          if [ -n "$existing" ]; then
+            echo "이미 열린 이슈 #$existing 있음 - 생략"
+            exit 0
+          fi
+
+          gh issue create \
+            --title "운영 DB·Storage 백업 실패" \
+            --label "$BACKUP_LABEL" \
+            --body "$(printf '실행 기록: %s\n\n실패한 스텝을 보고 docs/DEPLOY.md 13-4 "실패했을 때와 바꿀 때" 표를 따른다. 로그에는 데이터가 없어 원인을 더 보려면 13-3 리허설로 재현한다.\n\n다음 백업(매일 03:23 KST)이나 수동 실행이 성공하면 자동으로 닫힌다.' "$RUN_URL")"
+
+      - name: 성공하면 열린 이슈 닫기
+        if: needs.backup.result == 'success'
+        run: |
+          existing=$(gh issue list --label "$BACKUP_LABEL" --state open --json number -q '.[0].number')
+
+          if [ -n "$existing" ]; then
+            gh issue close "$existing" --comment "$(printf '백업이 다시 성공해 자동으로 닫는다: %s' "$RUN_URL")"
+          fi
