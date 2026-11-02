@@ -9,11 +9,11 @@ import jakarta.validation.constraints.Size
 // 않는다(2026-10-26, 패키지 순환 member ↔ auth 해소). OpenAPI 스키마 이름은 클래스 이름이라 그대로다.
 
 data class SignupRequest(
+    // 형식만 검증한다 - 실제 도달 가능한 주소인지는 가입 후 인증메일 확인으로 검증한다
+    // (미인증이어도 로그인은 되고, 글쓰기·댓글쓰기만 막힌다 - AuthService.signup 참고)
     @field:NotBlank
     @field:Email
     val email: String,
-    // 형식만 검증한다 - 실제 도달 가능한 주소인지는 가입 후 인증메일 확인으로 검증한다
-    // (미인증이어도 로그인은 되고, 글쓰기·댓글쓰기만 막힌다 - AuthService.signup 참고)
     @field:Size(min = 8, max = 64)
     // 영문·숫자·특수문자 조합 + 출력 가능 ASCII 전용(근거는 PasswordPattern)
     @field:Pattern(regexp = PasswordPattern.REGEXP, message = PasswordPattern.MESSAGE)

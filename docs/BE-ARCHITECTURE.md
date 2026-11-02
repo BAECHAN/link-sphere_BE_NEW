@@ -7,7 +7,7 @@
 > **읽고 나면**: 요청이 어느 코드를 거치는지, 레이어끼리 무엇을 참조하고 어떤 타입을 주고받는지(§3) 따라갈 수 있고, 자동 검사(§2)와 선례 패턴(§7)에 맞춰 새 코드를 쓸 수 있다.
 > 지금 코드가 규칙과 어긋나는 곳은 §9에 모아 두었다 — 그쪽을 본떠 쓰지 않는다.
 >
-> **마지막 검토**: 2026-10-30
+> **마지막 검토**: 2026-11-02
 
 시스템 전체(CloudFront·S3·Lambda·배포 파이프라인)는 FE 레포
 [`docs/SYSTEM-ARCHITECTURE.md`](https://github.com/BAECHAN/link-sphere_FE_NEW/blob/main/docs/SYSTEM-ARCHITECTURE.md)가,
@@ -630,7 +630,8 @@ for (id in ids) {
 - 여러 클래스가 같은 제약을 공유하면 그 제약을 이름으로 가진 `object`에 둔다 — 배치 잡 90초 마감은
   `BatchJobLimits.DEADLINE_MILLIS`(Lambda 120초 타임아웃 근거), 이메일 정규화는 `EmailNormalizer.normalize`,
   댓글 한도는 `CommentLimits`(WAF 8KB 벽 근거), 폴더 이름 길이는 `BookmarkFolderLimits`, 비밀번호 형식은 `PasswordPattern`.
-- **요청 입력 한도는 OpenAPI 스펙에도 싣는다** — FE가 스펙에서 상수를 생성해 폼 검증에 쓴다(FE `docs/OPENAPI-CODEGEN.md`).
+- **요청 입력 한도는 OpenAPI 스펙에도 싣는다** — FE는 폼 검증 상수를 손으로 두고, 스펙에서 생성한 상수와 계약 테스트로
+  대조한다(FE `docs/OPENAPI-CODEGEN.md` §5-6). BE 값이 바뀌면 FE codegen에서 그 테스트가 실패해 고칠 자리를 알린다.
   Bean Validation(`@Size`·`@Pattern`)으로 검사하는 필드는 springdoc이 알아서 싣는다. 서비스에서 검사하는 한도는 DTO 필드에
   문서 전용 `@field:Schema(maxLength = …)`·`@field:ArraySchema(maxItems = …)`를 달고 서비스와 같은 `…Limits` 상수를 참조한다
   (`CreateFolderRequest`, `CreateCommentRequest`). JSON Schema에 없는 규칙(바이트 수)은 `x-` 확장으로 값만 싣는다
