@@ -17,7 +17,6 @@ import org.springframework.http.MediaType
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder
-import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
@@ -86,6 +85,6 @@ class AccountPermissionSecurityTest {
         patch("/auth/account").contentType(MediaType.APPLICATION_JSON).content("""{"nickname":"newNick","image":null}"""),
         patch("/auth/account/password").contentType(MediaType.APPLICATION_JSON)
             .content("""{"currentPassword":"current1!","newPassword":"newPassword1!"}"""),
-        delete("/auth/account").contentType(MediaType.APPLICATION_JSON).content("""{"password":"correct1!"}"""),
+        post("/auth/account/deletion").contentType(MediaType.APPLICATION_JSON).content("""{"password":"correct1!"}"""),
     )
 }

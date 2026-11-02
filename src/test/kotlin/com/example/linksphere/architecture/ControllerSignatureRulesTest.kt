@@ -16,6 +16,7 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.security.core.Authentication
 import org.springframework.security.core.annotation.AuthenticationPrincipal
+import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.ResponseStatus
@@ -137,6 +138,20 @@ class ControllerSignatureRulesTest {
             }
 
         assertNoViolations(violations, "요청 DTO에 제약을 달았으면 파라미터에 @Valid를 붙인다(없으면 제약이 검사되지 않는다)")
+    }
+
+    // 2026-11-02 운영에서 본문 있는 DELETE(회원 탈퇴)가 CloudFront OAC 서명 단계에서 403으로 막혀 Lambda에 닿지 못했다 - 본문 없는
+    // DELETE와 본문 있는 POST·PATCH는 통과한다(docs/DEPLOY.md 5-1). RFC 9110 §9.3.5도 DELETE 본문에는 정의된 의미가 없다고 한다
+    // (https://www.rfc-editor.org/rfc/rfc9110#section-9.3.5).
+    @Test
+    fun `DELETE 엔드포인트는 요청 본문을 받지 않는다`() {
+        val violations =
+            endpoints()
+                .filter { (_, method) -> AnnotatedElementUtils.hasAnnotation(method, DeleteMapping::class.java) }
+                .filter { (_, method) -> method.parameters.any { it.isAnnotationPresent(RequestBody::class.java) } }
+                .map { (controller, method) -> "${controller.simpleName}.${method.name}" }
+
+        assertNoViolations(violations, "본문이 필요한 삭제는 POST /<자원>/deletion으로 만든다(예: POST /auth/account/deletion)")
     }
 
     private fun hasConstraints(type: Class<*>): Boolean = type.declaredFields.any { field ->

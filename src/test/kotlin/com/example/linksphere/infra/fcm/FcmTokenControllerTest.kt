@@ -14,7 +14,6 @@ import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequ
 import org.springframework.security.web.SecurityFilterChain
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.test.web.servlet.MockMvc
-import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
@@ -62,7 +61,7 @@ class FcmTokenControllerTest {
     @WithMockUser(username = USER_ID)
     fun `토큰 해제는 ApiResponse 본문을 주고 인증된 회원 id로 위임한다`() {
         mockMvc.perform(
-            delete("/fcm/token")
+            post("/fcm/token/deletion")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(jacksonObjectMapper().writeValueAsString(DeleteFcmTokenRequest(token = "fcm-token")))
                 .with(csrf()),

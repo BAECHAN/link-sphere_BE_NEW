@@ -19,7 +19,6 @@ import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.security.core.Authentication
 import org.springframework.validation.annotation.Validated
 import org.springframework.web.bind.annotation.CookieValue
-import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PostMapping
@@ -203,7 +202,7 @@ class AuthController(
             "403 ACCESS_DENIED(데모 계정처럼 이 권한이 없는 역할)",
     )
     @PreAuthorize("hasAuthority('ACCOUNT_DELETE')")
-    @DeleteMapping("/account")
+    @PostMapping("/account/deletion")
     fun deleteAccount(
         @Valid @RequestBody request: DeleteAccountRequest,
         authentication: Authentication,

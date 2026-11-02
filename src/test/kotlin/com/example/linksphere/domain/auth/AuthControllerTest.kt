@@ -25,7 +25,6 @@ import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequ
 import org.springframework.security.web.SecurityFilterChain
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.test.web.servlet.MockMvc
-import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
@@ -314,7 +313,7 @@ class AuthControllerTest {
         val request = DeleteAccountRequest(password = "correct1!")
 
         mockMvc.perform(
-            delete("/auth/account")
+            post("/auth/account/deletion")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(jacksonObjectMapper().writeValueAsString(request))
                 .with(csrf()),
@@ -333,7 +332,7 @@ class AuthControllerTest {
             .`when`(accountDeletionService).requestDeletion(UUID.fromString(MEMBER_ID), "wrong")
 
         mockMvc.perform(
-            delete("/auth/account")
+            post("/auth/account/deletion")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(jacksonObjectMapper().writeValueAsString(request))
                 .with(csrf()),

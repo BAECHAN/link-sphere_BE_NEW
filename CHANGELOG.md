@@ -57,6 +57,17 @@
 
   </details>
 
+- `auth` 운영에서 회원 탈퇴가 403으로 막히던 문제, `POST /auth/account/deletion`으로 옮김
+  <details><summary>배경·구현</summary>
+
+  본문 있는 DELETE 요청은 CloudFront OAC가 Lambda Function URL에 보내는 서명 단계에서 `403 The request signature we calculated does not match`로 막혀 앱에 닿지 못했다. 2026-11-02 운영에서 확인한 결과, 올바른 `x-amz-content-sha256`을 넣어도 같았고 본문 없는 DELETE와 본문 있는 POST·PATCH는 통과했다. 비밀번호 재확인 본문이 필요한 회원 탈퇴(`DELETE /auth/account`)가 이 경우라 운영에서 탈퇴가 되지 않았다. 언제부터였는지는 확인하지 못했다(OAC 적용은 2026-09-29). 탈퇴를 `POST /auth/account/deletion`으로, 같은 모양인 FCM 토큰 해제(`DELETE /fcm/token`, FE는 호출하지 않음)를 `POST /fcm/token/deletion`으로 옮겼다. 본문·권한(`ACCOUNT_DELETE`)·응답은 그대로다. RFC 9110 §9.3.5도 _"DELETE 요청에 담긴 내용에는 일반적으로 정의된 의미가 없고 (...) 일부 구현은 요청을 거절할 수 있다"_ (번역, [RFC 9110](https://www.rfc-editor.org/rfc/rfc9110#section-9.3.5))고 한다. 다시 생기지 않게 `ControllerSignatureRulesTest`가 `@DeleteMapping` 엔드포인트의 `@RequestBody`를 막는다. (`AuthController.kt`, `FcmTokenController.kt`, `ControllerSignatureRulesTest.kt`, `docs/DEPLOY.md` 5-1, [PR #154](https://github.com/BAECHAN/link-sphere_BE_NEW/pull/154))
+
+  </details>
+
+### Migration
+
+- FE 의존: 회원 탈퇴 호출을 `DELETE /auth/account` → `POST /auth/account/deletion`으로 바꿔야 한다(옛 경로는 없어진다). 운영에서는 옛 호출이 이미 CloudFront에서 403이라 BE를 먼저 배포해도 새로 깨지는 것은 없다. FE는 같은 날 호출 경로를 바꾸고 생성 스펙을 다시 만든다 — 안 하면 다음 날 `openapi-drift-check` 이슈가 열린다.
+
 ## [0.11.0] - 2026-10-28
 
 ### Added

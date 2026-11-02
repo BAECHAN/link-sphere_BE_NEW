@@ -313,6 +313,11 @@ WAF보다 앞단에서 막히므로 §2 WAF와는 독립적인 방어선이다).
   따르면 CloudFront는 바디를 오리진으로 스트리밍만 할 뿐 이 해시를 대신 계산해주지
   않는다 — Lambda는 서명되지 않은 페이로드(unsigned payload)를 지원하지 않으므로
   헤더가 없는 요청은 이 단계에서 거절된다
+- [x] 본문 있는 DELETE를 만들지 않는다 — 2026-11-02 운영에서 직접 확인했다. 본문 있는 DELETE는 올바른
+  `x-amz-content-sha256`을 넣어도 `403 The request signature we calculated does not match`로 막혀 Lambda에 닿지 못했다.
+  본문 없는 DELETE와 본문 있는 POST·PATCH는 통과했다. 위 AWS 문서도 본문 해시를 PUT·POST 요청으로만 설명한다. 그래서
+  회원 탈퇴(비밀번호 본문)와 FCM 토큰 해제를 `POST /auth/account/deletion`·`POST /fcm/token/deletion`으로
+  옮겼다. `ControllerSignatureRulesTest`가 `@DeleteMapping`의 `@RequestBody`를 막는다
 
 신규 구축 절차(이미 적용된 지금 환경을 다시 만들 때만 필요):
 

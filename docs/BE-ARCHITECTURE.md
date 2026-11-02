@@ -435,7 +435,7 @@ fun getPosts(authentication: Authentication?, ...): ApiResponse<PostPageResponse
 |---|---|
 | `ACCOUNT_PROFILE_UPDATE` | `PATCH /auth/account` |
 | `ACCOUNT_PASSWORD_CHANGE` | `PATCH /auth/account/password` |
-| `ACCOUNT_DELETE` | `DELETE /auth/account` |
+| `ACCOUNT_DELETE` | `POST /auth/account/deletion` |
 | `SESSION_LOGOUT_ALL` | `POST /auth/logout-all` |
 
 - 정본은 `domain/member/MemberRole.kt`(역할 → 권한)와 `domain/member/Permission.kt`다 — 위 두 표는 그 파생본이다.
