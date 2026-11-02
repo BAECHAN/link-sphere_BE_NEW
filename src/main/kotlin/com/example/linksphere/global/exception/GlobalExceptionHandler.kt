@@ -79,6 +79,20 @@ class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response)
     }
 
+    // 컨트롤러 @PreAuthorize가 거절한 요청 - 역할에 그 권한이 없다(데모 계정의 계정 설정 변경 등, MemberRole). 메서드 보안이
+    // 던지는 AuthorizationDeniedException은 AccessDeniedException 하위인데, 이 핸들러가 없으면 아래 Exception 안전망이 먼저 잡아
+    // 500 + "Unhandled exception" 로그(App5xx 알람)로 샌다. 코드는 URL 단계 거절(CustomAccessDeniedHandler)과 같은 ACCESS_DENIED다.
+    @ExceptionHandler(org.springframework.security.access.AccessDeniedException::class)
+    fun handleAccessDeniedException(e: org.springframework.security.access.AccessDeniedException): ResponseEntity<ErrorResponse> {
+        val response =
+            ErrorResponse(
+                status = HttpStatus.FORBIDDEN.value(),
+                code = "ACCESS_DENIED",
+                message = "Access is denied",
+            )
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response)
+    }
+
     @ExceptionHandler(DuplicateMemberException::class)
     fun handleDuplicateMemberException(
         e: DuplicateMemberException,

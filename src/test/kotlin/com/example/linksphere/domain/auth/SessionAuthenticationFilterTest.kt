@@ -1,5 +1,6 @@
 package com.example.linksphere.domain.auth
 
+import com.example.linksphere.domain.member.MemberRole
 import jakarta.servlet.FilterChain
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -43,7 +44,7 @@ class SessionAuthenticationFilterTest {
         request.addHeader("X-Access-Token", "token-from-custom-header")
         request.addHeader("Authorization", "Bearer token-from-authorization-header")
         `when`(memberSessionService.checkAccessToken("token-from-custom-header"))
-            .thenReturn(AccessTokenCheck.Valid(UUID.randomUUID(), UUID.randomUUID()))
+            .thenReturn(AccessTokenCheck.Valid(UUID.randomUUID(), UUID.randomUUID(), MemberRole.USER))
 
         filter.doFilter(request, MockHttpServletResponse(), filterChain)
 
@@ -55,7 +56,7 @@ class SessionAuthenticationFilterTest {
         val request = MockHttpServletRequest()
         request.addHeader("Authorization", "Bearer token-from-authorization-header")
         `when`(memberSessionService.checkAccessToken("token-from-authorization-header"))
-            .thenReturn(AccessTokenCheck.Valid(UUID.randomUUID(), UUID.randomUUID()))
+            .thenReturn(AccessTokenCheck.Valid(UUID.randomUUID(), UUID.randomUUID(), MemberRole.USER))
 
         filter.doFilter(request, MockHttpServletResponse(), filterChain)
 
@@ -68,7 +69,7 @@ class SessionAuthenticationFilterTest {
         request.addHeader("X-Access-Token", "")
         request.addHeader("Authorization", "Bearer token-from-authorization-header")
         `when`(memberSessionService.checkAccessToken("token-from-authorization-header"))
-            .thenReturn(AccessTokenCheck.Valid(UUID.randomUUID(), UUID.randomUUID()))
+            .thenReturn(AccessTokenCheck.Valid(UUID.randomUUID(), UUID.randomUUID(), MemberRole.USER))
 
         filter.doFilter(request, MockHttpServletResponse(), filterChain)
 
@@ -121,7 +122,7 @@ class SessionAuthenticationFilterTest {
         val request = MockHttpServletRequest()
         request.addHeader("X-Access-Token", "valid-token")
         `when`(memberSessionService.checkAccessToken("valid-token"))
-            .thenReturn(AccessTokenCheck.Valid(memberId, UUID.randomUUID()))
+            .thenReturn(AccessTokenCheck.Valid(memberId, UUID.randomUUID(), MemberRole.USER))
 
         filter.doFilter(request, MockHttpServletResponse(), filterChain)
 
@@ -135,10 +136,36 @@ class SessionAuthenticationFilterTest {
         val request = MockHttpServletRequest()
         request.addHeader("X-Access-Token", "valid-token")
         `when`(memberSessionService.checkAccessToken("valid-token"))
-            .thenReturn(AccessTokenCheck.Valid(UUID.randomUUID(), familyId))
+            .thenReturn(AccessTokenCheck.Valid(UUID.randomUUID(), familyId, MemberRole.USER))
 
         filter.doFilter(request, MockHttpServletResponse(), filterChain)
 
         assertEquals(familyId, SecurityContextHolder.getContext().authentication.details)
+    }
+
+    // 컨트롤러 @PreAuthorize("hasAuthority(...)")가 이 권한 목록으로 판정한다(MemberRole.permissions)
+    @Test
+    fun `유효한 토큰이면 회원 역할의 권한을 authorities로 싣는다 - USER는 계정 권한 4종, DEMO는 없음`() {
+        val request = MockHttpServletRequest()
+        request.addHeader("X-Access-Token", "user-token")
+        `when`(memberSessionService.checkAccessToken("user-token"))
+            .thenReturn(AccessTokenCheck.Valid(UUID.randomUUID(), UUID.randomUUID(), MemberRole.USER))
+
+        filter.doFilter(request, MockHttpServletResponse(), filterChain)
+
+        assertEquals(
+            setOf("ACCOUNT_PROFILE_UPDATE", "ACCOUNT_PASSWORD_CHANGE", "ACCOUNT_DELETE", "SESSION_LOGOUT_ALL"),
+            SecurityContextHolder.getContext().authentication.authorities.map { it.authority }.toSet(),
+        )
+
+        SecurityContextHolder.clearContext()
+        val demoRequest = MockHttpServletRequest()
+        demoRequest.addHeader("X-Access-Token", "demo-token")
+        `when`(memberSessionService.checkAccessToken("demo-token"))
+            .thenReturn(AccessTokenCheck.Valid(UUID.randomUUID(), UUID.randomUUID(), MemberRole.DEMO))
+
+        filter.doFilter(demoRequest, MockHttpServletResponse(), filterChain)
+
+        assertEquals(emptySet<String>(), SecurityContextHolder.getContext().authentication.authorities.map { it.authority }.toSet())
     }
 }

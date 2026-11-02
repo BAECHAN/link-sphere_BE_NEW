@@ -1,5 +1,6 @@
 package com.example.linksphere.domain.auth
 
+import com.example.linksphere.domain.member.MemberRole
 import com.example.linksphere.global.common.SecureToken
 import com.example.linksphere.global.exception.InvalidTokenException
 import com.example.linksphere.global.exception.SessionMismatchException
@@ -67,7 +68,7 @@ class MemberSessionServiceIntegrationTest {
         // 소비가 남아 있었다면 이미 회전된 쿠키로 보고 재사용 탐지(계열 폐기)로 끝난다
         val reissued = memberSessionService.rotate(cookie.refreshToken)
 
-        assertEquals(AccessTokenCheck.Valid(memberB, familyOf(cookie.refreshToken)), memberSessionService.checkAccessToken(reissued.accessToken))
+        assertEquals(AccessTokenCheck.Valid(memberB, familyOf(cookie.refreshToken), MemberRole.USER), memberSessionService.checkAccessToken(reissued.accessToken))
         assertEquals(2L, sessionCount(memberB))
     }
 
@@ -79,8 +80,20 @@ class MemberSessionServiceIntegrationTest {
 
         val issued = memberSessionService.rotate(cookie.refreshToken, hint.accessToken)
 
-        assertEquals(AccessTokenCheck.Valid(memberA, familyOf(cookie.refreshToken)), memberSessionService.checkAccessToken(issued.accessToken))
+        assertEquals(AccessTokenCheck.Valid(memberA, familyOf(cookie.refreshToken), MemberRole.USER), memberSessionService.checkAccessToken(issued.accessToken))
         assertNotNull(revokedAt(cookie.refreshToken))
+    }
+
+    // 필터의 권한 판정은 세션 조회가 members와 조인해 함께 읽은 역할을 쓴다(MemberSessionRepository.findWithRoleByAccessTokenHash).
+    // 조인이 틀리면 로그인한 모든 요청이 실패하므로 실제 Postgres에서 확인한다
+    @Test
+    fun `checkAccessToken은 members와 조인해 그 회원의 역할을 함께 돌려준다`() {
+        jdbc.update("UPDATE members SET role = 'DEMO' WHERE id = ?", memberA)
+        val demo = memberSessionService.createSession(memberA)
+        val user = memberSessionService.createSession(memberB)
+
+        assertEquals(AccessTokenCheck.Valid(memberA, familyOf(demo.refreshToken), MemberRole.DEMO), memberSessionService.checkAccessToken(demo.accessToken))
+        assertEquals(AccessTokenCheck.Valid(memberB, familyOf(user.refreshToken), MemberRole.USER), memberSessionService.checkAccessToken(user.accessToken))
     }
 
     // 회원 확인은 재사용 판정 뒤에 하므로 이미 회전된 refresh에 다른 회원 토큰을 붙여도 탐지를 피하지 못한다. 계열 폐기는

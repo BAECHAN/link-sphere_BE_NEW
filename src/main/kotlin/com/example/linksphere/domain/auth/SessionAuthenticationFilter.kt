@@ -4,6 +4,7 @@ import jakarta.servlet.FilterChain
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken
+import org.springframework.security.core.authority.SimpleGrantedAuthority
 import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.stereotype.Component
 import org.springframework.web.filter.OncePerRequestFilter
@@ -29,7 +30,9 @@ class SessionAuthenticationFilter(private val memberSessionService: MemberSessio
         if (token != null) {
             when (val result = memberSessionService.checkAccessToken(token)) {
                 is AccessTokenCheck.Valid -> {
-                    val auth = UsernamePasswordAuthenticationToken(result.memberId.toString(), null, emptyList())
+                    // 권한은 회원 역할에서 온다(MemberRole.permissions) - 컨트롤러의 @PreAuthorize("hasAuthority(...)")가 검사한다.
+                    val authorities = result.role.permissions.map { SimpleGrantedAuthority(it.name) }
+                    val auth = UsernamePasswordAuthenticationToken(result.memberId.toString(), null, authorities)
                     // details에 familyId를 실어 SecurityUtils.getSessionFamilyId()로 꺼내 쓴다
                     // (FcmTokenController가 토큰 등록 시 사용) - principal은 getUserId()가
                     // UUID로 파싱하는 계약이라 그대로 memberId 문자열만 담는다.

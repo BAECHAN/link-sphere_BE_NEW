@@ -53,6 +53,12 @@ class PasswordResetService(
 
         val member = memberRepository.findByEmail(normalizedEmail) ?: return
 
+        // 비밀번호를 공개한 공유 계정(데모)은 재설정 메일을 보내지 않는다 - 수신함이 없는 주소로 반복해 보내면 반송이 쌓여 SES
+        // 발신 평판이 깎인다. 응답은 없는 이메일과 같다(MemberRole.sharedCredentials).
+        if (member.role.sharedCredentials) {
+            return
+        }
+
         val raw = SecureToken.generate()
         memberActionTokenRepository.save(
             TableMemberActionToken(

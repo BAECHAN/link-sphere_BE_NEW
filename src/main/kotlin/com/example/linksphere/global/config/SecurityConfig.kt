@@ -10,6 +10,7 @@ import org.springframework.context.annotation.Configuration
 import org.springframework.core.env.Environment
 import org.springframework.http.HttpMethod
 import org.springframework.security.authorization.AuthorizationDecision
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity
 import org.springframework.security.config.http.SessionCreationPolicy
@@ -22,6 +23,8 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource
 
 @Configuration
 @EnableWebSecurity
+// 컨트롤러의 @PreAuthorize(역할 권한 검사, MemberRole)를 켠다. 거절은 GlobalExceptionHandler가 403 ACCESS_DENIED로 바꾼다.
+@EnableMethodSecurity
 class SecurityConfig(
     private val sessionAuthenticationFilter: SessionAuthenticationFilter,
     private val customAuthenticationEntryPoint: CustomAuthenticationEntryPoint,

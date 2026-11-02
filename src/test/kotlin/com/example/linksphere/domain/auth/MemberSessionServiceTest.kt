@@ -1,5 +1,6 @@
 package com.example.linksphere.domain.auth
 
+import com.example.linksphere.domain.member.MemberRole
 import com.example.linksphere.global.common.SecureToken
 import com.example.linksphere.global.exception.InvalidTokenException
 import com.example.linksphere.global.exception.SessionMismatchException
@@ -461,7 +462,7 @@ class MemberSessionServiceTest {
     @Test
     fun `checkAccessToken은 못 찾으면 Invalid`() {
         val hash = SecureToken.hash("unknown")
-        `when`(memberSessionRepository.findByAccessTokenHash(hash)).thenReturn(null)
+        `when`(memberSessionRepository.findWithRoleByAccessTokenHash(hash)).thenReturn(null)
 
         val result = memberSessionService.checkAccessToken("unknown")
 
@@ -474,8 +475,8 @@ class MemberSessionServiceTest {
         // 유효했어야 한다 - 여기서 Invalid를 주면 다른 탭이 즉시 로그아웃된다(PR #42 리뷰).
         // Expired를 주면 FE가 공유 refresh 쿠키로 조용히 회복을 시도한다.
         val rawToken = "revoked-but-not-expired"
-        `when`(memberSessionRepository.findByAccessTokenHash(SecureToken.hash(rawToken)))
-            .thenReturn(session(accessTokenHash = SecureToken.hash(rawToken), revokedAt = Instant.now()))
+        `when`(memberSessionRepository.findWithRoleByAccessTokenHash(SecureToken.hash(rawToken)))
+            .thenReturn(SessionWithRole(session(accessTokenHash = SecureToken.hash(rawToken), revokedAt = Instant.now()), MemberRole.USER))
 
         val result = memberSessionService.checkAccessToken(rawToken)
 
@@ -493,7 +494,7 @@ class MemberSessionServiceTest {
             refreshExpiresAt = Instant.now().plusSeconds(3600),
             familyId = UUID.randomUUID(),
         )
-        `when`(memberSessionRepository.findByAccessTokenHash(SecureToken.hash(rawToken))).thenReturn(expired)
+        `when`(memberSessionRepository.findWithRoleByAccessTokenHash(SecureToken.hash(rawToken))).thenReturn(SessionWithRole(expired, MemberRole.USER))
 
         val result = memberSessionService.checkAccessToken(rawToken)
 
@@ -501,15 +502,15 @@ class MemberSessionServiceTest {
     }
 
     @Test
-    fun `checkAccessToken은 유효한 행이면 memberId와 familyId를 담은 Valid`() {
+    fun `checkAccessToken은 유효한 행이면 memberId·familyId·회원 역할을 담은 Valid`() {
         val rawToken = "valid"
         val memberId = UUID.randomUUID()
         val familyId = UUID.randomUUID()
-        `when`(memberSessionRepository.findByAccessTokenHash(SecureToken.hash(rawToken)))
-            .thenReturn(session(memberId = memberId, accessTokenHash = SecureToken.hash(rawToken), familyId = familyId))
+        `when`(memberSessionRepository.findWithRoleByAccessTokenHash(SecureToken.hash(rawToken)))
+            .thenReturn(SessionWithRole(session(memberId = memberId, accessTokenHash = SecureToken.hash(rawToken), familyId = familyId), MemberRole.DEMO))
 
         val result = memberSessionService.checkAccessToken(rawToken)
 
-        assertEquals(AccessTokenCheck.Valid(memberId, familyId), result)
+        assertEquals(AccessTokenCheck.Valid(memberId, familyId, MemberRole.DEMO), result)
     }
 }

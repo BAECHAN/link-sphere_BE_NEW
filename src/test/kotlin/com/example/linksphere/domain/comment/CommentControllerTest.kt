@@ -2,6 +2,7 @@ package com.example.linksphere.domain.comment
 
 import com.example.linksphere.domain.auth.AccessTokenCheck
 import com.example.linksphere.domain.auth.MemberSessionService
+import com.example.linksphere.domain.member.MemberRole
 import com.example.linksphere.global.config.SecurityConfig
 import com.example.linksphere.global.config.security.CustomAccessDeniedHandler
 import com.example.linksphere.global.config.security.CustomAuthenticationEntryPoint
@@ -103,7 +104,7 @@ class CommentControllerTest {
 
     private fun givenValidToken(): UUID {
         val memberId = UUID.randomUUID()
-        `when`(memberSessionService.checkAccessToken("valid-token")).thenReturn(AccessTokenCheck.Valid(memberId, UUID.randomUUID()))
+        `when`(memberSessionService.checkAccessToken("valid-token")).thenReturn(AccessTokenCheck.Valid(memberId, UUID.randomUUID(), MemberRole.USER))
         return memberId
     }
 

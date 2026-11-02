@@ -137,7 +137,7 @@ AND deleted_at IS NULL` 조건)도 같은 파일에 있다.
 | 순서도 단계 | 파일 | 재배포 필요 |
 | --- | --- | --- |
 | 탈퇴 신청(1단계) | `domain/auth/AccountDeletionService.kt`의 `requestDeletion` | 예 |
-| 탈퇴 신청 API | `domain/auth/AuthController.kt`의 `deleteAccount` | 예 |
+| 탈퇴 신청 API | `domain/auth/AuthController.kt`의 `deleteAccount` — `ACCOUNT_DELETE` 권한이 없는 역할(데모 계정)은 서비스에 닿기 전에 403 `ACCESS_DENIED`(`docs/BE-ARCHITECTURE.md` §5 "역할·권한") | 예 |
 | 로그인 시 자동 복구 | `domain/auth/AuthService.kt:136-168`의 `login`(비밀번호 일치 후 `memberService.cancelPendingDeletion` 호출) | 예 |
 | 복구 여부를 FE에 전달 | `domain/auth/AuthDTO.kt`의 `TokenResponse.deletionCancelled` | 예 |
 | 경합 처리용 조건부 UPDATE 3개 | `domain/member/MemberRepository.kt:25-45`(`findIdsPendingPurge`·`cancelDeletionRequest`·`claimForPurge`) | 예 |
