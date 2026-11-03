@@ -163,8 +163,8 @@ flowchart TD
 | --- | --- | --- |
 | PR CI 트리거 | `pull_request`(base 브랜치 필터 없음 — 스택 PR도 트리거, 2026-10-13) | `.github/workflows/ci.yml` |
 | 동시 실행 제어 | 같은 브랜치 새 커밋 push 시 이전 실행 자동 취소 | `ci.yml`의 `concurrency: group: ci-${{ github.ref }}, cancel-in-progress: true` |
-| 체크아웃 깊이 | `fetch-depth: 0`(전체 히스토리) — 아래 "docs/plans 불변성 확인" 스텝이 `origin/${{ github.base_ref }}...HEAD` diff를 떠야 해서 얕은 클론(기본값 1)으로는 base 커밋을 못 찾는다 | `ci.yml`의 "Checkout source" 스텝 |
-| docs/plans 불변성 확인 | `docs/plans/*.md`가 커밋된 뒤 수정(M)됐는지 PR diff로 검사, 있으면 실패 | `ci.yml`의 "docs/plans 불변성 확인" 스텝 |
+| 체크아웃 깊이 | `fetch-depth: 0`(전체 히스토리) — 아래 "docs/plans 불변성 확인" 스텝이 `origin/${{ github.base_ref }}`와의 merge-base를 찾아 그 판과 비교해야 해서 얕은 클론(기본값 1)으로는 base 커밋을 못 찾는다 | `ci.yml`의 "Checkout source" 스텝 |
+| docs/plans 불변성 확인 | `docs/plans/*.md` 기존 파일에서 H1 아래 `구현 결과` 블록(`plan-result:start`~`end`)과 빈 줄을 뺀 원문이 merge-base 판과 달라졌으면 실패 — 블록은 병합 뒤에도 수정 가능(2026-11-03, `docs/plans/2026-11-03-plan-result-block.md`). PR이 아니라 `base_ref`가 없으면 건너뜀 | `ci.yml`의 "docs/plans 불변성 확인" 스텝 |
 | JDK 버전 | 17 (Corretto) | `ci.yml`·`deploy.yml` 공통, `deploy.yml`이 원본 |
 | Gradle 캐시 키 | `gradle-${{ hashFiles('**/*.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties') }}` | `ci.yml`·`deploy.yml` 공통 |
 | 배포 게이트 커맨드 | `./gradlew ktlintCheck test integrationTest shadowJar --no-daemon` — PR 검사 커맨드와 같다. `integrationTest`는 2026-10-31에 더했다: 룰셋 `strict_required_status_checks_policy`가 `false`라 뒤처진 브랜치의 CI 결과로도 병합되는데, 최근 병합 PR 30개 중 2개(#117, #119 — #119는 `build.gradle.kts` 의존성 변경)가 그렇게 병합돼 통합 테스트 없이 배포됐다. 이를 막는 merge queue는 조직 소유 저장소 전용이라([GitHub Docs](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue)) 이 개인 저장소에서는 쓸 수 없다. 늘어나는 시간은 PR CI 5회 실측 24.7~40.8초다 | `deploy.yml` "Ktlint check, test, integration test & Build Shadow JAR" 스텝 |
