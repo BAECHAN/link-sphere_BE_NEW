@@ -510,7 +510,7 @@ SnapStart 체크포인트 **이전**(`companion object init`)에 읽기 전용 �
 
 **작업 계획** — "무엇을 하기로 했는지"
 
-- [`docs/plans/`](docs/plans/) — plan mode로 세운 계획의 스냅샷 (append-only, 파일마다 여기 개별 등록하지 않음)
+- [`docs/plans/`](docs/plans/) — plan mode로 세운 계획의 스냅샷 (원문 append-only — H1 아래 "구현 결과" 블록만 병합 뒤에도 고침, 파일마다 여기 개별 등록하지 않음)
 
 > 문서 분류 기준과 작성 규칙은 [`.claude/CLAUDE.md`](.claude/CLAUDE.md)의 "문서 파일 위치"·"서사형 작업 문서 형식" 절 참고.
 
