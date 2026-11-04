@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Duration
 import java.time.Instant
+import java.util.UUID
 
 /**
  * 비밀번호 찾기 - 요청/확인 두 단계. AccountDeletionService와 같은 이유로 MemberService를
@@ -44,7 +45,7 @@ class PasswordResetService(
     // 이메일이 존재하지 않아도 항상 같은 방식으로 조용히 끝난다(컨트롤러가 항상 200) -
     // 존재 여부를 응답 차이로 노출하지 않는다.
     @Transactional
-    fun requestReset(email: String, clientIp: String?) {
+    fun requestReset(email: String, clientIp: String?, idempotencyKey: UUID) {
         val normalizedEmail = EmailNormalizer.normalize(email)
         val emailBucket = "password-reset:${SecureToken.hash(normalizedEmail)}"
         val ipBucket = clientIp?.let { "password-reset:ip:$it" }
@@ -59,6 +60,14 @@ class PasswordResetService(
             return
         }
 
+        // 같은 키의 토큰이 아직 쓸 수 있으면 받은 메일의 링크가 유효하니 다시 보내지 않는다. 만료·사용된 뒤에는 응답이 끊긴 탭에서
+        // 나중에 다시 요청한 경우라 메일이 가야 한다 - 키는 이미 옛 토큰이 쓰고 있어 새 토큰에는 싣지 않는다.
+        val existing = memberActionTokenRepository.findByMemberIdAndIdempotencyKey(member.id!!, idempotencyKey)
+
+        if (existing?.isActive(Instant.now()) == true) {
+            return
+        }
+
         val raw = SecureToken.generate()
         memberActionTokenRepository.save(
             TableMemberActionToken(
@@ -66,6 +75,7 @@ class PasswordResetService(
                 purpose = MemberActionTokenPurpose.PASSWORD_RESET,
                 tokenHash = SecureToken.hash(raw),
                 expiresAt = Instant.now().plus(TOKEN_VALIDITY),
+                idempotencyKey = idempotencyKey.takeIf { existing == null },
             ),
         )
 

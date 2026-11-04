@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.EntityGraph
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
+import java.time.LocalDateTime
 import java.util.UUID
 
 interface PostCommentCount {
@@ -40,6 +41,33 @@ interface CommentRepository : JpaRepository<TableComment, UUID> {
     fun countByPostIdIn(@Param("postIds") postIds: List<UUID>): List<PostCommentCount>
 
     fun existsByParentId(parentId: UUID): Boolean
+
+    fun findByUserIdAndIdempotencyKey(userId: UUID, idempotencyKey: UUID): TableComment?
+
+    // 같은 회원이 같은 대상에 같은 본문을 방금 썼는가(시간 창) - 톰스톤은 본문이 지워져 비교 대상이 아니다.
+    @Query(
+        "SELECT CASE WHEN COUNT(c) > 0 THEN true ELSE false END FROM TableComment c " +
+            "WHERE c.userId = :userId AND c.postId = :postId AND c.parentId IS NULL " +
+            "AND c.content = :content AND c.isDeleted = false AND c.createdAt > :after",
+    )
+    fun existsRecentComment(
+        @Param("userId") userId: UUID,
+        @Param("postId") postId: UUID,
+        @Param("content") content: String,
+        @Param("after") after: LocalDateTime,
+    ): Boolean
+
+    @Query(
+        "SELECT CASE WHEN COUNT(c) > 0 THEN true ELSE false END FROM TableComment c " +
+            "WHERE c.userId = :userId AND c.parentId = :parentId " +
+            "AND c.content = :content AND c.isDeleted = false AND c.createdAt > :after",
+    )
+    fun existsRecentReply(
+        @Param("userId") userId: UUID,
+        @Param("parentId") parentId: UUID,
+        @Param("content") content: String,
+        @Param("after") after: LocalDateTime,
+    ): Boolean
 
     // 게시글 삭제 시 이미지 정리용 — 스칼라 프로젝션이라 TableComment(및 그 post 지연연관관계)가
     // 영속성 컨텍스트에 올라가지 않는다. 같은 트랜잭션에서 postRepository.delete(post)가 뒤따르므로

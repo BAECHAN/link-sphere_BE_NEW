@@ -1,6 +1,7 @@
 package com.example.linksphere.domain.comment
 
 import com.example.linksphere.global.common.ApiResponse
+import com.example.linksphere.global.common.IdempotentCreate
 import com.example.linksphere.global.common.getUserId
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.security.SecurityRequirements
@@ -13,6 +14,10 @@ import java.util.UUID
 @Tag(name = "댓글", description = "댓글·답글 작성·조회·수정·삭제")
 @RestController
 class CommentController(private val commentService: CommentService) {
+
+    companion object {
+        private const val IDEMPOTENCY_INDEX = "uq_comments_user_idempotency_key"
+    }
 
     @Operation(
         summary = "댓글 목록 조회",
@@ -44,35 +49,52 @@ class CommentController(private val commentService: CommentService) {
     @Operation(
         summary = "댓글 작성",
         description = "HTTP 상태와 본문 status 모두 201 이다. " +
-            "실패: 404 POST_NOT_FOUND · 400 INVALID_INPUT(content·images 가 둘 다 비어 있음, 이미지 개수·본문 길이 초과)",
+            "Idempotency-Key 헤더(UUID)가 필수다. 같은 회원이 같은 키로 다시 보내면 새로 만들지 않고 처음 댓글을 201로 돌려준다. " +
+            "실패: 404 POST_NOT_FOUND · 400 INVALID_INPUT(키 없음, content·images 가 둘 다 비어 있음, 이미지 개수·본문 길이 초과) · " +
+            "400 INVALID_PATH_VARIABLE(키가 UUID 아님) · 409 DUPLICATE_COMMENT(다른 키로 1분 안에 같은 대상에 같은 본문을 등록함, 이미지 없는 댓글만)",
     )
     @PostMapping("/post/{postId}/comment")
     @ResponseStatus(HttpStatus.CREATED)
     fun createComment(
         @PathVariable postId: UUID,
+        @RequestHeader("Idempotency-Key") idempotencyKey: UUID,
         @RequestBody request: CreateCommentRequest,
         authentication: Authentication,
     ): ApiResponse<CommentResponse> {
         val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
-        val comment = commentService.createComment(postId, userId, request.content, request.images)
+        val comment =
+            IdempotentCreate.run(
+                index = IDEMPOTENCY_INDEX,
+                find = { commentService.findByIdempotencyKey(userId, idempotencyKey) },
+                create = { commentService.createComment(postId, userId, request.content, request.images, idempotencyKey) },
+            )
         return ApiResponse(HttpStatus.CREATED.value(), "댓글 작성 성공", comment)
     }
 
     @Operation(
         summary = "답글 작성",
         description = "답글의 답글은 허용하지 않는다(최대 depth 1). HTTP 상태와 본문 status 모두 201 이다. " +
+            "Idempotency-Key 헤더(UUID)가 필수다. 같은 회원이 같은 키로 다시 보내면 새로 만들지 않고 처음 답글을 201로 돌려준다. " +
             "실패: 404 COMMENT_NOT_FOUND(부모 댓글 없음) · " +
-            "400 INVALID_INPUT(content·images 가 둘 다 비어 있음, depth 초과, 이미지 개수·본문 길이 초과)",
+            "400 INVALID_INPUT(키 없음, content·images 가 둘 다 비어 있음, depth 초과, 이미지 개수·본문 길이 초과) · " +
+            "400 INVALID_PATH_VARIABLE(키가 UUID 아님) · 409 DUPLICATE_COMMENT(다른 키로 1분 안에 같은 대상에 같은 본문을 등록함, 이미지 없는 답글만)",
     )
     @PostMapping("/comment/{commentId}/reply")
     @ResponseStatus(HttpStatus.CREATED)
     fun createReply(
         @PathVariable commentId: UUID,
+        @RequestHeader("Idempotency-Key") idempotencyKey: UUID,
         @RequestBody request: CreateCommentRequest,
         authentication: Authentication,
     ): ApiResponse<CommentResponse> {
         val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
-        return ApiResponse(HttpStatus.CREATED.value(), "답글 작성 성공", commentService.createReply(commentId, userId, request.content, request.images))
+        val reply =
+            IdempotentCreate.run(
+                index = IDEMPOTENCY_INDEX,
+                find = { commentService.findByIdempotencyKey(userId, idempotencyKey) },
+                create = { commentService.createReply(commentId, userId, request.content, request.images, idempotencyKey) },
+            )
+        return ApiResponse(HttpStatus.CREATED.value(), "답글 작성 성공", reply)
     }
 
     @Operation(

@@ -30,4 +30,6 @@ class TableComment(
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "post_id", insertable = false, updatable = false)
     val post: TablePost? = null,
+    // 브라우저가 만든 Idempotency-Key. 이 컬럼 이전의 댓글은 null이다.
+    @Column(name = "idempotency_key", updatable = false) val idempotencyKey: UUID? = null,
 )

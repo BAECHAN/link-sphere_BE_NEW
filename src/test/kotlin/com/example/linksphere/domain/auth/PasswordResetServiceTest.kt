@@ -8,9 +8,12 @@ import com.example.linksphere.global.common.SecureToken
 import com.example.linksphere.global.exception.InvalidActionTokenException
 import com.example.linksphere.global.exception.RateLimitExceededException
 import com.example.linksphere.infra.mail.MailService
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.mockito.ArgumentCaptor
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.never
@@ -38,6 +41,7 @@ class PasswordResetServiceTest {
 
     private val emailBucket = "password-reset:${SecureToken.hash("test@example.com")}"
     private val ipBucket = "password-reset:ip:203.0.113.1"
+    private val idempotencyKey = UUID.randomUUID()
 
     @BeforeEach
     fun setUp() {
@@ -61,7 +65,7 @@ class PasswordResetServiceTest {
 
     @Test
     fun `requestReset은 이메일·IP 두 버킷 모두 한도를 소비(기록+확인)한다`() {
-        service.requestReset("test@example.com", "203.0.113.1")
+        service.requestReset("test@example.com", "203.0.113.1", idempotencyKey)
 
         verify(rateLimitService).consume(emailBucket, 3, Duration.ofHours(1))
         verify(rateLimitService).consume(ipBucket, 10, Duration.ofHours(1))
@@ -73,7 +77,7 @@ class PasswordResetServiceTest {
             .thenThrow(RateLimitExceededException("Too many requests, please try again later"))
 
         assertThrows(RateLimitExceededException::class.java) {
-            service.requestReset("test@example.com", "203.0.113.1")
+            service.requestReset("test@example.com", "203.0.113.1", idempotencyKey)
         }
 
         verifyNoInteractions(memberRepository)
@@ -83,7 +87,7 @@ class PasswordResetServiceTest {
     fun `requestReset은 존재하지 않는 이메일이어도 조용히 끝난다(메일 발송 없음)`() {
         `when`(memberRepository.findByEmail("test@example.com")).thenReturn(null)
 
-        service.requestReset("test@example.com", "203.0.113.1")
+        service.requestReset("test@example.com", "203.0.113.1", idempotencyKey)
 
         verifyNoInteractions(mailService, memberActionTokenRepository)
     }
@@ -96,7 +100,7 @@ class PasswordResetServiceTest {
         // 메일은 토큰 커밋 뒤에만 나가야 한다 - 커밋 전에는 보내지 않았는지 확인한 뒤 afterCommit을 직접 부른다
         TransactionSynchronizationManager.initSynchronization()
         try {
-            service.requestReset("test@example.com", "203.0.113.1")
+            service.requestReset("test@example.com", "203.0.113.1", idempotencyKey)
             verifyNoInteractions(mailService)
             TransactionSynchronizationManager.getSynchronizations().forEach { it.afterCommit() }
         } finally {
@@ -118,10 +122,79 @@ class PasswordResetServiceTest {
         val member = TableMember(id = UUID.randomUUID(), email = "test@example.com", password = "enc", role = MemberRole.DEMO)
         `when`(memberRepository.findByEmail("test@example.com")).thenReturn(member)
 
-        service.requestReset("test@example.com", "203.0.113.1")
+        service.requestReset("test@example.com", "203.0.113.1", idempotencyKey)
 
         verifyNoInteractions(mailService, memberActionTokenRepository)
     }
+
+    @Test
+    fun `requestReset은 첫 요청이면 토큰에 키를 저장한다`() {
+        val member = TableMember(id = UUID.randomUUID(), email = "test@example.com", password = "enc", nickname = "tester")
+        `when`(memberRepository.findByEmail("test@example.com")).thenReturn(member)
+
+        val saved = requestResetCapturingToken()
+
+        assertEquals(idempotencyKey, saved.idempotencyKey)
+    }
+
+    @Test
+    fun `requestReset은 같은 키의 토큰이 아직 유효하면 토큰도 메일도 만들지 않는다`() {
+        val member = TableMember(id = UUID.randomUUID(), email = "test@example.com", password = "enc", nickname = "tester")
+        `when`(memberRepository.findByEmail("test@example.com")).thenReturn(member)
+        `when`(memberActionTokenRepository.findByMemberIdAndIdempotencyKey(member.id!!, idempotencyKey))
+            .thenReturn(tokenOf(member.id!!, expiresAt = Instant.now().plusSeconds(60)))
+
+        service.requestReset("test@example.com", "203.0.113.1", idempotencyKey)
+
+        verify(memberActionTokenRepository, never()).save(any())
+        verifyNoInteractions(mailService)
+    }
+
+    // 응답이 끊긴 탭에서 나중에 다시 요청한 경우 - 옛 링크는 쓸 수 없으니 메일이 가야 한다. 키는 옛 토큰이 쓰고 있어 유니크 인덱스에 걸리므로 비운다.
+    @Test
+    fun `requestReset은 같은 키의 토큰이 만료됐으면 키 없는 새 토큰을 만든다`() {
+        val member = TableMember(id = UUID.randomUUID(), email = "test@example.com", password = "enc", nickname = "tester")
+        `when`(memberRepository.findByEmail("test@example.com")).thenReturn(member)
+        `when`(memberActionTokenRepository.findByMemberIdAndIdempotencyKey(member.id!!, idempotencyKey))
+            .thenReturn(tokenOf(member.id!!, expiresAt = Instant.now().minusSeconds(60)))
+
+        val saved = requestResetCapturingToken()
+
+        assertNull(saved.idempotencyKey)
+    }
+
+    @Test
+    fun `requestReset은 같은 키의 토큰을 이미 썼으면 키 없는 새 토큰을 만든다`() {
+        val member = TableMember(id = UUID.randomUUID(), email = "test@example.com", password = "enc", nickname = "tester")
+        `when`(memberRepository.findByEmail("test@example.com")).thenReturn(member)
+        `when`(memberActionTokenRepository.findByMemberIdAndIdempotencyKey(member.id!!, idempotencyKey))
+            .thenReturn(tokenOf(member.id!!, expiresAt = Instant.now().plusSeconds(60), consumedAt = Instant.now()))
+
+        val saved = requestResetCapturingToken()
+
+        assertNull(saved.idempotencyKey)
+    }
+
+    private fun requestResetCapturingToken(): TableMemberActionToken {
+        val captor = ArgumentCaptor.forClass(TableMemberActionToken::class.java)
+        TransactionSynchronizationManager.initSynchronization()
+        try {
+            service.requestReset("test@example.com", "203.0.113.1", idempotencyKey)
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization()
+        }
+        verify(memberActionTokenRepository).save(captor.capture())
+        return captor.value
+    }
+
+    private fun tokenOf(memberId: UUID, expiresAt: Instant, consumedAt: Instant? = null) = TableMemberActionToken(
+        memberId = memberId,
+        purpose = MemberActionTokenPurpose.PASSWORD_RESET,
+        tokenHash = "hash",
+        expiresAt = expiresAt,
+        consumedAt = consumedAt,
+        idempotencyKey = idempotencyKey,
+    )
 
     @Test
     fun `confirmReset은 유효하지 않은 토큰이면 InvalidActionTokenException을 던진다`() {

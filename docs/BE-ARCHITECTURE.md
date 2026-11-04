@@ -7,7 +7,7 @@
 > **읽고 나면**: 요청이 어느 코드를 거치는지, 레이어끼리 무엇을 참조하고 어떤 타입을 주고받는지(§3) 따라갈 수 있고, 자동 검사(§2)와 선례 패턴(§7)에 맞춰 새 코드를 쓸 수 있다.
 > 지금 코드가 규칙과 어긋나는 곳은 §9에 모아 두었다 — 그쪽을 본떠 쓰지 않는다.
 >
-> **마지막 검토**: 2026-11-02
+> **마지막 검토**: 2026-11-04
 
 시스템 전체(CloudFront·S3·Lambda·배포 파이프라인)는 FE 레포
 [`docs/SYSTEM-ARCHITECTURE.md`](https://github.com/BAECHAN/link-sphere_FE_NEW/blob/main/docs/SYSTEM-ARCHITECTURE.md)가,
@@ -354,6 +354,8 @@ return ApiResponse(HttpStatus.OK.value(), "Link preview", postService.previewLin
 | `DuplicateMemberException` | 409 | `DUPLICATE_MEMBER`(이메일 중복) |
 | `DuplicateNicknameException` | 409 | `DUPLICATE_NICKNAME`(가입·수정 모두) |
 | `DuplicateFolderNameException` | 409 | `DUPLICATE_FOLDER_NAME` |
+| `DuplicatePostException` | 409 | `DUPLICATE_POST`(다른 키로 1시간 안에 같은 URL) |
+| `DuplicateCommentException` | 409 | `DUPLICATE_COMMENT`(다른 키로 1분 안에 같은 대상·본문) |
 | `SessionMismatchException` | 409 | `SESSION_MISMATCH` |
 | `ForbiddenException` | 403 | `FORBIDDEN` |
 | `EmailNotVerifiedException` | 403 | `EMAIL_NOT_VERIFIED` |
@@ -653,6 +655,42 @@ for (id in ids) {
 - 연관관계는 `LAZY`, 대부분 FK는 원시 UUID 컬럼으로 둔다.
 - **안티패턴**: `@GeneratedValue`와 `= UUID.randomUUID()` 기본값을 함께 쓰기(옛 `/new-domain` 템플릿이 그랬다).
 
+### 7-14. 재전송이 중복을 만드는 등록 (`Idempotency-Key`)
+
+- **언제**: 글·댓글처럼 다시 보내면 행·이벤트가 또 생기는 등록, 유효한 링크를 담은 메일 요청. 응답이 끊겨 사용자가 다시
+  누른 요청을 첫 요청과 같게 처리해야 할 때. 7-1(상태 지정)로 풀리면 그쪽을 쓴다.
+- **정석**: 등록은 `PostController.createPost` + `IdempotentCreate.run` + `PostService.createPost`, 메일은
+  `AuthController` + `IdempotentCreate.ignoringLoss` + `PasswordResetService.requestReset`.
+- **모양**: FE가 만든 UUID를 필수 헤더로 받아 행과 한 커밋에 저장하고, `(회원, 키)` 유니크 인덱스로 막는다. 서비스 호출은
+  컨트롤러에서 `IdempotentCreate`로 감싼다. 위반한 트랜잭션은 Postgres가 중단시키므로 재조회를 트랜잭션 밖에서 해야 하고, 커밋
+  시점의 위반도 그 경계 밖에서만 잡힌다. 지는 쪽은 커밋하지 못해 AFTER_COMMIT 이벤트와 메일이 나가지 않는다.
+
+```kotlin
+// Controller - @Transactional 밖. 글 한도는 조회 뒤에 써서 재전송이 한도를 깎지 않는다
+val post = IdempotentCreate.run(
+    index = IDEMPOTENCY_INDEX,
+    find = { postService.findByIdempotencyKey(userId, idempotencyKey) },
+    create = {
+        rateLimitService.consume("post-create:member:$userId", CREATE_MEMBER_LIMIT, CREATE_MEMBER_WINDOW)
+        postService.createPost(userId, request, idempotencyKey = idempotencyKey)
+    },
+)
+```
+
+- **응답**: 같은 키의 재전송은 처음 결과를 201로 돌려준다. 키가 없으면 400 `INVALID_INPUT`, UUID가 아니면 400
+  `INVALID_PATH_VARIABLE`(`@RequestHeader` 타입 변환). 메일 요청은 항상 200이다 - 같은 키의 토큰이 유효하면 토큰도 메일도
+  만들지 않고, 만료·사용됐으면 키 없는 새 토큰으로 메일을 보낸다(키는 옛 토큰이 쓰고 있다).
+- **봇·내부 경로**: HTTP를 타지 않으므로 서비스의 키는 null이다. null이면 잠금·시간 창을 건너뛰고, Postgres 유니크 인덱스는
+  NULL끼리 충돌하지 않는다.
+- **시간 창(유니크 인덱스로 표현할 수 없는 조건)**: 키가 다른데 내용이 같으면 409(`DuplicatePostException`,
+  `DuplicateCommentException`). 글은 회원·URL 1시간, 댓글은 회원·대상·본문 1분이고 이미지 댓글은 URL이 매번 달라 적용하지 않는다.
+  확인과 저장 사이가 겹치지 않도록 `AdvisoryLock.lockForTransaction`으로 회원·내용 단위로 줄 세운다. 잠금을 기다리는 동안 첫 요청이
+  커밋됐을 수 있으므로 **잠금 뒤에 키를 먼저 재조회**한다 - 빠뜨리면 같은 키의 재전송이 시간 창에 걸려 409가 된다. 글은 크롤링
+  전에 확인하므로 같은 URL로 겹치면 뒤 요청은 크롤링하지 않는다.
+- **안티패턴**: 위반을 `@Transactional` 안에서 잡기(트랜잭션이 이미 중단됐다). `pg_advisory_lock`(세션 수준 - 운영은 Supavisor
+  트랜잭션 모드라 다른 요청에 남는다). 인덱스 이름을 보지 않고 위반을 전부 재전송으로 처리하기(FK 위반이 묻힌다).
+- **근거·대안 비교**: `docs/plans/2026-11-04-idempotent-create.md`. 키 생성·보관은 FE `docs/FE-ARCHITECTURE.md` §27.
+
 ---
 
 ## 8. 테스트 패턴
@@ -758,6 +796,7 @@ FE와 BE가 같은 테스트 원칙을 쓰면서 층 구성과 도구를 다르�
 | 경계 입력 검증 | Bean Validation(`@Valid`) | `@RequestBody` 23곳 중 10곳 | 방식 혼재로 둔다 — `PostCreateRequest`는 봇 경로(`FeedItemProcessor`)도 쓰므로 Service 검증이 어차피 필요하다 |
 | 모듈 순환 | [Spring Modulith 검증](https://docs.spring.io/spring-modulith/reference/verification.html), ArchUnit `slices().beFreeOfCycles()` | 허용 간선 8개(§9) | 새 순환만 막는다 |
 | 관측성 | 구조화 로그·요청 상관 ID | 앱 로그는 logstash JSON 한 줄 + MDC `awsRequestId`(2026-10-26, `LambdaHandler`·`AsyncConfig`). Lambda LogFormat은 Text 유지 | 따른다 — 찾는 법은 `DEPLOY.md` "운영 로그 읽기" |
+| 멱등 등록 | [IETF 초안](https://datatracker.ietf.org/doc/draft-ietf-httpapi-idempotency-key-header/)(RFC 아님) `Idempotency-Key`. 처리 중인 같은 키는 409를 권한다 | 필수 헤더 + 행에 저장(§7-14). 처리 중이면 기다렸다가 같은 결과 | 이름·필수 시 400은 따른다. 처리 중 409는 따르지 않는다 - 키를 행에 두면 커밋 전까지 "처리 중"을 알 수 없고, 기다리면 사용자가 바로 성공을 받는다 |
 | 지원 버전 | [Spring Boot 지원 일정](https://api.spring.io/projects/spring-boot/generations) — 3.5.x OSS 지원 2026-06-30 종료 | 3.5.16(OSS 마지막 패치, 2026-10-26). Dependabot이 Gradle minor·patch를 월간으로 올린다 | 4.x 이동은 "남은 것" |
 
 표에 링크한 문서가 하는 말(모두 번역):

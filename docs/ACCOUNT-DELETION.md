@@ -11,7 +11,7 @@
 > 수정하거나, 유예 만료 정리 배치의 실행 주기를 바꾸거나, 버그를 재현·수정할 수
 > 있다(§8 참고).
 >
-> **마지막 검토**: 2026-11-02 (§5-3 재가입 정책 추가. 최초 작성 2026-09-29)
+> **마지막 검토**: 2026-11-04 (줄 번호 갱신. §5-3 재가입 정책 2026-11-02, 최초 작성 2026-09-29)
 
 ## 1. 쉬운 설명
 
@@ -135,16 +135,16 @@ Context 절 참고). 한국 개인정보보호법의 "지체 없이 파기" 원�
 - 가입은 옛 행을 찾지 않고 늘 새 행을 만든다(`domain/member/MemberService.kt:38`,
   id는 `domain/member/TableMember.kt:14`의 `@GeneratedValue` UUID).
 - 이메일로 회원을 찾는 곳은 가입 중복 확인(`MemberService.kt:21,126`)·로그인
-  (`domain/auth/AuthService.kt:143`)·인증 메일 재발송(`AuthService.kt:90`)·비밀번호
-  재설정(`domain/auth/PasswordResetService.kt:54`)뿐이다. 퍼지가 옛 행의 이메일을
+  (`domain/auth/AuthService.kt:152`)·인증 메일 재발송(`AuthService.kt:90`)·비밀번호
+  재설정(`domain/auth/PasswordResetService.kt:55`)뿐이다. 퍼지가 옛 행의 이메일을
   `deleted-<id>@deleted.invalid`로 바꾸므로(`AccountDeletionService.kt:90`) 어느
   경로에도 옛 행이 걸리지 않는다.
 - 글·댓글은 옛 회원 id를 계속 가리키며 "탈퇴한 사용자"로 보인다(§5-1). 북마크·폴더·
   좋아요·조회 기록은 퍼지 때 지워져(`AccountDeletionService.kt:102-108`) 새 계정은 빈
   상태로 시작한다.
 - 같은 이메일로 이어지는 것은 이메일 해시를 키로 쓰는 레이트리밋 카운터뿐이다 —
-  로그인 실패 15분 창(`AuthService.kt:39,138`)·인증 메일 발송 1시간 창
-  (`AuthService.kt:53,85`). 창이 지나면 사라지고 계정 데이터와는 무관하다.
+  로그인 실패 15분 창(`AuthService.kt:39,149`)·인증 메일 발송 1시간 창
+  (`AuthService.kt:53,87`). 창이 지나면 사라지고 계정 데이터와는 무관하다.
 - 회귀 테스트: `AccountResignupIntegrationTest`(실제 Postgres, §9).
 
 닉네임도 같은 시점에 풀린다(유예 중 409 `DUPLICATE_NICKNAME`, 퍼지 뒤
@@ -244,7 +244,7 @@ AND deleted_at IS NULL` 조건)도 같은 파일에 있다.
 | --- | --- | --- |
 | 탈퇴 신청(1단계) | `domain/auth/AccountDeletionService.kt`의 `requestDeletion` | 예 |
 | 탈퇴 신청 API | `domain/auth/AuthController.kt`의 `deleteAccount` — `ACCOUNT_DELETE` 권한이 없는 역할(데모 계정)은 서비스에 닿기 전에 403 `ACCESS_DENIED`(`docs/BE-ARCHITECTURE.md` §5 "역할·권한") | 예 |
-| 로그인 시 자동 복구 | `domain/auth/AuthService.kt:136-168`의 `login`(비밀번호 일치 후 `memberService.cancelPendingDeletion` 호출) | 예 |
+| 로그인 시 자동 복구 | `domain/auth/AuthService.kt:146-185`의 `login`(비밀번호 일치 후 `memberService.cancelPendingDeletion` 호출) | 예 |
 | 복구 여부를 FE에 전달 | `domain/auth/AuthDTO.kt`의 `TokenResponse.deletionCancelled` | 예 |
 | 경합 처리용 조건부 UPDATE 3개 | `domain/member/MemberRepository.kt:25-45`(`findIdsPendingPurge`·`cancelDeletionRequest`·`claimForPurge`) | 예 |
 | 유예 만료 확정 + 실제 익명화(2단계) | `domain/auth/AccountDeletionService.kt`의 `purge` | 예 |

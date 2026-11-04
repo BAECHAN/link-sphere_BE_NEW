@@ -13,6 +13,10 @@ interface PostRepository :
 
     fun findAllByUserIdAndAiSummaryIsNull(userId: UUID): List<TablePost>
 
+    fun findByUserIdAndIdempotencyKey(userId: UUID, idempotencyKey: UUID): TablePost?
+
+    fun existsByUserIdAndUrlAndCreatedAtAfter(userId: UUID, url: String, after: LocalDateTime): Boolean
+
     fun findAllByAiStatusInAndCreatedAtBefore(aiStatuses: List<AiStatus>, before: LocalDateTime): List<TablePost>
 
     // 크롤링이 "성공"했지만 실제로는 페이지 껍데기를 요약해 aiStatus=COMPLETED로 확정된 글은 위

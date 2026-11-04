@@ -14,6 +14,7 @@ import com.example.linksphere.global.common.RateLimitService
 import com.example.linksphere.global.config.SecurityConfig
 import com.example.linksphere.global.config.security.CustomAccessDeniedHandler
 import com.example.linksphere.global.config.security.CustomAuthenticationEntryPoint
+import com.example.linksphere.global.exception.DuplicatePostException
 import jakarta.servlet.http.Cookie
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.verify
@@ -22,12 +23,14 @@ import org.mockito.Mockito.`when`
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest
 import org.springframework.context.annotation.Import
+import org.springframework.http.MediaType
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
+import java.time.Duration
 import java.util.UUID
 
 /**
@@ -56,6 +59,100 @@ class PostSecurityTest {
     @MockitoBean private lateinit var passwordResetService: PasswordResetService
 
     private val emptyPage = PostPageResponse(emptyList(), page = 0, size = 10, totalElements = 0, totalPages = 0, last = true)
+
+    private val postBody = """{"url":"https://example.com"}"""
+
+    private fun givenValidToken(): UUID {
+        val memberId = UUID.randomUUID()
+        `when`(memberSessionService.checkAccessToken("valid-token")).thenReturn(AccessTokenCheck.Valid(memberId, UUID.randomUUID(), MemberRole.USER))
+        return memberId
+    }
+
+    private fun postResponse(memberId: UUID) = PostResponse(
+        id = UUID.randomUUID(),
+        url = "https://example.com",
+        title = "제목",
+        description = null,
+        tags = null,
+        categories = emptyList(),
+        ogImage = null,
+        aiSummary = null,
+        createdAt = null,
+        aiStatus = AiStatus.NONE,
+        isPrivate = false,
+        stats = PostStats(viewCount = 0, likeCount = 0, commentCount = 0, bookmarkCount = 0),
+        userInteractions = PostUserInteractions(isLiked = false, isBookmarked = false),
+        author = UserSummary(memberId, null, null),
+    )
+
+    @Test
+    fun `같은 키의 글이 이미 있으면 한도를 쓰지 않고 그 글을 201로 돌려준다`() {
+        val memberId = givenValidToken()
+        val key = UUID.randomUUID()
+        val existing = postResponse(memberId)
+        `when`(postService.findByIdempotencyKey(memberId, key)).thenReturn(existing)
+
+        mockMvc.perform(
+            post("/post")
+                .header("X-Access-Token", "valid-token")
+                .header("Idempotency-Key", key.toString())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(postBody),
+        )
+            .andExpect(status().isCreated)
+            .andExpect(jsonPath("$.data.id").value(existing.id.toString()))
+
+        verifyNoInteractions(rateLimitService)
+    }
+
+    @Test
+    fun `다른 키로 같은 URL을 1시간 안에 등록하면 한도를 1회 쓰고 409 DUPLICATE_POST를 준다`() {
+        val memberId = givenValidToken()
+        val key = UUID.randomUUID()
+        val request = PostCreateRequest(url = "https://example.com")
+        `when`(postService.createPost(memberId, request, null, key)).thenThrow(DuplicatePostException(request.url))
+
+        mockMvc.perform(
+            post("/post")
+                .header("X-Access-Token", "valid-token")
+                .header("Idempotency-Key", key.toString())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(postBody),
+        )
+            .andExpect(status().isConflict)
+            .andExpect(jsonPath("$.code").value("DUPLICATE_POST"))
+
+        verify(rateLimitService).consume("post-create:member:$memberId", 20, Duration.ofHours(1))
+    }
+
+    @Test
+    fun `키 없이 글을 등록하면 한도를 쓰지 않고 400 INVALID_INPUT을 준다`() {
+        givenValidToken()
+
+        mockMvc.perform(
+            post("/post").header("X-Access-Token", "valid-token").contentType(MediaType.APPLICATION_JSON).content(postBody),
+        )
+            .andExpect(status().isBadRequest)
+            .andExpect(jsonPath("$.code").value("INVALID_INPUT"))
+
+        verifyNoInteractions(postService, rateLimitService)
+    }
+
+    @Test
+    fun `키가 UUID가 아니면 400을 준다`() {
+        givenValidToken()
+
+        mockMvc.perform(
+            post("/post")
+                .header("X-Access-Token", "valid-token")
+                .header("Idempotency-Key", "not-a-uuid")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(postBody),
+        )
+            .andExpect(status().isBadRequest)
+
+        verifyNoInteractions(postService, rateLimitService)
+    }
 
     @Test
     fun `만료 토큰으로 비공개 글 필터를 조회하면 비로그인 빈 목록 대신 401 TOKEN_EXPIRED를 준다`() {

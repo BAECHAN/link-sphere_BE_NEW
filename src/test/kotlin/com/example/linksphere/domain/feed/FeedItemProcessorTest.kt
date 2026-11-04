@@ -67,11 +67,10 @@ class FeedItemProcessorTest {
 
         feedItemProcessor.processFeedItem(botId, item)
 
-        // createPost가 fallbackContent 파라미터를 얻으면서 2-인자에서 3-인자 호출로 바뀌었다 -
-        // Kotlin 기본값 파라미터는 컴파일 시 별도의 $default 합성 브리지를 통해 호출되므로,
-        // 여기서 인자 수를 실제 프로덕션 호출부(3-인자)와 맞추지 않으면 서로 다른 메서드를
-        // 검증하게 되어 이 verify가 실제로는 아무것도 검증하지 못한다.
-        verify(postService, never()).createPost(anyNonNull(), anyNonNull(), ArgumentMatchers.any())
+        // createPost가 fallbackContent·idempotencyKey 파라미터를 얻으면서 4-인자가 됐다 - Kotlin 기본값 파라미터는
+        // $default 합성 브리지가 나머지 인자를 채워 부르므로, 매처 수를 실제 메서드(4개)와 맞추지 않으면 Mockito가
+        // InvalidUseOfMatchersException을 던진다.
+        verify(postService, never()).createPost(anyNonNull(), anyNonNull(), ArgumentMatchers.any(), ArgumentMatchers.any())
         verify(feedItemRepository, never()).attachPost(anyNonNull(), anyNonNull())
     }
 
