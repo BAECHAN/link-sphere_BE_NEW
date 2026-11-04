@@ -189,19 +189,24 @@ class PostService(
         )
     }
 
-    @Transactional
     fun getPostById(id: UUID, currentUserId: UUID?): PostResponse {
         val post = postRepository.findById(id).orElseThrow { PostNotFoundException(id) }
         // 목록/북마크 조회에는 있는 가시성 검증이 상세 조회에는 빠져 있었다.
         // 존재 여부를 알려주지 않도록 403이 아닌 404로 던진다.
         PostVisibility.assertVisible(post, currentUserId, id)
+        return postResponseAssembler.convertToResponse(post, currentUserId)
+    }
+
+    /**
+     * 상세 화면이 뜰 때 FE가 부르는 조회 기록. 읽기(getPostById)와 나눈 이유는 카드 hover 미리 받기·탭 복귀 재조회·수정 화면도
+     * 같은 GET을 보내 조회로 세지던 것이다(docs/plans/2026-11-05-post-view-record.md).
+     */
+    @Transactional
+    fun recordView(id: UUID, currentUserId: UUID?) {
+        val post = postRepository.findById(id).orElseThrow { PostNotFoundException(id) }
+        PostVisibility.assertVisible(post, currentUserId, id)
         postRepository.incrementViewCount(id)
         currentUserId?.let { postViewRepository.upsertView(it, id) }
-        // incrementViewCount는 JPQL 벌크 UPDATE라 위에서 읽은 post 엔티티에는 반영되지 않아, 그대로 조립하면 상세는 증가 전
-        // 값(N), 목록은 N+1로 어긋났다. 같은 트랜잭션에서 DB 값을 다시 읽어 싣는다(InteractionService가 쓴 뒤 COUNT를 다시
-        // 읽는 것과 같은 방식, docs/plans/2026-10-25-be-architecture-audit.md PR5).
-        val response = postResponseAssembler.convertToResponse(post, currentUserId)
-        return response.copy(stats = response.stats.copy(viewCount = postRepository.findViewCountById(id)))
     }
 
     @Transactional

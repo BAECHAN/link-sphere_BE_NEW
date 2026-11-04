@@ -89,7 +89,8 @@ class PostController(
     @Operation(
         summary = "게시글 상세 조회",
         description = "비공개 글을 작성자 본인이 아닌 사용자가 조회하면(비로그인 포함) 존재 자체를 " +
-            "숨기기 위해 403 이 아니라 404 로 응답한다. 실패: 404 POST_NOT_FOUND",
+            "숨기기 위해 403 이 아니라 404 로 응답한다. 조회수와 열람 기록은 바꾸지 않는다(POST /post/{id}/view). " +
+            "실패: 404 POST_NOT_FOUND",
     )
     @SecurityRequirements
     @GetMapping("/{id}")
@@ -100,6 +101,21 @@ class PostController(
         val currentUserId = authentication.getUserId()
         val post = postService.getPostById(id, currentUserId)
         return ApiResponse(HttpStatus.OK.value(), "Post retrieved", post)
+    }
+
+    @Operation(
+        summary = "게시글 조회 기록",
+        description = "상세 화면이 뜰 때 FE가 한 번 부른다. 조회수를 1 올리고, 로그인 상태면 최근 열람 시각도 갱신한다. " +
+            "볼 수 없는 글은 상세 조회와 같은 기준으로 404. 실패: 404 POST_NOT_FOUND",
+    )
+    @SecurityRequirements
+    @PostMapping("/{id}/view")
+    fun recordPostView(
+        @PathVariable id: UUID,
+        authentication: Authentication?,
+    ): ApiResponse<Unit> {
+        postService.recordView(id, authentication.getUserId())
+        return ApiResponse(HttpStatus.OK.value(), "Post view recorded", Unit)
     }
 
     @Operation(

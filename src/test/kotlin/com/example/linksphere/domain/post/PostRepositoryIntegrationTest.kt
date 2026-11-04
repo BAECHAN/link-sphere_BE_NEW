@@ -63,16 +63,15 @@ class PostRepositoryIntegrationTest {
     }
 
     @Test
-    fun `조회수 증가는 벌크 UPDATE라 이미 읽은 엔티티에는 반영되지 않고 다시 읽어야 보인다`() {
-        val post = postRepository.findById(notLiked).orElseThrow()
-        val before = post.viewCount ?: 0
+    fun `조회수 증가는 DB 값을 1 올린다`() {
+        val before = viewCountInDb(notLiked)
 
         postRepository.incrementViewCount(notLiked)
 
-        // 엔티티는 그대로다 - 응답을 이 엔티티로 만들면 증가 전 값이 나간다(PostService.getPostById)
-        assertEquals(before, post.viewCount ?: 0)
-        assertEquals(before + 1, postRepository.findViewCountById(notLiked))
+        assertEquals(before + 1, viewCountInDb(notLiked))
     }
+
+    private fun viewCountInDb(postId: UUID): Int = jdbc.queryForObject("SELECT COALESCE(view_count, 0) FROM posts WHERE id = ?", Int::class.java, postId)!!
 
     private fun findPosts(filter: String, currentUserId: UUID?) = postRepository.findPosts(
         category = null,
