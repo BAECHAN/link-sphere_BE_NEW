@@ -3,6 +3,7 @@ package com.example.linksphere.domain.auth
 import com.example.linksphere.domain.member.MemberService
 import com.example.linksphere.domain.member.SignupRequest
 import com.example.linksphere.domain.member.UpdateAccountRequest
+import com.example.linksphere.global.common.RateLimitService
 import com.example.linksphere.global.exception.DuplicateMemberException
 import com.example.linksphere.global.exception.DuplicateNicknameException
 import com.example.linksphere.global.exception.InvalidActionTokenException
@@ -34,6 +35,7 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
+import java.time.Duration
 import java.util.UUID
 
 @WebMvcTest(
@@ -59,6 +61,8 @@ class AuthControllerTest {
     @MockitoBean private lateinit var accountDeletionService: AccountDeletionService
 
     @MockitoBean private lateinit var passwordResetService: PasswordResetService
+
+    @MockitoBean private lateinit var rateLimitService: RateLimitService
 
     // ResponseEntity.status(CREATED)에서 @ResponseStatus(CREATED)로 바뀌어도 HTTP 상태와 본문 status가 함께 201인지 고정한다
     @Test
@@ -501,7 +505,7 @@ class AuthControllerTest {
         `when`(authService.isNicknameAvailable(null, "newNick"))
             .thenReturn(NicknameAvailabilityResponse(true))
 
-        val response = AuthController(authService, accountDeletionService, passwordResetService).checkNicknameAvailability("newNick", null)
+        val response = AuthController(authService, accountDeletionService, passwordResetService, rateLimitService).checkNicknameAvailability("newNick", null)
 
         assertEquals(true, response.data.available)
     }
@@ -515,6 +519,40 @@ class AuthControllerTest {
         mockMvc.perform(get("/auth/email-availability").param("email", "new@example.com"))
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.data.available").value(true))
+    }
+
+    @Test
+    @WithMockUser
+    fun `checkEmailAvailability는 IP 버킷에 시간당 60회 한도를 건다`() {
+        `when`(authService.isEmailAvailable("new@example.com"))
+            .thenReturn(EmailAvailabilityResponse(true))
+
+        mockMvc.perform(
+            get("/auth/email-availability")
+                .param("email", "new@example.com")
+                .header("CloudFront-Viewer-Address", "1.2.3.4:443"),
+        )
+            .andExpect(status().isOk)
+
+        verify(rateLimitService).consume("email-availability:ip:1.2.3.4", 60, Duration.ofHours(1))
+    }
+
+    @Test
+    @WithMockUser
+    fun `checkEmailAvailability는 한도를 넘으면 조회하지 않고 429를 반환한다`() {
+        doThrow(RateLimitExceededException("Too many requests, please try again later"))
+            .`when`(rateLimitService)
+            .consume("email-availability:ip:1.2.3.4", 60, Duration.ofHours(1))
+
+        mockMvc.perform(
+            get("/auth/email-availability")
+                .param("email", "new@example.com")
+                .header("CloudFront-Viewer-Address", "1.2.3.4:443"),
+        )
+            .andExpect(status().isTooManyRequests)
+            .andExpect(jsonPath("$.code").value("RATE_LIMIT_EXCEEDED"))
+
+        verifyNoInteractions(authService)
     }
 
     // MissingRequestCookieException도 ServletException이지만 전용 핸들러가 이겨 기존 응답(401 MISSING_REFRESH_TOKEN)이 그대로다

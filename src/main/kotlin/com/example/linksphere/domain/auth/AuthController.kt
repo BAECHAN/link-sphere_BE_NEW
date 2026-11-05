@@ -5,6 +5,7 @@ import com.example.linksphere.domain.member.UpdateAccountRequest
 import com.example.linksphere.global.common.ApiResponse
 import com.example.linksphere.global.common.ClientIpResolver
 import com.example.linksphere.global.common.IdempotentCreate
+import com.example.linksphere.global.common.RateLimitService
 import com.example.linksphere.global.common.getUserId
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.security.SecurityRequirements
@@ -29,6 +30,7 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
+import java.time.Duration
 import java.util.UUID
 
 @Tag(name = "인증", description = "회원가입·로그인·토큰 갱신·계정 조회")
@@ -39,6 +41,7 @@ class AuthController(
     private val authService: AuthService,
     private val accountDeletionService: AccountDeletionService,
     private val passwordResetService: PasswordResetService,
+    private val rateLimitService: RateLimitService,
 ) {
 
     companion object {
@@ -47,6 +50,11 @@ class AuthController(
         // 기존 refreshToken 쿠키는 새 세션 테이블에 없는 값이 되어 그냥 만료될 때까지
         // 무시된다(전원 재로그인, docs/plans/2026-09-28-auth-hardening.md 참고).
         private const val REFRESH_COOKIE_NAME = "__Host-refreshToken"
+
+        // 가입 여부를 대량으로 떠보지 못하게 한다. 계측값은 아니고, 디바운스된 입력 확인이 넉넉히 들어가도록
+        // 링크 미리보기 한도와 맞췄다. 초과해도 FE는 확인 전 상태로 돌아가고 실제 중복은 가입 때 409로 막힌다.
+        private val EMAIL_AVAILABILITY_IP_WINDOW = Duration.ofHours(1)
+        private const val EMAIL_AVAILABILITY_IP_LIMIT = 60
     }
 
     @Operation(
@@ -307,12 +315,24 @@ class AuthController(
         authService.isNicknameAvailable(authentication.getUserId(), nickname),
     )
 
-    @Operation(summary = "이메일 사용 가능 여부 확인", description = "가입 화면에서 쓰는 중복 검사. 대소문자를 구분하지 않는다.")
+    @Operation(
+        summary = "이메일 사용 가능 여부 확인",
+        description = "가입 화면에서 쓰는 중복 검사. 대소문자를 구분하지 않는다. 실패: 429 RATE_LIMIT_EXCEEDED(IP당 시간당 한도)",
+    )
     @SecurityRequirements
     @GetMapping("/email-availability")
     fun checkEmailAvailability(
         @RequestParam @Size(max = 254) email: String,
-    ): ApiResponse<EmailAvailabilityResponse> = ApiResponse(HttpStatus.OK.value(), "Email availability checked", authService.isEmailAvailable(email))
+        httpRequest: HttpServletRequest,
+    ): ApiResponse<EmailAvailabilityResponse> {
+        rateLimitService.consume(
+            ClientIpResolver.resolve(httpRequest)?.let { "email-availability:ip:$it" },
+            EMAIL_AVAILABILITY_IP_LIMIT,
+            EMAIL_AVAILABILITY_IP_WINDOW,
+        )
+
+        return ApiResponse(HttpStatus.OK.value(), "Email availability checked", authService.isEmailAvailable(email))
+    }
 
     private fun createCookieResponse(
         authResult: AuthResult,

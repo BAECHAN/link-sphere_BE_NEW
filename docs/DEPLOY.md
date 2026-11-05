@@ -1,6 +1,6 @@
 # AWS Lambda SnapStart 배포 가이드
 
-> 마지막 검토: 2026-10-30
+> 마지막 검토: 2026-11-05 (TLS 인자·임시 조회 이메일 제외·덤프 처리·로그 가림만 다시 봄. 전체 검토는 2026-10-30)
 
 ## 아키텍처 개요
 
@@ -271,6 +271,9 @@ Lambda 콘솔 → Configuration → Environment variables:
 > `APP_MAIL_FROM`/`APP_FRONTEND_URL`도 같은 규칙으로 각각 `app.mail.from`/`app.frontend.url`에 매핑된다.
 > `APP_CORS_ALLOWED_ORIGINS`처럼 `List<String>` 타입 속성(`app.cors.allowed-origins`)은 Spring Boot의
 > relaxed binding이 쉼표로 구분된 값 하나를 리스트로 변환해준다 - 배열 인덱스 문법(`_0`, `_1`) 없이도 된다.
+>
+> DB 연결의 TLS는 URL이 아니라 `LambdaHandler`의 기동 인자(`--spring.datasource.hikari.data-source-properties.sslmode=require`)가
+> 강제한다. 로컬·테스트에는 걸리지 않는다. 배포 직후 `/actuator/health`가 `UP`인지 보는 이유 중 하나다(`docs/DATA-PROTECTION.md` §5-3).
 
 ### 5. Function URL 생성
 
@@ -801,7 +804,7 @@ _"서로 다른 조합(사용자+데이터베이스+모드)이 연결하면 새 
 
 | 설정 | 값 | 이유 |
 | --- | --- | --- |
-| 권한 | `public` 전 테이블 SELECT, 단 `members.password`·`fcm_tokens.token` 제외(두 테이블은 컬럼 단위) | 조회 결과가 세션 기록에 남는다 — 비밀번호 해시와 기기 토큰 원문은 임시 조회에 필요 없다 |
+| 권한 | `public` 전 테이블 SELECT, 단 `members.password`·`members.email`·`fcm_tokens.token` 제외(두 테이블은 컬럼 단위) | 조회 결과가 세션 기록에 남는다 — 비밀번호 해시·이메일·기기 토큰 원문은 임시 조회에 필요 없다. 이메일로 회원을 찾아야 하면 Supabase 콘솔을 쓴다(2026-11-05, `docs/DATA-PROTECTION.md`) |
 | `BYPASSRLS` | 켬 | 공개 테이블 전부 RLS가 켜져 있고 정책이 0개라(`src/test/resources/db/schema.sql`) 없으면 0행이다. Supabase [Prisma 가이드](https://supabase.com/docs/guides/database/prisma)의 전용 계정도 `bypassrls` |
 | `default_transaction_read_only` | `on`(계정 기본값) | 보조 장치 — `SET`으로 끌 수 있어 실제 차단은 권한이 한다 |
 | `statement_timeout` | `30s`(계정 기본값) | 무거운 임시 조회가 운영 DB를 오래 잡지 않게 |
@@ -817,11 +820,13 @@ grant usage on schema public to adhoc_readonly;
 grant select on all tables in schema public to adhoc_readonly;
 alter default privileges for role postgres in schema public grant select on tables to adhoc_readonly;
 revoke select on public.members, public.fcm_tokens from adhoc_readonly;
-grant select (id, email, nickname, image, created_at, updated_at, role, is_bot, deleted_at, email_verified, deletion_requested_at)
+grant select (id, nickname, image, created_at, updated_at, role, is_bot, deleted_at, email_verified, deletion_requested_at)
   on public.members to adhoc_readonly;
 grant select (id, user_id, platform, created_at, updated_at, session_family_id) on public.fcm_tokens to adhoc_readonly;
 ```
 
+- **이미 만든 계정**에서 이메일을 빼는 SQL: `revoke select (email) on public.members from adhoc_readonly;`
+  확인은 이 계정으로 `select has_column_privilege('members', 'email', 'SELECT');` → `f`.
 - **새 테이블**은 `alter default privileges` 덕분에 `postgres`로 만들면 SELECT가 자동으로 붙는다.
 - **`members`·`fcm_tokens`에 컬럼을 추가하는 마이그레이션**에는 `grant select (<새 컬럼>) on public.<테이블> to
   adhoc_readonly;`를 같이 넣는다. 빠뜨리면 이 계정에서 그 컬럼만 안 보인다(쓰기·앱에는 영향 없음).
@@ -984,7 +989,8 @@ aws s3 ls s3://link-sphere-db-backup/ --recursive
 #### 13-2. 복구 (DB나 Storage를 잃었을 때)
 
 1. **덤프 받기** — 버킷을 읽을 수 있는 자격증명(콘솔 CloudShell 등)으로: `aws s3 ls s3://link-sphere-db-backup/db/` →
-   `aws s3 cp s3://link-sphere-db-backup/db/<날짜>.dump .`
+   `aws s3 cp s3://link-sphere-db-backup/db/<날짜>.dump .` 덤프에는 이메일과 비밀번호 해시가 그대로 들어 있다. CloudShell이나
+   컨테이너 안에서 처리하고, 로컬에 받았으면 복구가 끝난 뒤 지운다(`docs/DATA-PROTECTION.md`).
 2. **대상 DB 준비** — 새 Supabase 프로젝트(또는 같은 프로젝트의 비운 public)의 SQL Editor에서
    `create extension if not exists vector with schema extensions;`. `posts.embedding`이 `extensions.vector`다.
    `bookmarks.user_id`의 기본값 `auth.uid()`는 Supabase 프로젝트에 원래 있다(운영 스키마가 이미 이 함수를 쓴다).
@@ -1238,7 +1244,8 @@ FE `docs/DEPLOY.md`의 "CloudFront WAF (수동 관리)" 절 참고.
 기동 인자 `--logging.structured.format.console=logstash`를 넘긴다(로컬 `bootRun` 로그는 그대로 텍스트). 키는 평평하다:
 `@timestamp`·`level`·`logger_name`·`thread_name`·`message`, 예외면 `stack_trace` 한 필드(예전에는 스택 한 건이 CloudWatch 이벤트
 약 110개로 쪼개졌다), 그리고 MDC의 `awsRequestId`. `awsRequestId`는 플랫폼 `START`·`REPORT` 줄의 `RequestId`와 같은 값이라,
-요청 하나의 로그를 이렇게 모은다. AWS 문서는 _"CloudWatch Logs Insights는 Lambda 로그의 필드를 자동으로 찾지만, 각 로그
+요청 하나의 로그를 이렇게 모은다. 이메일 형태는 모든 값에서 `<email>`로 가려지고(`EmailMaskingLogCustomizer`, 로컬 텍스트 로그는
+제외), 로그 그룹 보존 기간은 90일이다(2026-11-05, `docs/DATA-PROTECTION.md`). AWS 문서는 _"CloudWatch Logs Insights는 Lambda 로그의 필드를 자동으로 찾지만, 각 로그
 이벤트의 첫 번째 JSON 조각만 본다"_ 고 쓴다(번역,
 [Supported logs and discovered fields](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/CWL_AnalyzeLogData-discoverable-fields.html))
 — 이 레포의 앱 로그는 이벤트 하나가 JSON 한 줄이라 `awsRequestId`·`level`을 바로 필터에 쓴다:

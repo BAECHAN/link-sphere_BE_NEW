@@ -3,6 +3,7 @@ package com.example.linksphere.global.common
 import com.example.linksphere.domain.auth.AuthRateLimitRepository
 import com.example.linksphere.domain.auth.TableAuthRateLimit
 import com.example.linksphere.global.exception.RateLimitExceededException
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -132,5 +133,13 @@ class RateLimitServiceTest {
 
         val retryAfter = e.retryAfterSeconds
         assertTrue(retryAfter != null && retryAfter in 1..900, "retryAfterSeconds=$retryAfter")
+    }
+
+    @Test
+    fun `purgeExpired는 하루 전을 기준 시각으로 넘기고 지운 행 수를 돌려준다`() {
+        val now = Instant.parse("2026-11-05T00:00:00Z")
+        `when`(repository.deleteOlderThan(now.minus(Duration.ofDays(1)))).thenReturn(3)
+
+        assertEquals(3, service.purgeExpired(now))
     }
 }

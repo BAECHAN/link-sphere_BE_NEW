@@ -11,6 +11,20 @@
 
 ### Added
 
+- `auth`·`infra` 이메일 컬럼은 평문으로 두기로 정하고 로그·DB 연결·레이트리밋 행·중복 검사의 유출 지점을 막음
+  <details><summary>배경·구현</summary>
+
+  "이메일을 암호화해야 하나"를 조사한 결과, 제7조 제2항 저장 암호화 대상이 아니고 컬럼 암호화는 키 분실 시 전 회원 로그인이 막히면서
+  덤프와 키를 함께 읽는 AWS 키 유출은 막지 못해 컬럼은 평문으로 두기로 했다. 대신 실제로 새던 곳을 막았다. Lambda JSON 로그의 모든
+  값에서 이메일 형태를 `<email>`로 가리고(`EmailMaskingLogCustomizer`), DB 연결에 `sslmode=require`를 기동 인자로 걸고, `account-purge`
+  잡이 하루 지난 `auth_rate_limits` 행을 지우고, `GET /auth/email-availability`에 IP당 1시간 60회 한도를 둔다. 초과하면 429이고 FE는
+  확인 전 상태로 돌아간다. 데이터 계약은 그대로다. 정책과 받아들인 위험, 재검토 조건은 `docs/DATA-PROTECTION.md`, 근거는
+  `docs/plans/2026-11-05-email-data-protection.md`. 개인정보처리방침은 범위에서 뺐다.
+  (`EmailMaskingLogCustomizer.kt`(신규), `LambdaHandler.kt`, `RateLimitService.kt`, `AuthRateLimitRepository.kt`, `AuthController.kt`,
+  [PR #161](https://github.com/BAECHAN/link-sphere_BE_NEW/pull/161))
+
+  </details>
+
 - `post`·`comment`·`auth` 글·댓글·답글·메일 요청에 `Idempotency-Key` 필수화, 같은 키의 재전송은 처음 결과를 돌려줌
   <details><summary>배경·구현</summary>
 

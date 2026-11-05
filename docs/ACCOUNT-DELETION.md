@@ -11,7 +11,7 @@
 > 수정하거나, 유예 만료 정리 배치의 실행 주기를 바꾸거나, 버그를 재현·수정할 수
 > 있다(§8 참고).
 >
-> **마지막 검토**: 2026-11-04 (줄 번호 갱신. §5-3 재가입 정책 2026-11-02, 최초 작성 2026-09-29)
+> **마지막 검토**: 2026-11-05 (퍼지 뒤 남는 사본·레이트리밋 행 삭제 반영. §5-3 재가입 정책 2026-11-02, 최초 작성 2026-09-29)
 
 ## 1. 쉬운 설명
 
@@ -144,7 +144,10 @@ Context 절 참고). 한국 개인정보보호법의 "지체 없이 파기" 원�
   상태로 시작한다.
 - 같은 이메일로 이어지는 것은 이메일 해시를 키로 쓰는 레이트리밋 카운터뿐이다 —
   로그인 실패 15분 창(`AuthService.kt:39,149`)·인증 메일 발송 1시간 창
-  (`AuthService.kt:53,87`). 창이 지나면 사라지고 계정 데이터와는 무관하다.
+  (`AuthService.kt:53,87`). 계정 데이터와는 무관하고, 끝난 창의 행은 하루가 지나면 퍼지 잡이 함께 지운다(최대 약 5일,
+  [`DATA-PROTECTION.md`](./DATA-PROTECTION.md) §7).
+- 퍼지 뒤에도 옛 이메일이 잠시 남는 사본은 DB 덤프(최대 약 60일)와 앱 로그다. 로그는 2026-11-05부터 이메일을 가리고 90일 뒤
+  지운다(가리기 전 로그는 늦어도 2027-01-31에 사라진다).
 - 회귀 테스트: `AccountResignupIntegrationTest`(실제 Postgres, §9).
 
 닉네임도 같은 시점에 풀린다(유예 중 409 `DUPLICATE_NICKNAME`, 퍼지 뒤
@@ -249,7 +252,7 @@ AND deleted_at IS NULL` 조건)도 같은 파일에 있다.
 | 경합 처리용 조건부 UPDATE 3개 | `domain/member/MemberRepository.kt:25-45`(`findIdsPendingPurge`·`cancelDeletionRequest`·`claimForPurge`) | 예 |
 | 유예 만료 확정 + 실제 익명화(2단계) | `domain/auth/AccountDeletionService.kt`의 `purge` | 예 |
 | 배치 진입점(회원별 트랜잭션 분리) | `domain/auth/AccountPurgeService.kt` | 예 |
-| EventBridge → Lambda 진입점 | `LambdaHandler.kt:145-147, 316`(`"account-purge"` case) | 예 |
+| EventBridge → Lambda 진입점 | `LambdaHandler.kt:183-186, 332`(`"account-purge"` case) | 예 |
 | 남에게 보이는 표시(공개 기준) | `domain/member/TableMember.kt:47-54`(`isWithdrawn`·`publicNickname`·`publicImage`) | 예 |
 | 댓글 작성자 표시 | `domain/comment/CommentService.kt`(`toCommentResponse`, `getComments`) | 예 |
 | 게시글 작성자 표시 | `domain/post/PostResponseAssembler.kt`(`convertToResponse`·`buildResponsesFromPosts`) | 예 |
@@ -342,7 +345,8 @@ AWS CLI 명령을 직접 실행해야 했다. 읽기 전용 조회(컬럼·인�
 - **개인정보처리방침 미비**: 유예기간 동안 개인정보를 보관한다는 사실을
   알리는 곳이 탈퇴 화면 문구와 확인 창뿐이다 — 이 앱에 개인정보처리방침
   페이지 자체가 없다. 이 고지로 충분한지는 법무 판단이 필요하다. 퍼지 뒤에도
-  재가입을 막는 정책으로 바꾸려면 이 페이지가 먼저 있어야 한다(§5-3 "법적 고려").
+  재가입을 막는 정책으로 바꾸려면 이 페이지가 먼저 있어야 한다(§5-3 "법적 고려"). 2026-11-05 이메일 보호 정책을
+  정할 때 이번 범위에서 빼기로 사용자가 결정했다(근거와 재검토 조건은 [`DATA-PROTECTION.md`](./DATA-PROTECTION.md) §11).
 - **재가입 정책 재검토 조건**: 포인트·쿠폰 같은 혜택이나 정지·차단 같은 제재
   기능이 생기면, 퍼지 뒤 대기 기간과 이메일 해시 보관을 다시 검토한다 — 업계가
   대기 기간을 두는 두 이유가 그때 생긴다(§5-3).

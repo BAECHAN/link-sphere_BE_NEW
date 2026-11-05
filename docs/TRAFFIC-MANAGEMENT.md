@@ -6,7 +6,7 @@
 >
 > **읽고 나면**: 요청 한도 값을 바꾸거나 새 엔드포인트에 한도를 걸 수 있고, WAF·알람 콘솔 작업을 이 문서만 보고 할 수 있다
 >
-> **마지막 검토**: 2026-11-04
+> **마지막 검토**: 2026-11-05
 
 ## 1. 쉬운 설명
 
@@ -181,9 +181,10 @@ Google SRE 책은 과부하 대응으로 기능을 낮춰 응답하는 방법(gr
 | `upload:member:<회원ID>` | 회원 | 업로드 URL 발급 |
 | `link-preview:member:<회원ID>` | 회원 | 링크 미리보기(작성 중) |
 | `search-embed:ip:<IP>` | IP | 검색 임베딩 |
+| `email-availability:ip:<IP>` | IP | 이메일 중복 검사 |
 
-옛 윈도 행은 정리하지 않는 기존 정책 그대로다. 검색 버킷은 검색한 IP 수 × 10분 윈도 수만큼 행이
-늘어난다 — 행이 많아지면 정리 배치를 검토한다(11장).
+끝난 윈도 행은 `account-purge` 잡이 하루가 지나면 지운다(2026-11-05, 키에 이메일 해시와 IP 원문이 들어가 쌓아 둘 이유가 없다.
+`docs/DATA-PROTECTION.md` §7). 잡 주기가 4일이라 최대 약 5일 남는다.
 
 ## 7. 운영 파라미터
 
@@ -200,6 +201,7 @@ Google SRE 책은 과부하 대응으로 기능을 낮춰 응답하는 방법(gr
 | 가입 | IP당 1시간 5회 | `domain/auth/AuthService.kt:49-50` |
 | 인증메일 재발송 | 이메일당 1시간 3회, IP당 1시간 10회 | `domain/auth/AuthService.kt:53-56` |
 | 비밀번호 재설정 요청 | 이메일당 1시간 3회, IP당 1시간 10회 | `domain/auth/PasswordResetService.kt:39-42` |
+| 이메일 중복 검사 | IP당 1시간 60회 (초과하면 FE는 확인 전 상태로 돌아가고 실제 중복은 가입 때 409) | `domain/auth/AuthController.kt:56-57` |
 
 (경로는 `src/main/kotlin/com/example/linksphere/` 기준)
 
@@ -349,7 +351,7 @@ WAF 차단은 429가 아니라 **403**으로 나간다. FE는 이를 `EDGE_BLOCK
 
 - 백그라운드 잡(`LambdaHandler.dispatch`의 `ai-analysis`·`comment-postprocess`·`feed-crawl`·`feed-item`·
   `account-purge`·`orphan-image-gc`)은 예외를 잡지 않아 그대로 함수 밖으로 나간다
-  (`src/main/kotlin/com/example/linksphere/LambdaHandler.kt:157-182`). 비동기 호출은 두 번 재시도하므로 실패 1건이
+  (`src/main/kotlin/com/example/linksphere/LambdaHandler.kt:166-191`). 비동기 호출은 두 번 재시도하므로 실패 1건이
   `Errors`를 최대 3번 올리지만, 임계값이 1이라 메일은 같다.
 - 인증 필터(`SessionAuthenticationFilter`)에서 난 예외는 `GlobalExceptionHandler`를 거치지 않아 로그 지표에
   안 잡히고, 함수 실패로 끝난다.
@@ -360,7 +362,7 @@ WAF 차단은 429가 아니라 **403**으로 나간다. FE는 이를 `EDGE_BLOCK
 예전 판단("`Errors` 알람은 만들지 않는다", 2026-10-03)은 "앱 500은 안 잡힌다"는 사실에서 나왔는데, 그 사실은
 그대로이고 위 두 경우를 놓쳤던 것이다(2026-11-02 정정).
 
-**로그 지표 패턴.** Lambda 로그는 한 줄에 JSON 하나다(Spring Boot logstash 형식, `LambdaHandler.kt:90-93` —
+**로그 지표 패턴.** Lambda 로그는 한 줄에 JSON 하나다(Spring Boot logstash 형식, `LambdaHandler.kt:92-102` —
 키는 `@timestamp`·`level`·`logger_name`·`message`·`stack_trace`·`awsRequestId` 등). 앱 500은
 `GlobalExceptionHandler`가 ERROR로 남기는 두 줄뿐이라(`Spring MVC error`·`Unhandled exception`) 그 로거로
 좁힌다. 모든 ERROR에 걸면 FCM·Gemini·메일의 일상적인 실패(각 서비스가 ERROR로 남기고 계속 진행)로 메일이
@@ -404,7 +406,7 @@ aws cloudwatch describe-alarms --region ap-northeast-1 --alarm-name-prefix link-
 3. `set-alarm-state`는 실제 지표와 상관없이 상태만 바꿔 메일 경로를 시험한다 — 경보 메일이 오고, 다음 평가(최대
    5분)에 조용히 OK로 돌아온다. 나머지 두 알람도 이름만 바꿔 같은 방법으로 시험한다.
 4. `lambda invoke`는 `Errors`를 실제로 한 번 올린다. 빈 `event`는 `CommentPostProcessEvent`의 필수 값
-   `commentId`가 없어 역직렬화(`LambdaHandler.kt:296`)에서 실패하므로 서비스는 호출되지 않는다(부작용 없음).
+   `commentId`가 없어 역직렬화(`LambdaHandler.kt:305`)에서 실패하므로 서비스는 호출되지 않는다(부작용 없음).
    동기 호출이라 재시도도 없다. 응답에 `"FunctionError": "Unhandled"`가 찍히고 5분 안에 errors 알람 메일이 온다.
 
 비용: CloudWatch 표준 알람은 지표 10개까지 무료이고 넘으면 개당 월 $0.10이다
@@ -560,7 +562,6 @@ CloudFront 보안 대시보드에서 10-02부터 차단이 늘고 국가가 다�
   한도를 걸지 않았다
 - 댓글·좋아요·북마크 회원별 한도 (WAF IP 제한으로 충분하다고 보고 보류)
 - Gemini 서킷 브레이커, SQS/DLQ 전환
-- `auth_rate_limits` 옛 윈도 행 정리 배치 (검색 버킷 행이 많아지면)
 - WAF·CloudFront·Lambda 설정의 코드화(IaC) — 지금은 콘솔 수동이라 레포와 어긋날 수 있다
 
 ## 12. 용어 사전
