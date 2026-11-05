@@ -8,6 +8,8 @@ import com.example.linksphere.domain.member.TableMember
 import com.example.linksphere.domain.post.PostRepository
 import com.example.linksphere.domain.post.TablePost
 import com.example.linksphere.global.common.AdvisoryLock
+import com.example.linksphere.global.common.CursorCodec
+import com.example.linksphere.global.common.CursorKeyType
 import com.example.linksphere.global.common.SupabaseStorageService
 import com.example.linksphere.global.exception.CommentDeletedException
 import com.example.linksphere.global.exception.CommentNotFoundException
@@ -31,6 +33,7 @@ import org.mockito.Mockito.verifyNoInteractions
 import org.mockito.Mockito.`when`
 import org.mockito.junit.jupiter.MockitoExtension
 import org.springframework.context.ApplicationEventPublisher
+import org.springframework.data.domain.Limit
 import org.springframework.data.domain.PageImpl
 import org.springframework.data.domain.PageRequest
 import org.springframework.transaction.support.TransactionSynchronizationManager
@@ -835,7 +838,38 @@ class CommentServiceTest {
         assertEquals("타입스크립트 5.9 정리", result.content[0].postTitle)
         assertEquals("감사합니다", result.content[0].content)
         assertEquals(1L, result.totalElements)
-        assertTrue(result.last)
+        assertEquals(true, result.last)
+    }
+
+    @Test
+    fun `getMyCommentsByCursor reads one extra row and returns a cursor only when more remain`() {
+        val userId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val post = TablePost(id = postId, userId = userId, url = "https://example.com", title = "제목")
+        val createdAt = LocalDateTime.of(2026, 11, 5, 12, 0, 0, 123_456_000)
+        val rows = List(3) { TableComment(postId = postId, userId = userId, content = "댓글 $it", post = post, createdAt = createdAt.minusSeconds(it.toLong())) }
+        val keyTypes = listOf(CursorKeyType.TIME, CursorKeyType.ID)
+
+        `when`(commentRepository.findMyCommentsFirst(userId, Limit.of(3))).thenReturn(rows)
+        val first = commentService.getMyCommentsByCursor(userId, null, 2)
+
+        assertEquals(listOf("댓글 0", "댓글 1"), first.content.map { it.content })
+        assertEquals("제목", first.content[0].postTitle)
+        assertEquals(listOf<Comparable<*>>(rows[1].createdAt, rows[1].id), CursorCodec.decode(first.nextCursor!!, "LATEST", keyTypes).keys)
+        assertNull(first.totalElements)
+
+        `when`(commentRepository.findMyCommentsAfter(userId, rows[1].createdAt, rows[1].id, Limit.of(3))).thenReturn(rows.drop(2))
+        val second = commentService.getMyCommentsByCursor(userId, first.nextCursor, 2)
+
+        assertEquals(listOf("댓글 2"), second.content.map { it.content })
+        assertNull(second.nextCursor)
+    }
+
+    @Test
+    fun `getMyCommentsByCursor rejects a cursor it cannot read`() {
+        assertThrows(InvalidInputException::class.java) {
+            commentService.getMyCommentsByCursor(UUID.randomUUID(), "not-a-cursor", 10)
+        }
     }
 
     @Test

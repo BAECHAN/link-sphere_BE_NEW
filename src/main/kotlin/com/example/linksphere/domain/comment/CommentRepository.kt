@@ -1,5 +1,6 @@
 package com.example.linksphere.domain.comment
 
+import org.springframework.data.domain.Limit
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import org.springframework.data.jpa.repository.EntityGraph
@@ -36,6 +37,30 @@ interface CommentRepository : JpaRepository<TableComment, UUID> {
             "AND (p.isPrivate = false OR p.userId = :userId)",
     )
     fun findMyComments(@Param("userId") userId: UUID, pageable: Pageable): Page<TableComment>
+
+    // findMyComments의 cursor 판 첫 쪽. 조건은 위와 같다. join fetch가 ManyToOne이라 limit을 DB에서 건다.
+    @Query(
+        "SELECT c FROM TableComment c JOIN FETCH c.post p " +
+            "WHERE c.userId = :userId AND c.isDeleted = false " +
+            "AND (p.isPrivate = false OR p.userId = :userId) " +
+            "ORDER BY c.createdAt DESC, c.id DESC",
+    )
+    fun findMyCommentsFirst(@Param("userId") userId: UUID, limit: Limit): List<TableComment>
+
+    // findMyComments의 cursor 판 다음 쪽. 앞의 상한이 있어야 인덱스로 시작 지점을 찾는다(SeekPredicate 주석 참고).
+    @Query(
+        "SELECT c FROM TableComment c JOIN FETCH c.post p " +
+            "WHERE c.userId = :userId AND c.isDeleted = false " +
+            "AND (p.isPrivate = false OR p.userId = :userId) " +
+            "AND c.createdAt <= :createdAt AND (c.createdAt < :createdAt OR (c.createdAt = :createdAt AND c.id < :id)) " +
+            "ORDER BY c.createdAt DESC, c.id DESC",
+    )
+    fun findMyCommentsAfter(
+        @Param("userId") userId: UUID,
+        @Param("createdAt") createdAt: LocalDateTime,
+        @Param("id") id: UUID,
+        limit: Limit,
+    ): List<TableComment>
 
     @Query("SELECT c.postId as postId, COUNT(c) as count FROM TableComment c WHERE c.postId IN :postIds GROUP BY c.postId")
     fun countByPostIdIn(@Param("postIds") postIds: List<UUID>): List<PostCommentCount>

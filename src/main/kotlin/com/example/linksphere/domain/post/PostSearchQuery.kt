@@ -5,6 +5,7 @@ import jakarta.persistence.criteria.CriteriaBuilder
 import jakarta.persistence.criteria.Expression
 import jakarta.persistence.criteria.From
 import jakarta.persistence.criteria.Predicate
+import org.hibernate.query.criteria.JpaExpression
 import java.util.UUID
 
 /**
@@ -30,6 +31,9 @@ import java.util.UUID
  * 직접 쓰는 네이티브 SQL)는 2d 오프라인 평가 때 이미 검증된 형태다.
  */
 object PostSearchQuery {
+
+    // [Search] 로그의 total 값 - cursor 목록은 검색 첫 쪽에서만 건수를 센다
+    const val TOTAL_NOT_COUNTED = -1L
 
     private const val TITLE_WEIGHT = 3
     private const val TAGS_WEIGHT = 2
@@ -178,6 +182,12 @@ object PostSearchQuery {
 
         return terms.fold(cb.literal(0) as Expression<Number>) { acc, term -> cb.sum(acc, term) }
     }
+
+    /**
+     * cursor 정렬 키로 쓰는 점수. 의미 점수가 없으면 정수, 있으면 실수라 cursor에서 되돌릴 타입이 하나가 되도록 double로 맞춘다.
+     * asDouble()은 SQL cast를 만들지만 JPA의 as()는 만들지 않는다.
+     */
+    fun relevanceKey(cb: CriteriaBuilder, from: From<*, TablePost>, tokens: List<String>, semanticMatches: Map<UUID, Double> = emptyMap()): Expression<Double> = (relevanceScore(cb, from, tokens, semanticMatches) as JpaExpression<Number>).asDouble()
 
     private fun caseInt(cb: CriteriaBuilder, cond: Predicate, weight: Int): Expression<Int> = cb.selectCase<Int>().`when`(cond, cb.literal(weight)).otherwise(cb.literal(0))
 

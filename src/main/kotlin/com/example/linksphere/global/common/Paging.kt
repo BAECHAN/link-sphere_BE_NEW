@@ -11,5 +11,7 @@ import org.springframework.data.domain.PageRequest
 object Paging {
     const val MAX_PAGE_SIZE = 50
 
-    fun pageRequest(page: Int, size: Int): PageRequest = PageRequest.of(page, size.coerceIn(1, MAX_PAGE_SIZE))
+    fun pageRequest(page: Int, size: Int): PageRequest = PageRequest.of(page, coerceSize(size))
+
+    fun coerceSize(size: Int): Int = size.coerceIn(1, MAX_PAGE_SIZE)
 }

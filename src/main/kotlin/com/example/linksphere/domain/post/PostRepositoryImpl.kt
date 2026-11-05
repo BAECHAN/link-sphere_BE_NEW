@@ -3,6 +3,10 @@ package com.example.linksphere.domain.post
 import com.example.linksphere.domain.category.TableCategory
 import com.example.linksphere.domain.interaction.TableBookmark
 import com.example.linksphere.domain.interaction.TablePostReaction
+import com.example.linksphere.global.common.KeysetQuery
+import com.example.linksphere.global.common.KeysetSlice
+import com.example.linksphere.global.common.KeysetSpec
+import com.example.linksphere.global.common.SeekKey
 import jakarta.persistence.EntityManager
 import jakarta.persistence.PersistenceContext
 import jakarta.persistence.criteria.*
@@ -10,6 +14,7 @@ import org.springframework.data.domain.Page
 import org.springframework.data.domain.PageImpl
 import org.springframework.data.domain.Pageable
 import java.time.Instant
+import java.time.LocalDateTime
 import java.util.UUID
 
 class PostRepositoryImpl : PostRepositoryCustom {
@@ -103,10 +108,51 @@ class PostRepositoryImpl : PostRepositoryCustom {
         return PageImpl(resultList, pageable, total)
     }
 
+    override fun findPostsAfter(
+        category: String?,
+        search: String?,
+        filter: String?,
+        nickname: String?,
+        currentUserId: UUID?,
+        sort: PostListSort,
+        after: List<Comparable<*>>?,
+        size: Int,
+        queryEmbedding: FloatArray?,
+        withTotal: Boolean,
+    ): KeysetSlice<TablePost> {
+        val cb = entityManager.criteriaBuilder
+        // 건수와 본 쿼리가 같은 후보 집합을 보도록 한 번만 계산한다 - findPosts와 같다
+        val semanticMatches = PostSearchQuery.resolveSemanticMatches(entityManager, queryEmbedding)
+        val predicatesOf = { root: Root<TablePost>, query: AbstractQuery<*> ->
+            buildPredicates(cb, root, query, category, search, filter, nickname, currentUserId, semanticMatches)
+        }
+
+        val total =
+            if (withTotal) {
+                val countQuery = cb.createQuery(Long::class.java)
+                val countRoot = countQuery.from(TablePost::class.java)
+                countQuery.select(cb.countDistinct(countRoot)).where(*predicatesOf(countRoot, countQuery).toTypedArray())
+                entityManager.createQuery(countQuery).singleResult
+            } else {
+                null
+            }
+
+        // 최신순은 첫 키에 인덱스가 있고, 검색은 첫 키가 비싼 계산식이다
+        val fetchRows = if (sort == PostListSort.LATEST) KeysetQuery::directRows else KeysetQuery::derivedRows
+        val rows =
+            fetchRows(entityManager, after, size + 1) { query ->
+                val root = query.from(TablePost::class.java)
+                val score = if (sort == PostListSort.RELEVANCE) SeekKey(PostSearchQuery.relevanceKey(cb, root, PostSearchQuery.tokenize(search), semanticMatches)) else null
+                KeysetSpec(listOfNotNull(score, SeekKey(root.get<LocalDateTime>("createdAt")), SeekKey(root.get<UUID>("id"))), predicatesOf(root, query))
+            }
+
+        return KeysetQuery.slice(entityManager, TablePost::class.java, rows, size, total) { it.id }
+    }
+
     private fun buildPredicates(
         cb: CriteriaBuilder,
         root: Root<TablePost>,
-        query: CriteriaQuery<*>,
+        query: AbstractQuery<*>,
         category: String?,
         search: String?,
         filter: String?,

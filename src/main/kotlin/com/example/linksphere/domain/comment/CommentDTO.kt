@@ -58,29 +58,34 @@ data class MyCommentResponse(
     val createdAt: LocalDateTime,
     val postId: UUID,
     val postTitle: String,
-)
+) {
+    companion object {
+        fun from(comment: TableComment): MyCommentResponse = MyCommentResponse(
+            id = comment.id,
+            content = comment.content,
+            createdAt = comment.createdAt,
+            postId = comment.postId,
+            // join fetch로 가져온 post - 가시성 게이트 자체가 post 존재를 전제하므로
+            // null이면 안 되지만, 연관관계 타입 자체는 nullable이라 방어적으로 폴백한다.
+            postTitle = comment.post?.title ?: "",
+        )
+    }
+}
 
 data class MyCommentPageResponse(
     val content: List<MyCommentResponse>,
-    val page: Int,
-    val size: Int,
-    val totalElements: Long,
-    val totalPages: Int,
-    val last: Boolean,
+    // 다음 쪽을 읽을 cursor. null이면 마지막 쪽이다. page로 요청하면 채우지 않는다.
+    val nextCursor: String? = null,
+    // 아래 5개는 page로 요청한 옛 번들에만 채운다. cursor로 요청하면 null이다.
+    @field:Schema(deprecated = true) val page: Int? = null,
+    @field:Schema(deprecated = true) val size: Int? = null,
+    @field:Schema(deprecated = true) val totalElements: Long? = null,
+    @field:Schema(deprecated = true) val totalPages: Int? = null,
+    @field:Schema(deprecated = true) val last: Boolean? = null,
 ) {
     companion object {
         fun from(page: Page<TableComment>): MyCommentPageResponse = MyCommentPageResponse(
-            content = page.content.map {
-                MyCommentResponse(
-                    id = it.id,
-                    content = it.content,
-                    createdAt = it.createdAt,
-                    postId = it.postId,
-                    // join fetch로 가져온 post - 가시성 게이트 자체가 post 존재를 전제하므로
-                    // null이면 안 되지만, 연관관계 타입 자체는 nullable이라 방어적으로 폴백한다.
-                    postTitle = it.post?.title ?: "",
-                )
-            },
+            content = page.content.map { MyCommentResponse.from(it) },
             page = page.number,
             size = page.size,
             totalElements = page.totalElements,

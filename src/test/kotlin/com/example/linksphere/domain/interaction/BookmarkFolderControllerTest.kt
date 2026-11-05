@@ -1,6 +1,8 @@
 package com.example.linksphere.domain.interaction
 
 import com.example.linksphere.domain.auth.MemberSessionService
+import com.example.linksphere.domain.post.PostPageResponse
+import com.example.linksphere.global.exception.InvalidInputException
 import org.hamcrest.Matchers.nullValue
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.`when`
@@ -69,6 +71,40 @@ class BookmarkFolderControllerTest {
         mockMvc.perform(delete("/bookmark/folders/$folderId/pin").with(csrf()))
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.data.pinnedAt").value(nullValue()))
+    }
+
+    @Test
+    @WithMockUser(username = USER_ID)
+    fun `폴더 글 목록은 page 없이 조회하면 cursor로 읽는다`() {
+        `when`(bookmarkFolderService.getBookmarkedPostsByCursor(UUID.fromString(USER_ID), "all", "title", null, "next", 10))
+            .thenReturn(PostPageResponse(emptyList(), nextCursor = "after-next"))
+
+        mockMvc.perform(get("/bookmark/folders/all/posts").param("sort", "title").param("cursor", "next"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.data.nextCursor").value("after-next"))
+    }
+
+    @Test
+    @WithMockUser(username = USER_ID)
+    fun `폴더 글 목록은 page를 보내면 옛 경로로 읽는다`() {
+        `when`(bookmarkFolderService.getBookmarkedPosts(UUID.fromString(USER_ID), "all", "views", null, 1, 10))
+            .thenReturn(PostPageResponse(emptyList(), page = 1, size = 10, totalElements = 11, totalPages = 2, last = true))
+
+        mockMvc.perform(get("/bookmark/folders/all/posts").param("sort", "views").param("page", "1"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.data.page").value(1))
+            .andExpect(jsonPath("$.data.nextCursor").value(nullValue()))
+    }
+
+    @Test
+    @WithMockUser(username = USER_ID)
+    fun `폴더 글 목록의 잘못된 cursor는 400 INVALID_INPUT을 준다`() {
+        `when`(bookmarkFolderService.getBookmarkedPostsByCursor(UUID.fromString(USER_ID), "all", null, null, "broken", 10))
+            .thenThrow(InvalidInputException("Invalid cursor"))
+
+        mockMvc.perform(get("/bookmark/folders/all/posts").param("cursor", "broken"))
+            .andExpect(status().isBadRequest)
+            .andExpect(jsonPath("$.code").value("INVALID_INPUT"))
     }
 
     companion object {

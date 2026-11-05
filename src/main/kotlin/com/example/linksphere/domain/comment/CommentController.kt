@@ -4,6 +4,7 @@ import com.example.linksphere.global.common.ApiResponse
 import com.example.linksphere.global.common.IdempotentCreate
 import com.example.linksphere.global.common.getUserId
 import io.swagger.v3.oas.annotations.Operation
+import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.security.SecurityRequirements
 import io.swagger.v3.oas.annotations.tags.Tag
 import org.springframework.http.HttpStatus
@@ -33,17 +34,29 @@ class CommentController(private val commentService: CommentService) {
 
     @Operation(
         summary = "내 댓글 목록 조회",
-        description = "로그인한 사용자가 작성한 댓글을 최신순으로 페이지네이션 조회한다. 삭제된(톰스톤) " +
-            "댓글은 제외한다. 댓글을 단 뒤 원글이 비공개로 전환되면 본인 소유가 아닌 한 목록에서도 제외된다.",
+        description = "로그인한 사용자가 작성한 댓글을 최신순으로 cursor·size 로 이어 읽는다. 첫 쪽은 cursor 없이 요청하고, 다음 쪽은 " +
+            "응답의 nextCursor 를 그대로 보낸다. nextCursor 가 null 이면 마지막 쪽이다. 삭제된(톰스톤) 댓글은 제외한다. " +
+            "댓글을 단 뒤 원글이 비공개로 전환되면 본인 소유가 아닌 한 목록에서도 제외된다. " +
+            "page 는 아직 새로고침하지 않은 옛 번들용이고 곧 없어진다. page 를 보내면 cursor 는 무시하고 옛 응답 필드를 채운다. " +
+            "실패: 400 INVALID_INPUT(잘못된 cursor)",
     )
     @GetMapping("/comment/my")
     fun getMyComments(
-        @RequestParam(defaultValue = "0") page: Int,
+        @RequestParam(required = false) cursor: String?,
+        @Parameter(deprecated = true)
+        @RequestParam(required = false)
+        page: Int?,
         @RequestParam(defaultValue = "10") size: Int,
         authentication: Authentication,
     ): ApiResponse<MyCommentPageResponse> {
         val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
-        return ApiResponse(HttpStatus.OK.value(), "내 댓글 목록 조회 성공", commentService.getMyComments(userId, page, size))
+        val comments =
+            if (page != null) {
+                commentService.getMyComments(userId, page, size)
+            } else {
+                commentService.getMyCommentsByCursor(userId, cursor, size)
+            }
+        return ApiResponse(HttpStatus.OK.value(), "내 댓글 목록 조회 성공", comments)
     }
 
     @Operation(

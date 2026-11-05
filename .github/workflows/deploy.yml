@@ -189,6 +189,44 @@ jobs:
 
           echo "5회 연속 정상 확인 완료"
 
+          # 위 호출은 page가 있어 옛 offset 경로만 탄다. cursor 경로의 SQL 오류도 승격 전에 막도록
+          # page 없이 첫 쪽을 읽고 nextCursor를 따라 다음 쪽까지 읽는다. 운영 글이 5건보다 많으니 cursor가 없으면 고장이다.
+          echo '{"rawPath":"/api/post","rawQueryString":"size=5","requestContext":{"http":{"method":"GET"}}}' \
+            > /tmp/verify-cursor-event.json
+
+          aws lambda invoke \
+            --function-name "${{ vars.LAMBDA_FUNCTION_NAME }}:$VERSION" \
+            --payload fileb:///tmp/verify-cursor-event.json \
+            /tmp/verify-cursor-first.json > /dev/null
+
+          STATUS=$(jq -r '.statusCode' /tmp/verify-cursor-first.json)
+          NEXT_CURSOR=$(jq -r '.body | fromjson | .data.nextCursor // empty' /tmp/verify-cursor-first.json)
+          echo "cursor 첫 쪽: statusCode=$STATUS"
+
+          if [ "$STATUS" != "200" ] || [ -z "$NEXT_CURSOR" ]; then
+            echo "::error::버전 $VERSION cursor 첫 쪽 실패(statusCode=$STATUS, nextCursor 없음 여부 확인) — 승격 중단, prod는 이전 버전 유지"
+            cat /tmp/verify-cursor-first.json
+            exit 1
+          fi
+
+          jq -n --arg query "size=5&cursor=$NEXT_CURSOR" \
+            '{rawPath:"/api/post",rawQueryString:$query,requestContext:{http:{method:"GET"}}}' \
+            > /tmp/verify-cursor-next-event.json
+
+          aws lambda invoke \
+            --function-name "${{ vars.LAMBDA_FUNCTION_NAME }}:$VERSION" \
+            --payload fileb:///tmp/verify-cursor-next-event.json \
+            /tmp/verify-cursor-next.json > /dev/null
+
+          STATUS=$(jq -r '.statusCode' /tmp/verify-cursor-next.json)
+          echo "cursor 다음 쪽: statusCode=$STATUS"
+
+          if [ "$STATUS" != "200" ]; then
+            echo "::error::버전 $VERSION cursor 다음 쪽 실패(statusCode=$STATUS) — 승격 중단, prod는 이전 버전 유지"
+            cat /tmp/verify-cursor-next.json
+            exit 1
+          fi
+
       # ─────────────────────────────────────────────
       # 14. 검증 통과 → prod alias 자동 승격
       # ─────────────────────────────────────────────

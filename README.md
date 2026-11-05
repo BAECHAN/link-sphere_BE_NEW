@@ -137,6 +137,9 @@ src/main/kotlin/com/example/linksphere/
 │   │   ├── ClientIpResolver.kt          # CloudFront-Viewer-Address 헤더에서 요청자 IP 추출
 │   │   ├── RateLimitService.kt          # bucketKey·limit·window 기반 범용 고정윈도 카운터
 │   │   ├── Paging.kt                    # 목록 size 상한(1~50)
+│   │   ├── CursorCodec.kt               # 목록 cursor 인코딩·검증
+│   │   ├── SeekPredicate.kt             # "이 키 다음부터" 조건식(방향 혼합)
+│   │   ├── KeysetQuery.kt               # cursor 목록 조회(WHERE·파생 테이블 형태)
 │   │   ├── BatchJobLimits.kt            # 예약 배치 3종 공용 마감(90초)
 │   │   ├── TransactionCallbacks.kt      # 커밋 뒤 실행 등록(afterCommit)
 │   │   └── SupabaseStorageService.kt    # Supabase 이미지 업로드
@@ -219,14 +222,14 @@ src/main/kotlin/com/example/linksphere/
 `/link-preview`는 `/post` 아래가 아니다 — `GET /post/*`가 비로그인에게 열려 있어, 그 아래 두면 로그인 없이 크롤링을
 시키는 경로가 된다(`LinkPreviewController`).
 
-**게시글 목록 쿼리 파라미터**: `category`, `search`, `filter`, `nickname`, `page`, `size`
+**게시글 목록 쿼리 파라미터**: `category`, `search`, `filter`, `nickname`, `cursor`, `size`. 첫 쪽은 `cursor` 없이 요청하고 다음 쪽은 응답의 `nextCursor`를 보낸다(`null`이면 끝). `page`는 옛 번들용이고 곧 없어진다([`docs/PAGINATION.md`](docs/PAGINATION.md)).
 
 ### 💬 Comment (`/post/{postId}/comment`, `/comment/{id}`)
 
 | Method   | Endpoint                                      | 설명                    | 인증 |
 | -------- | --------------------------------------------- | ----------------------- | ---- |
 | `GET`    | `/post/{postId}/comment`                      | 댓글 목록 조회          | 선택(로그인 시 좋아요 반영) |
-| `GET`    | `/comment/my`                                 | 내 댓글 목록 조회 (페이지네이션) | ✅   |
+| `GET`    | `/comment/my`                                 | 내 댓글 목록 조회 (cursor) | ✅   |
 | `POST`   | `/post/{postId}/comment`                      | 댓글 작성 (이미지 포함, 이메일 미인증 시 403) | ✅   |
 | `POST`   | `/comment/{commentId}/reply`                  | 답글 작성 (이미지 포함, 이메일 미인증 시 403) | ✅   |
 | `PATCH`  | `/comment/{commentId}`                        | 댓글/답글 수정          | ✅   |
@@ -438,7 +441,7 @@ git config core.hooksPath .githooks
 2. **GitHub Actions**: `./gradlew ktlintCheck test integrationTest shadowJar`로 검사·단위 테스트·통합 테스트 통과 후 fat JAR를 빌드하고 **AWS S3**에 업로드합니다.
 3. **Lambda 코드 업데이트**: S3의 새 JAR를 참조하도록 Lambda 함수를 업데이트합니다.
 4. **버전 발행**: `publish-version`으로 **SnapStart 스냅샷**을 생성합니다.
-5. **연속 호출 검증**: 방금 발행한 버전을 5회 연속 직접 호출해 전부 `statusCode 200`인지 확인합니다. 하나라도 실패하면 아래 승격 없이 워크플로우가 실패합니다.
+5. **연속 호출 검증**: 방금 발행한 버전을 5회 연속 직접 호출해 전부 `statusCode 200`인지 확인하고, cursor로 첫 쪽과 다음 쪽도 읽습니다. 하나라도 실패하면 아래 승격 없이 워크플로우가 실패합니다.
 6. **alias 업데이트**: 검증을 통과했을 때만 `prod` alias가 새 버전을 가리키도록 교체합니다.
 
 자세한 배포 과정은 [**docs/DEPLOY.md**](./docs/DEPLOY.md) 문서를 참고해주세요.
@@ -495,7 +498,7 @@ SnapStart 체크포인트 **이전**(`companion object init`)에 읽기 전용 �
 - [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) — Lambda 콜드스타트 원인 분석과 최적화 근거
 - [`docs/TRAFFIC-MANAGEMENT.md`](docs/TRAFFIC-MANAGEMENT.md) — 트래픽 관리 다층 방어: WAF IP 제한·앱 엔드포인트별 한도·검색 강등·알람과 콘솔 런북
 - [`docs/ACCOUNT-DELETION.md`](docs/ACCOUNT-DELETION.md) — 회원탈퇴 14일 유예기간: 즉시 익명화 대신 신청→유예→로그인 복구/만료 익명화 2단계로 바꾼 이유와 구조
-- [`docs/PAGINATION.md`](docs/PAGINATION.md) — 목록 페이지네이션: offset과 cursor를 합성 데이터로 비교한 실험과 판단 근거
+- [`docs/PAGINATION.md`](docs/PAGINATION.md) — 목록 페이지네이션: offset과 cursor를 합성 데이터로 비교한 실험, 전환된 cursor 구조와 판단 근거
 - [`docs/DATA-PROTECTION.md`](docs/DATA-PROTECTION.md) — 개인정보 보호 정책: 이메일 컬럼을 암호화하지 않기로 한 근거와 실제 유출 지점 보완
 
 **절차** — "이럴 땐 이렇게 한다"

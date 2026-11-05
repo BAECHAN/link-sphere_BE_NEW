@@ -1,0 +1,121 @@
+// 저장소 코드를 그대로 돌려 offset과 cursor를 비교한 1회용 측정(docs/PAGINATION.md §9.8). 빌드에 넣지 않으려고 여기 둔다.
+// 재현: src/test/kotlin/com/example/linksphere/spike/ 로 복사 → ./gradlew integrationTest --tests '*spike.CursorMeasureIntegrationTest'
+// → build/test-results/integrationTest/*CursorMeasure*.xml의 MEASURE 줄을 읽는다. findPosts 등 offset 경로가 코드에 있을 때만 돈다.
+// 제목순·최근 열람순의 형태 비교는 이 소스에 없다. 방법은 results/2026-11-05-code-path.md.
+package com.example.linksphere.spike
+
+import com.example.linksphere.domain.comment.CommentRepository
+import com.example.linksphere.domain.interaction.BookmarkListSort
+import com.example.linksphere.domain.interaction.BookmarkRepository
+import com.example.linksphere.domain.post.PostListSort
+import com.example.linksphere.domain.post.PostRepository
+import com.example.linksphere.support.PostgresIntegrationTest
+import jakarta.persistence.EntityManager
+import jakarta.persistence.PersistenceContext
+import org.junit.jupiter.api.Test
+import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.data.domain.Limit
+import org.springframework.data.domain.PageRequest
+import org.springframework.jdbc.core.JdbcTemplate
+import java.time.LocalDateTime
+import java.util.UUID
+
+@PostgresIntegrationTest
+class CursorMeasureIntegrationTest {
+    @Autowired private lateinit var jdbc: JdbcTemplate
+
+    @Autowired private lateinit var posts: PostRepository
+
+    @Autowired private lateinit var bookmarks: BookmarkRepository
+
+    @Autowired private lateinit var comments: CommentRepository
+
+    @PersistenceContext private lateinit var em: EntityManager
+
+    private val me = UUID.randomUUID()
+
+    private fun measure(label: String, block: () -> Unit) {
+        val times = mutableListOf<Double>()
+        repeat(6) {
+            em.clear()
+            val t = System.nanoTime()
+            block()
+            times += (System.nanoTime() - t) / 1e6
+        }
+        val rest = times.drop(1).sorted()
+        println("MEASURE|$label|${"%.2f".format(rest[2])}|${rest.joinToString(",") { "%.0f".format(it) }}")
+    }
+
+    @Test
+    fun measureAll() {
+        // 운영과 같게 맞춘다: jit=off, prepareThreshold=0(요청마다 계획을 새로 세운다). 테스트 기본값이면 JIT 비용이 더해지고 5회 뒤 계획을 재사용해 형태 비교가 어긋난다.
+        jdbc.execute("SET LOCAL jit = off")
+        jdbc.execute(
+            org.springframework.jdbc.core.ConnectionCallback<Any?> { connection ->
+                val pg = connection.unwrap(Class.forName("org.postgresql.PGConnection"))
+                pg.javaClass.getMethod("setPrepareThreshold", Int::class.javaPrimitiveType).invoke(pg, 0)
+            },
+        )
+        jdbc.update("INSERT INTO members (id) VALUES (?)", me)
+        jdbc.execute(
+            """
+            create or replace function public.pseudo_text(target_bytes int) returns text language sql volatile as ${'$'}${'$'}
+              select string_agg(case when random() < 0.2 then substr(md5(random()::text), 1, 5)
+                else chr(44032 + floor(random() * 11172)::int) || chr(44032 + floor(random() * 11172)::int) end, ' ')
+              from generate_series(1, greatest(1, target_bytes / 7))
+            ${'$'}${'$'}
+            """.trimIndent(),
+        )
+        jdbc.update(
+            """
+            INSERT INTO posts (id, user_id, url, title, description, tags, ai_summary, is_private, created_at)
+            SELECT gen_random_uuid(), ?, 'https://example.com',
+                   public.pseudo_text(74) || CASE WHEN g % 10 < 3 THEN ' react' ELSE '' END,
+                   public.pseudo_text(167), ARRAY['tag1','tag2','tag3'], public.pseudo_text(1024),
+                   g % 14 = 0, now() - (g || ' minutes')::interval
+            FROM generate_series(1, 100000) g
+            """.trimIndent(),
+            me,
+        )
+        // 내 북마크 10,000개(절반 열람), 내 댓글 10,000개
+        jdbc.update(
+            "INSERT INTO bookmarks (user_id, post_id, created_at) SELECT ?, id, now() - (row_number() over () || ' seconds')::interval FROM (SELECT id FROM posts LIMIT 10000) x",
+            me,
+        )
+        jdbc.update(
+            "INSERT INTO post_views (user_id, post_id, viewed_at) SELECT ?, post_id, LOCALTIMESTAMP - (row_number() over () || ' seconds')::interval FROM (SELECT post_id FROM bookmarks LIMIT 5000) x",
+            me,
+        )
+        jdbc.update(
+            "INSERT INTO comments (id, post_id, user_id, content, is_deleted, created_at) SELECT gen_random_uuid(), id, ?, 'c', false, LOCALTIMESTAMP - (row_number() over () || ' seconds')::interval FROM (SELECT id FROM posts WHERE is_private = false LIMIT 10000) x",
+            me,
+        )
+        jdbc.execute("ANALYZE")
+        println("MEASURE|seeded|posts=" + jdbc.queryForObject("select count(*) from posts", Long::class.java))
+
+        // 피드 최신순
+        measure("feed latest offset 1000 (data+count)") { posts.findPosts(null, null, null, null, null, PageRequest.of(100, 10)) }
+        val latestKeys = posts.findPostsAfter(null, null, null, null, null, PostListSort.LATEST, null, 1000).nextKeys
+        measure("feed latest cursor 1000") { posts.findPostsAfter(null, null, null, null, null, PostListSort.LATEST, latestKeys, 10) }
+
+        // 피드 검색
+        measure("feed search offset 1000 (data+count)") { posts.findPosts(null, "react", null, null, null, PageRequest.of(100, 10)) }
+        val searchKeys = posts.findPostsAfter(null, "react", null, null, null, PostListSort.RELEVANCE, null, 1000).nextKeys
+        measure("feed search cursor 1000") { posts.findPostsAfter(null, "react", null, null, null, PostListSort.RELEVANCE, searchKeys, 10) }
+        measure("feed search cursor first with count") { posts.findPostsAfter(null, "react", null, null, null, PostListSort.RELEVANCE, null, 10, withTotal = true) }
+
+        // 북마크
+        for ((sortName, sort) in listOf("latest" to BookmarkListSort.LATEST, "title" to BookmarkListSort.TITLE, "viewed" to BookmarkListSort.VIEWED)) {
+            measure("bookmark $sortName offset 1000 (data+count)") { bookmarks.findBookmarkedPosts(me, null, false, sortName, null, PageRequest.of(100, 10)) }
+            val keys = bookmarks.findBookmarkedPostsAfter(me, null, false, sort, null, null, 1000).nextKeys
+            measure("bookmark $sortName cursor 1000") { bookmarks.findBookmarkedPostsAfter(me, null, false, sort, null, keys, 10) }
+        }
+
+        // 내 댓글
+        measure("comments offset 1000 (data+count)") { comments.findMyComments(me, PageRequest.of(100, 10)) }
+        val c = comments.findMyCommentsFirst(me, Limit.of(1000)).last()
+        val createdAt: LocalDateTime = c.createdAt
+        val id: UUID = c.id
+        measure("comments cursor 1000") { comments.findMyCommentsAfter(me, createdAt, id, Limit.of(11)) }
+    }
+}

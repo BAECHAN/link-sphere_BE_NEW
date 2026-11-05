@@ -7,6 +7,7 @@ import com.example.linksphere.global.config.SecurityConfig
 import com.example.linksphere.global.config.security.CustomAccessDeniedHandler
 import com.example.linksphere.global.config.security.CustomAuthenticationEntryPoint
 import com.example.linksphere.global.exception.DuplicateCommentException
+import com.example.linksphere.global.exception.InvalidInputException
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.never
@@ -210,6 +211,37 @@ class CommentControllerTest {
         )
             .andExpect(status().isUnauthorized)
             .andExpect(jsonPath("$.code").value("NOT_LOGGED_IN"))
+    }
+
+    @Test
+    fun `내 댓글은 page 없이 조회하면 cursor로 읽는다`() {
+        val memberId = givenValidToken()
+        `when`(commentService.getMyCommentsByCursor(memberId, "next", 10)).thenReturn(MyCommentPageResponse(emptyList(), nextCursor = "after-next"))
+
+        mockMvc.perform(get("/comment/my").param("cursor", "next").header("X-Access-Token", "valid-token"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.data.nextCursor").value("after-next"))
+    }
+
+    @Test
+    fun `내 댓글은 page를 보내면 옛 경로로 읽는다`() {
+        val memberId = givenValidToken()
+        `when`(commentService.getMyComments(memberId, 1, 10))
+            .thenReturn(MyCommentPageResponse(emptyList(), page = 1, size = 10, totalElements = 11, totalPages = 2, last = true))
+
+        mockMvc.perform(get("/comment/my").param("page", "1").header("X-Access-Token", "valid-token"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.data.page").value(1))
+    }
+
+    @Test
+    fun `내 댓글의 잘못된 cursor는 400 INVALID_INPUT을 준다`() {
+        val memberId = givenValidToken()
+        `when`(commentService.getMyCommentsByCursor(memberId, "broken", 10)).thenThrow(InvalidInputException("Invalid cursor"))
+
+        mockMvc.perform(get("/comment/my").param("cursor", "broken").header("X-Access-Token", "valid-token"))
+            .andExpect(status().isBadRequest)
+            .andExpect(jsonPath("$.code").value("INVALID_INPUT"))
     }
 
     private fun givenValidToken(): UUID {
