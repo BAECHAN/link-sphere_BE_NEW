@@ -14,8 +14,8 @@ import java.time.Instant
  * 유일한 저장소라 Repository는 그쪽에서 가져오지만, 이 서비스 자체는 로그인·가입이 뭔지
  * 모른다(global에 둔 이유).
  *
- * 만료된 옛 윈도 행은 정리하지 않는다 - 이 앱 규모에서 무한정 커질 걱정은 없고(윈도·버킷
- * 조합마다 한 행), 정리 배치를 새로 만드는 비용이 이득보다 크다고 판단했다.
+ * 끝난 윈도 행은 account-purge 잡이 purgeExpired로 지운다 - bucketKey에 이메일 해시와 IP 원문이
+ * 들어가 쌓아 둘 이유가 없다(docs/DATA-PROTECTION.md).
  *
  * 두 가지 쓰는 법이 있다:
  * - checkNotExceeded + recordHit: "실패만 센다"처럼 확인과 기록 사이에 조건이 끼는 경우(로그인).
@@ -36,6 +36,9 @@ class RateLimitService(private val repository: AuthRateLimitRepository) {
 
     companion object {
         private const val EXCEEDED_MESSAGE = "Too many requests, please try again later"
+
+        // 지금 가장 긴 윈도(1시간)보다 넉넉하게 잡는다. 더 긴 윈도를 쓰게 되면 그보다 길게 늘린다.
+        private val RETENTION = Duration.ofDays(1)
     }
 
     /** bucketKey가 null이면(IP를 특정할 수 없는 등) 아무 것도 하지 않고 통과시킨다. */
@@ -81,6 +84,10 @@ class RateLimitService(private val repository: AuthRateLimitRepository) {
         val windowStart = floorToWindow(Instant.now(), window)
         return incrementAndGet(bucketKey, windowStart) <= limit
     }
+
+    /** 끝난 지 RETENTION이 지난 윈도의 행을 지우고 지운 행 수를 돌려준다. */
+    @Transactional
+    fun purgeExpired(now: Instant = Instant.now()): Int = repository.deleteOlderThan(now.minus(RETENTION))
 
     private fun incrementAndGet(bucketKey: String, windowStart: Instant): Int {
         repository.incrementHit(bucketKey, windowStart)

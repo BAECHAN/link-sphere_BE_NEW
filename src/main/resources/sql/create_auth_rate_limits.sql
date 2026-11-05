@@ -3,7 +3,7 @@
 
 -- 고정 윈도(fixed window) 카운터. bucket_key 예: "login-fail:<sha256(email)>",
 -- "signup:ip:<ip>". window_start는 그 윈도의 시작 시각(예: 15분 단위로 내림한 시각).
--- 이메일은 해시로만 키에 들어가 이 테이블 자체엔 PII가 남지 않는다.
+-- 이메일은 솔트 없는 해시로, IP는 원문으로 키에 들어가므로 개인정보로 다룬다(docs/DATA-PROTECTION.md).
 CREATE TABLE IF NOT EXISTS auth_rate_limits (
     bucket_key   VARCHAR(200) NOT NULL,
     window_start TIMESTAMPTZ  NOT NULL,

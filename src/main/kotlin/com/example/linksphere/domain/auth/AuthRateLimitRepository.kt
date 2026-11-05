@@ -40,4 +40,9 @@ interface AuthRateLimitRepository : JpaRepository<TableAuthRateLimit, AuthRateLi
         nativeQuery = true,
     )
     fun findHitCount(@Param("bucketKey") bucketKey: String?, @Param("windowStart") windowStart: Instant?): Int?
+
+    // RateLimitService.purgeExpired 전용. idx_auth_rate_limits_window를 탄다.
+    @Modifying
+    @Query(value = "DELETE FROM auth_rate_limits WHERE window_start < :cutoff", nativeQuery = true)
+    fun deleteOlderThan(@Param("cutoff") cutoff: Instant?): Int
 }

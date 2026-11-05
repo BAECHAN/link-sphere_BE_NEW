@@ -10,6 +10,8 @@ import com.example.linksphere.domain.feed.FeedItemJobEvent
 import com.example.linksphere.domain.post.PostAIService
 import com.example.linksphere.domain.post.PostCreatedEvent
 import com.example.linksphere.domain.upload.OrphanImageGcService
+import com.example.linksphere.global.common.EmailMaskingLogCustomizer
+import com.example.linksphere.global.common.RateLimitService
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import jakarta.servlet.http.Cookie
@@ -90,7 +92,14 @@ class LambdaHandler : RequestStreamHandler {
             // 로그는 Lambda에서만 logstash JSON 한 줄로 낸다(spring-boot 3.5 structured logging). Text 로그는 RequestId가
             // 없고 예외 1건의 스택이 CloudWatch 이벤트 약 110개로 쪼개졌다(2026-10-26 운영 로그). JSON은 스택을
             // stack_trace 필드 한 줄에 담고 MDC(아래 handleRequest의 awsRequestId)를 최상위 키로 싣는다. 로컬 로그는 그대로다.
-            val ctx = app.run("--server.port=-1", "--logging.structured.format.console=logstash")
+            // 이메일 가림과 TLS 강제도 운영에만 건다 - pgjdbc 기본값은 PREFER라(42.7.11 SslMode.of) TLS를 못 쓰면 평문으로
+            // 넘어가고, 테스트 컨테이너와 로컬 DB는 TLS가 없을 수 있다(docs/DATA-PROTECTION.md).
+            val ctx = app.run(
+                "--server.port=-1",
+                "--logging.structured.format.console=logstash",
+                "--logging.structured.json.customizer=${EmailMaskingLogCustomizer::class.java.name}",
+                "--spring.datasource.hikari.data-source-properties.sslmode=require",
+            )
             applicationContext = ctx
             // webAppContextSetup()만으로는 FilterChainProxy(Spring Security)가 MockMvc 필터 체인에
             // 자동 포함되지 않는다. 명시적으로 추가해야 SessionAuthenticationFilter 등 보안 필터가 실행된다.
@@ -317,12 +326,13 @@ class LambdaHandler : RequestStreamHandler {
     }
 
     // EventBridge cron(4일마다, link-sphere-feed-crawl 룰을 feed-crawl과 공유)이 직접
-    // 호출하는 진입점 - 탈퇴 유예 14일이 지난 계정을 익명화한다.
+    // 호출하는 진입점 - 탈퇴 유예 14일이 지난 계정을 익명화하고, 끝난 레이트리밋 창의 행을 지운다.
     // 회원 한 명이 실패해도 나머지는 계속 처리하므로(AccountPurgeService 내부의 runCatching)
-    // 여기서 별도 예외 처리는 필요 없다.
+    // 여기서 별도 예외 처리는 필요 없다. 행 삭제가 실패하면 잡 오류로 드러나고, 다시 돌아도 결과가 같다.
     private fun handleAccountPurgeJob(output: OutputStream) {
         val accountPurgeService = applicationContext.getBean(AccountPurgeService::class.java)
         accountPurgeService.purgeExpired()
+        applicationContext.getBean(RateLimitService::class.java).purgeExpired()
         mapper.writeValue(output, mapOf("statusCode" to 200, "body" to "ok"))
     }
 

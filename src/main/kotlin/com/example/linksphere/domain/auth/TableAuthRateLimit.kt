@@ -14,8 +14,8 @@ data class AuthRateLimitId(
 ) : Serializable
 
 // sql/create_auth_rate_limits.sql(Phase 2)과 컬럼명 1:1 대응. bucket_key 예:
-// "login-fail:<sha256(email)>", "login-fail:ip:<ip>", "signup:ip:<ip>" - 이메일은 해시로만
-// 들어가 이 테이블 자체엔 PII가 남지 않는다(SQL 파일 주석 참고).
+// "login-fail:<sha256(email)>", "login-fail:ip:<ip>", "signup:ip:<ip>" - 이메일은 솔트 없는 해시로,
+// IP는 원문으로 들어가므로 개인정보로 다룬다. 끝난 창의 행은 RateLimitService.purgeExpired가 지운다.
 @Entity
 @Table(name = "auth_rate_limits")
 @IdClass(AuthRateLimitId::class)
