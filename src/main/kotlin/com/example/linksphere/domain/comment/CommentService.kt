@@ -7,6 +7,8 @@ import com.example.linksphere.domain.member.TableMember
 import com.example.linksphere.domain.post.PostRepository
 import com.example.linksphere.domain.post.PostVisibility
 import com.example.linksphere.global.common.AdvisoryLock
+import com.example.linksphere.global.common.CursorCodec
+import com.example.linksphere.global.common.CursorKeyType
 import com.example.linksphere.global.common.Paging
 import com.example.linksphere.global.common.SupabaseStorageService
 import com.example.linksphere.global.common.TransactionCallbacks
@@ -17,6 +19,7 @@ import com.example.linksphere.global.exception.ForbiddenException
 import com.example.linksphere.global.exception.InvalidInputException
 import com.example.linksphere.global.exception.PostNotFoundException
 import org.springframework.context.ApplicationEventPublisher
+import org.springframework.data.domain.Limit
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -25,6 +28,10 @@ import java.time.LocalDateTime
 import java.util.UUID
 
 private const val DELETED_COMMENT_CONTENT = "삭제된 댓글입니다."
+
+// 내 댓글 목록은 정렬이 하나뿐이다. cursor에 담는 키는 findMyCommentsAfter의 인자 순서와 맞춘다
+private const val MY_COMMENTS_SORT = "LATEST"
+private val MY_COMMENTS_KEYS = listOf(CursorKeyType.TIME, CursorKeyType.ID)
 
 // 회원탈퇴 신청(유예 중) 또는 익명화 완료로 publicNickname이 null인 경우의 표시명
 // (TableMember.isWithdrawn 참고) - 유예 중에도 퍼지가 끝난 것과 동일하게 보인다. member
@@ -116,6 +123,23 @@ class CommentService(
     fun getMyComments(userId: UUID, page: Int, size: Int): MyCommentPageResponse {
         val pageable = Paging.pageRequest(page, size)
         return MyCommentPageResponse.from(commentRepository.findMyComments(userId, pageable))
+    }
+
+    /** getMyComments의 cursor 판(docs/PAGINATION.md). size+1개 읽어 다음 쪽 유무를 정한다. */
+    @Transactional(readOnly = true)
+    fun getMyCommentsByCursor(userId: UUID, cursor: String?, size: Int): MyCommentPageResponse {
+        val limit = Paging.coerceSize(size)
+        val after = cursor?.let { CursorCodec.decode(it, MY_COMMENTS_SORT, MY_COMMENTS_KEYS).keys }
+        val rows =
+            if (after == null) {
+                commentRepository.findMyCommentsFirst(userId, Limit.of(limit + 1))
+            } else {
+                commentRepository.findMyCommentsAfter(userId, after[0] as LocalDateTime, after[1] as UUID, Limit.of(limit + 1))
+            }
+        val page = rows.take(limit)
+        val nextCursor = page.lastOrNull().takeIf { rows.size > limit }?.let { CursorCodec.encode(MY_COMMENTS_SORT, listOf(it.createdAt, it.id)) }
+
+        return MyCommentPageResponse(content = page.map { MyCommentResponse.from(it) }, nextCursor = nextCursor)
     }
 
     @Transactional(readOnly = true)

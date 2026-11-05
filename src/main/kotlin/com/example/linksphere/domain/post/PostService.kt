@@ -8,6 +8,8 @@ import com.example.linksphere.domain.interaction.BookmarkRepository
 import com.example.linksphere.domain.member.EmailVerificationGate
 import com.example.linksphere.domain.member.MemberRepository
 import com.example.linksphere.global.common.AdvisoryLock
+import com.example.linksphere.global.common.CursorCodec
+import com.example.linksphere.global.common.KeysetSlice
 import com.example.linksphere.global.common.Paging
 import com.example.linksphere.global.exception.BookmarkFolderNotFoundException
 import com.example.linksphere.global.exception.DuplicatePostException
@@ -205,6 +207,85 @@ class PostService(
             postResponseAssembler.buildResponsesFromPosts(postPage.content, currentUserId, searchTokens),
         )
     }
+
+    /**
+     * cursor로 이어 읽는 목록(docs/PAGINATION.md). 첫 쪽의 의미 검색·자판 보정 여부를 cursor에 담아 뒤쪽도 같은 기준으로 읽는다.
+     * 쪽마다 후보 집합이 바뀌면 점수 비교의 기준이 흔들려 글을 놓치기 때문이다. 다만 의미 검색으로 시작했어도 뒤쪽에서 임베딩을
+     * 못 받으면 막지 않고 키워드로 내려가 그대로 유지한다 - Gemini 장애로 검색이 실패하지 않게 한 getAllPosts와 같은 원칙이다.
+     *
+     * tryConsumeEmbedding은 임베딩을 실제로 부를 때만 불러, 의미 검색을 안 하는 쪽이 IP당 호출 한도를 쓰지 않게 한다.
+     */
+    fun getPostsByCursor(
+        category: String?,
+        search: String?,
+        filter: String?,
+        nickname: String?,
+        cursor: String?,
+        size: Int,
+        currentUserId: UUID?,
+        tryConsumeEmbedding: () -> Boolean = { true },
+    ): PostPageResponse {
+        val limit = Paging.coerceSize(size)
+        val searchTokens = PostSearchQuery.tokenize(search)
+        val sort = if (searchTokens.isEmpty()) PostListSort.LATEST else PostListSort.RELEVANCE
+        val state = cursor?.let { CursorCodec.decode(it, sort.name, sort.keyTypes) }
+        val correctedSearch = search?.takeIf { state?.corrected == true }?.let { HangulKeyboardConverter.convertIfMislayout(it) }
+        val wantsEmbedding = searchTokens.isNotEmpty() && correctedSearch == null && state?.semantic != false
+        val queryEmbedding = search?.takeIf { wantsEmbedding && tryConsumeEmbedding() }?.let { geminiService.embedQuery(PostEmbeddingText.query(it)) }
+        val semantic = queryEmbedding != null
+        val isFirstSearchPage = state == null && searchTokens.isNotEmpty()
+
+        if (state?.semantic == true && !semantic) {
+            logger.warn("[Search] scope=feed semantic degraded to keyword")
+        }
+
+        val slice =
+            postRepository.findPostsAfter(
+                category,
+                correctedSearch ?: search,
+                filter,
+                nickname,
+                currentUserId,
+                sort,
+                state?.keys,
+                limit,
+                queryEmbedding,
+                withTotal = isFirstSearchPage,
+            )
+
+        // 쪽마다 건수를 세지 않으므로 첫 쪽이 비었을 때만 보정을 판정한다. 뒤쪽이 비었다고 0건 검색은 아니다.
+        val candidate = search?.takeIf { isFirstSearchPage && slice.content.isEmpty() }?.let { HangulKeyboardConverter.convertIfMislayout(it) }
+        if (candidate != null) {
+            val correctedSlice = postRepository.findPostsAfter(category, candidate, filter, nickname, currentUserId, sort, null, limit, withTotal = true)
+            if (correctedSlice.content.isNotEmpty()) {
+                logSearch(search = search, total = correctedSlice.total ?: PostSearchQuery.TOTAL_NOT_COUNTED, corrected = true, semantic = false)
+                return cursorResponse(correctedSlice, sort, currentUserId, PostSearchQuery.tokenize(candidate), candidate, semantic = false)
+            }
+        }
+
+        logSearch(search = search, total = slice.total ?: PostSearchQuery.TOTAL_NOT_COUNTED, corrected = correctedSearch != null, semantic = semantic)
+        return cursorResponse(
+            slice,
+            sort,
+            currentUserId,
+            correctedSearch?.let { PostSearchQuery.tokenize(it) } ?: searchTokens,
+            correctedSearch,
+            semantic.takeIf { searchTokens.isNotEmpty() },
+        )
+    }
+
+    private fun cursorResponse(
+        slice: KeysetSlice<TablePost>,
+        sort: PostListSort,
+        currentUserId: UUID?,
+        tokens: List<String>,
+        correctedSearch: String?,
+        semantic: Boolean?,
+    ): PostPageResponse = PostPageResponse(
+        content = postResponseAssembler.buildResponsesFromPosts(slice.content, currentUserId, tokens),
+        nextCursor = slice.nextKeys?.let { CursorCodec.encode(sort.name, it, semantic, corrected = true.takeIf { correctedSearch != null }) },
+        correctedSearch = correctedSearch,
+    )
 
     /**
      * 검색어별 결과 건수를 로그로 남긴다 - 0건 검색어 파악, 의미 검색 임계값 튜닝 근거로 쓴다.

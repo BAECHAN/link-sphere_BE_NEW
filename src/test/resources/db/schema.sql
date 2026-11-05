@@ -340,7 +340,7 @@ CREATE TABLE public.posts (
     og_image text,
     ai_summary text,
     view_count integer DEFAULT 0,
-    created_at timestamp with time zone DEFAULT now(),
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
     ai_status character varying(20) DEFAULT 'NONE'::character varying NOT NULL,
     is_private boolean DEFAULT false NOT NULL,
     embedding extensions.vector(768),
@@ -710,6 +710,27 @@ CREATE INDEX idx_post_reactions_post_user ON public.post_reactions USING btree (
 --
 
 CREATE INDEX idx_post_views_user_viewed ON public.post_views USING btree (user_id, viewed_at);
+
+
+--
+-- Name: idx_posts_created_at_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_posts_created_at_id ON public.posts USING btree (created_at DESC, id DESC);
+
+
+--
+-- Name: idx_bookmarks_user_created_at_post; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bookmarks_user_created_at_post ON public.bookmarks USING btree (user_id, created_at DESC, post_id DESC);
+
+
+--
+-- Name: idx_comments_user_created_at_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_comments_user_created_at_id ON public.comments USING btree (user_id, created_at DESC, id DESC);
 
 
 --

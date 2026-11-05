@@ -7,7 +7,7 @@
 > **읽고 나면**: 요청이 어느 코드를 거치는지, 레이어끼리 무엇을 참조하고 어떤 타입을 주고받는지(§3) 따라갈 수 있고, 자동 검사(§2)와 선례 패턴(§7)에 맞춰 새 코드를 쓸 수 있다.
 > 지금 코드가 규칙과 어긋나는 곳은 §9에 모아 두었다 — 그쪽을 본떠 쓰지 않는다.
 >
-> **마지막 검토**: 2026-11-04
+> **마지막 검토**: 2026-11-05
 
 시스템 전체(CloudFront·S3·Lambda·배포 파이프라인)는 FE 레포
 [`docs/SYSTEM-ARCHITECTURE.md`](https://github.com/BAECHAN/link-sphere_FE_NEW/blob/main/docs/SYSTEM-ARCHITECTURE.md)가,
@@ -61,7 +61,7 @@ flowchart TD
 |---|---|---|
 | 루트 | `LambdaHandler`(진입점·잡 분기), `FunctionUrlOriginGuard`, `FunctionUrlResponse`(응답 직렬화) | 전부 |
 | `domain/<도메인>/` | 도메인별 평면 구조 — Controller·Service·Repository·`Table*` 엔티티·`*DTO.kt`와 그 도메인 전용 헬퍼 | 다른 도메인(§3), `global`, `infra` |
-| `global/common/` | 응답 래퍼, `SecurityUtils`, `SecureToken`, `ClientIpResolver`, `Paging`, `RateLimitService`, `SupabaseStorageService`, `TransactionCallbacks`, `BatchJobLimits` | `domain` 금지(허용 3쌍 예외, §3) |
+| `global/common/` | 응답 래퍼, `SecurityUtils`, `SecureToken`, `ClientIpResolver`, `Paging`, `CursorCodec`, `SeekPredicate`, `KeysetQuery`, `RateLimitService`, `SupabaseStorageService`, `TransactionCallbacks`, `BatchJobLimits` | `domain` 금지(허용 3쌍 예외, §3) |
 | `global/config/` | Security·Swagger·Async 설정 | 위와 같음 |
 | `global/exception/` | 커스텀 예외 전부 + `GlobalExceptionHandler` | — |
 | `infra/<기술>/` | 외부 연동(Gemini·YouTube·SES·FCM·Lambda self-invoke) | `domain`은 이벤트 DTO만(디스패처) |
@@ -602,10 +602,11 @@ for (id in ids) {
 
 ### 7-9. 페이징
 
-- **언제**: 클라이언트가 `page`·`size`를 보내는 목록 API.
-- **정석**: `Paging.pageRequest(page, size)` — size를 1~50으로 묶는다(무제한 size 요청 방어). offset 페이징만 있다.
-- 정렬 동점은 `createdAt desc, id desc`로 끊는다(`PostRepositoryImpl`).
-- **안티패턴**: `PageRequest.of(page, size)`를 직접 호출(size 상한 없음), 정렬 키 하나만 써 페이지 경계에서 중복·누락.
+- **언제**: 쪽 번호 없이 이어 붙이는 목록 API. 세 목록(피드·북마크·내 댓글)이 `cursor`·`size`를 받고 `nextCursor`를 돌려준다.
+- **정석**: `Paging.coerceSize(size)`로 1~50으로 묶고(무제한 size 요청 방어) size+1개를 읽어 다음 쪽 유무를 정한다. 조회는 `KeysetQuery`로 한다 — 조건을 WHERE에 바로 쓰는 `directRows`, 파생 테이블에서 계산하는 `derivedRows` 중 첫 키에 맞는 것을 고른다. cursor는 `CursorCodec`으로 만들고 읽으며, 못 읽으면 `InvalidInputException`이다. 왜 형태가 둘인지와 키 표는 [`PAGINATION.md`](PAGINATION.md) §5.
+- 마지막 정렬 키는 동점을 끊는 고유 값이고 NULL이면 안 된다. 비교에서 빠져 그 행을 다시는 읽지 못한다.
+- `page`를 보내는 옛 번들용 offset 경로(`Paging.pageRequest`)가 Phase 4까지 남아 있다. 새 코드는 쓰지 않는다.
+- **안티패턴**: `PageRequest.of(page, size)`를 직접 호출(size 상한 없음), 정렬 키 하나만 써 페이지 경계에서 중복·누락, 비싼 계산식 첫 키를 WHERE에 바로 써 행마다 다시 계산.
 
 ### 7-10. 비공개 글 404 게이트
 

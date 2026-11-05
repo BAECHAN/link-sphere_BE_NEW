@@ -25,6 +25,22 @@
 
   </details>
 
+- `post`·`interaction`·`comment` 세 목록에 cursor 조회 추가, `page`를 보내는 옛 번들은 그대로 동작
+  <details><summary>배경·구현</summary>
+
+  쪽 사이에 글이 등록·삭제되면 offset은 같은 글을 또 보여 주거나 건너뛴다. 합성 데이터 측정에서 cursor는 안 바뀐 글을 놓치지
+  않았고, 인덱스 위 최신순은 깊은 위치에서도 시간이 늘지 않았다(`docs/PAGINATION.md` §9). 학습용 프로젝트라 지금 규모의 체감이
+  아니라 큰 규모의 판단 근거를 보려고 전환한다. `page` 없이 요청하면 `{content, nextCursor, correctedSearch}`를 돌려주고,
+  `nextCursor`가 `null`이면 끝이다. 잘못된 cursor와 정렬이 달라진 cursor는 400 `INVALID_INPUT`이다. 최신순·오래된순·최근 열람순은
+  상한을 붙인 조건식을 WHERE에 바로 쓰고, 검색 점수·제목 앞 200자는 파생 테이블에서 한 번만 계산해 비교한다. 파생 테이블은
+  엔티티를 돌려주지 못해 키를 먼저 읽고 엔티티를 id로 불러온다. 첫 쪽의 의미 검색·자판 보정 여부를 cursor에 담아 뒤쪽도 같은
+  기준으로 읽고, 키워드로 읽는 쪽은 Gemini와 IP당 호출 한도를 쓰지 않는다. 건수는 검색 첫 쪽에서만 세어 뒤쪽 로그는 `total=-1`이다.
+  옛 응답 필드(`page`·`size`·`totalElements`·`totalPages`·`last`)는 nullable·deprecated가 됐고 `page` 요청에는 그대로 채운다.
+  구조는 `docs/PAGINATION.md` §5, 계획은 `docs/plans/2026-11-05-cursor-pagination.md`.
+  ([PR #164](https://github.com/BAECHAN/link-sphere_BE_NEW/pull/164))
+
+  </details>
+
 - `post`·`comment`·`auth` 글·댓글·답글·메일 요청에 `Idempotency-Key` 필수화, 같은 키의 재전송은 처음 결과를 돌려줌
   <details><summary>배경·구현</summary>
 
@@ -108,6 +124,9 @@
 
 ### Migration
 
+- DB 먼저: 이 버전을 배포하기 **전에** `sql/add_cursor_pagination_indexes.sql`을 세션 풀러(5432)로 실행한다. 정렬 키 인덱스 3개를 만들고
+  `posts.created_at`을 `NOT NULL`로 바꾼다. 없이 배포해도 결과는 같지만 정렬 키를 처음부터 훑는다. 옛 번들은 `page` 경로로 그대로 동작한다.
+  되돌릴 때는 FE를 먼저 되돌린다. 옛 BE는 `cursor`를 무시해 모든 목록이 10개에서 조용히 끝난다.
 - DB 먼저: 이 버전을 배포하기 **전에** `sql/add_idempotency_keys.sql`을 세션 풀러(5432)로 실행한다. 컬럼 없이 나가면 posts·comments
   조회가 전부 500이다. FE 의존: 글·댓글·메일 요청이 `Idempotency-Key`를 보내는 FE(#535)가 먼저 배포돼 있어야 한다. 그 전 번들을
   띄워 둔 탭은 400을 받고 새로고침하면 회복한다.

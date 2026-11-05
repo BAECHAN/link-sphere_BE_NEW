@@ -9,14 +9,18 @@ import com.example.linksphere.domain.interaction.TableBookmarkFolder
 import com.example.linksphere.domain.member.MemberRepository
 import com.example.linksphere.domain.member.TableMember
 import com.example.linksphere.global.common.AdvisoryLock
+import com.example.linksphere.global.common.CursorCodec
+import com.example.linksphere.global.common.KeysetSlice
 import com.example.linksphere.global.common.Paging
 import com.example.linksphere.global.exception.BookmarkFolderNotFoundException
 import com.example.linksphere.global.exception.DuplicatePostException
 import com.example.linksphere.global.exception.EmailNotVerifiedException
 import com.example.linksphere.global.exception.ForbiddenException
+import com.example.linksphere.global.exception.InvalidInputException
 import com.example.linksphere.global.exception.PostNotFoundException
 import com.example.linksphere.infra.ai.GeminiService
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
@@ -33,6 +37,7 @@ import org.mockito.Mockito.`when`
 import org.mockito.junit.jupiter.MockitoExtension
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.data.domain.PageImpl
+import java.time.LocalDateTime
 import java.util.Optional
 import java.util.UUID
 
@@ -706,6 +711,162 @@ class PostServiceTest {
         postService.getAllPosts(null, null, null, null, 0, 100_000, null)
 
         verify(postRepository).findPosts(null, null, null, null, null, capped, null)
+    }
+
+    // ── cursor 목록 ──────────────────────────────────────
+
+    private val relevanceKeys = listOf<Comparable<*>>(8.0, LocalDateTime.of(2026, 11, 5, 12, 0, 0, 123_456_000), UUID.randomUUID())
+
+    private fun relevanceCursor(semantic: Boolean, corrected: Boolean? = null) = CursorCodec.encode(PostListSort.RELEVANCE.name, relevanceKeys, semantic, corrected)
+
+    private fun relevanceState(cursor: String?) = CursorCodec.decode(cursor!!, PostListSort.RELEVANCE.name, PostListSort.RELEVANCE.keyTypes)
+
+    private fun searchPost() = TablePost(id = UUID.randomUUID(), userId = UUID.randomUUID(), url = "https://example.com", title = "제목")
+
+    @Test
+    fun `getPostsByCursor는 검색 첫 쪽에서 의미 검색 여부를 cursor에 담고 건수를 센다`() {
+        val embedding = floatArrayOf(1f)
+        `when`(geminiService.embedQuery(PostEmbeddingText.query("spring"))).thenReturn(embedding)
+        `when`(postRepository.findPostsAfter(null, "spring", null, null, null, PostListSort.RELEVANCE, null, 10, embedding, true))
+            .thenReturn(KeysetSlice(listOf(searchPost()), relevanceKeys, 5L))
+
+        val result = postService.getPostsByCursor(null, "spring", null, null, null, 10, null)
+
+        assertEquals(relevanceKeys, relevanceState(result.nextCursor).keys)
+        assertEquals(true, relevanceState(result.nextCursor).semantic)
+        assertNull(result.page)
+        assertNull(result.totalElements)
+    }
+
+    @Test
+    fun `getPostsByCursor는 의미 검색으로 시작한 다음 쪽에서 임베딩을 다시 받고 건수는 세지 않는다`() {
+        val embedding = floatArrayOf(1f)
+        var consumed = 0
+        `when`(geminiService.embedQuery(PostEmbeddingText.query("spring"))).thenReturn(embedding)
+        `when`(postRepository.findPostsAfter(null, "spring", null, null, null, PostListSort.RELEVANCE, relevanceKeys, 10, embedding, false))
+            .thenReturn(KeysetSlice(listOf(searchPost()), relevanceKeys))
+
+        val result =
+            postService.getPostsByCursor(null, "spring", null, null, relevanceCursor(semantic = true), 10, null) {
+                consumed++
+                true
+            }
+
+        assertEquals(1, consumed)
+        assertEquals(true, relevanceState(result.nextCursor).semantic)
+    }
+
+    // 키워드로 시작한 뒤 의미 점수가 켜지면 키워드 점수 기준의 cursor와 맞지 않아 글을 놓친다(docs/PAGINATION.md)
+    @Test
+    fun `getPostsByCursor는 키워드로 시작한 뒤쪽에서 임베딩과 호출 한도를 쓰지 않는다`() {
+        `when`(postRepository.findPostsAfter(null, "spring", null, null, null, PostListSort.RELEVANCE, relevanceKeys, 10, null, false))
+            .thenReturn(KeysetSlice(listOf(searchPost()), relevanceKeys))
+
+        val result =
+            postService.getPostsByCursor(null, "spring", null, null, relevanceCursor(semantic = false), 10, null) {
+                throw AssertionError("호출 한도를 쓰면 안 된다")
+            }
+
+        verifyNoInteractions(geminiService)
+        assertEquals(false, relevanceState(result.nextCursor).semantic)
+    }
+
+    @Test
+    fun `getPostsByCursor는 호출 한도를 넘으면 키워드로 내려가 뒤쪽도 그대로 유지한다`() {
+        `when`(postRepository.findPostsAfter(null, "spring", null, null, null, PostListSort.RELEVANCE, relevanceKeys, 10, null, false))
+            .thenReturn(KeysetSlice(listOf(searchPost()), relevanceKeys))
+
+        val result = postService.getPostsByCursor(null, "spring", null, null, relevanceCursor(semantic = true), 10, null) { false }
+
+        verifyNoInteractions(geminiService)
+        assertEquals(false, relevanceState(result.nextCursor).semantic)
+    }
+
+    @Test
+    fun `getPostsByCursor는 뒤쪽에서 임베딩이 실패하면 키워드로 내려가 뒤쪽도 그대로 유지한다`() {
+        `when`(geminiService.embedQuery(PostEmbeddingText.query("spring"))).thenReturn(null)
+        `when`(postRepository.findPostsAfter(null, "spring", null, null, null, PostListSort.RELEVANCE, relevanceKeys, 10, null, false))
+            .thenReturn(KeysetSlice(listOf(searchPost()), relevanceKeys))
+
+        val result = postService.getPostsByCursor(null, "spring", null, null, relevanceCursor(semantic = true), 10, null)
+
+        assertEquals(false, relevanceState(result.nextCursor).semantic)
+    }
+
+    @Test
+    fun `getPostsByCursor는 첫 쪽이 비면 자판 보정으로 재검색하고 cursor에 표시한다`() {
+        `when`(geminiService.embedQuery(PostEmbeddingText.query("spdlqj"))).thenReturn(null)
+        `when`(postRepository.findPostsAfter(null, "spdlqj", null, null, null, PostListSort.RELEVANCE, null, 10, null, true))
+            .thenReturn(KeysetSlice(emptyList(), null, 0L))
+        `when`(postRepository.findPostsAfter(null, "네이버", null, null, null, PostListSort.RELEVANCE, null, 10, null, true))
+            .thenReturn(KeysetSlice(listOf(searchPost()), relevanceKeys, 1L))
+
+        val result = postService.getPostsByCursor(null, "spdlqj", null, null, null, 10, null)
+
+        assertEquals("네이버", result.correctedSearch)
+        assertEquals(true, relevanceState(result.nextCursor).corrected)
+        assertEquals(false, relevanceState(result.nextCursor).semantic)
+    }
+
+    @Test
+    fun `getPostsByCursor는 보정으로 시작한 뒤쪽을 보정어로 읽고 응답에 보정어를 유지한다`() {
+        `when`(postRepository.findPostsAfter(null, "네이버", null, null, null, PostListSort.RELEVANCE, relevanceKeys, 10, null, false))
+            .thenReturn(KeysetSlice(listOf(searchPost()), relevanceKeys))
+
+        val result = postService.getPostsByCursor(null, "spdlqj", null, null, relevanceCursor(semantic = false, corrected = true), 10, null)
+
+        verifyNoInteractions(geminiService)
+        assertEquals("네이버", result.correctedSearch)
+        assertEquals(true, relevanceState(result.nextCursor).corrected)
+    }
+
+    // 예전에는 쪽마다 totalElements == 0으로 판정했다. 건수를 세지 않으니 빈 마지막 쪽을 0건 검색으로 오인하면 안 된다.
+    @Test
+    fun `getPostsByCursor는 뒤쪽이 비어도 자판 보정을 시도하지 않는다`() {
+        `when`(postRepository.findPostsAfter(null, "spdlqj", null, null, null, PostListSort.RELEVANCE, relevanceKeys, 10, null, false))
+            .thenReturn(KeysetSlice(emptyList()))
+
+        val result = postService.getPostsByCursor(null, "spdlqj", null, null, relevanceCursor(semantic = false), 10, null)
+
+        assertNull(result.correctedSearch)
+        assertNull(result.nextCursor)
+    }
+
+    @Test
+    fun `getPostsByCursor는 검색이 아니면 임베딩과 호출 한도를 쓰지 않고 마지막 쪽이면 cursor가 없다`() {
+        `when`(postRepository.findPostsAfter(null, null, null, null, null, PostListSort.LATEST, null, 10, null, false))
+            .thenReturn(KeysetSlice(listOf(searchPost())))
+
+        val result =
+            postService.getPostsByCursor(null, null, null, null, null, 10, null) {
+                throw AssertionError("호출 한도를 쓰면 안 된다")
+            }
+
+        verifyNoInteractions(geminiService)
+        assertNull(result.nextCursor)
+    }
+
+    @Test
+    fun `getPostsByCursor는 잘못된 cursor를 호출 한도를 쓰기 전에 거절한다`() {
+        val latestCursor = CursorCodec.encode(PostListSort.LATEST.name, listOf(LocalDateTime.of(2026, 11, 5, 12, 0), UUID.randomUUID()))
+
+        listOf("not-a-cursor", latestCursor).forEach { cursor ->
+            assertThrows(InvalidInputException::class.java) {
+                postService.getPostsByCursor(null, "spring", null, null, cursor, 10, null) {
+                    throw AssertionError("호출 한도를 쓰면 안 된다")
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `getPostsByCursor는 size를 최대 페이지 크기로 자른다`() {
+        `when`(postRepository.findPostsAfter(null, null, null, null, null, PostListSort.LATEST, null, Paging.MAX_PAGE_SIZE, null, false))
+            .thenReturn(KeysetSlice(emptyList()))
+
+        postService.getPostsByCursor(null, null, null, null, null, 100_000, null)
+
+        verify(postRepository).findPostsAfter(null, null, null, null, null, PostListSort.LATEST, null, Paging.MAX_PAGE_SIZE, null, false)
     }
 
     @Test

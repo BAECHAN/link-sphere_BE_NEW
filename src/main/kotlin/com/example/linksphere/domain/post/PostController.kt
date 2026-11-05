@@ -6,6 +6,7 @@ import com.example.linksphere.global.common.IdempotentCreate
 import com.example.linksphere.global.common.RateLimitService
 import com.example.linksphere.global.common.getUserId
 import io.swagger.v3.oas.annotations.Operation
+import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.security.SecurityRequirements
 import io.swagger.v3.oas.annotations.tags.Tag
 import jakarta.servlet.http.HttpServletRequest
@@ -73,9 +74,12 @@ class PostController(
 
     @Operation(
         summary = "게시글 목록 조회",
-        description = "category·search·filter·nickname 으로 필터링, page·size 로 페이지네이션한다. " +
+        description = "category·search·filter·nickname 으로 필터링하고 cursor·size 로 이어 읽는다. 첫 쪽은 cursor 없이 요청하고, " +
+            "다음 쪽은 응답의 nextCursor 를 그대로 보낸다. nextCursor 가 null 이면 마지막 쪽이다. " +
             "인증 토큰을 보내면 본인의 좋아요·북마크 여부가 응답에 반영된다. size 는 최대 50 으로 잘린다. " +
-            "같은 IP의 검색이 몰리면 의미 검색을 건너뛰고 키워드 검색 결과만 돌려준다(에러 아님).",
+            "같은 IP의 검색이 몰리면 의미 검색을 건너뛰고 키워드 검색 결과만 돌려준다(에러 아님). " +
+            "page 는 아직 새로고침하지 않은 옛 번들용이고 곧 없어진다. page 를 보내면 cursor 는 무시하고 옛 응답 필드를 채운다. " +
+            "실패: 400 INVALID_INPUT(잘못된 cursor, 검색어 유무가 달라진 cursor)",
     )
     @SecurityRequirements
     @GetMapping
@@ -84,20 +88,28 @@ class PostController(
         @RequestParam(required = false) search: String?,
         @RequestParam(required = false) filter: String?,
         @RequestParam(required = false) nickname: String?,
-        @RequestParam(defaultValue = "0") page: Int,
+        @RequestParam(required = false) cursor: String?,
+        @Parameter(deprecated = true)
+        @RequestParam(required = false)
+        page: Int?,
         @RequestParam(defaultValue = "10") size: Int,
         authentication: Authentication?,
         httpRequest: HttpServletRequest,
     ): ApiResponse<PostPageResponse> {
         val currentUserId = authentication.getUserId()
-        val allowSemanticSearch =
-            search.isNullOrBlank() ||
-                rateLimitService.tryConsume(
-                    ClientIpResolver.resolve(httpRequest)?.let { "search-embed:ip:$it" },
-                    SEARCH_EMBED_IP_LIMIT,
-                    SEARCH_EMBED_IP_WINDOW,
-                )
-        val posts = postService.getAllPosts(category, search, filter, nickname, page, size, currentUserId, allowSemanticSearch)
+        val tryConsumeEmbedding = {
+            rateLimitService.tryConsume(
+                ClientIpResolver.resolve(httpRequest)?.let { "search-embed:ip:$it" },
+                SEARCH_EMBED_IP_LIMIT,
+                SEARCH_EMBED_IP_WINDOW,
+            )
+        }
+        val posts =
+            if (page != null) {
+                postService.getAllPosts(category, search, filter, nickname, page, size, currentUserId, search.isNullOrBlank() || tryConsumeEmbedding())
+            } else {
+                postService.getPostsByCursor(category, search, filter, nickname, cursor, size, currentUserId, tryConsumeEmbedding)
+            }
         return ApiResponse(HttpStatus.OK.value(), "Posts retrieved", posts)
     }
 

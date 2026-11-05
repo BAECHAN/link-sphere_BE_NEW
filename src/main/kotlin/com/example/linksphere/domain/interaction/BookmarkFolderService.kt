@@ -7,6 +7,9 @@ import com.example.linksphere.domain.post.PostRepository
 import com.example.linksphere.domain.post.PostResponseAssembler
 import com.example.linksphere.domain.post.PostSearchQuery
 import com.example.linksphere.domain.post.PostVisibility
+import com.example.linksphere.domain.post.TablePost
+import com.example.linksphere.global.common.CursorCodec
+import com.example.linksphere.global.common.KeysetSlice
 import com.example.linksphere.global.common.Paging
 import com.example.linksphere.global.exception.BookmarkFolderNotFoundException
 import com.example.linksphere.global.exception.DuplicateFolderNameException
@@ -216,6 +219,8 @@ class BookmarkFolderService(
      * folderKey: "all" / "uncategorized" / 폴더 UUID 문자열
      * sort: "latest"(default) / "oldest" / "title" / "views"
      * search: 제목/설명/태그 부분 검색 (null/blank면 미적용)
+     *
+     * 아직 새로고침하지 않은 옛 번들용 - 새 번들은 getBookmarkedPostsByCursor를 쓴다.
      */
     @Transactional(readOnly = true)
     fun getBookmarkedPosts(
@@ -226,25 +231,7 @@ class BookmarkFolderService(
         page: Int,
         size: Int,
     ): PostPageResponse {
-        val (folderId, onlyUncategorized) =
-            when (folderKey) {
-                "all" -> null to false
-                "uncategorized" -> null to true
-                else -> {
-                    val uuid =
-                        try {
-                            UUID.fromString(folderKey)
-                        } catch (e: IllegalArgumentException) {
-                            throw InvalidInputException("Invalid folder key: $folderKey")
-                        }
-                    val folder = bookmarkFolderRepository.findByIdOrNull(uuid)
-                        ?: throw BookmarkFolderNotFoundException(uuid)
-                    if (folder.userId != userId) {
-                        throw ForbiddenException("Cannot access another user's folder")
-                    }
-                    uuid to false
-                }
-            }
+        val (folderId, onlyUncategorized) = resolveFolderKey(userId, folderKey)
 
         val pageable = Paging.pageRequest(page, size)
         val searchTokens = PostSearchQuery.tokenize(search)
@@ -292,6 +279,102 @@ class BookmarkFolderService(
 
         logSearch(search = search, total = postPage.totalElements, corrected = false, semantic = queryEmbedding != null)
         return PostPageResponse.from(postPage, postResponseAssembler.buildResponsesFromPosts(postPage.content, userId, searchTokens))
+    }
+
+    /**
+     * getBookmarkedPosts의 cursor 판. 첫 쪽의 의미 검색·자판 보정 여부를 cursor에 담아 뒤쪽도 같은 기준으로 읽는다
+     * (PostService.getPostsByCursor와 같은 규칙, 이유는 그쪽 주석 참고).
+     */
+    @Transactional(readOnly = true)
+    fun getBookmarkedPostsByCursor(
+        userId: UUID,
+        folderKey: String,
+        sort: String?,
+        search: String?,
+        cursor: String?,
+        size: Int,
+    ): PostPageResponse {
+        val (folderId, onlyUncategorized) = resolveFolderKey(userId, folderKey)
+        val limit = Paging.coerceSize(size)
+        val searchTokens = PostSearchQuery.tokenize(search)
+        val listSort = BookmarkListSort.of(sort, searching = searchTokens.isNotEmpty())
+        val state = cursor?.let { CursorCodec.decode(it, listSort.name, listSort.keyTypes) }
+        val correctedSearch = search?.takeIf { state?.corrected == true }?.let { HangulKeyboardConverter.convertIfMislayout(it) }
+        val wantsEmbedding = searchTokens.isNotEmpty() && correctedSearch == null && state?.semantic != false
+        val queryEmbedding = search?.takeIf { wantsEmbedding }?.let { geminiService.embedQuery(PostEmbeddingText.query(it)) }
+        val semantic = queryEmbedding != null
+        val isFirstSearchPage = state == null && searchTokens.isNotEmpty()
+
+        if (state?.semantic == true && !semantic) {
+            logger.warn("[Search] scope=bookmark semantic degraded to keyword")
+        }
+
+        val slice =
+            bookmarkRepository.findBookmarkedPostsAfter(
+                userId,
+                folderId,
+                onlyUncategorized,
+                listSort,
+                correctedSearch ?: search,
+                state?.keys,
+                limit,
+                queryEmbedding,
+                withTotal = isFirstSearchPage,
+            )
+
+        // 쪽마다 건수를 세지 않으므로 첫 쪽이 비었을 때만 보정을 판정한다. 뒤쪽이 비었다고 0건 검색은 아니다.
+        val candidate = search?.takeIf { isFirstSearchPage && slice.content.isEmpty() }?.let { HangulKeyboardConverter.convertIfMislayout(it) }
+        if (candidate != null) {
+            val correctedSlice =
+                bookmarkRepository.findBookmarkedPostsAfter(userId, folderId, onlyUncategorized, listSort, candidate, null, limit, withTotal = true)
+            if (correctedSlice.content.isNotEmpty()) {
+                logSearch(search = search, total = correctedSlice.total ?: PostSearchQuery.TOTAL_NOT_COUNTED, corrected = true, semantic = false)
+                return cursorResponse(correctedSlice, listSort, userId, PostSearchQuery.tokenize(candidate), candidate, semantic = false)
+            }
+        }
+
+        logSearch(search = search, total = slice.total ?: PostSearchQuery.TOTAL_NOT_COUNTED, corrected = correctedSearch != null, semantic = semantic)
+        return cursorResponse(
+            slice,
+            listSort,
+            userId,
+            correctedSearch?.let { PostSearchQuery.tokenize(it) } ?: searchTokens,
+            correctedSearch,
+            semantic.takeIf { searchTokens.isNotEmpty() },
+        )
+    }
+
+    private fun cursorResponse(
+        slice: KeysetSlice<TablePost>,
+        sort: BookmarkListSort,
+        userId: UUID,
+        tokens: List<String>,
+        correctedSearch: String?,
+        semantic: Boolean?,
+    ): PostPageResponse = PostPageResponse(
+        content = postResponseAssembler.buildResponsesFromPosts(slice.content, userId, tokens),
+        nextCursor = slice.nextKeys?.let { CursorCodec.encode(sort.name, it, semantic, corrected = true.takeIf { correctedSearch != null }) },
+        correctedSearch = correctedSearch,
+    )
+
+    // "all" / "uncategorized" / 폴더 UUID를 (폴더 id, 미분류만 볼지)로 바꾼다. 남의 폴더는 여기서 막는다.
+    private fun resolveFolderKey(userId: UUID, folderKey: String): Pair<UUID?, Boolean> = when (folderKey) {
+        "all" -> null to false
+        "uncategorized" -> null to true
+        else -> {
+            val uuid =
+                try {
+                    UUID.fromString(folderKey)
+                } catch (e: IllegalArgumentException) {
+                    throw InvalidInputException("Invalid folder key: $folderKey")
+                }
+            val folder = bookmarkFolderRepository.findByIdOrNull(uuid)
+                ?: throw BookmarkFolderNotFoundException(uuid)
+            if (folder.userId != userId) {
+                throw ForbiddenException("Cannot access another user's folder")
+            }
+            uuid to false
+        }
     }
 
     /** PostService.logSearch와 동일한 형태 - 북마크함 검색어별 결과 건수를 로그로 남긴다. */

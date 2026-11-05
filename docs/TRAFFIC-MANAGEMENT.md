@@ -31,7 +31,7 @@ flowchart TD
   P -->|"GET /post?search="| T["RateLimitService.tryConsume<br/>IP별 10분 60회"]
   T -->|"한도 안"| G["Gemini 임베딩 + 키워드 검색"]
   T -->|"초과"| K["키워드 검색만 (에러 아님)"]
-  P -->|"GET 목록 API의 size"| Z["Paging.pageRequest<br/>size를 최대 50으로 자름"]
+  P -->|"GET 목록 API의 size"| Z["Paging.coerceSize<br/>size를 최대 50으로 자름"]
   M["CloudWatch 알람 3개: 앱 500·Errors·Throttles<br/>(SNS → 운영자 메일)"] -.감시.-> L
 ```
 
@@ -129,7 +129,8 @@ Postgres 카운터(`RateLimitService`)를 쓰고 있어 그대로 확장했다.
 Google SRE 책은 과부하 대응으로 기능을 낮춰 응답하는 방법(graceful degradation)을 든다
 ([Addressing Cascading Failures](https://sre.google/sre-book/addressing-cascading-failures/)).
 한도를 넘은 IP의 검색은 Gemini 임베딩만 건너뛰고 키워드 검색 결과를 그대로 돌려준다 — Gemini
-장애 때 이미 쓰던 폴백 경로와 같다.
+장애 때 이미 쓰던 폴백 경로와 같다. cursor 목록에서는 내려간 뒤 뒤쪽도 키워드로 유지하고, 키워드로 읽는 쪽은
+한도를 쓰지 않는다([`PAGINATION.md`](PAGINATION.md) §5.4).
 
 ### 5-5. 한도를 컨트롤러에 둔 이유
 
@@ -193,7 +194,7 @@ Google SRE 책은 과부하 대응으로 기능을 낮춰 응답하는 방법(gr
 | 대상 | 한도 | 위치 |
 |---|---|---|
 | 글 등록 | 회원당 1시간 20회 | `domain/post/PostController.kt:30-31` |
-| 검색 임베딩 | IP당 10분 60회 (초과 시 키워드 검색으로 강등) | `domain/post/PostController.kt:35-36` |
+| 검색 임베딩 | IP당 10분 60회 (초과 시 키워드 검색으로 강등) | `domain/post/PostController.kt:36-37` |
 | 업로드 URL 발급 | 회원당 1시간 30회 | `domain/upload/UploadController.kt:25-26` |
 | 링크 미리보기 | 회원당 1시간 60회 (URL 입력마다 1회 크롤링, 결과는 10분 캐시) | `domain/post/LinkPreviewController.kt:27-28` |
 | 목록 `size` | 최대 50 (글 목록·북마크 폴더 글·내 댓글) | `global/common/Paging.kt:12` |

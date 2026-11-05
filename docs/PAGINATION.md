@@ -1,12 +1,12 @@
 # Link-Sphere BE — 목록 페이지네이션: offset과 cursor 비교
 
-> **문서 성격**: 서사형(설명) — offset을 cursor로 바꿀지 판단하려고 잰 실험과 그 결과를 기록한다. 지금 운영 코드는 아직 offset이다.
+> **문서 성격**: 서사형(설명) — offset을 cursor로 바꾸게 한 실험과 전환된 구조를 기록한다. 지금 BE는 두 방식을 모두 받는다. `page`가 오면 옛 offset 경로, 없으면 cursor 경로다. FE는 [계획](plans/2026-11-05-cursor-pagination.md) Phase 3까지 `page`로 요청한다.
 >
 > **대상 독자**: 이 레포 BE를 처음 보거나, 무한 스크롤 목록을 새로 설계할 때 참고하려는 개발자.
 >
-> **읽고 나면**: 어떤 목록에서 cursor가 이득인지 수치로 말할 수 있고, 실험을 다시 돌리거나 조건을 바꿔 잴 수 있다.
+> **읽고 나면**: 어떤 목록에서 cursor가 이득인지 수치로 말할 수 있고, 새 정렬을 추가하거나 cursor 형식을 바꿀 수 있으며, 실험을 다시 돌리거나 조건을 바꿔 잴 수 있다.
 >
-> **마지막 검토**: 2026-11-05 (Phase 1 실험 결과 기록)
+> **마지막 검토**: 2026-11-05 (Phase 2 cursor 경로 반영)
 
 ## 1. 쉬운 설명
 
@@ -20,12 +20,12 @@
 ```mermaid
 flowchart TD
   A["사용자가 목록을 스크롤"] --> B{"어느 방식인가"}
-  B -->|"offset, 지금 운영"| C["GET /post?page=3&size=10"]
+  B -->|"offset, 옛 번들용. Phase 4에서 제거"| C["GET /post?page=3&size=10"]
   C --> D["DB: count 쿼리로 전체 건수 계산"]
   D --> E["DB: 앞의 30행을 읽어 버리고 10행 반환"]
   E --> F["응답: content, page, totalElements 등"]
   F --> G["쪽 사이에 글이 늘거나 줄면<br/>중복·누락 발생"]
-  B -->|"cursor, 전환 검토 중"| H["GET /post?cursor=마지막 행의 키&size=10"]
+  B -->|"cursor, 새 경로"| H["GET /post?cursor=마지막 행의 키&size=10"]
   H --> I["DB: 키보다 뒤의 행부터 11행 조회<br/>count 없음"]
   I --> J["응답: content, nextCursor<br/>11번째가 있으면 다음 키, 없으면 null"]
   J --> K["쪽 사이에 글이 늘거나 줄어도 그대로<br/>정렬 값이 바뀐 글만 자리를 옮김"]
@@ -41,10 +41,12 @@ flowchart TD
 
 ## 3. 사용한 도구·기술
 
-**기능 자체** (전환하면 쓰는 것)
+**기능 자체**
 
 - PostgreSQL B-tree 복합 인덱스와 keyset 조건식
 - Base64url로 감싼 불투명 cursor 문자열
+- Hibernate 6.6 `JpaSelectCriteria.from(Subquery)` 파생 테이블(`offset 0`으로 합쳐지지 않게 막음)
+- Spring Data `Limit`(내 댓글 JPQL)
 
 **실험에 쓴 것**
 
@@ -71,43 +73,110 @@ flowchart TD
 
 ## 5. 구조
 
-### 5.1 지금
+### 5.1 요청 흐름
 
-세 목록 모두 `page`·`size`를 받아 `OFFSET`으로 읽고 쪽마다 count를 함께 돌린다. 정렬 키 `created_at`에는 인덱스가 없어 전 행을 읽어 정렬한다.
+```mermaid
+flowchart TD
+  R["GET 목록<br/>/post, /bookmark/folders/{key}/posts, /comment/my"] --> P{"page 파라미터가 있나"}
+  P -->|"예, 옛 번들"| O["옛 offset 경로<br/>쪽마다 count, 옛 응답 필드"]
+  P -->|아니오| C{"cursor가 있나"}
+  C -->|없음, 첫 쪽| S["정렬 결정<br/>검색이면 임베딩 호출·첫 쪽만 건수"]
+  C -->|있음| V["CursorCodec.decode<br/>실패·정렬 불일치는 400 INVALID_INPUT"]
+  V --> S2["cursor의 semantic·corrected 복원<br/>semantic=false면 Gemini·호출 한도 건너뜀"]
+  S --> Q{"어떤 정렬인가"}
+  S2 --> Q
+  Q -->|"최신순·오래된순·최근 열람순"| I["directRows<br/>WHERE에 상한 + 펼친 조건"]
+  Q -->|"검색·제목순"| D["derivedRows<br/>파생 테이블에서 계산, 바깥에서 비교"]
+  I --> L["size+1개의 키 값 조회"]
+  D --> L
+  L --> E["이 쪽 엔티티를 id로 조회<br/>순서는 키 조회 결과대로"]
+  E --> N{"size+1번째가 있나"}
+  N -->|있음| NC["size번째 행의 키로 nextCursor"]
+  N -->|없음| NN["nextCursor = null"]
+```
 
-| 목록 | 위치 |
-| --- | --- |
-| 피드·검색 | [`PostRepositoryImpl.kt`](../src/main/kotlin/com/example/linksphere/domain/post/PostRepositoryImpl.kt) `findPosts` |
-| 북마크 | [`BookmarkRepositoryImpl.kt`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkRepositoryImpl.kt) `findBookmarkedPosts` |
-| 내 댓글 | [`CommentRepository.kt:28-37`](../src/main/kotlin/com/example/linksphere/domain/comment/CommentRepository.kt#L28-L37) |
-
-### 5.2 keyset 조건식은 정렬 키에 인덱스가 있느냐로 갈린다
-
-이 실험의 핵심 결론이다. 같은 keyset이어도 조건을 어떻게 쓰느냐로 결과가 정반대가 된다. 아래는 측정에서 나온 제안이고, 검색의 서브쿼리 형태를 Hibernate로 만들 수 있는지는 아직 돌려 보지 않았다(§9.7).
-
-| 경우 | 맞는 형태 | 이유(§9.1·§9.3) |
+| 목록 | cursor 경로 | 옛 경로(Phase 4에서 제거) |
 | --- | --- | --- |
-| 첫 키에 인덱스가 있음(최신순) | `k1 <= x AND (k1 < x OR (k1 = x AND k2 < y))` | 앞의 상한이 없으면 인덱스를 처음부터 훑어 offset과 똑같이 느리다 |
-| 첫 키가 계산식(검색 점수) | 서브쿼리에서 한 번 계산하고 바깥에서 비교 | 식을 WHERE에 쓰면 행마다 다시 계산해 offset의 2배가 걸린다. 인덱스가 없어 상한의 이득도 없다 |
+| 피드·검색 | [`PostRepositoryImpl.kt:111`](../src/main/kotlin/com/example/linksphere/domain/post/PostRepositoryImpl.kt#L111) `findPostsAfter`, [`PostService.kt:218`](../src/main/kotlin/com/example/linksphere/domain/post/PostService.kt#L218) | `findPosts`, `getAllPosts` |
+| 북마크 | [`BookmarkRepositoryImpl.kt:132`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkRepositoryImpl.kt#L132) `findBookmarkedPostsAfter`, [`BookmarkFolderService.kt:289`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkFolderService.kt#L289) | `findBookmarkedPosts`, `getBookmarkedPosts` |
+| 내 댓글 | [`CommentRepository.kt:48`](../src/main/kotlin/com/example/linksphere/domain/comment/CommentRepository.kt#L48) `findMyCommentsFirst`·`findMyCommentsAfter`, [`CommentService.kt:130`](../src/main/kotlin/com/example/linksphere/domain/comment/CommentService.kt#L130) | `findMyComments`, `getMyComments` |
 
-`(k1, k2) < (x, y)` 행 비교가 가장 간단하지만, 이 레포가 쓰는 Hibernate 6.6.53의 `tuple()`은 `JpaCompoundSelection`을 돌려줘 `lessThan`에 넣을 수 없다(javap 확인). 그래서 OR로 펼친 형태를 쓴다. 전환 계획의 정렬 키 전체는 [`plans/2026-11-05-cursor-pagination.md`](plans/2026-11-05-cursor-pagination.md)에 있다.
+**정렬 키**(마지막 키가 동점을 끊는 고유 값)
+
+| 목록 | 정렬 | 키 | 조회 형태 |
+| --- | --- | --- | --- |
+| 피드 | 최신순 | `p.created_at DESC, p.id DESC` | WHERE(인덱스) |
+| 피드 | 검색 | `점수 DESC, p.created_at DESC, p.id DESC` | 파생 테이블 |
+| 북마크 | 최신순 | `b.created_at DESC, b.post_id DESC` | WHERE(인덱스) |
+| 북마크 | 오래된순 | `b.created_at ASC, b.post_id ASC` | WHERE(인덱스를 거꾸로 읽음) |
+| 북마크 | 제목순 | `left(p.title,200) ASC, b.created_at DESC, b.post_id DESC` | 파생 테이블 |
+| 북마크 | 최근 열람순 | `coalesce(열람 시각, 1970) DESC, b.created_at DESC, b.post_id DESC` | WHERE |
+| 북마크 | 검색(`sort=latest`일 때만) | `점수 DESC, b.created_at DESC, b.post_id DESC` | 파생 테이블 |
+| 내 댓글 | 최신순 | `c.created_at DESC, c.id DESC` | WHERE(인덱스, JPQL) |
+
+**키와 엔티티를 나눠 읽는다.** 파생 테이블은 스칼라만 돌려줘 엔티티를 함께 받을 수 없다. 그래서 키 값을 먼저 읽고 이 쪽 id로 엔티티를 불러온다([`KeysetQuery.kt`](../src/main/kotlin/com/example/linksphere/global/common/KeysetQuery.kt)). WHERE 형태도 같은 길로 맞췄다. 내 댓글만 `JOIN FETCH` + `Limit` 한 번이다. 쪽마다 조회가 2번이지만 offset도 count + 본 쿼리로 2번이었다.
+
+### 5.2 keyset 조건식은 첫 키가 무엇이냐로 갈린다
+
+이 실험의 핵심 결론이다. 같은 keyset이어도 조건을 어떻게 쓰느냐로 결과가 정반대가 된다. "계산식이면 파생 테이블"처럼 단순하지 않아서, 첫 키마다 재서 정했다(§9.8).
+
+| 첫 키 | 맞는 형태 | 이유 |
+| --- | --- | --- |
+| 인덱스가 있음(최신순·오래된순) | WHERE: `k1 <= x AND (k1 < x OR (k1 = x AND k2 < y))` | 앞의 상한이 없으면 인덱스를 처음부터 훑어 offset과 똑같이 느리다(§9.1) |
+| 비싼 계산식(검색 점수) | 파생 테이블에서 한 번 계산하고 바깥에서 비교 | 식을 WHERE에 쓰면 행마다 다시 계산해 offset의 2배가 걸린다(§9.3) |
+| 조인한 표의 컬럼(제목 앞부분) | 파생 테이블 | WHERE에 쓰면 조건이 글 표 전체 탐색으로 내려가 앞쪽 위치일수록 느리다. 50번째 1.8배, 9,000번째는 근소하게 빠르다(§9.8) |
+| 조인 전에 계산되는 싼 식(열람 시각) | WHERE | 조인 전에 행을 걸러 글 표를 읽을 행이 준다. 파생 테이블은 이걸 막는다(§9.8) |
+
+파생 테이블에 붙는 `offset 0`은 양날이다. Postgres가 안쪽을 합쳐 식을 다시 계산하는 일을 막지만, 바깥 조건을 안쪽 조인 아래로 내리는 것도 함께 막는다.
+
+코드는 [`KeysetQuery.kt`](../src/main/kotlin/com/example/linksphere/global/common/KeysetQuery.kt)의 `directRows`(WHERE)와 `derivedRows`(파생 테이블)다.
+
+`(k1, k2) < (x, y)` 행 비교가 가장 간단하지만, 이 레포가 쓰는 Hibernate 6.6.53의 `tuple()`은 `JpaCompoundSelection`을 돌려줘 `lessThan`에 넣을 수 없다(javap 확인). 그래서 OR로 펼친 형태를 쓴다([`SeekPredicate.kt`](../src/main/kotlin/com/example/linksphere/global/common/SeekPredicate.kt)). 정렬 키 전체는 §5.1 표다.
 
 ### 5.3 cursor로도 못 막는 빈틈
 
 - **정렬 값이 바뀐 글**은 cursor에서도 자리를 옮겨 놓치거나 다시 보인다. Solr 문서는 _"색인 변경으로 문서가 건너뛰어지거나 두 번 반환될 수 있는 유일한 경우는 그 문서의 정렬 값이 바뀔 때다"_ (번역, [Apache Solr](https://solr.apache.org/guide/solr/latest/query-guide/pagination-of-results.html))라고 쓰고, §9.4의 측정도 그렇게 나왔다. 막으려면 결과 스냅샷이 필요하다.
 - **쪽마다 전체를 계산하는 검색 비용**은 페이지 방식으로 줄지 않는다(§9.3). 규모가 커지면 전용 검색 엔진이나 미리 계산한 색인이 필요하다.
 
+### 5.4 검색 상태를 cursor에 담는 이유
+
+쪽마다 후보 집합이 달라지면 점수 비교의 기준이 흔들려 글을 놓친다. 그래서 첫 쪽의 상태를 cursor로 이어 간다.
+
+| 상황 | 동작 |
+| --- | --- |
+| 첫 쪽이 키워드로 시작(`semantic=false`) | 뒤쪽도 키워드만. Gemini를 부르지 않고 IP당 호출 한도도 쓰지 않는다. 키워드로 시작한 뒤 의미 점수가 켜지는 경우가 시뮬레이션에서 누락이 가장 컸다 |
+| 의미 검색으로 시작했는데 뒤쪽에서 임베딩 실패·한도 초과 | 그 쪽부터 키워드로 내려가 유지하고 로그를 남긴다. Gemini 장애로 검색이 실패하지 않게 한 기존 원칙과 같다. 점수 기준이 바뀌는 그 쪽에서는 누락이 생길 수 있다 |
+| 첫 쪽이 0건이고 자판 보정 후보가 있음 | 보정어로 재검색하고 `corrected=true`를 담는다. 뒤쪽도 보정어로 읽고 응답에 `correctedSearch`를 유지한다 |
+| 뒤쪽이 0건 | 보정을 시도하지 않는다. 쪽마다 건수를 세지 않으니 빈 마지막 쪽을 0건 검색으로 오인하면 안 된다 |
+
+건수는 검색 첫 쪽에서만 센다. `[Search]` 로그의 `total`에만 쓰고 화면에서 읽는 곳이 없어서다. 뒤쪽 로그는 `total=-1`이다.
+
 ## 6. 데이터 모델
 
-새 표는 없다. 전환하면 정렬 키 인덱스가 필요하고, SQL은 전환 단계에서 `src/main/resources/sql/`에 추가한다. 큰 표에서는 쓰기를 막지 않도록 `CREATE INDEX CONCURRENTLY`를 써야 한다.
+새 표는 없다. [`sql/add_cursor_pagination_indexes.sql`](../src/main/resources/sql/add_cursor_pagination_indexes.sql)이 정렬 키 인덱스 3개를 만들고 `posts.created_at`을 `NOT NULL`로 바꾼다. 값이 NULL이면 비교에서 빠져 그 글을 다시는 읽지 못한다. 지금 표가 작아 일반 `CREATE INDEX`를 쓰고, 큰 표에서는 쓰기를 막지 않도록 `CREATE INDEX CONCURRENTLY`를 써야 한다.
+
+**cursor 내용**은 Base64url로 감싼 JSON이다([`CursorCodec.kt`](../src/main/kotlin/com/example/linksphere/global/common/CursorCodec.kt)).
+
+| 필드 | 뜻 |
+| --- | --- |
+| `v` | 형식 버전. 지금 1 |
+| `sort` | 정렬 이름(`LATEST`, `RELEVANCE`, `TITLE` 등). 지금 요청의 정렬과 다르면 키를 해석할 수 없어 400 |
+| `keys` | 마지막 행의 정렬 키 값(문자열). 시각은 ISO, 점수는 double |
+| `semantic` | 검색일 때만. 첫 쪽이 의미 검색이었는가 |
+| `corrected` | 자판 보정으로 시작했을 때만 `true` |
+
+서명은 하지 않는다. 공개 범위 조건을 요청마다 적용해 조작해도 볼 수 없는 글은 나오지 않고 위치만 달라진다. 검색어·필터가 cursor와 달라도 막지 않는다. FE 쿼리 키가 이미 분리하고, 어긋나도 위치만 달라진다.
 
 ## 7. 운영 파라미터
 
 | 값 | 현재 | 위치 |
 | --- | --- | --- |
-| 쪽 크기 기본값 | 10 | [`PostController.kt:73`](../src/main/kotlin/com/example/linksphere/domain/post/PostController.kt#L73) |
+| 쪽 크기 기본값 | 10 | [`PostController.kt:95`](../src/main/kotlin/com/example/linksphere/domain/post/PostController.kt#L95) |
 | 쪽 크기 상한 | 50 | [`Paging.kt:12`](../src/main/kotlin/com/example/linksphere/global/common/Paging.kt#L12) |
-| 임베딩 호출 제한 | IP당 10분 60회 | [`PostController.kt:34-35`](../src/main/kotlin/com/example/linksphere/domain/post/PostController.kt#L34-L35) |
+| 임베딩 호출 제한 | IP당 10분 60회. `semantic=false` cursor면 쓰지 않음 | [`PostController.kt:36-37`](../src/main/kotlin/com/example/linksphere/domain/post/PostController.kt#L36-L37) |
+| 제목 키 길이 | 앞 200자 | [`BookmarkRepositoryImpl.kt:199`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkRepositoryImpl.kt#L199) |
+| 열람 기록 없는 글의 키 | 1970-01-01 | [`BookmarkRepositoryImpl.kt:200`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkRepositoryImpl.kt#L200) |
+| cursor 형식 버전 | 1 | [`CursorCodec.kt:41`](../src/main/kotlin/com/example/linksphere/global/common/CursorCodec.kt#L41) |
 | 질의 임베딩 읽기 제한 시간 | 1,500ms | [`GeminiService.kt:39`](../src/main/kotlin/com/example/linksphere/infra/ai/GeminiService.kt#L39) |
 | 쿼리 문자열 크기 한도 | 2,048바이트 | AWS WAF `SizeRestrictions_QUERYSTRING`, 콘솔 관리. AWS 문서는 _"2,048바이트를 넘는 URI 쿼리 문자열을 검사한다"_ (번역, [AWS](https://docs.aws.amazon.com/waf/latest/developerguide/aws-managed-rule-groups-baseline.html))고 쓴다. cursor가 이 안에 들어야 한다 |
 
@@ -120,9 +189,18 @@ flowchart TD
 | 조회 시간 표 출력 | [`performance-report.sql`](../scripts/pagination-experiment/performance-report.sql) |
 | 중복·누락 측정 | [`gaps.sql`](../scripts/pagination-experiment/gaps.sql) |
 | 이 문서가 쓴 원본 출력 | [`results/2026-11-05.md`](../scripts/pagination-experiment/results/2026-11-05.md) |
+| cursor 인코딩·검증 | [`CursorCodec.kt`](../src/main/kotlin/com/example/linksphere/global/common/CursorCodec.kt) |
+| "이 키 다음부터" 조건식 | [`SeekPredicate.kt`](../src/main/kotlin/com/example/linksphere/global/common/SeekPredicate.kt) |
+| WHERE 형태·파생 테이블 형태 조회 | [`KeysetQuery.kt`](../src/main/kotlin/com/example/linksphere/global/common/KeysetQuery.kt) |
+| 정렬별 키 구성 | [`PostRepositoryCustom.kt:41`](../src/main/kotlin/com/example/linksphere/domain/post/PostRepositoryCustom.kt#L41) `PostListSort`, [`BookmarkRepositoryCustom.kt:54`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkRepositoryCustom.kt#L54) `BookmarkListSort` |
+| 검색 상태 이어 가기 | [`PostService.kt:218`](../src/main/kotlin/com/example/linksphere/domain/post/PostService.kt#L218), [`BookmarkFolderService.kt:289`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkFolderService.kt#L289) |
+| 끝까지 읽기·SQL 형태 테스트 | [`CursorPaginationIntegrationTest.kt`](../src/test/kotlin/com/example/linksphere/domain/post/CursorPaginationIntegrationTest.kt) |
 
 | 하고 싶은 일 | 방법 | 재배포 |
 | --- | --- | --- |
+| 정렬 추가 | `BookmarkListSort`에 키 구성을 추가하고 `findBookmarkedPostsAfter`의 첫 키를 만든다. 첫 키에 따라 `directRows`나 `derivedRows`를 고른다(§5.2 표). 애매하면 두 형태를 같은 실행에서 재 본다(§9.8). 마지막 키는 고유해야 하고 NULL이면 안 된다 | 필요 |
+| cursor 형식 변경 | `VERSION`을 올리되 옛 값도 계속 읽는다. 열려 있는 탭이 옛 cursor를 들고 있고, 400이면 재시도해도 같은 값을 보낸다 | 필요 |
+| 쪽 크기 상한 변경 | `Paging.MAX_PAGE_SIZE` | 필요 |
 | 실험 전체 다시 돌리기(약 25분) | `./scripts/pagination-experiment/run.sh > results.md` | 불필요 |
 | 빠른 확인(약 30초) | `PERF_SIZES="10000" SKIP_GAPS=1 ./scripts/pagination-experiment/run.sh` | 불필요 |
 | 행 수 바꾸기 | `PERF_SIZES`에 원하는 행 수를 공백으로 나열 | 불필요 |
@@ -140,7 +218,7 @@ Docker만 있으면 되고, 운영 DB에는 연결하지 않는다.
 
 단위 ms. "위치"는 앞에서 몇 번째 행부터 읽었는지다. 위치 1,000은 쪽당 10개로 100쪽을 넘긴 지점이다.
 
-| 행 수 | 위치 | offset, 인덱스 없음(지금) | offset + 인덱스 | keyset 상한 있음 | keyset 상한 없음 |
+| 행 수 | 위치 | offset, 인덱스 없음(전환 전) | offset + 인덱스 | keyset 상한 있음 | keyset 상한 없음 |
 | ---: | ---: | ---: | ---: | ---: | ---: |
 | 1만 | 50 | 3.29 | 0.12 | 0.14 | 0.13 |
 | 1만 | 1,000 | 6.96 | 0.24 | 0.12 | 0.25 |
@@ -253,21 +331,61 @@ offset 경로는 쪽마다 전체 건수를 센다. 화면에서 이 값을 읽�
 
 ### 9.7 이 실험이 말해 주지 않는 것
 
-- Hibernate가 만드는 SQL이 아니라 손으로 쓴 SQL을 쟀다. 바인드 파라미터 때문에 식이 더 계산될 수 있어 전환 단계에서 실제 SQL을 다시 봐야 한다. 서브쿼리 형태를 Hibernate로 만들 수 있는지도 API(`JpaSelectCriteria.from(Subquery)`)만 확인했고 돌려 보지 않았다.
+- Hibernate가 만드는 SQL이 아니라 손으로 쓴 SQL을 쟀다. 정정: Phase 2에서 실제 코드로 다시 쟀고 §9.8에 적었다.
 - 개발 PC의 Docker이고 운영 Supabase가 아니다. 동시 접속도 없다.
 - 쓰기 위치와 빈도는 가정이다. 실제 서비스의 쓰기 분포를 잰 값이 아니다.
-- 북마크·내 댓글의 조회 시간은 재지 않았다. 북마크 최신순·오래된순과 내 댓글은 키 형태가 최신순과 같아 비슷할 것으로 보지만 추론이다. 북마크 제목순(`left(title, 200)`)과 최근 열람순(`coalesce` 서브쿼리)은 첫 키가 계산식이라 검색처럼 식을 다시 계산하는 비용이 생길 수 있는데, 재지 않아 모른다.
+- 북마크·내 댓글의 조회 시간은 재지 않았다. 정정: §9.8에서 쟀다. 다만 그 측정도 10만 행 1회이고 쪽 사이 쓰기가 없다.
+
+### 9.8 실제 코드 경로 측정 (Phase 2)
+
+앞 절들은 손으로 쓴 SQL이다. 전환 뒤 저장소 메서드를 그대로 불러 다시 쟀다(직접 측정, 2026-11-05, 1회 실행). 글 10만 건(30%가 검색어 포함), 내 북마크·댓글 각 1만 건, 열람 5천 건이고, 위치는 1,000번째이며 Hibernate 시간까지 포함한다. 첫 회를 버린 5회의 중앙값이다. 운영과 같게 `jit=off`, `prepareThreshold=0`으로 맞췄다. 임베딩 컬럼은 비웠고 인덱스는 전환 뒤 상태라 §9.1의 "인덱스 없는 offset"과 다르다. 재현 소스는 [`CursorMeasureIntegrationTest.kt.txt`](../scripts/pagination-experiment/CursorMeasureIntegrationTest.kt.txt), 원본은 [`results/2026-11-05-code-path.md`](../scripts/pagination-experiment/results/2026-11-05-code-path.md)다.
+
+| 목록 | offset(본 쿼리 + count, ms) | cursor(ms) |
+| --- | --- | --- |
+| 피드 최신순 | 35.4 | 1.8 |
+| 피드 검색 | 928 | 566 |
+| 북마크 최신순 | 35.0 | 2.0 |
+| 북마크 제목순 | 453 | 40 |
+| 북마크 최근 열람순 | 75 | 27 |
+| 내 댓글 | 32.1 | 1.0 |
+
+- **Hibernate가 만든 SQL도 서브쿼리 형태 그대로다.** 바깥 WHERE·ORDER BY에 점수 식이 다시 나오지 않고 `offset 0 rows`가 붙는다. `CursorPaginationIntegrationTest`가 이 형태를 단정한다.
+- **검색의 차이 대부분은 count다.** count를 세는 검색 첫 쪽은 920ms, 세지 않는 뒤쪽은 566ms로 약 354ms 차이다. 이를 offset의 928ms에서 빼면 offset 본 쿼리는 약 574ms로 cursor와 비슷하다(따로 재지 않고 뺄셈으로 얻은 값). §9.3의 서브쿼리 형태와 같은 결과다.
+- **인덱스를 타는 목록은 인덱스 조건으로 시작 지점을 찾는다.** 같은 테스트가 `EXPLAIN`에 인덱스 이름과 `Index Cond`가 있고 `Sort`가 없는지 본다. 표가 작아 순차·비트맵 탐색을 끄고 확인하므로 "쓸 수 있는 형태"라는 뜻이다. 운영 계획은 배포 뒤 읽기 계정으로 본다.
+
+**제목순·최근 열람순의 형태 비교.** 같은 실행·같은 데이터에서 두 형태를 번갈아 쟀다(`BookmarkRepositoryImpl`의 `fetchRows`를 임시로 바꿔 측정, 조건은 위와 같다). 앞선 실행(`jit`·`prepareThreshold` 기본값)에서 두 형태가 돌려준 행이 네 위치 모두 같은 것을 확인했다.
+
+| 정렬 | 위치 | 파생 테이블(ms) | WHERE(ms) |
+| --- | --- | --- | --- |
+| 제목순 | 50 | 150.8 | 267.7 |
+| 제목순 | 1,000 | 41.2 | 51.4 |
+| 제목순 | 5,000 | 37.9 | 40.2 |
+| 제목순 | 9,000 | 36.3 | 33.7 |
+| 최근 열람순 | 50 | 36.9 | 29.5 |
+| 최근 열람순 | 1,000 | 36.9 | 27.0 |
+| 최근 열람순 | 5,000 | 36.0 | 17.9 |
+| 최근 열람순 | 9,000 | 35.7 | 13.9 |
+
+- **최근 열람순은 WHERE가 모든 위치에서 빠르다.** 키가 북마크 행과 열람 기록만으로 계산돼, `EXPLAIN`에서 조건이 `bookmarks` 탐색에 붙고 5,000번째 위치의 `posts` 조회가 5,000회로 준다. 파생 테이블은 1만 행을 전부 조인한다(`posts` 10만 행 순차 탐색, 약 24ms). 위치가 깊을수록 차이가 커진다.
+- **제목순은 파생 테이블이 대체로 빠르다.** `left(p.title, 200)`이 글 표의 컬럼이라 WHERE의 조건이 `posts` 탐색 전체로 내려간다. 맨 뒤쪽(9,000번째)만 WHERE가 근소하게 빠르다.
+- **제목순 50번째가 유독 느린 이유는 찾지 못했다.** 두 형태 모두 느리고, 파생 테이블 계획에서는 필터 단계에 시간이 몰린다(1,000번째 약 11ms, 50번째 약 76ms). 문자열 비교로 보이지만 확인하지 못했다. 테스트 DB는 libc 콜레이션이고 운영은 ICU라 운영의 값은 다를 수 있다.
+- 글 표와 북마크 표의 비율이 달라지면 조인 방식이 바뀌어 숫자도 달라질 수 있다. 이 표는 글 10만·북마크 1만 조건의 결과다.
 
 ## 10. 시행착오
 
 - **"검색 cursor는 위험하다"는 초기 판단은 근거가 없었다.** 처음에는 의미 점수가 쪽 사이에 바뀌면 cursor가 더 많이 놓칠 거라고 봤다. 공개 글 328개로 시뮬레이션하니 offset과 비슷했고, 운영 로그 30일에서 같은 검색어의 상태가 바뀐 경우는 16쌍 중 0건이었다(표본이 작다).
 - **"정렬 메모리만 줄고 속도는 같을 것"도 틀렸다.** 첫 실행에서 공용 형태의 검색이 offset의 2배로 나왔다. 식을 WHERE에서 다시 계산하는 탓이라는 가설을 세우고 상한 없음·서브쿼리 형태를 추가해 확인했다. 10만·100만 행에서 계산 횟수가 3 → 2 → 1번으로 줄수록 시간이 줄었다(1만 행은 병렬 실행 여부가 달라 이 순서가 아니다).
+- **Hibernate 파생 테이블은 스파이크로 먼저 확인했다.** `offset(Number)`는 `offset ? rows`를 만들고 `offset(cb.literal(0))`이 측정한 형태인 `offset 0 rows`를 만든다. `MATERIALIZED` CTE(`query.with(sub)`)는 `Already registered a copy` 오류로 실패해 쓰지 않았다(둘 다 Hibernate 6.6.53).
+- **상관 서브쿼리의 경로를 바꿨다.** 열람 시각 서브쿼리에서 옛 코드처럼 `postJoin.get("id")`를 쓰면 Hibernate가 서브쿼리 안에 `posts`를 한 번 더 조인했다. `bookmarkRoot.get("postId")`로 바꿔 없앴다.
+- **"계산식이면 파생 테이블"은 틀린 일반화였다.** 검색 점수의 결과를 제목순·최근 열람순에도 적용해 구현했는데, 계획 대조에서 "직접 잰 값이 없다"는 지적을 받고 재 보니 최근 열람순은 WHERE가 최대 2.6배 빨랐다. 싼 식은 재계산 비용보다 조인 전에 걸러지는 이득이 크다(§5.2).
+- **형태를 비교하기 전에 운영 설정부터 맞춰야 했다.** 테스트 기본값(`jit=on`, `prepareThreshold=5`)으로 재면 JIT 비용이 더해지고 5회 뒤 계획을 재사용해, 같은 쿼리가 실행 순서에 따라 35ms와 44ms로 갈렸다. 운영의 `jit=off`, `prepareThreshold=0`으로 맞추니 분산이 사라졌다. JIT가 제목순 50번째를 느리게 한다는 가설도 세웠지만, 계획에 JIT가 없고 꺼도 같아서 틀렸다.
+- **테스트 DB와 운영의 콜레이션이 다르다.** 테스트 컨테이너는 libc `en_US.utf8`이라 `'힣' > '제목 3'`이 거짓이고, 운영은 ICU라 참이다. cursor 비교와 `ORDER BY`가 같은 콜레이션을 쓰므로 어느 쪽에서든 일관되지만, 한글 제목 순서를 단정하는 테스트는 테스트 DB에서 어긋난다. 그래서 제목 순서 테스트는 ASCII로 쓴다.
 - **처음 정한 누락 지표는 공정하지 않았다.** "시작 시점 상위 500개 중 못 본 글"로 시작했는데, 새 글 때문에 아직 도달하지 못한 글까지 누락으로 셌다. 쪽 사이 100건에서 offset이 "중복 0, 고유 500"으로 멀쩡해 보이기도 했는데, 실제로는 새 글만 보고 있었다. 그래서 "도달"을 재고 누락을 값 변경 여부로 나눴다.
 
 ## 11. 남은 것
 
-- 전환 여부와 검색 형태 결정 — [계획](plans/2026-11-05-cursor-pagination.md) Phase 2 이후는 이 결과를 본 뒤 정한다.
-- 앞에서 찾은 결함 2건(§4)은 전환하면 함께 해결되고, 전환하지 않으면 따로 고쳐야 한다.
+- [계획](plans/2026-11-05-cursor-pagination.md) Phase 3: FE를 cursor로 바꾸고 조회수순을 없앤다. 앞에서 찾은 결함 2건(§4)은 이때 함께 해결된다.
+- Phase 4: Phase 3 배포 후 최소 7일 뒤에 `page` 경로와 옛 응답 필드를 없앤다.
 - 범위 밖: 결과 스냅샷, 전용 검색 엔진, 임베딩 캐시, 목록 조회에서 쓰지 않는 `embedding` 컬럼 제외.
 
 ## 12. 용어 사전
@@ -278,6 +396,7 @@ offset 경로는 쪽마다 전체 건수를 센다. 화면에서 이 값을 읽�
 | cursor | keyset의 키 값을 담아 클라이언트에 건네는 불투명 문자열. API 계약 쪽 이름이다 |
 | 상한 | `k1 <= x`처럼 OR 조건 앞에 덧붙이는 중복 조건. 논리상 없어도 되지만 인덱스 범위 탐색을 가능하게 한다 |
 | 동점 해소 키 | 정렬 값이 같을 때 순서를 정하는 고유 키(`id` 등). 없으면 쪽 경계에서 순서가 흔들린다 |
+| 파생 테이블 | `FROM (SELECT ...) x`처럼 FROM에 쓴 서브쿼리. `offset 0`을 붙이면 Postgres가 바깥 쿼리로 합치지 못해 안쪽 식을 한 번만 계산한다 |
 | K | 의미 매칭 임계값 안에 든 후보 글 수. SQL에 `CASE`·`IN` 목록으로 실린다 |
 | top-N heapsort | 상위 N개만 메모리에 유지하는 정렬. N이 작으면 메모리를 거의 안 쓴다 |
 | external merge | `work_mem`을 넘어 디스크를 쓰는 정렬 |
@@ -287,5 +406,6 @@ offset 경로는 쪽마다 전체 건수를 센다. 화면에서 이 값을 읽�
 
 - [`plans/2026-11-05-cursor-pagination.md`](plans/2026-11-05-cursor-pagination.md) — 전환 계획과 판단 근거
 - [`scripts/pagination-experiment/results/2026-11-05.md`](../scripts/pagination-experiment/results/2026-11-05.md) — 실험 원본 출력(실행 계획 포함)
+- [`scripts/pagination-experiment/results/2026-11-05-code-path.md`](../scripts/pagination-experiment/results/2026-11-05-code-path.md) — 실제 코드 경로 측정 원본
 - [`TRAFFIC-MANAGEMENT.md`](TRAFFIC-MANAGEMENT.md) — 검색 호출 제한과 강등
 - FE 레포 `docs/POST.md` — 무한 스크롤 동작

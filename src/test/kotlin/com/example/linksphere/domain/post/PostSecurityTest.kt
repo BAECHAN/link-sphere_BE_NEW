@@ -15,8 +15,18 @@ import com.example.linksphere.global.config.SecurityConfig
 import com.example.linksphere.global.config.security.CustomAccessDeniedHandler
 import com.example.linksphere.global.config.security.CustomAuthenticationEntryPoint
 import com.example.linksphere.global.exception.DuplicatePostException
+import com.example.linksphere.global.exception.InvalidInputException
 import jakarta.servlet.http.Cookie
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
+import org.mockito.ArgumentMatchers
+import org.mockito.ArgumentMatchers.anyBoolean
+import org.mockito.ArgumentMatchers.anyInt
+import org.mockito.ArgumentMatchers.anyString
+import org.mockito.ArgumentMatchers.eq
+import org.mockito.ArgumentMatchers.isNull
+import org.mockito.Mockito.mockingDetails
+import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.verifyNoInteractions
 import org.mockito.Mockito.`when`
@@ -180,7 +190,7 @@ class PostSecurityTest {
     fun `토큰 없이 조회하면 지금처럼 비로그인으로 목록을 준다`() {
         `when`(postService.getAllPosts(null, null, "isPrivate", null, 0, 10, null, true)).thenReturn(emptyPage)
 
-        mockMvc.perform(get("/post").param("filter", "isPrivate"))
+        mockMvc.perform(get("/post").param("filter", "isPrivate").param("page", "0"))
             .andExpect(status().isOk)
 
         verify(postService).getAllPosts(null, null, "isPrivate", null, 0, 10, null, true)
@@ -193,10 +203,61 @@ class PostSecurityTest {
         `when`(memberSessionService.checkAccessToken("valid-token")).thenReturn(AccessTokenCheck.Valid(memberId, UUID.randomUUID(), MemberRole.USER))
         `when`(postService.getAllPosts(null, null, "isPrivate", null, 0, 10, memberId, true)).thenReturn(emptyPage)
 
-        mockMvc.perform(get("/post").param("filter", "isPrivate").header("X-Access-Token", "valid-token"))
+        mockMvc.perform(get("/post").param("filter", "isPrivate").param("page", "0").header("X-Access-Token", "valid-token"))
             .andExpect(status().isOk)
 
         verify(postService).getAllPosts(null, null, "isPrivate", null, 0, 10, memberId, true)
+    }
+
+    // any()의 실제 반환값(null)을 Kotlin 비-null 인자에 그대로 넘기면 NPE가 난다 - PostServiceTest.anyUuid와 같은 우회
+    private fun anyEmbeddingGate(): () -> Boolean {
+        ArgumentMatchers.any<() -> Boolean>()
+        return { true }
+    }
+
+    @Test
+    fun `page 없이 조회하면 cursor로 읽고 호출 한도는 서비스가 임베딩을 부를 때만 쓴다`() {
+        `when`(postService.getPostsByCursor(isNull(), eq("spring"), isNull(), isNull(), eq("next"), eq(5), isNull(), anyEmbeddingGate()))
+            .thenAnswer { invocation ->
+                assertEquals(0, mockingDetails(rateLimitService).invocations.size)
+                invocation.getArgument<() -> Boolean>(7).invoke()
+                PostPageResponse(emptyList(), nextCursor = "after-next")
+            }
+
+        mockMvc.perform(get("/post").param("search", "spring").param("cursor", "next").param("size", "5"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.data.nextCursor").value("after-next"))
+
+        assertEquals(1, mockingDetails(rateLimitService).invocations.size)
+        verify(postService, never()).getAllPosts(isNull(), anyString(), isNull(), isNull(), anyInt(), anyInt(), isNull(), anyBoolean())
+    }
+
+    // 옛 번들은 항상 page를 보낸다. 옛 응답 필드를 그대로 채워야 다음 쪽 계산이 깨지지 않는다.
+    @Test
+    fun `page를 보내면 옛 경로로 읽고 옛 응답 필드를 채운다`() {
+        `when`(rateLimitService.tryConsume(isNull(), anyInt(), anyDuration())).thenReturn(true)
+        `when`(postService.getAllPosts(null, "spring", null, null, 2, 10, null, true)).thenReturn(emptyPage)
+
+        mockMvc.perform(get("/post").param("search", "spring").param("page", "2").param("cursor", "ignored"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.data.page").value(0))
+            .andExpect(jsonPath("$.data.totalElements").value(0))
+            .andExpect(jsonPath("$.data.last").value(true))
+    }
+
+    @Test
+    fun `잘못된 cursor는 400 INVALID_INPUT을 준다`() {
+        `when`(postService.getPostsByCursor(isNull(), isNull(), isNull(), isNull(), eq("broken"), eq(10), isNull(), anyEmbeddingGate()))
+            .thenThrow(InvalidInputException("Invalid cursor"))
+
+        mockMvc.perform(get("/post").param("cursor", "broken"))
+            .andExpect(status().isBadRequest)
+            .andExpect(jsonPath("$.code").value("INVALID_INPUT"))
+    }
+
+    private fun anyDuration(): Duration {
+        ArgumentMatchers.any<Duration>()
+        return Duration.ZERO
     }
 
     @Test
