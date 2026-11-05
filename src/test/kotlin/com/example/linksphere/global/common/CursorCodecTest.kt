@@ -20,7 +20,7 @@ class CursorCodecTest {
 
     @Test
     fun `키와 상태를 값 그대로 왕복한다`() {
-        val keys = listOf<Comparable<*>>(19.606656001953125, time, id)
+        val keys = listOf<Comparable<*>>(196067L, time, id)
 
         val state = CursorCodec.decode(CursorCodec.encode("RELEVANCE", keys, semantic = true, corrected = true), "RELEVANCE", types)
 
@@ -66,12 +66,13 @@ class CursorCodecTest {
                 rawCursor("not json"),
                 rawCursor("""{"v":1,"sort":"RELEVANCE"}"""),
                 // 다른 버전, 키 개수 불일치
-                rawCursor("""{"v":99,"sort":"RELEVANCE","keys":["1.0","2026-11-05T12:00:00","$id"]}"""),
-                rawCursor("""{"v":1,"sort":"RELEVANCE","keys":["1.0"]}"""),
+                rawCursor("""{"v":99,"sort":"RELEVANCE","keys":["10000","2026-11-05T12:00:00","$id"]}"""),
+                rawCursor("""{"v":1,"sort":"RELEVANCE","keys":["10000"]}"""),
                 // 키 타입 불일치
                 rawCursor("""{"v":1,"sort":"RELEVANCE","keys":["abc","2026-11-05T12:00:00","$id"]}"""),
-                rawCursor("""{"v":1,"sort":"RELEVANCE","keys":["1.0","어제","$id"]}"""),
-                rawCursor("""{"v":1,"sort":"RELEVANCE","keys":["1.0","2026-11-05T12:00:00","not-a-uuid"]}"""),
+                rawCursor("""{"v":1,"sort":"RELEVANCE","keys":["84.5","2026-11-05T12:00:00","$id"]}"""),
+                rawCursor("""{"v":1,"sort":"RELEVANCE","keys":["10000","어제","$id"]}"""),
+                rawCursor("""{"v":1,"sort":"RELEVANCE","keys":["10000","2026-11-05T12:00:00","not-a-uuid"]}"""),
             )
 
         invalid.forEach { cursor ->

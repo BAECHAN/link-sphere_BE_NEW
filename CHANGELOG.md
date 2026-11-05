@@ -108,6 +108,17 @@
 
 ### Fixed
 
+- `post`·`interaction` 의미 검색 cursor로 이어 읽을 때 쪽 경계의 글이 다시 나오던 문제
+  <details><summary>배경·구현</summary>
+
+  운영 DB의 `extra_float_digits`가 0이라 실수 점수가 유효숫자 15자리로 반올림돼 cursor 값이 실제 점수와 달라졌다. 위로 반올림된
+  글은 다음 쪽 조건을 다시 만족해 또 나왔다. 테스트 DB는 설정이 달라 통과했고, 배포 뒤 운영 순회에서 찾았다. FE 전환 전이라 사용자
+  영향은 없었다. 점수 키를 `cast(점수 * 10000 as bigint)`로 바꿔 출력 설정과 무관하게 왕복한다. 운영 설정을 흉내 낸 테스트를
+  피드·북마크에 더했다. 상세는 `docs/PAGINATION.md` §9.9.
+  ([PR #165](https://github.com/BAECHAN/link-sphere_BE_NEW/pull/165))
+
+  </details>
+
 - `auth` 이메일 인증·비밀번호 재설정 메일 링크가 FE 404 화면으로 가던 문제
   <details><summary>배경·구현</summary>
 

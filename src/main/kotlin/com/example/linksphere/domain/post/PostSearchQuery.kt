@@ -57,6 +57,9 @@ object PostSearchQuery {
     private const val SEMANTIC_WEIGHT = 20.0
     private const val MAX_COSINE_DISTANCE = 0.30
 
+    // cursor 점수 키의 단위. 소수 넷째 자리까지 본다
+    private const val SCORE_KEY_SCALE = 10_000
+
     // 제거할 기호를 명시적으로 나열한다 - `[^[:alnum:]]` 같은 부정 문자 클래스는 쓰지 않는다.
     // DB의 LC_CTYPE에 따라 한글이 "영숫자"로 인식되지 않으면 한글까지 통째로 지워질 수
     // 있어서다(Supabase 로케일 미확인, 안전한 쪽으로 방어). `]`를 목록 맨 앞에, `-`를 맨
@@ -184,10 +187,11 @@ object PostSearchQuery {
     }
 
     /**
-     * cursor 정렬 키로 쓰는 점수. 의미 점수가 없으면 정수, 있으면 실수라 cursor에서 되돌릴 타입이 하나가 되도록 double로 맞춘다.
-     * asDouble()은 SQL cast를 만들지만 JPA의 as()는 만들지 않는다.
+     * cursor 정렬 키로 쓰는 점수. 소수 넷째 자리까지 본 정수다. 실수로 두면 운영 DB(extra_float_digits=0)가 유효숫자 15자리로
+     * 반올림해 보내 cursor 값이 실제 점수와 달라지고, 위로 반올림된 글이 다음 쪽에 다시 나온다(docs/PAGINATION.md §9.9).
+     * asLong()은 SQL cast를 만들지만 JPA의 as()는 만들지 않는다. Postgres는 float8을 bigint로 cast할 때 반올림한다.
      */
-    fun relevanceKey(cb: CriteriaBuilder, from: From<*, TablePost>, tokens: List<String>, semanticMatches: Map<UUID, Double> = emptyMap()): Expression<Double> = (relevanceScore(cb, from, tokens, semanticMatches) as JpaExpression<Number>).asDouble()
+    fun relevanceKey(cb: CriteriaBuilder, from: From<*, TablePost>, tokens: List<String>, semanticMatches: Map<UUID, Double> = emptyMap()): Expression<Long> = (cb.prod(relevanceScore(cb, from, tokens, semanticMatches), cb.literal(SCORE_KEY_SCALE)) as JpaExpression<Number>).asLong()
 
     private fun caseInt(cb: CriteriaBuilder, cond: Predicate, weight: Int): Expression<Int> = cb.selectCase<Int>().`when`(cond, cb.literal(weight)).otherwise(cb.literal(0))
 

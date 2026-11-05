@@ -715,7 +715,7 @@ class PostServiceTest {
 
     // ── cursor 목록 ──────────────────────────────────────
 
-    private val relevanceKeys = listOf<Comparable<*>>(8.0, LocalDateTime.of(2026, 11, 5, 12, 0, 0, 123_456_000), UUID.randomUUID())
+    private val relevanceKeys = listOf<Comparable<*>>(80000L, LocalDateTime.of(2026, 11, 5, 12, 0, 0, 123_456_000), UUID.randomUUID())
 
     private fun relevanceCursor(semantic: Boolean, corrected: Boolean? = null) = CursorCodec.encode(PostListSort.RELEVANCE.name, relevanceKeys, semantic, corrected)
 
