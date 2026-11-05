@@ -536,6 +536,9 @@ if (memberActionTokenRepository.consumeIfActive(token.id, Instant.now()) == 0) {
   `PostViewRepository.upsertView`, `AuthRateLimitRepository.incrementHit`
 - **원자적 카운터**는 `UPDATE … SET view_count = COALESCE(view_count, 0) + 1`(`PostRepository.incrementViewCount`).
   좋아요·북마크·댓글 수는 저장하지 않고 매번 센다.
+- **조회 기록은 읽기와 나눈다**. `GET /post/{id}`는 쓰지 않고, 상세 화면이 뜰 때 FE가 부르는 `POST /post/{id}/view`
+  (`PostService.recordView`)만 조회수와 `post_views`를 바꾼다. 같은 GET을 hover 미리 받기·탭 복귀 재조회·수정 화면도
+  보내 조회로 세졌기 때문이다(`docs/plans/2026-11-05-post-view-record.md`).
 
 ### 7-4. 삭제는 일괄 DELETE
 

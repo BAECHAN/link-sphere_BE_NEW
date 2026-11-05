@@ -152,23 +152,7 @@ class PostServiceTest {
     }
 
     @Test
-    fun `getPostById 는 증가 뒤 DB에서 다시 읽은 조회수를 응답에 싣는다`() {
-        val ownerId = UUID.randomUUID()
-        val postId = UUID.randomUUID()
-        val post = TablePost(id = postId, userId = ownerId, url = "https://example.com", title = "제목", isPrivate = false)
-
-        `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
-        stubAssemblerResponse(postId) // 엔티티로 조립한 응답은 증가 전 값(0)
-        `when`(postRepository.findViewCountById(postId)).thenReturn(8)
-
-        val result = postService.getPostById(postId, null)
-
-        assertEquals(8, result.stats.viewCount)
-        verify(postRepository).incrementViewCount(postId)
-    }
-
-    @Test
-    fun `getPostById 는 로그인 사용자가 조회하면 post_views 를 upsert 한다`() {
+    fun `getPostById 는 조회수와 post_views 를 바꾸지 않는다`() {
         val ownerId = UUID.randomUUID()
         val postId = UUID.randomUUID()
         val post = TablePost(id = postId, userId = ownerId, url = "https://example.com", title = "제목", isPrivate = false)
@@ -178,20 +162,50 @@ class PostServiceTest {
 
         postService.getPostById(postId, ownerId)
 
-        verify(postViewRepository).upsertView(ownerId, postId)
+        verify(postRepository, never()).incrementViewCount(anyUuid())
+        verifyNoInteractions(postViewRepository)
     }
 
     @Test
-    fun `getPostById 는 비로그인 사용자가 조회하면 post_views 를 건드리지 않는다`() {
+    fun `recordView 는 로그인 사용자면 조회수를 올리고 post_views 를 upsert 한다`() {
         val ownerId = UUID.randomUUID()
         val postId = UUID.randomUUID()
         val post = TablePost(id = postId, userId = ownerId, url = "https://example.com", title = "제목", isPrivate = false)
 
         `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
-        stubAssemblerResponse(postId)
 
-        postService.getPostById(postId, null)
+        postService.recordView(postId, ownerId)
 
+        verify(postRepository).incrementViewCount(postId)
+        verify(postViewRepository).upsertView(ownerId, postId)
+    }
+
+    @Test
+    fun `recordView 는 비로그인이면 조회수만 올리고 post_views 를 건드리지 않는다`() {
+        val ownerId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val post = TablePost(id = postId, userId = ownerId, url = "https://example.com", title = "제목", isPrivate = false)
+
+        `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
+
+        postService.recordView(postId, null)
+
+        verify(postRepository).incrementViewCount(postId)
+        verifyNoInteractions(postViewRepository)
+    }
+
+    @Test
+    fun `recordView 는 남의 비공개 글이면 PostNotFoundException 이고 기록하지 않는다`() {
+        val ownerId = UUID.randomUUID()
+        val otherUserId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+
+        `when`(postRepository.findById(postId)).thenReturn(Optional.of(privatePost(postId, ownerId)))
+
+        assertThrows(PostNotFoundException::class.java) {
+            postService.recordView(postId, otherUserId)
+        }
+        verify(postRepository, never()).incrementViewCount(anyUuid())
         verifyNoInteractions(postViewRepository)
     }
 

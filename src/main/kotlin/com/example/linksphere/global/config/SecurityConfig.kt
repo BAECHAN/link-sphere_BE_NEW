@@ -72,6 +72,9 @@ class SecurityConfig(
                     "/post/*/comment",
                 )
                     .access { _, context -> AuthorizationDecision(context.request.getAttribute("exception") == null) }
+                // 상세 화면이 뜰 때 FE가 보내는 조회 기록 - 비로그인 조회도 세고, 규칙은 위 공개 조회와 같다
+                it.requestMatchers(HttpMethod.POST, "/post/*/view")
+                    .access { _, context -> AuthorizationDecision(context.request.getAttribute("exception") == null) }
                 it.anyRequest().authenticated()
             }
             .exceptionHandling {

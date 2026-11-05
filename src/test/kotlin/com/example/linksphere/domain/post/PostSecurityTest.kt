@@ -31,8 +31,8 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import java.util.UUID
 
 /**
- * 공개 조회(GET /post, /post/{id}, /post/{id}/comment)가 만료·무효 토큰을 비로그인으로 삼키지 않고 401을
- * 돌려주는지 실제 SecurityConfig·SessionAuthenticationFilter·진입점으로 검증한다. 다른 컨트롤러 테스트는
+ * 공개 조회(GET /post, /post/{id}, /post/{id}/comment)와 조회 기록(POST /post/{id}/view)이 만료·무효 토큰을 비로그인으로
+ * 삼키지 않고 401을 돌려주는지 실제 SecurityConfig·SessionAuthenticationFilter·진입점으로 검증한다. 다른 컨트롤러 테스트는
  * 보안 체인을 빼고 돌아 이 규칙을 볼 수 없다(docs/plans/2026-10-20-public-get-expired-token-401.md).
  */
 @WebMvcTest(controllers = [PostController::class, CommentController::class, AuthController::class])
@@ -115,6 +115,39 @@ class PostSecurityTest {
             .andExpect(jsonPath("$.code").value("TOKEN_EXPIRED"))
 
         verifyNoInteractions(postService, commentService)
+    }
+
+    @Test
+    fun `토큰 없이 조회를 기록하면 비로그인으로 기록한다`() {
+        val postId = UUID.randomUUID()
+
+        mockMvc.perform(post("/post/$postId/view"))
+            .andExpect(status().isOk)
+
+        verify(postService).recordView(postId, null)
+    }
+
+    @Test
+    fun `유효 토큰으로 조회를 기록하면 본인으로 기록한다`() {
+        val userId = UUID.randomUUID()
+        `when`(memberSessionService.checkAccessToken("valid-token")).thenReturn(AccessTokenCheck.Valid(userId, UUID.randomUUID(), MemberRole.DEMO))
+        val postId = UUID.randomUUID()
+
+        mockMvc.perform(post("/post/$postId/view").header("X-Access-Token", "valid-token"))
+            .andExpect(status().isOk)
+
+        verify(postService).recordView(postId, userId)
+    }
+
+    @Test
+    fun `만료 토큰으로 조회를 기록하면 401 TOKEN_EXPIRED를 주고 기록하지 않는다`() {
+        `when`(memberSessionService.checkAccessToken("expired-token")).thenReturn(AccessTokenCheck.Expired)
+
+        mockMvc.perform(post("/post/${UUID.randomUUID()}/view").header("X-Access-Token", "expired-token"))
+            .andExpect(status().isUnauthorized)
+            .andExpect(jsonPath("$.code").value("TOKEN_EXPIRED"))
+
+        verifyNoInteractions(postService)
     }
 
     @Test

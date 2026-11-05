@@ -32,6 +32,18 @@
 
 ### Changed
 
+- `post` 조회수·열람 기록을 `GET /post/{id}`에서 `POST /post/{id}/view`로 옮김
+  <details><summary>배경·구현</summary>
+
+  상세 GET이 글을 돌려주면서 조회수를 올리고 `post_views`를 갱신해, 같은 GET을 보내는 카드 hover 미리 받기·탭 복귀 재조회·
+  수정 화면·CI Lighthouse까지 조회로 세졌다. GET은 읽기만 하게 하고(`readOnly` 트랜잭션), 상세 화면이 뜰 때 FE가 부르는
+  `POST /post/{id}/view`(`PostService.recordView`)만 기록한다. 비로그인 조회도 세려고 공개 조회와 같은 보안 규칙을 걸었고,
+  응답에 숫자는 싣지 않는다. 쓰이지 않게 된 `findViewCountById`는 지웠다. 계획 `docs/plans/2026-11-05-post-view-record.md`.
+  (`PostService.kt`, `PostController.kt`, `PostRepository.kt`, `SecurityConfig.kt`,
+  [PR #159](https://github.com/BAECHAN/link-sphere_BE_NEW/pull/159))
+
+  </details>
+
 - `config` OpenAPI 스펙에 요청 입력 한도를 싣고 비밀번호 형식 규칙을 정규식 하나로 합침
   <details><summary>배경·구현</summary>
 
