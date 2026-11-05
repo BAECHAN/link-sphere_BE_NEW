@@ -78,6 +78,13 @@
 
 ### Changed
 
+- `infra` 복원 뒤 첫 작업 발행이 어느 구간에서 시간을 쓰는지 로그로 남김
+  <details><summary>배경·구현</summary>
+
+  첫 발행 약 1.7초가 무엇으로 이루어졌는지 재지 않은 채 AWS SDK 워밍을 넣어, 원인이 추정으로 남아 있었다. `LambdaSelfInvoker`가 인스턴스의 첫 발행에서 JSON 직렬화·요청 조립·클라이언트 생성과 SDK 지표(`CoreMetric`: 자격 증명·서명·서비스 호출 등) 시간을 한 줄 남긴다. `MetricPublisher.publish`에서 던진 예외는 `invoke` 밖으로 그대로 나가서(SDK 2.57.4 직접 확인) publisher는 값만 담고, 로그는 `invoke`가 끝난 뒤에 만든다. 발행 동작과 응답은 같고 로그만 인스턴스당 1줄 는다. 값의 의미와 쿼리는 `docs/PERFORMANCE.md` §4.6·§7. (`LambdaSelfInvoker.kt`, `LambdaSelfInvokerTimingTest.kt`, [PR #168](https://github.com/BAECHAN/link-sphere_BE_NEW/pull/168))
+
+  </details>
+
 - `infra` 복원 뒤 첫 작업 발행·메일 발송이 덜 늦도록 AWS SDK를 스냅샷 전에 데움
   <details><summary>배경·구현</summary>
 

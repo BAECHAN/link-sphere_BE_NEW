@@ -150,15 +150,44 @@ TLS 연결도 그대로다. 메일 쪽은 `MailService`가 실패 때만 로그�
 노트북은 Lambda가 아니고 복원 뒤 자격 증명 경로를 재현하지 못해 비율만 참고한다. 같은 비율이면 운영 첫 발행은 약 650ms로,
 아래 목표에 못 미칠 수 있다(단순 환산, 측정 아님). `SdkWarmUp` 자체 시간은 버전 발행 때의 init에만 든다.
 
+**구간 로그(2026-11-05 추가).** 1.7초의 구성은 재지 않은 추정이라, `LambdaSelfInvoker`가 인스턴스의 첫 발행에서 구간별 시간을 한 줄
+남긴다. 둘째 발행부터는 찍지 않는다. 워밍이 들어간 뒤의 값이므로 원래 1.7초의 구성은 새 합계와의 차이로 간접적으로만 알 수 있다.
+
+```
+[LambdaSelfInvoker] 첫 발행 구간 - commentId: 1, totalMs=…, jsonMs=…, requestMs=…, clientMs=…, apiMs=…, credentialsMs=…, endpointMs=…, marshallingMs=…, signingMs=…, serviceCallMs=…, unmarshallingMs=…, retries=0
+```
+
+| 값 | 잰 구간 |
+| --- | --- |
+| `totalMs` | 아래 넷의 합에 가깝고, 위임 로그에서 `작업 발행` 로그까지의 간격과 거의 같다 |
+| `jsonMs`, `requestMs` | 작업 내용 JSON 직렬화, `InvokeRequest` 조립 |
+| `clientMs` | `by lazy` 클라이언트 생성 |
+| `apiMs` | SDK `invoke` 전체(`ApiCallDuration`). 아래 값의 합을 뺀 나머지는 SDK 내부 처리다 |
+| `credentialsMs`, `endpointMs`, `marshallingMs`, `signingMs`, `unmarshallingMs` | 자격 증명 읽기, 엔드포인트 결정, 요청 직렬화, 서명, 응답 해석 |
+| `serviceCallMs` | 연결부터 응답 첫 바이트까지. 첫 호출 172ms, 둘째 66ms로 새 연결 비용이 여기 들어간다(직접 측정, 1회) |
+
+로컬 구간 값(직접 측정, 2026-11-05). 실제 `LambdaSelfInvoker`를 로컬 가짜 Lambda API(`aws.endpointUrlLambda`)로 새 JVM마다 돌린 각 5회의
+p50이다. TLS와 AWS 왕복이 없고 작업 내용이 단순한 `Map`이라 운영 값이 아니라 로그가 찍히는지와 구간의 크기만 본다.
+
+| | `totalMs` | `jsonMs` | `requestMs` | `clientMs` | `apiMs` |
+| --- | --- | --- | --- | --- | --- |
+| 워밍 없음 | 199 | 9 | 4 | 122 | 58 |
+| 워밍 있음 | 38 | 9 | 1 | 5 | 21 |
+
+측정 코드 비용은 작다. 위 "로컬 비교"와 같은 방식(실제 TLS)으로 워밍 뒤 첫 호출 p50이 publisher 없이 189ms, 있으면 201ms였다(직접 측정,
+각 5회, 오차 범위).
+
 **판정 기준(우리 판단, 외부 기준 아님).** 새 버전의 첫 발행 5건 이상에서 p50 500ms 이하이고 이후 발행이 그대로면 달성으로 본다.
 Restore Duration(기준선: 최근 14일 n=499, p50 684ms, p90 944ms, 최대 1,412ms)이 p50 기준 200ms 넘게 늘면 득실을 다시 본다.
-못 미치면 남은 구간을 재서 별도로 다룬다.
+못 미치면 구간 로그로 남은 비용을 보고 별도로 다룬다.
 
 제약:
 - 실패해도 부팅은 계속한다 — 이 최적화 때문에 배포가 막히지 않게 한다
 - 실제 클라이언트는 `by lazy` 그대로다. `SdkWarmUp`은 별도 임시 클라이언트로 돈다
 - 배포 관문(`deploy.yml`의 새 버전 직접 호출)은 `GET /api/post`만 불러 self-invoke를 지나지 않는다. 배포 뒤 `작업 발행` 로그의
   `statusCode`를 따로 확인한다
+- `MetricPublisher.publish`에서 던진 예외는 SDK가 `invoke` 밖으로 그대로 던진다(2.57.4 직접 확인). 측정이 발행을 깨지 않게 publisher는
+  값만 담고, 로그는 `invoke`가 끝난 뒤에 만든다
 
 ---
 
@@ -437,7 +466,13 @@ filter @type = "REPORT" and @message like /Restore Duration/
 | stats count() as n, pct(r, 50) as p50, pct(r, 90) as p90, max(r) as maxR
 ```
 
-배포 시각을 시작 시간으로 잡으면 새 버전만 잡힌다.
+배포 시각을 시작 시간으로 잡으면 새 버전만 잡힌다. 구간별 시간은 구간 로그를 쪼개 본다.
+
+```
+filter @message like /첫 발행 구간/
+| parse @message /totalMs=(?<total>\d+), jsonMs=(?<json>\d+), requestMs=(?<req>\d+), clientMs=(?<client>\d+), apiMs=(?<api>\d+), credentialsMs=(?<cred>\d+), endpointMs=(?<endpoint>\d+), marshallingMs=(?<marshal>\d+), signingMs=(?<sign>\d+), serviceCallMs=(?<call>\d+), unmarshallingMs=(?<unmarshal>\d+)/
+| stats count() as n, pct(total, 50) as totalP50, pct(json, 50) as jsonP50, pct(req, 50) as reqP50, pct(client, 50) as clientP50, pct(api, 50) as apiP50, pct(cred, 50) as credP50, pct(sign, 50) as signP50, pct(call, 50) as callP50
+```
 
 ---
 
