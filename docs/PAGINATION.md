@@ -410,16 +410,17 @@ flowchart TD
 
 ### 9.10 FE 전환 뒤 운영 확인 (Phase 3)
 
-[FE #549](https://github.com/BAECHAN/link-sphere_FE_NEW/pull/549)를 배포한 뒤 확인했다(2026-11-05, 직접 측정). 운영 `version.json`의 sha가 배포 커밋 `f69f55d5`와 같은 것을 먼저 봤다.
+[FE #549](https://github.com/BAECHAN/link-sphere_FE_NEW/pull/549)를 배포한 뒤 확인했다(2026-11-05, 사용자 확인 행 말고는 직접 측정). 운영 `version.json`의 sha가 배포 커밋 `f69f55d5`와 같은 것을 먼저 봤다.
 
 | 확인 | 결과 |
 | --- | --- |
 | 운영 사이트 피드 스크롤(비로그인) | 5쪽 50건이 모두 다름, 요청에 `page=` 없음, 모두 200 |
 | 전환한 FE를 로컬에서 운영 BE로 띄워 피드 스크롤(배포 전, 비로그인) | 7쪽 70건이 모두 다름 |
 | 같은 환경에서 `react` 검색 스크롤 | 3쪽 22건이 모두 다름, 마지막 쪽 `nextCursor` 없음 |
-| 글 삭제 뒤 다음 쪽, 북마크, 내 댓글 | 모킹 녹화로만 확인 |
+| 글 삭제 뒤 다음 쪽 | 모킹 녹화로만 확인 |
+| 북마크 폴더, 내 댓글을 로그인 계정으로 끝까지 스크롤 | 사용자 확인, 문제없음 |
 
-**북마크와 내 댓글을 실제 계정으로 끝까지 넘겨 보지는 않았다.** 녹화에 쓸 로그인 쿠키가 없었다. [#169](https://github.com/BAECHAN/link-sphere_BE_NEW/issues/169)의 시작 조건으로 남겼다.
+**북마크와 내 댓글의 운영 확인은 사용자 보고다.** 녹화에 쓸 로그인 쿠키가 없어 자동 확인은 모킹으로만 했고, 쪽 수와 건수 기록은 없다.
 
 ## 10. 시행착오
 
@@ -435,7 +436,7 @@ flowchart TD
 
 ## 11. 남은 것
 
-- [계획](plans/2026-11-05-cursor-pagination.md) Phase 4([#169](https://github.com/BAECHAN/link-sphere_BE_NEW/issues/169)): 2026-11-12 이후에 `page` 경로와 옛 응답 필드를 없앤다. 그 전에 사용자 계정으로 북마크와 내 댓글을 끝까지 넘겨 본다(§9.10).
+- [계획](plans/2026-11-05-cursor-pagination.md) Phase 4([#169](https://github.com/BAECHAN/link-sphere_BE_NEW/issues/169)): 2026-11-12 이후에 `page` 경로와 옛 응답 필드를 없앤다.
 - 범위 밖: 결과 스냅샷, 전용 검색 엔진, 임베딩 캐시, 목록 조회에서 쓰지 않는 `embedding` 컬럼 제외.
 
 ## 12. 용어 사전
