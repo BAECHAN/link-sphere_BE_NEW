@@ -14,7 +14,7 @@ import java.util.UUID
 enum class CursorKeyType(private val parser: (String) -> Comparable<*>) {
     TIME(LocalDateTime::parse),
     ID(UUID::fromString),
-    NUMBER(String::toDouble),
+    NUMBER(String::toLong),
 
     // NUL은 Postgres 문자열 인자로 보낼 수 없어 500이 된다 - 정상 제목에는 없으니 조작된 cursor로 본다
     TEXT({ raw -> if ('\u0000' in raw) throw InvalidInputException("Invalid cursor") else raw }),

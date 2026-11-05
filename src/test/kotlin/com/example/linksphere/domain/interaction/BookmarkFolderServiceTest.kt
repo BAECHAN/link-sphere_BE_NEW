@@ -331,7 +331,7 @@ class BookmarkFolderServiceTest {
 
     // ── cursor 목록 ──────────────────────────────────────
 
-    private val relevanceKeys = listOf<Comparable<*>>(8.0, LocalDateTime.of(2026, 11, 5, 12, 0, 0, 123_456_000), UUID.randomUUID())
+    private val relevanceKeys = listOf<Comparable<*>>(80000L, LocalDateTime.of(2026, 11, 5, 12, 0, 0, 123_456_000), UUID.randomUUID())
 
     private fun relevanceState(cursor: String?) = CursorCodec.decode(cursor!!, BookmarkListSort.RELEVANCE.name, BookmarkListSort.RELEVANCE.keyTypes)
 

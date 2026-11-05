@@ -161,7 +161,7 @@ flowchart TD
 | --- | --- |
 | `v` | 형식 버전. 지금 1 |
 | `sort` | 정렬 이름(`LATEST`, `RELEVANCE`, `TITLE` 등). 지금 요청의 정렬과 다르면 키를 해석할 수 없어 400 |
-| `keys` | 마지막 행의 정렬 키 값(문자열). 시각은 ISO, 점수는 double |
+| `keys` | 마지막 행의 정렬 키 값(문자열). 시각은 ISO, 점수는 10,000을 곱한 정수(§9.9) |
 | `semantic` | 검색일 때만. 첫 쪽이 의미 검색이었는가 |
 | `corrected` | 자판 보정으로 시작했을 때만 `true` |
 
@@ -174,6 +174,7 @@ flowchart TD
 | 쪽 크기 기본값 | 10 | [`PostController.kt:95`](../src/main/kotlin/com/example/linksphere/domain/post/PostController.kt#L95) |
 | 쪽 크기 상한 | 50 | [`Paging.kt:12`](../src/main/kotlin/com/example/linksphere/global/common/Paging.kt#L12) |
 | 임베딩 호출 제한 | IP당 10분 60회. `semantic=false` cursor면 쓰지 않음 | [`PostController.kt:36-37`](../src/main/kotlin/com/example/linksphere/domain/post/PostController.kt#L36-L37) |
+| 점수 키 단위 | 10,000(소수 넷째 자리까지 본다) | [`PostSearchQuery.kt:61`](../src/main/kotlin/com/example/linksphere/domain/post/PostSearchQuery.kt#L61) |
 | 제목 키 길이 | 앞 200자 | [`BookmarkRepositoryImpl.kt:199`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkRepositoryImpl.kt#L199) |
 | 열람 기록 없는 글의 키 | 1970-01-01 | [`BookmarkRepositoryImpl.kt:200`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkRepositoryImpl.kt#L200) |
 | cursor 형식 버전 | 1 | [`CursorCodec.kt:41`](../src/main/kotlin/com/example/linksphere/global/common/CursorCodec.kt#L41) |
@@ -319,7 +320,7 @@ offset 경로는 쪽마다 전체 건수를 센다. 화면에서 이 값을 읽�
 
 ### 9.5 임베딩 벡터 안정성
 
-점수를 cursor에 담으려면 같은 검색어의 점수가 호출마다 같아야 한다. 검색어 3개를 2회씩 호출해 비교했더니 벡터가 완전히 같았다(최대 차이 0.0, `gemini-embedding-2`, 호출 6회). 표본이 작아 보장은 아니다. 값이 달라지는 사례가 나오면 의미 점수를 반올림해 작은 차이를 흡수한다(계획의 위험 관리).
+점수를 cursor에 담으려면 같은 검색어의 점수가 호출마다 같아야 한다. 검색어 3개를 2회씩 호출해 비교했더니 벡터가 완전히 같았다(최대 차이 0.0, `gemini-embedding-2`, 호출 6회). 표본이 작아 보장은 아니다. 지금은 점수 키를 소수 넷째 자리까지 본 정수로 쓰므로(§9.9) 그 아래의 차이는 같은 값이 된다. 반올림 경계에 걸린 값은 여전히 갈릴 수 있다.
 
 ### 9.6 판단
 
@@ -371,6 +372,40 @@ offset 경로는 쪽마다 전체 건수를 센다. 화면에서 이 값을 읽�
 - **제목순 50번째가 유독 느린 이유는 찾지 못했다.** 두 형태 모두 느리고, 파생 테이블 계획에서는 필터 단계에 시간이 몰린다(1,000번째 약 11ms, 50번째 약 76ms). 문자열 비교로 보이지만 확인하지 못했다. 테스트 DB는 libc 콜레이션이고 운영은 ICU라 운영의 값은 다를 수 있다.
 - 글 표와 북마크 표의 비율이 달라지면 조인 방식이 바뀌어 숫자도 달라질 수 있다. 이 표는 글 10만·북마크 1만 조건의 결과다.
 
+### 9.9 배포 뒤 운영 확인
+
+Phase 2를 배포한 뒤 운영에서 확인했다(2026-11-05, 직접 측정). 표가 작아(글 355, 북마크 99, 댓글 144) 시간은 뜻이 없고 어떤 인덱스를 타는지만 본다. 원본은 [`results/2026-11-05-code-path.md`](../scripts/pagination-experiment/results/2026-11-05-code-path.md).
+
+| 확인 | 결과 |
+| --- | --- |
+| 피드 최신순 뒤쪽 `EXPLAIN` | `idx_posts_created_at_id`, `Index Cond`에 상한 |
+| 북마크 최신순 뒤쪽 `EXPLAIN` | `idx_bookmarks_user_created_at_post`, `Index Cond`에 회원·상한 |
+| 내 댓글 첫 쪽 `EXPLAIN` | `idx_comments_user_created_at_id` |
+| 비로그인 최신순 3쪽(5개씩) | 15행 모두 고유, 읽기 계정 SQL의 정렬과 같음 |
+| `page=0` 옛 경로 | 200, 옛 필드 채워짐, 첫 쪽이 cursor 첫 쪽과 같음 |
+| 잘못된 cursor | 400 `INVALID_INPUT` |
+| 비로그인 의미 검색 2쪽(5개씩) | **10행 중 고유 9개**. 1쪽 마지막 글이 2쪽 첫 글로 다시 나왔다 |
+
+**마지막 줄이 결함이었다.** 쪽 사이에 쓰기가 없는데 같은 글이 다시 나왔고, 같은 자리에서 재현됐다. 그때 FE는 아직 `page`를 써서 사용자 영향은 없었다.
+
+```mermaid
+flowchart TD
+  A["실제 점수 84.44919089391417…"] --> B["운영 DB가 15자리로 반올림해 보냄<br/>84.4491908939142"]
+  B --> C["cursor 값이 실제 점수보다 커짐"]
+  C --> D["다음 쪽 조건: 점수 < cursor 값"]
+  D --> E["방금 본 글도 조건을 만족해 다시 나옴"]
+```
+
+(위 그림의 실제 점수는 설명용 예시다. 운영에서 관측한 것은 cursor의 `84.4491908939142`뿐이다.)
+
+- **원인.** 운영 `extra_float_digits`는 설정 파일 값 `0`이고(`pg_settings`), 이 값이면 `float8`을 글자로 낼 때 유효숫자 15자리로 반올림한다. cursor에 담긴 소수 점수 4개가 모두 정확히 15자리였다.
+- **드라이버가 막아 주지 못한 이유.** pgjdbc 42.7.11은 연결을 열 때 `SET extra_float_digits = 3`을 한 번 보낸다(`ConnectionFactoryImpl.runInitialQueries`, `javap`로 확인). 앱은 트랜잭션 풀러(6543)에 붙으므로 다음 쿼리가 다른 서버 연결로 가서 이 `SET`이 남지 않는 것으로 본다. 풀러 내부는 확인하지 못했고, 위의 15자리 관측이 근거다. `prepareThreshold=0`이라 결과는 항상 글자로 온다.
+- **재현.** 테스트에서 `SET LOCAL extra_float_digits = 0`과 `prepareThreshold=0`을 걸고 의미 점수가 모두 다른 글 40개를 3개씩 읽으면 46행이 나왔다. 중복 6건이 모두 쪽 경계였고 누락은 0이었다. 값만 `3`으로 바꾸면 통과했다. 아래로 반올림되면 점수가 똑같은 글을 놓칠 수 있지만 이 경우는 재현하지 않았다.
+- **수정.** 점수 키를 `cast(점수 * 10000 as bigint)`로 바꿨다. 정수는 출력 설정과 무관하게 정확히 왕복한다. 소수 넷째 자리 아래만 다른 글은 동점으로 보고 시각과 id로 정렬한다. 의미 점수 0.0001은 코사인 거리 0.000005라 순서가 체감될 차이가 아니다.
+- **기각한 대안.** DB 역할이나 연결 옵션으로 `extra_float_digits`를 올리면 키 형식은 그대로지만 정확성이 코드 밖 설정에 달린다. 설정이 바뀌거나 풀러가 옵션을 넘기지 않으면 이 결함이 조용히 돌아온다. 실수를 소수 넷째 자리로 반올림해 실수로 두는 안도 가능하지만, 15자리 표현과 왕복이 맞는다는 성질에 기대야 해 정수보다 따질 것이 많다.
+- **cursor 형식 버전은 올리지 않았다.** 형식은 바뀌었지만(`84.44…` → `844492`) 이 값을 쓰는 클라이언트가 아직 없다. FE가 전환하기 전이라 옛 버전을 읽어 줄 상대가 없다.
+- **재측정.** 같은 소스로 다시 재니 피드 검색 cursor는 566.54ms, 건수를 세는 첫 쪽은 920.89ms로 §9.8과 차이가 없었다.
+
 ## 10. 시행착오
 
 - **"검색 cursor는 위험하다"는 초기 판단은 근거가 없었다.** 처음에는 의미 점수가 쪽 사이에 바뀌면 cursor가 더 많이 놓칠 거라고 봤다. 공개 글 328개로 시뮬레이션하니 offset과 비슷했고, 운영 로그 30일에서 같은 검색어의 상태가 바뀐 경우는 16쌍 중 0건이었다(표본이 작다).
@@ -379,6 +414,7 @@ offset 경로는 쪽마다 전체 건수를 센다. 화면에서 이 값을 읽�
 - **상관 서브쿼리의 경로를 바꿨다.** 열람 시각 서브쿼리에서 옛 코드처럼 `postJoin.get("id")`를 쓰면 Hibernate가 서브쿼리 안에 `posts`를 한 번 더 조인했다. `bookmarkRoot.get("postId")`로 바꿔 없앴다.
 - **"계산식이면 파생 테이블"은 틀린 일반화였다.** 검색 점수의 결과를 제목순·최근 열람순에도 적용해 구현했는데, 계획 대조에서 "직접 잰 값이 없다"는 지적을 받고 재 보니 최근 열람순은 WHERE가 최대 2.6배 빨랐다. 싼 식은 재계산 비용보다 조인 전에 걸러지는 이득이 크다(§5.2).
 - **형태를 비교하기 전에 운영 설정부터 맞춰야 했다.** 테스트 기본값(`jit=on`, `prepareThreshold=5`)으로 재면 JIT 비용이 더해지고 5회 뒤 계획을 재사용해, 같은 쿼리가 실행 순서에 따라 35ms와 44ms로 갈렸다. 운영의 `jit=off`, `prepareThreshold=0`으로 맞추니 분산이 사라졌다. JIT가 제목순 50번째를 느리게 한다는 가설도 세웠지만, 계획에 JIT가 없고 꺼도 같아서 틀렸다.
+- **통합 테스트와 측정을 모두 통과한 결함이 운영 순회에서만 드러났다.** 형태 비교 때 `jit`·`prepareThreshold`는 운영에 맞췄지만 `extra_float_digits`는 보지 않았다. 테스트 DB는 드라이버의 `SET`이 그대로 남아 실수가 정확히 왕복했다. 그래서 운영 설정을 흉내 낸 테스트를 추가했고, 배포 뒤 3쪽 순회를 계획에 넣어 둔 덕에 FE 전환 전에 찾았다(§9.9).
 - **테스트 DB와 운영의 콜레이션이 다르다.** 테스트 컨테이너는 libc `en_US.utf8`이라 `'힣' > '제목 3'`이 거짓이고, 운영은 ICU라 참이다. cursor 비교와 `ORDER BY`가 같은 콜레이션을 쓰므로 어느 쪽에서든 일관되지만, 한글 제목 순서를 단정하는 테스트는 테스트 DB에서 어긋난다. 그래서 제목 순서 테스트는 ASCII로 쓴다.
 - **처음 정한 누락 지표는 공정하지 않았다.** "시작 시점 상위 500개 중 못 본 글"로 시작했는데, 새 글 때문에 아직 도달하지 못한 글까지 누락으로 셌다. 쪽 사이 100건에서 offset이 "중복 0, 고유 500"으로 멀쩡해 보이기도 했는데, 실제로는 새 글만 보고 있었다. 그래서 "도달"을 재고 누락을 값 변경 여부로 나눴다.
 
@@ -398,6 +434,7 @@ offset 경로는 쪽마다 전체 건수를 센다. 화면에서 이 값을 읽�
 | 동점 해소 키 | 정렬 값이 같을 때 순서를 정하는 고유 키(`id` 등). 없으면 쪽 경계에서 순서가 흔들린다 |
 | 파생 테이블 | `FROM (SELECT ...) x`처럼 FROM에 쓴 서브쿼리. `offset 0`을 붙이면 Postgres가 바깥 쿼리로 합치지 못해 안쪽 식을 한 번만 계산한다 |
 | K | 의미 매칭 임계값 안에 든 후보 글 수. SQL에 `CASE`·`IN` 목록으로 실린다 |
+| `extra_float_digits` | `float8`을 글자로 낼 때의 자릿수 설정. 0이면 유효숫자 15자리로 반올림하고, 1 이상이면 정확히 되돌릴 수 있는 형태로 낸다([PostgreSQL 문서](https://www.postgresql.org/docs/17/runtime-config-client.html#GUC-EXTRA-FLOAT-DIGITS), 동작은 §9.9에서 직접 재현) |
 | top-N heapsort | 상위 N개만 메모리에 유지하는 정렬. N이 작으면 메모리를 거의 안 쓴다 |
 | external merge | `work_mem`을 넘어 디스크를 쓰는 정렬 |
 | TOAST | PostgreSQL이 큰 값을 별도 저장소에 두는 방식. `embedding`이 여기 있다 |

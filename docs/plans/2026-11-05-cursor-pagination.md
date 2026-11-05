@@ -25,6 +25,7 @@
 - 계획에 없던 변경: `Paging.coerceSize`, `resolveFolderKey`, `MyCommentResponse.from`을 추출했다. 옛 경로와 cursor 경로가 함께 쓴다.
 - 계획에 없던 변경: 표에 없던 서비스·컨트롤러 테스트 6개 파일에 cursor 테스트를 더했고, 옛 경로 테스트는 `page`를 명시하도록 고쳤다.
 - 계획에 없던 변경(문서 동기화): `docs/DEPLOY.md`, `docs/TRAFFIC-MANAGEMENT.md`를 새 동작에 맞췄고, `docs/PAGINATION.md`의 Phase 1 서술을 정정했다.
+- 병합 뒤 발견 → 수정(#165): 배포 뒤 운영 순회에서 의미 검색 cursor가 쪽 경계의 글을 다시 돌려주는 것을 찾았다. 운영 DB가 실수를 유효숫자 15자리로 반올림해 보내 cursor 값이 실제 점수와 달라진 탓이다. 계획이 `asDouble()`로 정한 점수 키를 소수 넷째 자리까지 본 정수로 바꿨다. 계획의 위험 관리에 있던 "소수 4자리 반올림"과 같은 정밀도이고 FE 전환 전이라 사용자 영향은 없었다.
 
 <!-- plan-result:end -->
 

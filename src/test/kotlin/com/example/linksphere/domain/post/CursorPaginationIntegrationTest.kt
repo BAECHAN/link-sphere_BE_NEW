@@ -22,6 +22,7 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.system.CapturedOutput
 import org.springframework.boot.test.system.OutputCaptureExtension
 import org.springframework.data.domain.Limit
+import org.springframework.jdbc.core.ConnectionCallback
 import org.springframework.jdbc.core.JdbcTemplate
 import java.sql.Timestamp
 import java.time.LocalDateTime
@@ -169,6 +170,27 @@ class CursorPaginationIntegrationTest {
         assertEquals(7, walked.toSet().size)
         assertTrue(keyword in walked)
         assertFalse(far in walked)
+    }
+
+    @Test
+    fun `운영처럼 실수를 15자리로 내보내도 의미 점수 검색을 중복·누락 없이 끝까지 읽는다`() {
+        // 각도가 전부 달라 점수가 모두 긴 소수가 된다. 위로 반올림되는 경계에서 방금 본 글이 다시 나온다.
+        val seeded = (1..40).map { insertPost("글 $it", embedding = vectorAt(it * 0.01)) }
+        val query = vectorAt(0.0).toFloatArray()
+
+        val walked = withProductionFloatOutput { walkFeed(PostListSort.RELEVANCE, search = "react", size = 3, embedding = query) }
+
+        assertEquals(seeded, walked)
+    }
+
+    @Test
+    fun `운영처럼 실수를 15자리로 내보내도 북마크 의미 점수 검색을 중복·누락 없이 끝까지 읽는다`() {
+        val seeded = (1..40).map { i -> insertPost("글 $i", embedding = vectorAt(i * 0.01)).also { bookmark(it) } }
+        val query = vectorAt(0.0).toFloatArray()
+
+        val walked = withProductionFloatOutput { walkBookmarks(BookmarkListSort.RELEVANCE, search = "react", embedding = query) }
+
+        assertEquals(seeded, walked)
     }
 
     @Test
@@ -414,15 +436,15 @@ class CursorPaginationIntegrationTest {
     fun `검색 점수는 파생 테이블 안에서 한 번만 계산하고 바깥에서는 값만 비교한다`(output: CapturedOutput) {
         insertPost("react")
 
-        findFeed(PostListSort.RELEVANCE, search = "react", after = listOf(10.0, LocalDateTime.of(2026, 3, 1, 0, 0), UUID.randomUUID()), size = 3)
+        findFeed(PostListSort.RELEVANCE, search = "react", after = listOf(100_000L, LocalDateTime.of(2026, 3, 1, 0, 0), UUID.randomUUID()), size = 3)
 
         val sql = lastSelect(output, "derived1_0")
         val outer = sql.substringAfterLast(" offset 0 rows)")
 
         assertTrue(sql.contains(" offset 0 rows)"), sql)
         assertFalse(outer.contains("case when") || outer.contains("regexp_replace"), outer)
-        // 점수를 double로 변환해야 소수 의미 점수와 키워드 전용 정수 점수가 같은 cursor 형식으로 왕복한다
-        assertTrue(sql.contains(" as float(53))"), sql)
+        // 실수 키는 운영에서 15자리로 반올림돼 왕복하지 못한다. 의미 점수가 있어도 없어도 같은 정수 키여야 한다
+        assertTrue(sql.contains(" as bigint)"), sql)
     }
 
     // 최근 열람순 키는 북마크 행만으로 계산돼 조인 전에 거를 수 있고, 파생 테이블이면 offset 0이 그걸 막는다. 제목은 글 표의 컬럼이라 반대다(docs/PAGINATION.md §5.2).
@@ -449,9 +471,10 @@ class CursorPaginationIntegrationTest {
         folderId: UUID? = null,
         onlyUncategorized: Boolean = false,
         size: Int = 3,
+        embedding: FloatArray? = null,
         between: (Int) -> Unit = {},
     ): List<UUID> = walk(sort.name, sort.keyTypes, between) { after ->
-        bookmarkRepository.findBookmarkedPostsAfter(me, folderId, onlyUncategorized, sort, search, after, size)
+        bookmarkRepository.findBookmarkedPostsAfter(me, folderId, onlyUncategorized, sort, search, after, size, embedding)
     }.map { it.id!! }
 
     private fun walkComments(size: Int = 3, between: (Int) -> Unit = {}): List<UUID> = walk("LATEST", listOf(CursorKeyType.TIME, CursorKeyType.ID), between) { after ->
@@ -552,6 +575,29 @@ class CursorPaginationIntegrationTest {
     }
 
     // 첫 두 축 평면에서 angle만큼 돌린 단위 벡터. 코사인 거리가 소수가 되어 의미 점수에 소수 동점을 만든다
+    // 운영 DB는 extra_float_digits가 설정 파일 값 0이고, JDBC가 연결 때 한 번 보내는 SET은 트랜잭션 풀러에서 다음 쿼리에 남지 않는다.
+    // prepareThreshold=0이면 결과가 글자로 오므로 float8이 유효숫자 15자리로 반올림된다. 테스트 DB의 기본값은 이 상황을 만들지 않는다.
+    private fun <T> withProductionFloatOutput(block: () -> T): T {
+        jdbc.execute("SET LOCAL extra_float_digits = 0")
+        setPrepareThreshold(0)
+
+        try {
+            return block()
+        } finally {
+            setPrepareThreshold(5)
+        }
+    }
+
+    // 드라이버가 runtimeOnly라 PGConnection을 컴파일 시점에 참조할 수 없다
+    private fun setPrepareThreshold(threshold: Int) {
+        jdbc.execute(
+            ConnectionCallback<Any?> { connection ->
+                val pg = connection.unwrap(Class.forName("org.postgresql.PGConnection"))
+                pg.javaClass.getMethod("setPrepareThreshold", Int::class.javaPrimitiveType).invoke(pg, threshold)
+            },
+        )
+    }
+
     private fun vectorAt(angle: Double): List<Float> = List(768) {
         when (it) {
             0 -> cos(angle).toFloat()
