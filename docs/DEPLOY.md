@@ -84,6 +84,7 @@ SnapStart는 Lambda init phase를 스냅샷으로 저장해 cold start를 단축
    - LambdaHandler.companion.init { } 실행
    - Spring Boot 시작 (MockMvc 초기화 포함)
    - warmUp() 실행 — 읽기 전용 엔드포인트로 실제 요청을 흘려보냄
+   - warmUpAwsSdk() 실행 — LambdaClient·SesClient를 SdkWarmUp으로 데움(운영 함수·메일은 부르지 않음)
    - SnapStart가 이 상태를 스냅샷으로 저장
 
 2. 요청 수신 (cold start):
@@ -111,6 +112,7 @@ SnapStart는 Lambda init phase를 스냅샷으로 저장해 cold start를 단축
 - 워밍업은 **읽기 전용·`permitAll` 엔드포인트만** 사용한다 (부작용 방지)
 - 실패해도 부팅은 계속한다 — 배포 시점에 DB가 닿지 않아도 Lambda는 기동되어야 한다
 - HikariCP 풀은 Spring Boot의 `HikariCheckpointRestoreLifecycle`이 체크포인트 직전에 멈추고 커넥션을 닫으므로(복원 때 다시 연다) init 단계의 DB 워밍업과 충돌하지 않는다. **순서를 바꾸지 말 것** — 워밍업은 체크포인트 전에 끝나야 한다
+- `warmUpAwsSdk()`는 서비스 호출을 로컬의 준비된 응답으로 돌리고 HTTP 클라이언트만 STS 주소로 GET을 1번 보낸다. 자격 증명·IAM 권한이 필요 없고, 실패해도 부팅은 계속한다. AWS SDK 클라이언트를 새로 쓰면 인자에 더한다([PERFORMANCE.md](./PERFORMANCE.md) §4.6)
 
 ### Shadow JAR에서 spring.factories를 append하는 이유
 

@@ -27,6 +27,9 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders
 import org.springframework.test.web.servlet.setup.MockMvcBuilders
 import org.springframework.web.context.WebApplicationContext
+import software.amazon.awssdk.core.warmup.SdkWarmUp
+import software.amazon.awssdk.services.lambda.LambdaClient
+import software.amazon.awssdk.services.ses.SesClient
 import java.io.InputStream
 import java.io.OutputStream
 import java.net.URI
@@ -109,6 +112,7 @@ class LambdaHandler : RequestStreamHandler {
             mockMvc = builder.build()
 
             warmUp()
+            warmUpAwsSdk()
         }
 
         /**
@@ -141,6 +145,21 @@ class LambdaHandler : RequestStreamHandler {
                         logger.warn("Warmup failed: {} ({})", path, e.message)
                     }
                 }
+            }
+        }
+
+        /**
+         * 복원 뒤 첫 self-invoke·메일 발송이 AWS SDK 초기화를 떠안지 않게 스냅샷 전에 데운다.
+         *
+         * 서비스 호출은 로컬의 준비된 응답으로 돌고 HTTP 클라이언트만 네트워크를 1번 쓴다. 자격 증명·IAM 권한이
+         * 필요 없다(https://docs.aws.amazon.com/sdk-for-java/latest/developer-guide/sdk-warmup.html). 실제
+         * 클라이언트는 그대로 by lazy라 복원 뒤에 만들어진다. 효과 측정은 docs/PERFORMANCE.md 4.6 참고.
+         */
+        private fun warmUpAwsSdk() {
+            try {
+                SdkWarmUp.warmUp(LambdaClient::class.java, SesClient::class.java)
+            } catch (e: Exception) {
+                logger.warn("AWS SDK warm-up failed: {}", e.message)
             }
         }
     }

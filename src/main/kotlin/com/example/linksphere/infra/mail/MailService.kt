@@ -28,6 +28,7 @@ class MailService(
     // LambdaSelfInvoker와 같은 이유로 lazy + UrlConnectionHttpClient를 명시한다 - SnapStart
     // 체크포인트 이전(Spring 컨텍스트 초기화 시점)에 클라이언트를 만들면 내부적으로 연 소켓이
     // 체크포인트를 방해할 수 있어, 실제 발송이 일어나는 첫 호출 시점까지 생성을 미룬다.
+    // SDK 초기화는 LambdaHandler.warmUpAwsSdk가 스냅샷 전에 해 둔다.
     private val sesClient: SesClient by lazy {
         SesClient.builder()
             .region(Region.of(System.getenv("AWS_REGION") ?: "ap-northeast-1"))

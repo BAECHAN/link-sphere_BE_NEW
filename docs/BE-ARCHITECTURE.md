@@ -621,7 +621,7 @@ for (id in ids) {
 - **정석**: `infra/youtube/YoutubeVideoClient.kt`
 - **모양**: `RestClient` + `JdkClientHttpRequestFactory`로 **connect·read 타임아웃을 명시**한다 → 실패는 warn 로그 후
   null 반환 → 호출부가 폴백한다. 키 설정은 `@Value("\${키:}")` 기본값으로 비어 있어도 부팅되게 한다. AWS SDK 클라이언트는
-  SnapStart 때문에 `by lazy`(`MailService`). 응답 파싱은 `internal` 순수 함수로 떼어 테스트한다.
+  SnapStart 때문에 `by lazy`(`MailService`)이고, SDK 초기화는 `LambdaHandler.warmUpAwsSdk`가 스냅샷 전에 한다(새 클라이언트는 그 인자에 더한다). 응답 파싱은 `internal` 순수 함수로 떼어 테스트한다.
 - **안티패턴**: 기본 생성자 `RestTemplate()` — 타임아웃이 없다(spring-web 6.2.14 `SimpleClientHttpRequestFactory`는
   timeout이 -1이면 설정하지 않음, 2026-10-25 업스트림 소스로 확인). `SupabaseStorageService`가 이것으로 업로드 서명
   요청이 끝없이 멈췄다 — 지금은 팩토리에 타임아웃을 건 `RestTemplate`이다(§9).

@@ -78,6 +78,13 @@
 
 ### Changed
 
+- `infra` 복원 뒤 첫 작업 발행·메일 발송이 덜 늦도록 AWS SDK를 스냅샷 전에 데움
+  <details><summary>배경·구현</summary>
+
+  복원된 인스턴스의 첫 self-invoke가 약 1.7초 걸려(직접 측정, 2026-11-05 최근 30일, n=80, p50 1,713ms, 이후 호출 p50 42ms) 커밋 뒤 동기로 기다리는 댓글·글 등록 응답을 늦췄다. `LambdaHandler.warmUpAwsSdk()`가 init에서 AWS 문서가 SnapStart용으로 권하는 `SdkWarmUp.warmUp(LambdaClient, SesClient)`을 호출한다. 실제 클라이언트는 그대로 `by lazy`다. 복원 뒤 자격 증명 읽기와 새 TLS 연결은 데우지 못해 효과는 배포 뒤 첫 발행 수치로 판정한다. 근거·측정 방법은 `docs/PERFORMANCE.md` §4.6·§7. (`LambdaHandler.kt`, `MailService.kt`, `LambdaSelfInvoker.kt`, `docs/DEPLOY.md`, `docs/BE-ARCHITECTURE.md`, `docs/plans/2026-11-05-sdk-warmup.md`, [PR #166](https://github.com/BAECHAN/link-sphere_BE_NEW/pull/166))
+
+  </details>
+
 - `post` 조회수·열람 기록을 `GET /post/{id}`에서 `POST /post/{id}/view`로 옮김
   <details><summary>배경·구현</summary>
 

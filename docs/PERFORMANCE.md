@@ -1,6 +1,6 @@
 # Link-Sphere BE — 성능 (Lambda 콜드스타트)
 
-> 마지막 검토: 2026-10-16 (§4.1의 체크포인트 처리 주체를 Spring Boot 내장 기능으로 정정)
+> 마지막 검토: 2026-11-05 (§4.6 AWS SDK 첫 호출 데우기와 §7 측정 방법 추가)
 
 이 문서는 **"왜 느렸고, 무엇을 근거로 무엇을 바꿨는지"** 를 남긴다.
 배포 절차는 [DEPLOY.md](./DEPLOY.md), 무엇이 바뀌었는지는 [CHANGELOG.md](../CHANGELOG.md)를 참고.
@@ -104,6 +104,61 @@ Lambda는 메모리에 비례해 vCPU를 준다(1024MB ≈ 0.58 vCPU → 2048MB 
 `JwtAuthenticationFilter` / `JwtTokenProvider`가 만료 토큰마다 `ExpiredJwtException`
 **전체 스택트레이스**를 ERROR로 남기고 있었다. 만료는 FE가 refresh로 복구하는 정상 흐름이라
 스택 생성 + 로그 쓰기가 낭비였다. WARN 한 줄로 낮췄다(위변조·서명 불일치는 ERROR 유지).
+
+### 4.6 AWS SDK 첫 호출을 스냅샷 전에 데우기 — 적용 중, 효과 판정 전 (2026-11-05)
+
+복원된 인스턴스가 처음 작업을 발행할 때 `LambdaSelfInvoker`의 `by lazy` 클라이언트가 만들어진다. 이 호출은 커밋 뒤 요청
+스레드에서 동기로 돌아 댓글·글 등록 응답을 늦춘다.
+
+직접 측정(2026-11-05, Logs Insights 최근 30일, 쿼리는 7장). 위임 로그에서 `작업 발행` 로그까지의 간격이고, 위임 로그를 찍는
+AI·댓글 발행만 잡힌다. 피드 발행은 빠져 있다.
+
+| 구분 | 인스턴스 첫 발행 | 이후 발행 |
+| --- | --- | --- |
+| 전체 | n=80, p50 1,713ms, p90 2,007ms, 최대 2,364ms | n=46, p50 42ms, p90 68ms, 최대 83ms |
+| 댓글(10-26 이후 JSON 로그만) | n=8, p50 1,928ms, 최대 2,143ms | n=5, p50 61ms, 최대 80ms |
+| AI(10-26 이후 JSON 로그만, 봇 글 포함 가능) | n=23, p50 1,426ms, 최대 2,364ms | n=9, p50 41ms, 최대 49ms |
+
+같은 날 댓글 POST의 Lambda Duration은 첫 발행이 낀 요청 2,521ms·2,250ms, 같은 인스턴스의 다음 등록 99ms였다. 구간별로 재지는
+않아서 "SDK 초기화가 대부분"은 첫 호출과 이후 호출의 차이에서 나온 추정이다.
+
+`LambdaHandler.warmUpAwsSdk()`가 init에서 `SdkWarmUp.warmUp(LambdaClient, SesClient)`을 호출한다. AWS 문서는 SnapStart에서
+이 방식을 권한다.
+
+> `SdkWarmUp`은 HTTP 클라이언트를 데우려 네트워크 호출을 1번 하고, 서비스 클라이언트는 로컬의 준비된 응답으로 데운다. AWS 자격
+> 증명이나 IAM 권한이 필요 없고 요금도 들지 않는다. Lambda는 핸들러 생성자가 끝난 뒤 스냅샷을 찍으므로 생성자에서 호출하면
+> 스냅샷이 데워진 클라이언트를 포함한다. (번역, 요약)
+>
+> — AWS SDK for Java 2.x 개발자 안내서, https://docs.aws.amazon.com/sdk-for-java/latest/developer-guide/sdk-warmup.html
+
+**실제로 하는 일(설치본 2.57.4를 `javap`로 확인).** 서비스 쪽은 `LambdaWarmUpProvider.warmUpClient`가 `CannedResponseHttpClient`,
+`AnonymousCredentialsProvider`, `endpointOverride("http://localhost")`로 `listEventSourceMappings()`를 로컬에서 돈다. HTTP 쪽은
+`SyncHttpClientWarmer`가 `https://sts.<AWS_REGION>.amazonaws.com/`에 GET을 1번 보내고, 실패는 debug 로그만 남긴다. 공급자 실패는
+`WarmUpDiscovery.runSafely`가 warn(`Warm-up failed for X and was skipped.`)으로 남긴다.
+
+**덮지 못하는 것.** 실제 `invoke`는 돌지 않고, 자격 증명은 anonymous라 실제 체인을 지나지 않으며, 복원 뒤 Lambda API로 가는 새
+TLS 연결도 그대로다. 메일 쪽은 `MailService`가 실패 때만 로그를 남겨 전후 수치를 낼 수 없다.
+
+**로컬 비교(직접 측정, 2026-11-05).** `shadowJar` 결과물 위에서 새 JVM(Corretto 17)마다 `LambdaSelfInvoker`와 같은 모양으로
+클라이언트를 만들어 첫 `invoke` 시간을 쟀다. 가짜 자격 증명이라 AWS가 403으로 거절해 아무것도 실행되지 않는다. 각 5회의 p50이다.
+
+| | 첫 호출(클라이언트 생성 포함) | 두 번째 호출 | `SdkWarmUp` 자체 |
+| --- | --- | --- | --- |
+| 워밍 없음 | 499ms | 48ms | - |
+| 워밍 있음 | 188ms | 45ms | 682ms |
+
+노트북은 Lambda가 아니고 복원 뒤 자격 증명 경로를 재현하지 못해 비율만 참고한다. 같은 비율이면 운영 첫 발행은 약 650ms로,
+아래 목표에 못 미칠 수 있다(단순 환산, 측정 아님). `SdkWarmUp` 자체 시간은 버전 발행 때의 init에만 든다.
+
+**판정 기준(우리 판단, 외부 기준 아님).** 새 버전의 첫 발행 5건 이상에서 p50 500ms 이하이고 이후 발행이 그대로면 달성으로 본다.
+Restore Duration(기준선: 최근 14일 n=499, p50 684ms, p90 944ms, 최대 1,412ms)이 p50 기준 200ms 넘게 늘면 득실을 다시 본다.
+못 미치면 남은 구간을 재서 별도로 다룬다.
+
+제약:
+- 실패해도 부팅은 계속한다 — 이 최적화 때문에 배포가 막히지 않게 한다
+- 실제 클라이언트는 `by lazy` 그대로다. `SdkWarmUp`은 별도 임시 클라이언트로 돈다
+- 배포 관문(`deploy.yml`의 새 버전 직접 호출)은 `GET /api/post`만 불러 self-invoke를 지나지 않는다. 배포 뒤 `작업 발행` 로그의
+  `statusCode`를 따로 확인한다
 
 ---
 
@@ -361,6 +416,28 @@ EOF
 ```
 
 콜드 비율은 트래픽 패턴에 좌우되므로 **워밍 핑 적용 후 24시간 지나서** 다시 본다.
+
+### 첫 발행 지연 (4.6)
+
+`/aws/lambda/link-sphere-api` 로그 그룹의 Logs Insights로 아래 줄을 받는다. 읽기 전용이다.
+
+```
+fields @timestamp, @logStream, @message
+| filter @message like /LambdaSelfInvoker\] 작업 발행|별도 Lambda 호출로 위임/
+| sort @timestamp asc | limit 10000
+```
+
+로그 스트림(인스턴스)별로 시간순으로 놓고, 위임 로그 뒤 처음 나오는 `작업 발행` 로그까지의 간격을 잰다. 스트림에서 첫 `작업 발행`이면
+"첫 발행", 그 뒤면 "이후 발행"으로 나눈다. 피드 발행은 위임 로그 없이 `작업 발행`만 찍히므로 간격을 내지 않고 순번에만 센다.
+종류 구분은 메시지의 `[AI]`·`[Comment PostProcess]`로 하고, 2026-10-26 전 로그는 텍스트 형식이라 태그 구분에서 뺀다. 복원 시간은 함께 본다.
+
+```
+filter @type = "REPORT" and @message like /Restore Duration/
+| parse @message /Restore Duration: (?<r>[0-9.]+) ms/
+| stats count() as n, pct(r, 50) as p50, pct(r, 90) as p90, max(r) as maxR
+```
+
+배포 시각을 시작 시간으로 잡으면 새 버전만 잡힌다.
 
 ---
 
