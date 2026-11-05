@@ -6,7 +6,7 @@
 >
 > **읽고 나면**: 요청 한도 값을 바꾸거나 새 엔드포인트에 한도를 걸 수 있고, WAF·알람 콘솔 작업을 이 문서만 보고 할 수 있다
 >
-> **마지막 검토**: 2026-11-02
+> **마지막 검토**: 2026-11-04
 
 ## 1. 쉬운 설명
 
@@ -191,20 +191,23 @@ Google SRE 책은 과부하 대응으로 기능을 낮춰 응답하는 방법(gr
 
 | 대상 | 한도 | 위치 |
 |---|---|---|
-| 글 등록 | 회원당 1시간 20회 | `domain/post/PostController.kt:29-30` |
-| 검색 임베딩 | IP당 10분 60회 (초과 시 키워드 검색으로 강등) | `domain/post/PostController.kt:34-35` |
+| 글 등록 | 회원당 1시간 20회 | `domain/post/PostController.kt:30-31` |
+| 검색 임베딩 | IP당 10분 60회 (초과 시 키워드 검색으로 강등) | `domain/post/PostController.kt:35-36` |
 | 업로드 URL 발급 | 회원당 1시간 30회 | `domain/upload/UploadController.kt:25-26` |
 | 링크 미리보기 | 회원당 1시간 60회 (URL 입력마다 1회 크롤링, 결과는 10분 캐시) | `domain/post/LinkPreviewController.kt:27-28` |
 | 목록 `size` | 최대 50 (글 목록·북마크 폴더 글·내 댓글) | `global/common/Paging.kt:12` |
 | 로그인 실패 | 이메일당 15분 5회, IP당 15분 20회 | `domain/auth/AuthService.kt:39-45` |
 | 가입 | IP당 1시간 5회 | `domain/auth/AuthService.kt:49-50` |
 | 인증메일 재발송 | 이메일당 1시간 3회, IP당 1시간 10회 | `domain/auth/AuthService.kt:53-56` |
-| 비밀번호 재설정 요청 | 이메일당 1시간 3회, IP당 1시간 10회 | `domain/auth/PasswordResetService.kt:38-41` |
+| 비밀번호 재설정 요청 | 이메일당 1시간 3회, IP당 1시간 10회 | `domain/auth/PasswordResetService.kt:39-42` |
 
 (경로는 `src/main/kotlin/com/example/linksphere/` 기준)
 
 글 등록·업로드·검색의 값은 2026-10-02에 정한 초안이다. 실제 사용 패턴을 본 적이 없어 넉넉하게
 잡았다 — 정상 사용자가 걸린다는 신호(429 로그)가 보이면 올린다.
+
+글 등록 한도는 `Idempotency-Key` 조회 뒤에 쓴다(2026-11-04) — 응답이 끊겨 같은 키로 다시 보낸 요청은 한도를 깎지 않고, 20번째
+글의 재전송이 429로 보이지 않는다. 인증 메일·재설정 요청은 회원 조회보다 한도가 먼저인 기존 순서라 재전송도 1회를 쓴다.
 
 ### 7-2. 엣지·알람 (레포 밖, AWS 콘솔에서 관리)
 

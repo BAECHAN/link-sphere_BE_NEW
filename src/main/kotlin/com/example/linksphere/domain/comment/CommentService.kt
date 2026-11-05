@@ -6,11 +6,13 @@ import com.example.linksphere.domain.member.MemberRepository
 import com.example.linksphere.domain.member.TableMember
 import com.example.linksphere.domain.post.PostRepository
 import com.example.linksphere.domain.post.PostVisibility
+import com.example.linksphere.global.common.AdvisoryLock
 import com.example.linksphere.global.common.Paging
 import com.example.linksphere.global.common.SupabaseStorageService
 import com.example.linksphere.global.common.TransactionCallbacks
 import com.example.linksphere.global.exception.CommentDeletedException
 import com.example.linksphere.global.exception.CommentNotFoundException
+import com.example.linksphere.global.exception.DuplicateCommentException
 import com.example.linksphere.global.exception.ForbiddenException
 import com.example.linksphere.global.exception.InvalidInputException
 import com.example.linksphere.global.exception.PostNotFoundException
@@ -18,6 +20,7 @@ import org.springframework.context.ApplicationEventPublisher
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.time.Duration
 import java.time.LocalDateTime
 import java.util.UUID
 
@@ -34,6 +37,10 @@ private val URL_REGEX = Regex("""https?://\S+""")
 
 private val LIKE_SPECIAL_CHARS = Regex("[!%_]")
 
+// 같은 회원이 같은 대상에 같은 본문을 다른 키로 다시 쓰면 막는 창. 더 길면 일부러 쓴 말까지 막는다
+// (운영 3쌍 중 5초 간격 1쌍만 잡고 32·44분 간격은 두었다, 2026-11-04 사용자 결정, docs/plans/2026-11-04-idempotent-create.md).
+private val DUPLICATE_COMMENT_WINDOW = Duration.ofMinutes(1)
+
 @Service
 class CommentService(
     private val commentRepository: CommentRepository,
@@ -42,6 +49,7 @@ class CommentService(
     private val commentReactionRepository: CommentReactionRepository,
     private val supabaseStorageService: SupabaseStorageService,
     private val eventPublisher: ApplicationEventPublisher,
+    private val advisoryLock: AdvisoryLock,
 ) {
 
     @Transactional(readOnly = true)
@@ -110,12 +118,23 @@ class CommentService(
         return MyCommentPageResponse.from(commentRepository.findMyComments(userId, pageable))
     }
 
+    @Transactional(readOnly = true)
+    fun findByIdempotencyKey(userId: UUID, idempotencyKey: UUID): CommentResponse? {
+        val comment = commentRepository.findByUserIdAndIdempotencyKey(userId, idempotencyKey) ?: return null
+        val member =
+            memberRepository.findByIdOrNull(userId)
+                ?: throw IllegalStateException("User not found")
+
+        return toCommentResponse(comment, member)
+    }
+
     @Transactional
     fun createComment(
         postId: UUID,
         userId: UUID,
         content: String?,
         images: List<String>?,
+        idempotencyKey: UUID? = null,
     ): CommentResponse {
         validateContent(content, images)
 
@@ -133,12 +152,27 @@ class CommentService(
 
         val finalContent = buildFinalContent(content, images)
 
+        // 이미지가 있으면 재시도마다 URL이 달라 본문으로 비교할 수 없다 - 그 경우는 키만 본다.
+        if (idempotencyKey != null && images.isNullOrEmpty()) {
+            advisoryLock.lockForTransaction("comment-create:$userId:$postId:$finalContent")
+
+            // 잠금을 기다리는 동안 같은 키의 요청이 먼저 끝났으면 그 댓글이 곧 이 요청의 결과다 - 아래 시간 창에 걸려 409가 되면 안 된다.
+            commentRepository.findByUserIdAndIdempotencyKey(userId, idempotencyKey)?.let {
+                return toCommentResponse(it, member)
+            }
+
+            if (commentRepository.existsRecentComment(userId, postId, finalContent, LocalDateTime.now().minus(DUPLICATE_COMMENT_WINDOW))) {
+                throw DuplicateCommentException()
+            }
+        }
+
         val comment =
             TableComment(
                 postId = postId,
                 userId = userId,
                 content = finalContent,
                 linkUrl = extractFirstNonImageUrl(finalContent),
+                idempotencyKey = idempotencyKey,
             )
         val saved = commentRepository.save(comment)
 
@@ -158,6 +192,7 @@ class CommentService(
         userId: UUID,
         content: String?,
         images: List<String>?,
+        idempotencyKey: UUID? = null,
     ): CommentResponse {
         validateContent(content, images)
 
@@ -185,6 +220,19 @@ class CommentService(
 
         val finalContent = buildFinalContent(content, images)
 
+        // createComment와 같은 규칙이고 대상만 부모 댓글이다.
+        if (idempotencyKey != null && images.isNullOrEmpty()) {
+            advisoryLock.lockForTransaction("reply-create:$userId:$parentId:$finalContent")
+
+            commentRepository.findByUserIdAndIdempotencyKey(userId, idempotencyKey)?.let {
+                return toCommentResponse(it, member)
+            }
+
+            if (commentRepository.existsRecentReply(userId, parentId, finalContent, LocalDateTime.now().minus(DUPLICATE_COMMENT_WINDOW))) {
+                throw DuplicateCommentException()
+            }
+        }
+
         val comment =
             TableComment(
                 postId = parent.postId,
@@ -192,6 +240,7 @@ class CommentService(
                 parentId = parentId,
                 content = finalContent,
                 linkUrl = extractFirstNonImageUrl(finalContent),
+                idempotencyKey = idempotencyKey,
             )
         val saved = commentRepository.save(comment)
 

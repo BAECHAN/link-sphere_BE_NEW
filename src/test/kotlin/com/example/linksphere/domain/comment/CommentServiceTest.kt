@@ -7,6 +7,7 @@ import com.example.linksphere.domain.member.MemberRepository
 import com.example.linksphere.domain.member.TableMember
 import com.example.linksphere.domain.post.PostRepository
 import com.example.linksphere.domain.post.TablePost
+import com.example.linksphere.global.common.AdvisoryLock
 import com.example.linksphere.global.common.SupabaseStorageService
 import com.example.linksphere.global.exception.CommentDeletedException
 import com.example.linksphere.global.exception.CommentNotFoundException
@@ -52,6 +53,8 @@ class CommentServiceTest {
     @Mock private lateinit var supabaseStorageService: SupabaseStorageService
 
     @Mock private lateinit var eventPublisher: ApplicationEventPublisher
+
+    @Mock private lateinit var advisoryLock: AdvisoryLock
 
     @InjectMocks private lateinit var commentService: CommentService
 

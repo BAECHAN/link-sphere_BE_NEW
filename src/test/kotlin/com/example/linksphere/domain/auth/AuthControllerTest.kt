@@ -14,11 +14,13 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.doThrow
 import org.mockito.Mockito.verify
+import org.mockito.Mockito.verifyNoInteractions
 import org.mockito.Mockito.`when`
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest
 import org.springframework.context.annotation.ComponentScan
 import org.springframework.context.annotation.FilterType
+import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.http.MediaType
 import org.springframework.security.test.context.support.WithMockUser
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf
@@ -345,16 +347,50 @@ class AuthControllerTest {
     @WithMockUser
     fun `requestPasswordReset은 성공하면 200을 반환하고 passwordResetService에 위임한다`() {
         val request = PasswordResetRequest(email = "test@example.com")
+        val key = UUID.randomUUID()
 
         mockMvc.perform(
             post("/auth/password-reset/request")
+                .header("Idempotency-Key", key.toString())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(jacksonObjectMapper().writeValueAsString(request))
                 .with(csrf()),
         )
             .andExpect(status().isOk)
 
-        verify(passwordResetService).requestReset("test@example.com", null)
+        verify(passwordResetService).requestReset("test@example.com", null, key)
+    }
+
+    @Test
+    @WithMockUser
+    fun `requestPasswordReset은 키가 없으면 서비스까지 가지 않고 400 INVALID_INPUT을 준다`() {
+        mockMvc.perform(
+            post("/auth/password-reset/request")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(jacksonObjectMapper().writeValueAsString(PasswordResetRequest(email = "test@example.com")))
+                .with(csrf()),
+        )
+            .andExpect(status().isBadRequest)
+            .andExpect(jsonPath("$.code").value("INVALID_INPUT"))
+
+        verifyNoInteractions(passwordResetService)
+    }
+
+    @Test
+    @WithMockUser
+    fun `requestPasswordReset은 겹친 요청에 져서 키 인덱스를 위반해도 200을 준다`() {
+        val key = UUID.randomUUID()
+        doThrow(DataIntegrityViolationException("x", RuntimeException("duplicate key \"uq_member_action_tokens_member_idempotency_key\"")))
+            .`when`(passwordResetService).requestReset("test@example.com", null, key)
+
+        mockMvc.perform(
+            post("/auth/password-reset/request")
+                .header("Idempotency-Key", key.toString())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(jacksonObjectMapper().writeValueAsString(PasswordResetRequest(email = "test@example.com")))
+                .with(csrf()),
+        )
+            .andExpect(status().isOk)
     }
 
     @Test
@@ -394,16 +430,33 @@ class AuthControllerTest {
     @WithMockUser
     fun `requestEmailVerification은 성공하면 200을 반환하고 authService에 위임한다`() {
         val request = EmailVerificationRequest(email = "test@example.com")
+        val key = UUID.randomUUID()
 
         mockMvc.perform(
             post("/auth/email-verification/request")
+                .header("Idempotency-Key", key.toString())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(jacksonObjectMapper().writeValueAsString(request))
                 .with(csrf()),
         )
             .andExpect(status().isOk)
 
-        verify(authService).requestEmailVerification("test@example.com", null)
+        verify(authService).requestEmailVerification("test@example.com", null, key)
+    }
+
+    @Test
+    @WithMockUser
+    fun `requestEmailVerification은 키가 없으면 서비스까지 가지 않고 400 INVALID_INPUT을 준다`() {
+        mockMvc.perform(
+            post("/auth/email-verification/request")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(jacksonObjectMapper().writeValueAsString(EmailVerificationRequest(email = "test@example.com")))
+                .with(csrf()),
+        )
+            .andExpect(status().isBadRequest)
+            .andExpect(jsonPath("$.code").value("INVALID_INPUT"))
+
+        verifyNoInteractions(authService)
     }
 
     @Test

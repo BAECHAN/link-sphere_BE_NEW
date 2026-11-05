@@ -2,6 +2,7 @@ package com.example.linksphere.domain.post
 
 import com.example.linksphere.global.common.ApiResponse
 import com.example.linksphere.global.common.ClientIpResolver
+import com.example.linksphere.global.common.IdempotentCreate
 import com.example.linksphere.global.common.RateLimitService
 import com.example.linksphere.global.common.getUserId
 import io.swagger.v3.oas.annotations.Operation
@@ -33,6 +34,8 @@ class PostController(
         // 키워드 검색으로 강등한다. 공유 IP(NAT)를 고려해 넉넉하게 잡는다.
         private val SEARCH_EMBED_IP_WINDOW = Duration.ofMinutes(10)
         private const val SEARCH_EMBED_IP_LIMIT = 60
+
+        private const val IDEMPOTENCY_INDEX = "uq_posts_user_idempotency_key"
     }
 
     @Operation(
@@ -40,19 +43,31 @@ class PostController(
         description = "URL 을 크롤링해 메타데이터를 추출하고 AI 요약을 비동기로 채운다. 10분 안에 같은 URL을 " +
             "GET /link-preview 로 미리 본 적이 있으면 크롤링 대신 그 결과를 쓴다. " +
             "HTTP 상태와 본문 status 모두 201 이다. " +
-            "실패: 400 INVALID_URL · 400 URL_UNRESOLVABLE(도메인 없음) · 400 URL_NOT_ALLOWED(내부망) · " +
+            "Idempotency-Key 헤더(UUID)가 필수다. 같은 회원이 같은 키로 다시 보내면 새로 만들지 않고 처음 글을 201로 돌려주며 한도도 쓰지 않는다. " +
+            "실패: 400 INVALID_INPUT(키 없음) · 400 INVALID_PATH_VARIABLE(키가 UUID 아님) · " +
+            "400 INVALID_URL · 400 URL_UNRESOLVABLE(도메인 없음) · 400 URL_NOT_ALLOWED(내부망) · " +
             "403 EMAIL_NOT_VERIFIED · 404 FOLDER_NOT_FOUND · 403 FORBIDDEN(남의 폴더) · " +
+            "409 DUPLICATE_POST(다른 키로 1시간 안에 같은 URL을 등록함) · " +
             "429 RATE_LIMIT_EXCEEDED(회원당 시간당 등록 한도 초과)",
     )
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     fun createPost(
+        @RequestHeader("Idempotency-Key") idempotencyKey: UUID,
         @RequestBody request: PostCreateRequest,
         authentication: Authentication,
     ): ApiResponse<PostResponse> {
         val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
-        rateLimitService.consume("post-create:member:$userId", CREATE_MEMBER_LIMIT, CREATE_MEMBER_WINDOW)
-        val post = postService.createPost(userId, request)
+        val post =
+            IdempotentCreate.run(
+                index = IDEMPOTENCY_INDEX,
+                find = { postService.findByIdempotencyKey(userId, idempotencyKey) },
+                create = {
+                    // 응답이 끊겨 다시 보낸 요청이 한도를 깎지 않고, 20번째 글의 재전송이 429로 보이지 않도록 조회 뒤에 쓴다.
+                    rateLimitService.consume("post-create:member:$userId", CREATE_MEMBER_LIMIT, CREATE_MEMBER_WINDOW)
+                    postService.createPost(userId, request, idempotencyKey = idempotencyKey)
+                },
+            )
         return ApiResponse(HttpStatus.CREATED.value(), "Post created", post)
     }
 

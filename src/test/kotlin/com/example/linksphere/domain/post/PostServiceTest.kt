@@ -8,8 +8,10 @@ import com.example.linksphere.domain.interaction.BookmarkRepository
 import com.example.linksphere.domain.interaction.TableBookmarkFolder
 import com.example.linksphere.domain.member.MemberRepository
 import com.example.linksphere.domain.member.TableMember
+import com.example.linksphere.global.common.AdvisoryLock
 import com.example.linksphere.global.common.Paging
 import com.example.linksphere.global.exception.BookmarkFolderNotFoundException
+import com.example.linksphere.global.exception.DuplicatePostException
 import com.example.linksphere.global.exception.EmailNotVerifiedException
 import com.example.linksphere.global.exception.ForbiddenException
 import com.example.linksphere.global.exception.PostNotFoundException
@@ -64,6 +66,8 @@ class PostServiceTest {
     @Mock private lateinit var memberRepository: MemberRepository
 
     @Mock private lateinit var linkPreviewService: LinkPreviewService
+
+    @Mock private lateinit var advisoryLock: AdvisoryLock
 
     @InjectMocks private lateinit var postService: PostService
 
@@ -252,6 +256,56 @@ class PostServiceTest {
         `when`(urlMetadataExtractor.extract(url)).thenReturn(
             UrlMetadata(title = "제목", description = null, ogImage = null, tags = emptyList(), pageContent = null),
         )
+    }
+
+    // 잠금·시간 창이 실제로 겹친 요청을 막는지는 PostIdempotencyIntegrationTest가 Postgres로 본다
+    @Test
+    fun `키 없는 봇 경로는 잠금과 시간 창을 건너뛴다`() {
+        val userId = UUID.randomUUID()
+        val url = "https://example.com/post"
+        stubVerifiedMember(userId)
+        stubMetadataExtraction(url)
+        stubAssemblerResponse(UUID.randomUUID())
+        `when`(postRepository.save(anyUuid<TablePost>())).thenAnswer { it.arguments[0] }
+
+        postService.createPost(userId, PostCreateRequest(url = url))
+
+        verifyNoInteractions(advisoryLock)
+        verify(postRepository, never()).existsByUserIdAndUrlAndCreatedAtAfter(anyUuid(), anyUuid(), anyUuid())
+    }
+
+    @Test
+    fun `createPost는 다른 키로 1시간 안에 같은 URL을 등록하면 크롤링 전에 DuplicatePostException을 던진다`() {
+        val userId = UUID.randomUUID()
+        val url = "https://example.com/post"
+        stubVerifiedMember(userId)
+        `when`(postRepository.existsByUserIdAndUrlAndCreatedAtAfter(anyUuid(), anyUuid(), anyUuid())).thenReturn(true)
+
+        assertThrows(DuplicatePostException::class.java) {
+            postService.createPost(userId, PostCreateRequest(url = url), idempotencyKey = UUID.randomUUID())
+        }
+
+        verify(advisoryLock).lockForTransaction("post-create:$userId:$url")
+        verifyNoInteractions(urlMetadataExtractor)
+    }
+
+    @Test
+    fun `createPost는 잠금을 기다리는 동안 같은 키의 글이 생겼으면 그 글을 돌려주고 시간 창을 보지 않는다`() {
+        val userId = UUID.randomUUID()
+        val key = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val url = "https://example.com/post"
+        stubVerifiedMember(userId)
+        val response = stubAssemblerResponse(postId)
+        `when`(postRepository.findByUserIdAndIdempotencyKey(userId, key))
+            .thenReturn(TablePost(id = postId, userId = userId, url = url, title = "제목", idempotencyKey = key))
+
+        val result = postService.createPost(userId, PostCreateRequest(url = url), idempotencyKey = key)
+
+        assertEquals(response, result)
+        verify(postRepository, never()).existsByUserIdAndUrlAndCreatedAtAfter(anyUuid(), anyUuid(), anyUuid())
+        verify(postRepository, never()).save(anyUuid<TablePost>())
+        verifyNoInteractions(urlMetadataExtractor)
     }
 
     @Test

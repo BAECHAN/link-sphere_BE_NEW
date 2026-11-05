@@ -7,8 +7,10 @@ import com.example.linksphere.domain.interaction.BookmarkFolderRepository
 import com.example.linksphere.domain.interaction.BookmarkRepository
 import com.example.linksphere.domain.member.EmailVerificationGate
 import com.example.linksphere.domain.member.MemberRepository
+import com.example.linksphere.global.common.AdvisoryLock
 import com.example.linksphere.global.common.Paging
 import com.example.linksphere.global.exception.BookmarkFolderNotFoundException
+import com.example.linksphere.global.exception.DuplicatePostException
 import com.example.linksphere.global.exception.ForbiddenException
 import com.example.linksphere.global.exception.PostNotFoundException
 import com.example.linksphere.infra.ai.GeminiService
@@ -16,6 +18,8 @@ import org.slf4j.LoggerFactory
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.time.Duration
+import java.time.LocalDateTime
 import java.util.UUID
 
 @Service
@@ -35,12 +39,27 @@ class PostService(
     private val geminiService: GeminiService,
     private val memberRepository: MemberRepository,
     private val linkPreviewService: LinkPreviewService,
+    private val advisoryLock: AdvisoryLock,
 ) {
 
     private val logger = LoggerFactory.getLogger(PostService::class.java)
 
+    companion object {
+        // 같은 회원이 같은 URL을 다른 키로 다시 등록하면 막는 창. 표준 값이 없어 운영 간격을 보고 정했다
+        // (2026-11-04 사용자 결정, docs/plans/2026-11-04-idempotent-create.md "판단이 필요했던 항목").
+        private val DUPLICATE_URL_WINDOW = Duration.ofHours(1)
+    }
+
+    fun findByIdempotencyKey(userId: UUID, idempotencyKey: UUID): PostResponse? = postRepository.findByUserIdAndIdempotencyKey(userId, idempotencyKey)
+        ?.let { postResponseAssembler.convertToResponse(it, userId) }
+
     @Transactional
-    fun createPost(userId: UUID, request: PostCreateRequest, fallbackContent: String? = null): PostResponse {
+    fun createPost(
+        userId: UUID,
+        request: PostCreateRequest,
+        fallbackContent: String? = null,
+        idempotencyKey: UUID? = null,
+    ): PostResponse {
         // 크롤링 등 비싼 작업을 하기 전에 먼저 확인한다 - 읽기·좋아요·북마크는 막지 않고
         // 글쓰기만 막는다(docs/plans/2026-09-28-auth-hardening.md "확정된 결정들" 참고).
         val member = memberRepository.findById(userId).orElseThrow { IllegalStateException("User not found") }
@@ -48,6 +67,21 @@ class PostService(
 
         val url = request.url.trim()
         validateUrl(url)
+
+        // 키가 없는 경로는 봇(FeedItemProcessor)뿐이고, 봇은 같은 글을 feed_items로 따로 막는다.
+        if (idempotencyKey != null) {
+            advisoryLock.lockForTransaction("post-create:$userId:$url")
+
+            // 잠금을 기다리는 동안 같은 키의 요청이 먼저 끝났으면 그 글이 곧 이 요청의 결과다 - 아래 시간 창에 걸려 409가 되면 안 된다.
+            postRepository.findByUserIdAndIdempotencyKey(userId, idempotencyKey)?.let {
+                return postResponseAssembler.convertToResponse(it, userId)
+            }
+
+            if (postRepository.existsByUserIdAndUrlAndCreatedAtAfter(userId, url, LocalDateTime.now().minus(DUPLICATE_URL_WINDOW))) {
+                throw DuplicatePostException(url)
+            }
+        }
+
         // 작성 중 미리보기(10분 이내)가 있으면 그 결과를 그대로 쓴다 - 사용자가 본 미리보기와 저장되는
         // 글이 같아지고 크롤링을 다시 하지 않는다. 없으면(미리보기 전 제출·만료·봇) 기존처럼 크롤링한다.
         val metadata = linkPreviewService.findFresh(url) ?: urlMetadataExtractor.extract(url)
@@ -75,6 +109,7 @@ class PostService(
                 ogImage = metadata.ogImage,
                 aiStatus = if (pageContent != null) AiStatus.PENDING else AiStatus.NONE,
                 isPrivate = request.isPrivate,
+                idempotencyKey = idempotencyKey,
             )
         val savedPost = postRepository.save(newPost)
 

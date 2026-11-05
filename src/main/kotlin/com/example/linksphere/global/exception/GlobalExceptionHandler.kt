@@ -119,6 +119,32 @@ class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(response)
     }
 
+    @ExceptionHandler(DuplicatePostException::class)
+    fun handleDuplicatePostException(
+        e: DuplicatePostException,
+    ): ResponseEntity<ErrorResponse> {
+        val response =
+            ErrorResponse(
+                status = HttpStatus.CONFLICT.value(),
+                code = "DUPLICATE_POST",
+                message = e.message ?: "Duplicate post",
+            )
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(response)
+    }
+
+    @ExceptionHandler(DuplicateCommentException::class)
+    fun handleDuplicateCommentException(
+        e: DuplicateCommentException,
+    ): ResponseEntity<ErrorResponse> {
+        val response =
+            ErrorResponse(
+                status = HttpStatus.CONFLICT.value(),
+                code = "DUPLICATE_COMMENT",
+                message = e.message ?: "Duplicate comment",
+            )
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(response)
+    }
+
     @ExceptionHandler(BookmarkFolderNotFoundException::class)
     fun handleBookmarkFolderNotFoundException(
         e: BookmarkFolderNotFoundException,

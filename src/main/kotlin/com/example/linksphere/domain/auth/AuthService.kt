@@ -80,7 +80,7 @@ class AuthService(
     // 공개 API - 로그인 여부와 무관하게 이메일만으로 재발송 가능하다. 존재하지 않는 이메일·
     // 이미 인증된 이메일이어도 항상 같은 방식으로 조용히 끝난다(컨트롤러가 항상 200).
     @Transactional
-    fun requestEmailVerification(email: String, clientIp: String?) {
+    fun requestEmailVerification(email: String, clientIp: String?, idempotencyKey: UUID) {
         val normalizedEmail = EmailNormalizer.normalize(email)
         val emailBucket = "email-verify:${SecureToken.hash(normalizedEmail)}"
         val ipBucket = clientIp?.let { "email-verify:ip:$it" }
@@ -90,7 +90,15 @@ class AuthService(
         val member = memberService.findByEmailOrNull(normalizedEmail) ?: return
         if (member.emailVerified) return
 
-        sendVerificationEmail(member)
+        // 같은 키의 토큰이 아직 쓸 수 있으면 받은 메일의 링크가 유효하니 다시 보내지 않는다. 만료·사용된 뒤에는 응답이 끊긴 탭에서
+        // 나중에 다시 요청한 경우라 메일이 가야 한다 - 키는 이미 옛 토큰이 쓰고 있어 새 토큰에는 싣지 않는다.
+        val existing = memberActionTokenRepository.findByMemberIdAndIdempotencyKey(member.id!!, idempotencyKey)
+
+        if (existing?.isActive(Instant.now()) == true) {
+            return
+        }
+
+        sendVerificationEmail(member, idempotencyKey.takeIf { existing == null })
     }
 
     @Transactional
@@ -108,7 +116,7 @@ class AuthService(
         memberService.markEmailVerified(token.memberId)
     }
 
-    private fun sendVerificationEmail(member: TableMember) {
+    private fun sendVerificationEmail(member: TableMember, idempotencyKey: UUID? = null) {
         val raw = SecureToken.generate()
         memberActionTokenRepository.save(
             TableMemberActionToken(
@@ -116,6 +124,7 @@ class AuthService(
                 purpose = MemberActionTokenPurpose.EMAIL_VERIFY,
                 tokenHash = SecureToken.hash(raw),
                 expiresAt = Instant.now().plus(EMAIL_VERIFY_TOKEN_VALIDITY),
+                idempotencyKey = idempotencyKey,
             ),
         )
 

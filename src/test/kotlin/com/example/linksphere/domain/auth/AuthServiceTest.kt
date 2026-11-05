@@ -11,9 +11,11 @@ import com.example.linksphere.global.exception.InvalidCredentialsException
 import com.example.linksphere.global.exception.RateLimitExceededException
 import com.example.linksphere.infra.mail.MailService
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.mockito.ArgumentCaptor
 import org.mockito.ArgumentMatchers.any
 import org.mockito.ArgumentMatchers.anyString
 import org.mockito.ArgumentMatchers.contains
@@ -46,6 +48,7 @@ class AuthServiceTest {
 
     private val emailBucket = "login-fail:${SecureToken.hash("test@example.com")}"
     private val ipBucket = "login-fail:ip:203.0.113.1"
+    private val idempotencyKey = UUID.randomUUID()
 
     @BeforeEach
     fun setUp() {
@@ -315,7 +318,7 @@ class AuthServiceTest {
     fun `requestEmailVerification은 존재하지 않는 이메일이어도 조용히 끝난다`() {
         `when`(memberService.findByEmailOrNull("unknown@example.com")).thenReturn(null)
 
-        authService.requestEmailVerification("unknown@example.com", "203.0.113.1")
+        authService.requestEmailVerification("unknown@example.com", "203.0.113.1", idempotencyKey)
 
         verifyNoInteractions(memberActionTokenRepository, mailService)
     }
@@ -325,7 +328,7 @@ class AuthServiceTest {
         val member = TableMember(id = UUID.randomUUID(), email = "test@example.com", password = "enc", emailVerified = true)
         `when`(memberService.findByEmailOrNull("test@example.com")).thenReturn(member)
 
-        authService.requestEmailVerification("test@example.com", "203.0.113.1")
+        authService.requestEmailVerification("test@example.com", "203.0.113.1", idempotencyKey)
 
         verifyNoInteractions(memberActionTokenRepository, mailService)
     }
@@ -335,11 +338,59 @@ class AuthServiceTest {
         val member = TableMember(id = UUID.randomUUID(), email = "test@example.com", password = "enc", emailVerified = false)
         `when`(memberService.findByEmailOrNull("test@example.com")).thenReturn(member)
 
-        afterCommitOf { authService.requestEmailVerification("test@example.com", "203.0.113.1") }
+        afterCommitOf { authService.requestEmailVerification("test@example.com", "203.0.113.1", idempotencyKey) }
 
         verify(memberActionTokenRepository).save(any())
         verify(mailService).send(anyString(), anyString(), anyString())
     }
+
+    @Test
+    fun `requestEmailVerification은 첫 요청이면 토큰에 키를 저장한다`() {
+        val member = TableMember(id = UUID.randomUUID(), email = "test@example.com", password = "enc", emailVerified = false)
+        `when`(memberService.findByEmailOrNull("test@example.com")).thenReturn(member)
+
+        val captor = ArgumentCaptor.forClass(TableMemberActionToken::class.java)
+        afterCommitOf { authService.requestEmailVerification("test@example.com", "203.0.113.1", idempotencyKey) }
+        verify(memberActionTokenRepository).save(captor.capture())
+
+        assertEquals(idempotencyKey, captor.value.idempotencyKey)
+    }
+
+    @Test
+    fun `requestEmailVerification은 같은 키의 토큰이 아직 유효하면 토큰도 메일도 만들지 않는다`() {
+        val member = TableMember(id = UUID.randomUUID(), email = "test@example.com", password = "enc", emailVerified = false)
+        `when`(memberService.findByEmailOrNull("test@example.com")).thenReturn(member)
+        `when`(memberActionTokenRepository.findByMemberIdAndIdempotencyKey(member.id!!, idempotencyKey))
+            .thenReturn(verifyTokenOf(member.id!!, expiresAt = Instant.now().plusSeconds(60)))
+
+        authService.requestEmailVerification("test@example.com", "203.0.113.1", idempotencyKey)
+
+        verify(memberActionTokenRepository, never()).save(any())
+        verifyNoInteractions(mailService)
+    }
+
+    @Test
+    fun `requestEmailVerification은 같은 키의 토큰이 만료됐으면 키 없는 새 토큰과 메일을 만든다`() {
+        val member = TableMember(id = UUID.randomUUID(), email = "test@example.com", password = "enc", emailVerified = false)
+        `when`(memberService.findByEmailOrNull("test@example.com")).thenReturn(member)
+        `when`(memberActionTokenRepository.findByMemberIdAndIdempotencyKey(member.id!!, idempotencyKey))
+            .thenReturn(verifyTokenOf(member.id!!, expiresAt = Instant.now().minusSeconds(60)))
+
+        val captor = ArgumentCaptor.forClass(TableMemberActionToken::class.java)
+        afterCommitOf { authService.requestEmailVerification("test@example.com", "203.0.113.1", idempotencyKey) }
+        verify(memberActionTokenRepository).save(captor.capture())
+
+        assertNull(captor.value.idempotencyKey)
+        verify(mailService).send(anyString(), anyString(), anyString())
+    }
+
+    private fun verifyTokenOf(memberId: UUID, expiresAt: Instant) = TableMemberActionToken(
+        memberId = memberId,
+        purpose = MemberActionTokenPurpose.EMAIL_VERIFY,
+        tokenHash = "hash",
+        expiresAt = expiresAt,
+        idempotencyKey = idempotencyKey,
+    )
 
     // 메일은 토큰 커밋 뒤에만 나가야 한다 - 커밋 전에는 보내지 않았는지 확인한 뒤 afterCommit을 직접 부른다
     // (CommentServiceTest의 이미지 삭제와 같은 방식).

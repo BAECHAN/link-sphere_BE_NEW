@@ -11,6 +11,22 @@
 
 ### Added
 
+- `post`·`comment`·`auth` 글·댓글·답글·메일 요청에 `Idempotency-Key` 필수화, 같은 키의 재전송은 처음 결과를 돌려줌
+  <details><summary>배경·구현</summary>
+
+  같은 요청이 두 번 오면 글·댓글 행이 2개 생기고 AI 분석·푸시도 2번 나갔으며, 재설정·인증 요청은 유효한 메일이 2통 갔다. FE는
+  더블클릭을 막지만 서버가 저장한 뒤 응답이 끊겨 다시 누르는 경우는 막지 못한다. 브라우저가 만든 UUID를 필수 헤더로 받아 행과 한
+  커밋에 저장하고 `(회원, 키)` 유니크 인덱스로 막는다. 같은 키의 재전송은 201 + 처음 결과이고(메일은 200, 토큰이 유효하면 메일
+  없음), 겹치면 뒤 요청은 유니크 위반 뒤 재조회해 같은 결과를 받는다. 키가 다른데 내용이 같으면 409다 — 글은 회원·URL 1시간
+  `DUPLICATE_POST`, 댓글은 회원·대상·본문 1분 `DUPLICATE_COMMENT`(이미지 댓글 제외), 확인과 저장 사이는
+  `pg_advisory_xact_lock`으로 줄 세운다. 글 한도는 키 조회 뒤에 써서 재전송이 깎지 않는다. 봇은 키가 null이라 그대로다. 구조는
+  `docs/BE-ARCHITECTURE.md` §7-14, 근거는 `docs/plans/2026-11-04-idempotent-create.md`.
+  (`IdempotentCreate.kt`·`AdvisoryLock.kt`·`DuplicatePostException.kt`·`DuplicateCommentException.kt`(신규), `PostController.kt`,
+  `PostService.kt`, `CommentController.kt`, `CommentService.kt`, `AuthController.kt`, `AuthService.kt`, `PasswordResetService.kt`,
+  `GlobalExceptionHandler.kt`, [PR #158](https://github.com/BAECHAN/link-sphere_BE_NEW/pull/158))
+
+  </details>
+
 - `auth` 역할·권한 체계, `DEMO` 역할은 계정 설정 4개 API가 403 `ACCESS_DENIED`
   <details><summary>배경·구현</summary>
 
@@ -78,6 +94,9 @@
 
 ### Migration
 
+- DB 먼저: 이 버전을 배포하기 **전에** `sql/add_idempotency_keys.sql`을 세션 풀러(5432)로 실행한다. 컬럼 없이 나가면 posts·comments
+  조회가 전부 500이다. FE 의존: 글·댓글·메일 요청이 `Idempotency-Key`를 보내는 FE(#535)가 먼저 배포돼 있어야 한다. 그 전 번들을
+  띄워 둔 탭은 400을 받고 새로고침하면 회복한다.
 - FE 의존: 회원 탈퇴 호출을 `DELETE /auth/account` → `POST /auth/account/deletion`으로 바꿔야 한다(옛 경로는 없어진다). 운영에서는 옛 호출이 이미 CloudFront에서 403이라 BE를 먼저 배포해도 새로 깨지는 것은 없다. FE는 같은 날 호출 경로를 바꾸고 생성 스펙을 다시 만든다 — 안 하면 다음 날 `openapi-drift-check` 이슈가 열린다.
 
 ## [0.11.0] - 2026-10-28

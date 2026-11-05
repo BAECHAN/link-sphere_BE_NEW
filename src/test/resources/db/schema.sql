@@ -177,7 +177,8 @@ CREATE TABLE public.comments (
     link_url text,
     link_title text,
     link_description text,
-    link_og_image text
+    link_og_image text,
+    idempotency_key uuid
 );
 
 
@@ -251,7 +252,8 @@ CREATE TABLE public.member_action_tokens (
     token_hash character(64) NOT NULL,
     expires_at timestamp with time zone NOT NULL,
     consumed_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL
+    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    idempotency_key uuid
 );
 
 
@@ -341,7 +343,8 @@ CREATE TABLE public.posts (
     created_at timestamp with time zone DEFAULT now(),
     ai_status character varying(20) DEFAULT 'NONE'::character varying NOT NULL,
     is_private boolean DEFAULT false NOT NULL,
-    embedding extensions.vector(768)
+    embedding extensions.vector(768),
+    idempotency_key uuid
 );
 
 
@@ -728,6 +731,27 @@ CREATE UNIQUE INDEX members_email_lower_key ON public.members USING btree (lower
 --
 
 CREATE UNIQUE INDEX members_nickname_lower_key ON public.members USING btree (lower(nickname));
+
+
+--
+-- Name: uq_comments_user_idempotency_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_comments_user_idempotency_key ON public.comments USING btree (user_id, idempotency_key);
+
+
+--
+-- Name: uq_member_action_tokens_member_idempotency_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_member_action_tokens_member_idempotency_key ON public.member_action_tokens USING btree (member_id, idempotency_key);
+
+
+--
+-- Name: uq_posts_user_idempotency_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_posts_user_idempotency_key ON public.posts USING btree (user_id, idempotency_key);
 
 
 --

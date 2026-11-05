@@ -26,4 +26,13 @@ class TableMemberActionToken(
     @Column(name = "expires_at", nullable = false) val expiresAt: Instant,
     @Column(name = "consumed_at") var consumedAt: Instant? = null,
     @Column(name = "created_at", updatable = false) val createdAt: Instant = Instant.now(),
-)
+    // 메일 요청의 Idempotency-Key. 가입 경로의 인증 메일과 만료·사용된 키로 다시 만든 토큰은 null이다.
+    @Column(name = "idempotency_key", updatable = false) val idempotencyKey: UUID? = null,
+) {
+    fun isActive(now: Instant): Boolean = consumedAt == null && expiresAt.isAfter(now)
+
+    companion object {
+        // 겹친 메일 요청을 가리는 유니크 인덱스(sql/add_idempotency_keys.sql)
+        const val IDEMPOTENCY_INDEX = "uq_member_action_tokens_member_idempotency_key"
+    }
+}

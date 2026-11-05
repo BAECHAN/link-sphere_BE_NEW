@@ -15,6 +15,8 @@ import java.util.UUID
 interface MemberActionTokenRepository : JpaRepository<TableMemberActionToken, UUID> {
     fun findByTokenHash(tokenHash: String): TableMemberActionToken?
 
+    fun findByMemberIdAndIdempotencyKey(memberId: UUID, idempotencyKey: UUID): TableMemberActionToken?
+
     // 재사용(이미 소비됨)·동시 확인 요청을 한 번에 막는다 - WHERE consumed_at IS NULL 조건이
     // 있는 이 UPDATE 자체가 "먼저 실행된 요청만 1행을 건드린다"는 DB 레벨 락 역할을 한다.
     @Modifying

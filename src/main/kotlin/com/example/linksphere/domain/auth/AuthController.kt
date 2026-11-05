@@ -4,6 +4,7 @@ import com.example.linksphere.domain.member.SignupRequest
 import com.example.linksphere.domain.member.UpdateAccountRequest
 import com.example.linksphere.global.common.ApiResponse
 import com.example.linksphere.global.common.ClientIpResolver
+import com.example.linksphere.global.common.IdempotentCreate
 import com.example.linksphere.global.common.getUserId
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.security.SecurityRequirements
@@ -28,6 +29,7 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
+import java.util.UUID
 
 @Tag(name = "인증", description = "회원가입·로그인·토큰 갱신·계정 조회")
 @RestController
@@ -225,15 +227,20 @@ class AuthController(
     @Operation(
         summary = "비밀번호 찾기 요청",
         description = "이메일이 존재하지 않아도 항상 200을 반환한다(계정 존재 여부 노출 방지). " +
-            "실제 회원이면 1시간짜리 재설정 링크를 메일로 보낸다. 실패: 429 RATE_LIMIT_EXCEEDED",
+            "실제 회원이면 1시간짜리 재설정 링크를 메일로 보낸다. " +
+            "Idempotency-Key 헤더(UUID)가 필수다. 같은 키의 링크가 아직 유효하면 메일을 다시 보내지 않고 200을 준다. " +
+            "실패: 400 INVALID_INPUT(키 없음) · 400 INVALID_PATH_VARIABLE(키가 UUID 아님) · 429 RATE_LIMIT_EXCEEDED",
     )
     @SecurityRequirements
     @PostMapping("/password-reset/request")
     fun requestPasswordReset(
+        @RequestHeader("Idempotency-Key") idempotencyKey: UUID,
         @Valid @RequestBody request: PasswordResetRequest,
         httpRequest: HttpServletRequest,
     ): ApiResponse<Unit> {
-        passwordResetService.requestReset(request.email, ClientIpResolver.resolve(httpRequest))
+        IdempotentCreate.ignoringLoss(TableMemberActionToken.IDEMPOTENCY_INDEX) {
+            passwordResetService.requestReset(request.email, ClientIpResolver.resolve(httpRequest), idempotencyKey)
+        }
         return ApiResponse(HttpStatus.OK.value(), "Password reset email sent if the account exists", Unit)
     }
 
@@ -252,15 +259,20 @@ class AuthController(
     @Operation(
         summary = "이메일 인증 메일 발송/재발송",
         description = "로그인 여부와 무관하게 이메일만으로 호출 가능하다. 존재하지 않는 계정·이미 인증된 " +
-            "계정이어도 항상 200을 반환한다(계정 상태 노출 방지). 실패: 429 RATE_LIMIT_EXCEEDED",
+            "계정이어도 항상 200을 반환한다(계정 상태 노출 방지). " +
+            "Idempotency-Key 헤더(UUID)가 필수다. 같은 키의 링크가 아직 유효하면 메일을 다시 보내지 않고 200을 준다. " +
+            "실패: 400 INVALID_INPUT(키 없음) · 400 INVALID_PATH_VARIABLE(키가 UUID 아님) · 429 RATE_LIMIT_EXCEEDED",
     )
     @SecurityRequirements
     @PostMapping("/email-verification/request")
     fun requestEmailVerification(
+        @RequestHeader("Idempotency-Key") idempotencyKey: UUID,
         @Valid @RequestBody request: EmailVerificationRequest,
         httpRequest: HttpServletRequest,
     ): ApiResponse<Unit> {
-        authService.requestEmailVerification(request.email, ClientIpResolver.resolve(httpRequest))
+        IdempotentCreate.ignoringLoss(TableMemberActionToken.IDEMPOTENCY_INDEX) {
+            authService.requestEmailVerification(request.email, ClientIpResolver.resolve(httpRequest), idempotencyKey)
+        }
         return ApiResponse(HttpStatus.OK.value(), "Verification email sent if applicable", Unit)
     }
 

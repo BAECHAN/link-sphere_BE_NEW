@@ -181,6 +181,9 @@ src/main/kotlin/com/example/linksphere/
 
 ## API 엔드포인트
 
+글·댓글·답글 등록과 메일 요청 2개(`password-reset/request`, `email-verification/request`)는 `Idempotency-Key` 헤더(UUID)가
+필수다. 없으면 400이고, 같은 회원이 같은 키로 다시 보내면 새로 만들지 않는다(`docs/BE-ARCHITECTURE.md` §7-14).
+
 ### 🔐 Auth (`/auth`)
 
 | Method   | Endpoint                                | 설명                                          | 인증 |

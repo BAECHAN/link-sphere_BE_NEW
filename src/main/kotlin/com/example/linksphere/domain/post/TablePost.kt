@@ -48,4 +48,6 @@ class TablePost(
     @Column(name = "embedding", insertable = false, updatable = false)
     @JdbcTypeCode(SqlTypes.VECTOR)
     val embedding: FloatArray? = null,
+    // 브라우저가 만든 Idempotency-Key. 봇과 이 컬럼 이전의 글은 null이다.
+    @Column(name = "idempotency_key", updatable = false) val idempotencyKey: UUID? = null,
 )

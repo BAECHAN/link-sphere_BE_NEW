@@ -1,13 +1,13 @@
 # Link-Sphere BE — 게시글 AI 분석 비동기화 (2026-08-01)
 
-> 마지막 검토: 2026-10-03
+> 마지막 검토: 2026-11-04
 
 ## 1. 문제
 
 `POST /post`는 크롤링 이후 Gemini 요약·카테고리 분류가 끝날 때까지 응답을 미룬 채
 동기로 기다리는 구조였다(`PostAIService.handlePostCreatedEvent`,
 `@TransactionalEventListener(AFTER_COMMIT)` + 동기 호출). 크롤링과 AI 처리 합산
-시간이 CloudFront origin timeout(30초)을 넘기면 클라이언트는 504를 받지만, Lambda
+시간이 CloudFront origin timeout(당시 30초, 2026-11-04 확인 값은 60초)을 넘기면 클라이언트는 504를 받지만, Lambda
 자체는 계속 실행되어 게시글은 이미 DB에 커밋된 채 **응답만 유실**되는 문제가 있었다.
 
 실제 사고 사례(2026-07-31 02:20~02:21 UTC, `postId b61c9b90...`):
