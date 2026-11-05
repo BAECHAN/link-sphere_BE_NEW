@@ -161,7 +161,7 @@ flowchart LR
 | 다른 값도 로그에서 가리기 | `EmailMaskingLogCustomizer`에 치환을 더하고 `EmailMaskingLogCustomizerTest`에 형태를 추가 | 필요 |
 | 한도 값 바꾸기 | 위 상수를 바꾸고 `AuthControllerTest`의 기대값과 `TRAFFIC-MANAGEMENT.md` §7-1을 함께 고침 | 필요 |
 | 1일보다 긴 레이트리밋 창 추가 | `RETENTION`을 그 창보다 길게 늘린다. 안 늘리면 창이 끝나기 전에 행이 지워져 한도가 풀린다 | 필요 |
-| 로그 보존 기간 바꾸기 | `aws logs put-retention-policy --log-group-name <그룹> --retention-in-days <일>`을 4개 그룹에 실행 | 불필요 |
+| 로그 보존 기간 바꾸기 | `aws logs put-retention-policy --log-group-name <그룹> --retention-in-days <일>`을 4개 그룹에 실행. `link-sphere-user`에는 권한이 없어 관리자 권한의 CloudShell에서 한다 | 불필요 |
 | 로그 속 이메일 건수 세기 | `aws logs filter-log-events --log-group-name /aws/lambda/link-sphere-api --start-time <ms> --filter-pattern '%[a-zA-Z0-9._-]+@[a-zA-Z0-9-]+\.[a-zA-Z]{2,}%'`. 값을 대화나 파일에 남기지 않고 건수만 본다 | 불필요 |
 
 ## 9. 검증 결과
@@ -176,12 +176,20 @@ flowchart LR
 | 중복 검사 한도 | 같은 IP로 61회, 다른 IP로 1회 | 60회 200, 61번째 429 `RATE_LIMIT_EXCEEDED`, 다른 IP는 200 |
 | 행 삭제 경계 | `RateLimitServicePurgeIntegrationTest`(실제 Postgres) | 기준 전 1초 행만 삭제, 기준과 같은 행은 유지 |
 
-운영에서 2026-11-05 확인한 것은 다음과 같다. 나머지 운영 확인 결과는 배포 뒤 이 절에 덧붙인다.
+운영에서 2026-11-05 배포(`prod` alias 버전 192) 뒤 확인한 결과는 다음과 같다. 이메일 값은 출력하지 않고 건수만 셌다.
 
 | 대상 | 방법 | 결과 |
 | --- | --- | --- |
+| 기동 | 배포 run 성공 뒤 `/api/actuator/health` | `UP` |
+| 중복 검사 한도 | `example.com` 주소로 61회 호출 | 60회 200, 61번째 429 `RATE_LIMIT_EXCEEDED`, `Retry-After` 2954초 |
+| 배포 뒤 로그 | 배포 시각 이후 약 10분치를 필터 패턴으로 집계 | 이메일 형태 0건, `does not support SSL` 0건, ERROR 0건 |
+| 레이트리밋 행 삭제 | `account-purge` 잡을 1회 호출하고 전후를 `linksphere-ro`로 조회 | 163행 → 6행, 하루 지난 행 157 → 0. 유예가 끝난 계정은 0개라 퍼지 대상은 없었다 |
+| 로그 보존 | 사용자가 CloudShell에서 설정한 뒤 `describe-log-groups` | 4개 그룹 모두 90일 |
 | 임시 조회 권한 | 사용자가 Supabase에서 `revoke select (email)` 실행 뒤 `has_column_privilege('members','email','SELECT')` | `f`(`select count(email) from members`도 권한 오류) |
 | 옛 Supabase Auth에 남은 이메일 | 사용자가 Supabase에서 `select count(*) from auth.users` | 0행, 정리할 것 없음 |
+
+배포 뒤 로그는 표본이 작고, 운영 로그에서 `<email>`로 가려진 줄을 직접 보지는 못했다(발송 실패나 유니크 위반이 일어나야 찍힌다). 정기 잡까지 거친 재확인은
+[#162](https://github.com/BAECHAN/link-sphere_BE_NEW/issues/162)에서 한다.
 
 ## 10. 시행착오
 
