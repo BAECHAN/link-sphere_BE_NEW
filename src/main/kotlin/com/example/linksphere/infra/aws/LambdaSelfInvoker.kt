@@ -27,6 +27,7 @@ class LambdaSelfInvoker(
         const val PROD_QUALIFIER = "prod"
     }
 
+    // 실제 클라이언트는 복원 뒤 첫 호출에서 만든다. SDK 초기화는 LambdaHandler.warmUpAwsSdk가 스냅샷 전에 해 둔다.
     private val lambdaClient: LambdaClient by lazy {
         LambdaClient.builder()
             .region(Region.of(System.getenv("AWS_REGION") ?: "ap-northeast-1"))
