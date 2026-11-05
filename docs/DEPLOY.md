@@ -1,6 +1,6 @@
 # AWS Lambda SnapStart 배포 가이드
 
-> 마지막 검토: 2026-11-05 (TLS 인자·임시 조회 이메일 제외·덤프 처리·로그 가림·cursor 스모크 테스트·요청 경로만 다시 봄. 전체 검토는 2026-10-30)
+> 마지막 검토: 2026-11-05 (TLS 인자·임시 조회 이메일 제외·덤프 처리·로그 가림·cursor 스모크 테스트·요청 경로·Lambda 실행 역할·백업 보존 설정·CDK 안내만 다시 봄. 전체 검토는 2026-10-30)
 
 ## 아키텍처 개요
 
@@ -154,6 +154,10 @@ Shadow 공식 변경 내역은 9.0.1에서 _"대부분의 ResourceTransformer �
 
 ## AWS 초기 설정 (최초 1회)
 
+> **이 장의 값을 바꾸면 코드도 맞춘다.** Lambda 설정·URL·호출 권한, EventBridge 룰, 알람, IAM 역할, 배포·백업 버킷은 2026-11-05부터 비공개 저장소
+> `link-sphere-infra`의 CDK 스택이 기록하고 매일 실제와 비교한다(FE [`docs/DEPLOY.md`](https://github.com/BAECHAN/link-sphere_FE_NEW/blob/main/docs/DEPLOY.md) "AWS 설정 코드화(CDK)"). 값은 여전히 아래 명령으로
+> 바꾸지만, 바꾼 뒤 그 저장소의 코드를 맞춰야 `iac-drift` 이슈가 닫힌다. Lambda 코드·별칭·버전·환경변수는 대상이 아니라 일반 배포와 환경변수 변경에는 해당 없다.
+
 ### 1. GitHub Actions용 IAM 역할 (OIDC)
 
 `deploy.yml`·`prod-alias-drift-check.yml`·`db-backup.yml`은 IAM 사용자의 영구 키가 아니라, GitHub OIDC로 맡는 역할
@@ -166,7 +170,7 @@ job마다 임시 자격증명을 받아 기본 1시간 뒤 만료되므로 교�
 - **역할 ARN**: 레포 Secret `AWS_ROLE_ARN`.
 - **만든 방법**: 콘솔 CloudShell 스크립트로 OIDC 제공자와 FE·BE 역할을 함께 만들었다(스크립트 원문:
   [`docs/plans/2026-10-13-github-oidc-aws.md`](./plans/2026-10-13-github-oidc-aws.md) 부록 A — 여러 번 실행해도
-  안전하니 권한을 바꿀 때 고쳐서 다시 돌린다). 로컬 IAM 사용자(`link-sphere-user`)에는 IAM 권한이 없어 콘솔에서 한다.
+  안전하니 권한을 바꿀 때 고쳐서 다시 돌린다). 로컬 IAM 사용자(`link-sphere-user`)에는 IAM 쓰기 권한이 없어 콘솔에서 한다.
 - **전제 — 도쿄 리전 STS 활성화**: IAM → Account settings → Security Token Service (STS) → Endpoints에서
   Asia Pacific (Tokyo)가 Active여야 한다. 꺼져 있으면 역할 맡기가 _"이 리전에서 STS가 활성화돼 있지 않다"_ (번역)
   에러로 실패한다 — 2026-10-13 FE 첫 전환 때 실제로 이걸로 실패해 켰다. AWS 문서는 _"기본으로 켜진 리전은 임시
@@ -231,7 +235,7 @@ aws lambda create-function \
   --function-name link-sphere-api \
   --runtime java17 \
   --handler com.example.linksphere.LambdaHandler \
-  --role arn:aws:iam::ACCOUNT_ID:role/lambda-execution-role \
+  --role arn:aws:iam::ACCOUNT_ID:role/service-role/link-sphere-api-role-qd2sz01l \
   --code S3Bucket=link-sphere-lambda-deploy,S3Key=initial.jar \
   --memory-size 2048 \
   --timeout 120 \
@@ -239,7 +243,11 @@ aws lambda create-function \
   --snap-start ApplyOn=PublishedVersions
 ```
 
-Lambda 실행 역할 필요 권한: `AWSLambdaBasicExecutionRole`
+Lambda 실행 역할(`link-sphere-api-role-qd2sz01l`, 경로 `/service-role/`) 필요 권한:
+
+- 로그 쓰기: 관리형 정책 `AWSLambdaBasicExecutionRole-...`(함수를 콘솔에서 만들 때 생긴 고객 관리형 정책)
+- 메일 발송: 인라인 정책 `link-sphere-ses-send`(`ses:SendEmail`·`ses:SendRawEmail`, 9장)
+- 자기 호출: 인라인 정책 `link-sphere-api-self-invoke`(`lambda:InvokeFunction`, 이 함수만)
 
 > **메모리 2048MB인 이유**: Lambda는 메모리에 비례해 vCPU를 준다(1024MB ≈ 0.58 vCPU → 2048MB ≈ 1.15 vCPU). 콜드스타트 첫 요청은 클래스 로딩·JIT 위주의 CPU 바운드라 메모리를 올리면 거의 선형으로 빨라진다. 실사용 메모리는 460MB 수준이므로 메모리 자체가 목적이 아니다. `GB × 초` 과금이라 실행 시간이 줄어 **비용은 거의 중립**이다. ([PERFORMANCE.md](./PERFORMANCE.md))
 
@@ -869,6 +877,8 @@ flowchart TD
 | DB public 스키마 전체(구조 + 데이터). 단 `member_sessions`·`member_action_tokens`·`auth_rate_limits`는 구조만 | `s3://link-sphere-db-backup/db/<UTC 날짜>.dump`(pg_dump custom 형식) | 30일. 버전 관리라 지운 뒤에도 이전 버전으로 30일 더 남는다 |
 | Storage `comments` 버킷 중 댓글 본문·회원 아바타가 참조하는 이미지 | `s3://link-sphere-db-backup/storage/comments/<파일>` | 무기한 — GC가 원본을 지워도 남는다 |
 
+- **보존 설정이 빠져 있었다(2026-11-05 발견·적용)**: 아래 ③의 네 줄 중 버전 관리와 수명 주기 두 줄이 실제로는 적용돼 있지 않았다. CloudTrail에는 11-02의
+  `CreateBucket`·`PutBucketPublicAccessBlock`만 남아 있어 앞 두 줄만 실행된 것으로 보인다(추정). CDK 편입 때 문서와 대조하다 찾았고 그날 적용했다. 이제 이 설정이 사라지면 매일 검사가 잡는다.
 - **빼는 것**: 세 테이블의 데이터는 계속 바뀌고 토큰 해시를 백업에 남기지 않으려고 뺀다. 그래서 복원하면 모두 다시
   로그인한다. 역할(`adhoc_readonly`·`backup_reader`)은 DB 전체 수준이라 public 덤프에 들어가지 않는다. 참조되지 않는
   이미지(GC가 지울 고아)도 뺀다.
