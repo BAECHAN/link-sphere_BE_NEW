@@ -42,9 +42,11 @@ import java.util.Base64
  * 만들지만 `--server.port=-1`이라 8080에 바인딩하지 않는다 — 기동·복원 때 임시 포트(0)에 잠깐 bind했다가 바로 닫으므로
  * 요청을 처리하는 동안에는 리스닝 소켓이 없다(init 블록 주석 참고).
  *
- * Tomcat 방식을 사용하지 않는 이유:
- * - SnapStart CRaC 체크포인트는 열린 소켓(Tomcat 8080, HikariCP DB)이 있으면 State:Failed
- * - CRaC restore 후 Tomcat이 8080 포트에 재바인딩하지 못하는 Lambda 환경 제약
+ * MockMvc가 서빙 경로가 된 경위(Lambda에서 Tomcat을 못 써서가 아니다):
+ * - 2026-03: 체크포인트 State:Failed는 org.crac 의존성으로 풀었고, 복원 뒤 Tomcat이 8080에 재바인딩하지 못한다고 보고 이 경로를 만들었다.
+ *   재바인딩 실패의 원인은 추정이었다(docs/DEPLOY.md 시행착오 2·3).
+ * - 2026-07-25: 그때까지 실제 트래픽은 Lambda Web Adapter를 거쳐 Tomcat이 복원 뒤에도 처리하고 있었다. init에서 MockMvc를 돌리는 워밍업이
+ *   이 어댑터와 충돌해, 어댑터를 없애고 이 경로로 서빙을 옮겼다(docs/PERFORMANCE.md 5장).
  *
  * 동작 흐름:
  * 1. Init phase: companion object init에서 Spring Boot 시작 → SnapStart 스냅샷 저장
