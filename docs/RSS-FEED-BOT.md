@@ -8,7 +8,7 @@
 > **읽고 나면**: 이 문서만 보고 피드 소스를 추가/제거하거나, 수집 주기·건수를 조정하거나,
 > 버그를 재현·수정할 수 있다 (§9 참고).
 >
-> **마지막 검토**: 2026-11-05(룰 값을 CDK 코드가 기록한다는 서술만 고침). 2026-09-29 (EventBridge 룰이 `account-purge`와 공유되는 사실,
+> **마지막 검토**: 2026-11-06(룰 변경을 infra PR로 한다는 서술만 고침). 2026-11-05(룰 값을 CDK 코드가 기록한다는 서술만 고침). 2026-09-29 (EventBridge 룰이 `account-purge`와 공유되는 사실,
 > Stage C의 임베딩 생성 단계, 오래된 절 참조 정정 반영)
 
 ## 1. RSS가 뭔가요?
@@ -259,9 +259,9 @@ nullable + `ON DELETE SET NULL`로 둬서, 봇 글을 관리자가 지워도 원
 레포는 이런 운영 튜닝값을 `application.yml`로 빼지 않고 코드 상수로 두는 게
 기존 관례라 이번에도 그대로 따랐다.
 
-**EventBridge 값을 바꾸려면**: `docs/DEPLOY.md` 8장의 `aws events put-rule`
-커맨드를 `--schedule-expression`만 바꿔 재실행하면 된다(같은 이름의 룰에
-다시 `put-rule`을 호출하면 덮어써진다 — 별도 삭제 불필요).
+**EventBridge 값을 바꾸려면**: 비공개 저장소 `link-sphere-infra`의 `FeedCrawlRule` 일정을 고쳐
+PR을 올린다. 병합하면 시험 단계를 거쳐 운영에 적용된다. `aws events put-rule`을 직접 실행하면
+코드와 실제가 달라져 다음 인프라 배포가 멈춘다(2026-11-06부터).
 
 > ⚠️ 이 룰의 스케줄(`cron(0 22 */4 * ? *)`)을 바꾸면 **탈퇴 계정 정리
 > 주기도 함께 바뀐다** — `link-sphere-feed-crawl` 룰에는 `feed-crawl`
@@ -310,12 +310,12 @@ nullable + `ON DELETE SET NULL`로 둬서, 봇 글을 관리자가 지워도 원
 | 하고 싶은 것 | 방법 |
 | --- | --- |
 | 피드 소스 추가·제거·일시중단 | `feed_sources` 테이블에 직접 INSERT / `enabled=false` UPDATE — **재배포 불필요** |
-| 실행 시각 변경 | `docs/DEPLOY.md` 8장의 `aws events put-rule` 재실행 |
+| 실행 시각 변경 | `link-sphere-infra`의 `FeedCrawlRule` 일정을 고쳐 PR |
 | 수집 건수·chunk 크기 조정 | `FeedCrawlService`의 companion object 상수(§8 표) 수정 — 재배포 필요 |
 | 특정 글 재수집 강제 | `feed_items`에서 해당 `normalized_url` 행을 DELETE — 다음 실행 때 새 후보로 다시 잡힌다 |
 | 로컬에서 안전하게 돌려보기 | `./gradlew bootRun --args='--spring.profiles.active=secret,feed-crawl'` — dry-run이 기본(후보만 출력), `--commit`을 붙여야 실제로 게시글이 생성된다(`FeedCrawlRunner.kt`) |
 | 테스트 실행 | `./gradlew test --tests '*Feed*'` |
-| 프로덕션에서 수동 1회 실행 | §10의 `aws lambda invoke` 커맨드 |
+| 프로덕션에서 수동 1회 실행 | §10의 `aws lambda invoke` 커맨드를 CloudShell에서 실행(로컬 키에는 호출 권한이 없다) |
 
 ## 10. 검증 (실제 프로덕션)
 

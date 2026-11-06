@@ -8,7 +8,7 @@
 > **읽고 나면**: 이메일 컬럼을 왜 암호화하지 않는지 설명할 수 있고, 언제 다시 검토해야 하는지 알며, 로그 가림·행 삭제·보존
 > 기간·중복 검사 한도를 고칠 수 있다.
 >
-> **마지막 검토**: 2026-11-05 (최초 작성)
+> **마지막 검토**: 2026-11-06 (로그 보존 기간을 바꾸는 경로만 고침). 2026-11-05 최초 작성
 
 ## 1. 쉬운 설명
 
@@ -161,7 +161,7 @@ flowchart LR
 | 다른 값도 로그에서 가리기 | `EmailMaskingLogCustomizer`에 치환을 더하고 `EmailMaskingLogCustomizerTest`에 형태를 추가 | 필요 |
 | 한도 값 바꾸기 | 위 상수를 바꾸고 `AuthControllerTest`의 기대값과 `TRAFFIC-MANAGEMENT.md` §7-1을 함께 고침 | 필요 |
 | 1일보다 긴 레이트리밋 창 추가 | `RETENTION`을 그 창보다 길게 늘린다. 안 늘리면 창이 끝나기 전에 행이 지워져 한도가 풀린다 | 필요 |
-| 로그 보존 기간 바꾸기 | `aws logs put-retention-policy --log-group-name <그룹> --retention-in-days <일>`을 4개 그룹에 실행. `link-sphere-user`에는 권한이 없어 관리자 권한의 CloudShell에서 한다 | 불필요 |
+| 로그 보존 기간 바꾸기 | `aws logs put-retention-policy --log-group-name <그룹> --retention-in-days <일>`을 4개 그룹에 실행. `link-sphere-user`에는 권한이 없어 관리자 권한의 CloudShell에서 한다. `/aws/lambda/link-sphere-api`만은 `link-sphere-infra` 코드(`ApiLogGroup`)로 바꾼다 | 불필요 |
 | 로그 속 이메일 건수 세기 | `aws logs filter-log-events --log-group-name /aws/lambda/link-sphere-api --start-time <ms> --filter-pattern '%[a-zA-Z0-9._-]+@[a-zA-Z0-9-]+\.[a-zA-Z]{2,}%'`. 값을 대화나 파일에 남기지 않고 건수만 본다 | 불필요 |
 
 ## 9. 검증 결과

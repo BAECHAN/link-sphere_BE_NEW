@@ -237,7 +237,7 @@ Plan mode로 계획을 세우고 구현한 작업은, PR을 열기 전에:
   실패하면 워크플로우가 죽고 `prod`는 이전 버전 유지). 이 규칙은 이제 **롤백 등
   CI를 우회하는 예외적 수동 개입에만** 적용된다 — 그럴 때도 반드시 버전을 **직접
   연속 호출**해 확인한 뒤 옮긴다. 위 장애는 "복원 후 첫 요청은 성공, 이후 실패"
-  패턴이라 단발 확인으로는 잡히지 않았다
+  패턴이라 단발 확인으로는 잡히지 않았다. 로컬 키에는 Lambda 호출·쓰기 권한이 없어(2026-11-06 회수) 사용자가 CloudShell에서 실행한다
   ```bash
   aws lambda invoke --function-name link-sphere-api:<버전> --log-type Tail \
     --payload fileb://event.json /tmp/out.json --query 'LogResult' --output text | base64 -d

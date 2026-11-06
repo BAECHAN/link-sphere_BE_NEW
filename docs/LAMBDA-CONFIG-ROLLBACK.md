@@ -1,7 +1,10 @@
 # Lambda 배포 설정 롤백 런북
 
-> 마지막 검토: 2026-09-30 (즉시 검증의 CloudFront 경유 예시 URL을 커스텀 도메인
-> `linksphere.click`으로 교체)
+> 마지막 검토: 2026-11-06 (명령 실행 위치와 개별 설정 되돌리기 경로만 다시 봄. 2026-09-30에는 즉시
+> 검증의 CloudFront 경유 예시 URL을 커스텀 도메인 `linksphere.click`으로 교체)
+>
+> **이 문서의 `aws` 쓰기·호출 명령은 CloudShell에서 실행한다.** 로컬 키 `link-sphere-user`는 2026-11-06부터
+> 조회 전용이다.
 
 2026-07-25 502 장애 대응 과정에서 작성된 변경 전 상태 스냅샷 겸, 이후에도
 prod alias를 안전 버전으로 되돌릴 때 계속 참고하는 롤백 절차서다.
@@ -117,7 +120,9 @@ F=link-sphere-api   # 리전은 CLI 기본값(ap-northeast-1)을 쓴다
 aws lambda update-alias --function-name $F --name prod --function-version <버전>
 ```
 
-아래는 개별 설정을 되돌릴 때만 쓴다.
+아래는 개별 설정을 되돌릴 때만 쓴다. **2~4번 대상은 2026-11-06부터 `link-sphere-infra` 스택 안에 있다.** 3·4번은 그 저장소에
+되돌리는 PR로 하고, 2번은 README "Lambda 설정 바꾸기" 순서를 따른다. 코드만 바꿔 메모리를 고치면 `$LATEST`의 환경변수가
+지워진다. 아래 명령을 급해서 직접 실행하면 비상 변경이니, 같은 저장소 README "비상 변경" 순서로 코드를 맞춘다.
 
 ```bash
 # 2. 메모리 되돌리기 ($LATEST 기준. 반영하려면 publish-version 후 alias 이동 필요)
@@ -127,7 +132,6 @@ aws lambda update-function-configuration --function-name $F --memory-size 1024
 aws s3api delete-bucket-lifecycle --bucket link-sphere-lambda-deploy
 
 # 4. EventBridge 워밍핑 제거
-#    주의: 인라인 정책 ops-warmup-and-diagnostics를 회수했다면 먼저 다시 붙여야 실행된다
 aws events remove-targets --rule link-sphere-api-warmup --ids warmup
 aws events delete-rule --name link-sphere-api-warmup
 aws lambda remove-permission --function-name $F --qualifier prod \
@@ -212,5 +216,5 @@ curl -o /dev/null -w '%{http_code}\n' \
   `publish-version`은 코드·설정이 이전과 같으면 새 버전을 만들지 않고 기존 버전을 반환한다.
 - S3 버전 관리가 비활성이므로 단순 `Expiration`만으로 실제 삭제가 일어난다
   (`NoncurrentVersionExpiration` 불필요).
-- IAM 인라인 정책 이름은 `ops-warmup-and-diagnostics`다(초기에는 `warmup-rule-setup`이었으나
-  진단 권한을 추가하며 교체). 워밍 핑 삭제·재생성에 이 정책이 필요하다.
+- 인라인 정책 `ops-warmup-and-diagnostics`(초기 이름 `warmup-rule-setup`)는 2026-11-06 로컬 키에서 회수했다. 워밍 핑 변경은
+  이제 `link-sphere-infra` PR로 한다.
