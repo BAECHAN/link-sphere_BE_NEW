@@ -1,6 +1,6 @@
 # AWS Lambda SnapStart 배포 가이드
 
-> 마지막 검토: 2026-11-06 ("MockMvc 방식을 사용하는 이유", "init 단계에서 워밍업을 실행하는 이유", "메모리 2048MB인 이유"만 다시 봄. 2026-11-05에는 TLS 인자·임시 조회 이메일 제외·덤프 처리·로그 가림·cursor 스모크 테스트·요청 경로·Lambda 실행 역할·백업 보존 설정·CDK 안내만 다시 봄. 전체 검토는 2026-10-30)
+> 마지막 검토: 2026-11-06 (AWS 설정 변경 경로와 명령 실행 위치만 다시 봄. 같은 날 "MockMvc 방식을 사용하는 이유", "init 단계에서 워밍업을 실행하는 이유", "메모리 2048MB인 이유"만 다시 봄. 2026-11-05에는 TLS 인자·임시 조회 이메일 제외·덤프 처리·로그 가림·cursor 스모크 테스트·요청 경로·Lambda 실행 역할·백업 보존 설정·CDK 안내만 다시 봄. 전체 검토는 2026-10-30)
 
 ## 아키텍처 개요
 
@@ -158,9 +158,12 @@ Shadow 공식 변경 내역은 9.0.1에서 _"대부분의 ResourceTransformer �
 
 ## AWS 초기 설정 (최초 1회)
 
-> **이 장의 값을 바꾸면 코드도 맞춘다.** Lambda 설정·URL·호출 권한, EventBridge 룰, 알람, IAM 역할, 배포·백업 버킷은 2026-11-05부터 비공개 저장소
-> `link-sphere-infra`의 CDK 스택이 기록하고 매일 실제와 비교한다(FE [`docs/DEPLOY.md`](https://github.com/BAECHAN/link-sphere_FE_NEW/blob/main/docs/DEPLOY.md) "AWS 설정 코드화(CDK)"). 값은 여전히 아래 명령으로
-> 바꾸지만, 바꾼 뒤 그 저장소의 코드를 맞춰야 `iac-drift` 이슈가 닫힌다. Lambda 코드·별칭·버전·환경변수는 대상이 아니라 일반 배포와 환경변수 변경에는 해당 없다.
+> **스택 안 리소스를 만드는 아래 명령은 처음 만들 때의 기록이다. 다시 실행하지 않는다.** 2026-11-06부터 Lambda 설정·URL·호출 권한, EventBridge 룰, 알람, IAM 역할, 배포·백업 버킷은 비공개 저장소
+> `link-sphere-infra`의 PR로 바꾼다(FE [`docs/DEPLOY.md`](https://github.com/BAECHAN/link-sphere_FE_NEW/blob/main/docs/DEPLOY.md) "AWS 설정 코드화(CDK)"). 아래 `put-rule`·`put-targets`·`add-permission`·`put-role-policy`·`put-bucket-*`를
+> 그대로 실행하면 코드와 실제가 달라져 다음 인프라 배포가 멈춘다. **Lambda 메모리·타임아웃만 예외다.** 코드로만 바꾸면 환경변수가 지워져 그 저장소 README "Lambda 설정 바꾸기" 순서를 따른다.
+> Lambda 코드·별칭·버전·환경변수는 대상이 아니라 일반 배포와 환경변수 변경에는 해당 없다.
+>
+> **쓰기와 Lambda 호출은 CloudShell에서 실행한다.** 로컬 키 `link-sphere-user`는 2026-11-06부터 조회 전용이다(사용자 결정).
 
 ### 1. GitHub Actions용 IAM 역할 (OIDC)
 
@@ -174,7 +177,7 @@ job마다 임시 자격증명을 받아 기본 1시간 뒤 만료되므로 교�
 - **역할 ARN**: 레포 Secret `AWS_ROLE_ARN`.
 - **만든 방법**: 콘솔 CloudShell 스크립트로 OIDC 제공자와 FE·BE 역할을 함께 만들었다(스크립트 원문:
   [`docs/plans/2026-10-13-github-oidc-aws.md`](./plans/2026-10-13-github-oidc-aws.md) 부록 A — 여러 번 실행해도
-  안전하니 권한을 바꿀 때 고쳐서 다시 돌린다). 로컬 IAM 사용자(`link-sphere-user`)에는 IAM 쓰기 권한이 없어 콘솔에서 한다.
+  안전했지만, 지금은 이 역할이 `link-sphere-infra` 스택 안에 있어 권한을 그 저장소 PR로 바꾼다). 스크립트를 다시 돌리면 코드와 실제가 달라진다.
 - **전제 — 도쿄 리전 STS 활성화**: IAM → Account settings → Security Token Service (STS) → Endpoints에서
   Asia Pacific (Tokyo)가 Active여야 한다. 꺼져 있으면 역할 맡기가 _"이 리전에서 STS가 활성화돼 있지 않다"_ (번역)
   에러로 실패한다 — 2026-10-13 FE 첫 전환 때 실제로 이걸로 실패해 켰다. AWS 문서는 _"기본으로 켜진 리전은 임시
@@ -255,12 +258,8 @@ Lambda 실행 역할(`link-sphere-api-role-qd2sz01l`, 경로 `/service-role/`) �
 
 > **메모리 2048MB인 이유**: Lambda는 메모리에 비례해 vCPU를 준다(1024MB ≈ 0.58 vCPU → 2048MB ≈ 1.15 vCPU). 콜드스타트 첫 요청은 클래스 로딩 위주의 CPU 바운드라 빨라질 것으로 기대해 올렸지만, 두 차례 측정이 서로 모순돼 **효과는 판단하지 못했다**([PERFORMANCE.md](./PERFORMANCE.md) 6장). 실사용 메모리는 460MB 수준이므로 메모리 자체가 목적이 아니다. 장애와 무관함이 확인됐고 Lambda 비용도 사실상 0이라 유지한다(같은 문서 8장, 청구액은 2026년 7월 1~25일의 1024MB 시절 값).
 
-기존 함수의 메모리를 바꿀 때는 설정 변경 후 새 버전을 발행해야 스냅샷에 반영된다.
-
-```bash
-aws lambda update-function-configuration \
-  --function-name link-sphere-api --memory-size 2048 --region ap-northeast-1
-```
+기존 함수의 메모리를 바꿀 때는 `link-sphere-infra` README "Lambda 설정 바꾸기" 순서를 따른다. 코드만 바꿔 배포하면 CloudFormation이 `$LATEST`의 환경변수를 지워 다음 배포가 호출 검증에서 멈춘다(2026-11-06 서울 시험 함수로 측정).
+순서는 CloudShell에서 `update-function-configuration` → 코드를 같은 값으로 고친 PR → `revert_drift` 수동 실행 → BE 배포다. 새 버전을 발행해야 스냅샷에 반영되므로 마지막 BE 배포가 필요하다.
 
 ### 4. Lambda 환경변수 설정
 
@@ -428,9 +427,7 @@ Function URL을 직접 두드리는 시도는 그보다 앞단인 Lambda IAM 인
 > EventBridge 콘솔의 Lambda 타겟 선택 UI는 alias 지정이 노출되지 않을 수 있으므로
 > 아래처럼 CLI로 ARN에 `:prod`를 명시해 연결한다.
 
-> **IAM**: 이 셋업에는 `events:PutRule`, `events:PutTargets`, `lambda:AddPermission`이
-> 필요하다. `link-sphere-user`에는 원래 없어서 인라인 정책 `ops-warmup-and-diagnostics`로 부여했다.
-> **1회성 셋업 권한이므로 규칙 생성 후 회수해도 규칙은 그대로 동작한다** (롤백 시 다시 필요).
+> **룰 값은 `link-sphere-infra` 코드(`WarmupRule`)가 정한다.** 일정을 바꾸려면 그 저장소에 PR을 올린다. 아래 명령은 처음 만들 때의 기록이다(`link-sphere-user`에 임시 권한을 줘 실행했고, 지금 그 권한은 없다).
 
 ```bash
 # 5분마다 실행되는 규칙 생성
@@ -510,6 +507,8 @@ aws s3api put-bucket-lifecycle-configuration \
 
 > **타겟은 반드시 `prod` alias여야 한다** — 이유는 6장 워밍 핑과 동일(`$LATEST`엔
 > SnapStart 스냅샷이 적용되지 않음).
+
+**일정·타겟을 바꾸려면 `link-sphere-infra`의 `FeedCrawlRule`을 고쳐 PR을 올린다.** 아래 명령은 처음 만들 때의 기록이다.
 
 ```bash
 # 4일마다 UTC 22:00(KST 07:00) 실행되는 규칙 생성
@@ -684,6 +683,8 @@ aws iam put-role-policy \
    뒤에만 다음 단계로 진행한다. 배포 직후에는 유예 만료 대상이 없어 보통
    `purged=0`이다 - 그 자체로는 실패가 아니다.
 
+타겟은 지금 `link-sphere-infra`의 `FeedCrawlRule`에 있다. 아래 명령은 처음 추가할 때의 기록이다.
+
 ```bash
 # link-sphere-feed-crawl 룰(8장, 4일마다 UTC 22:00)에 두 번째 타겟을 추가한다.
 # put-targets는 Id로 추가·갱신만 하고 기존 타겟(feed-crawl)은 건드리지 않으므로
@@ -760,7 +761,7 @@ aws events put-targets \
    쓰기 요청 6건이 500이 났다. 이 대조는 이제 [12장](#12-운영-db-임시-조회-전용-읽기-계정-supabase--적용-완료-2026-10-20)
    계정으로 한다.
 3. 확인되면 같은 명령에서 `"dryRun":true`를 빼고 한 번 실행한 뒤, 다시 dry-run해 후보가 0인지 본다.
-4. 타겟을 추가한다:
+4. 타겟을 추가한다(적용 완료. 지금은 `link-sphere-infra`의 `FeedCrawlRule`에 있고, 아래는 처음 추가할 때의 기록이다):
    ```bash
    aws events put-targets \
      --rule link-sphere-feed-crawl \
@@ -1022,13 +1023,13 @@ aws s3 ls s3://link-sphere-db-backup/ --recursive
    켜짐은 덤프에 들어 있어 복원된다. 아래 조회가 0행이어야 한다(RLS가 꺼진 테이블은 anon 키로 읽힌다):
    `select relname from pg_class where relnamespace = 'public'::regnamespace and relkind = 'r' and not relrowsecurity;`
 5. **Storage** — DB만 잃었으면 원본 객체는 그대로다. 프로젝트가 바뀌었으면 공개 버킷 `comments`를 만들고
-   `aws s3 sync s3://link-sphere-db-backup/storage/comments ./comments`로 받은 파일을 같은 이름으로 올린다(대시보드
+   `aws s3 sync s3://link-sphere-db-backup/storage/comments ./comments`(13-3의 lookup 역할 자격증명으로)로 받은 파일을 같은 이름으로 올린다(대시보드
    Storage). 그다음 DB 안 URL의 프로젝트 주소를 바꾼다:
    `update comments set content = replace(content, 'https://<옛 ref>.supabase.co', 'https://<새 ref>.supabase.co');`,
    `update members set image = replace(image, 'https://<옛 ref>.supabase.co', 'https://<새 ref>.supabase.co');`
 6. **앱 전환** — Lambda 콘솔 → Configuration → Environment variables에서 `SPRING_DATASOURCE_URL`·`USERNAME`·`PASSWORD`
    (프로젝트가 바뀌었으면 `SUPABASE_URL`·`SUPABASE_KEY`도, 4장 표)를 바꾼다. 설정은 버전에 묶이므로 새 버전을 발행해
-   `prod`를 옮긴다(`docs/LAMBDA-CONFIG-ROLLBACK.md` "롤백 커맨드" 2번 주석과 같은 이유):
+   `prod`를 옮긴다(`docs/LAMBDA-CONFIG-ROLLBACK.md` "롤백 커맨드" 2번 주석과 같은 이유). CloudShell에서 실행한다:
 
    ```bash
    aws lambda wait function-updated --function-name link-sphere-api
@@ -1042,12 +1043,14 @@ aws s3 ls s3://link-sphere-db-backup/ --recursive
 
 덤프가 실제로 쓸 수 있는지 사람이 한 번씩 확인하는 절차다(워크플로도 매번 같은 복원을 하지만 행 수는 남기지 않는다).
 덤프에는 이메일·bcrypt 해시가 들어 있어 **디스크에 받지 않고 컨테이너 안으로 바로 받는다** — 컨테이너를 지우면 같이 사라진다.
-버킷을 읽을 수 있는 자격증명이 필요하다(로컬 `link-sphere-user`로 된다, 2026-11-02 확인. 배포 역할은 읽지 못한다).
-`<날짜>`는 `aws s3 ls s3://link-sphere-db-backup/db/`에서 고른다. 로컬 터미널에서 한 줄씩:
+버킷을 읽을 수 있는 자격증명이 필요하다. 로컬 `link-sphere-user`는 2026-11-06부터 직접 읽지 못해 CDK lookup 역할을 맡는다(목록 조회로 확인. 배포 역할은 읽지 못한다).
+로컬 터미널에서 한 줄씩. `<날짜>`는 둘째 줄 출력에서 고른다:
 
 ```bash
+read -r K S T <<< "$(aws sts assume-role --role-arn "arn:aws:iam::$(aws sts get-caller-identity --query Account --output text):role/cdk-hnb659fds-lookup-role-$(aws sts get-caller-identity --query Account --output text)-ap-northeast-1" --role-session-name rehearsal --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' --output text)"
+AWS_ACCESS_KEY_ID=$K AWS_SECRET_ACCESS_KEY=$S AWS_SESSION_TOKEN=$T aws s3 ls s3://link-sphere-db-backup/db/
 docker run -d --name bk-rehearsal -e POSTGRES_PASSWORD=postgres pgvector/pgvector:pg17
-aws s3 cp --only-show-errors s3://link-sphere-db-backup/db/<날짜>.dump - | docker exec -i bk-rehearsal sh -c 'cat > /tmp/db.dump'
+AWS_ACCESS_KEY_ID=$K AWS_SECRET_ACCESS_KEY=$S AWS_SESSION_TOKEN=$T aws s3 cp --only-show-errors s3://link-sphere-db-backup/db/<날짜>.dump - | docker exec -i bk-rehearsal sh -c 'cat > /tmp/db.dump'
 until docker exec bk-rehearsal pg_isready -q -h 127.0.0.1 -U postgres; do sleep 2; done
 docker exec bk-rehearsal psql -q -U postgres -v ON_ERROR_STOP=1 -c "CREATE SCHEMA extensions; CREATE EXTENSION vector WITH SCHEMA extensions; CREATE SCHEMA auth; CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS 'SELECT NULL::uuid'; DROP SCHEMA public CASCADE;"
 docker exec bk-rehearsal pg_restore -U postgres -d postgres --exit-on-error --single-transaction --no-owner --no-privileges /tmp/db.dump
@@ -1185,7 +1188,7 @@ configuration에도 강제해 ktlint 1.5.0이 Kotlin 2.4 컴파일러로 깨지�
 ### 수동 개입이 필요한 경우 (예외 상황)
 
 정상 배포는 위 파이프라인이 전부 처리하므로 아래 명령은 **롤백이나 CI 우회가
-필요한 예외 상황에만** 쓴다.
+필요한 예외 상황에만** 쓴다. 로컬 키에는 Lambda 호출·쓰기 권한이 없어(2026-11-06 회수) **CloudShell에서 실행한다.**
 
 ```bash
 # 특정 버전으로 직접 호출 검증 (단발 확인 금지 — docs/LAMBDA-CONFIG-ROLLBACK.md 참고)
