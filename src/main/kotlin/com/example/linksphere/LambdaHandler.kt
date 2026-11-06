@@ -232,7 +232,7 @@ class LambdaHandler : RequestStreamHandler {
         // context-path를 제거한 서블릿 경로만 MockMvc에 전달한다.
         val rawPath = event.get("rawPath")?.asText() ?: "/"
         val path = rawPath.removePrefix("/api").ifEmpty { "/" }
-        val rawQuery = event.get("rawQueryString")?.asText()?.takeIf { it.isNotEmpty() }
+        val rawQuery = event.get("rawQueryString")?.asText()?.takeIf { it.isNotEmpty() }?.let(FunctionUrlQuery::toMockMvcQuery)
         val method = event.at("/requestContext/http/method").asText("GET")
         val body = event.get("body")?.asText()
         val isBase64 = event.get("isBase64Encoded")?.asBoolean() ?: false

@@ -79,6 +79,11 @@ MockMvc가 실제 서빙 경로가 된 것은 2026-07-25다. init에서 MockMvc�
 찍혔고, Spring의 SnapStart 수명주기 처리가 체크포인트 전에 커넥터를 멈췄다가 복원 때 다시 열었다(spring-framework 6.2
 `DefaultLifecycleProcessor` `beforeCheckpoint`·`afterRestore`). 문서는 그동안 "Tomcat 없음"이라고 잘못 적고 있었다.
 
+**서버와 달라 직접 맞춘 것**: `/api` 제거, `Cookie` 헤더를 Cookie 객체로 변환, `secure(true)`(`LambdaHandler.dispatch`), 쿼리의 `+`를
+공백으로 변환(`FunctionUrlQuery`), 응답 변환(`FunctionUrlResponse`). MockMvc는 테스트용 도구라 실제 서버와 동작이 다를 수 있고, 로컬
+`bootRun`은 Tomcat이라 이런 차이가 로컬에서는 드러나지 않는다. 쿼리의 `+`는 2026-07-25에 이 경로로 옮긴 뒤로 빠져 있던 것으로 보이며(추정),
+2026-11-06에 운영 측정으로 찾았다 — 두 단어 검색이 한 단어로 처리돼 "Spring Boot"가 5건 대신 1건만 나왔다.
+
 ### SnapStart 동작 흐름
 
 ```
