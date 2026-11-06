@@ -6,7 +6,7 @@
 >
 > **읽고 나면**: 요청 한도 값을 바꾸거나 새 엔드포인트에 한도를 걸 수 있고, WAF·알람 콘솔 작업을 이 문서만 보고 할 수 있다
 >
-> **마지막 검토**: 2026-11-05
+> **마지막 검토**: 2026-11-06 (Hikari 풀 위치의 줄 번호만 다시 봄)
 
 ## 1. 쉬운 설명
 
@@ -217,7 +217,7 @@ Google SRE 책은 과부하 대응으로 기능을 낮춰 응답하는 방법(gr
 | 항목 | 값 | 위치 | 필요도 · 비용 |
 |---|---|---|---|
 | Lambda 계정 동시 실행 | 10 (신규 계정 한도, 사용량에 따라 AWS가 자동 상향) | AWS 계정, 2026-10-02 실측 | — |
-| Hikari 풀 | 인스턴스당 5 → 최대 10×5=50 DB 연결 | `src/main/resources/application.yml:17` | — |
+| Hikari 풀 | 인스턴스당 5 → 최대 10×5=50 DB 연결 | `src/main/resources/application.yml:25` | — |
 | WAF rate-based rule | IP당 5분 1000회, **Block** (8-1 런북) | WAF Web ACL `CreatedByCloudFront-bcd729fb` (CLI로만 수정 가능, 8-1) | 권장 · 추가 비용 없음(Free 플랜 규칙 5개 안). 막는 범위가 좁다 — 8-1 |
 | WAF 요청 로깅 | **꺼짐** (`get-logging-configuration`이 `WAFNonexistentItemException`) | 같은 Web ACL의 로깅 설정 | 선택 · 비용 미확인 — 아래 |
 | CloudWatch 알람 3개 (앱 500·`Errors`·`Throttles`) | 8-2 런북 참고 | CloudWatch (ap-northeast-1), SNS `link-sphere-alerts` | 권장 · 무료(프리티어 알람 10개 안) |
