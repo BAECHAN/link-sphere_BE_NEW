@@ -448,7 +448,7 @@ git config core.hooksPath .githooks
 
 ### Lambda 핵심 구조
 
-Lambda 환경에서는 Tomcat 소켓 문제를 피하기 위해 **MockMvc**로 `DispatcherServlet`을 직접 호출합니다:
+Lambda에서는 **MockMvc**로 `DispatcherServlet`을 직접 호출합니다(경위는 [docs/DEPLOY.md](./docs/DEPLOY.md) "MockMvc 방식을 사용하는 이유"):
 
 ```
 API 요청 → CloudFront(/api/*) → Lambda Function URL(prod alias)
