@@ -118,11 +118,11 @@ class LambdaHandler : RequestStreamHandler {
         }
 
         /**
-         * SnapStart 체크포인트 이전(init 단계)에 실제 요청을 흘려보내 초기화 비용을 스냅샷에 굽는다.
+         * SnapStart 체크포인트 이전(init 단계)에 실제 요청을 흘려보내 처음 쓸 때 하는 준비를 스냅샷에 담는다.
          *
-         * 이 과정이 없으면 DispatcherServlet 초기화, Security 필터 체인 첫 통과,
-         * Hibernate 메타모델·쿼리플랜 생성, HikariCP 커넥션 확보가 전부 복원 이후 첫 요청으로 밀린다.
-         * 실측상 restore 자체는 약 0.65초인데 그 뒤 첫 요청이 약 2.9초였던 원인이 이것이다.
+         * 이 과정이 없으면 처음 쓰는 클래스 로딩, Security 필터 체인 첫 통과, Hibernate 쿼리 처리가
+         * 복원 이후 첫 요청으로 밀린다. 지나간 경로만 담긴다. DispatcherServlet 초기화와 Hibernate 메타모델은
+         * 이 워밍업과 무관하게 먼저 끝난다. 항목별 근거는 docs/PERFORMANCE.md 3장 참고.
          *
          * 주의 — 2026-07-25에 한 번 실패했다. 당시에는 Lambda Web Adapter 레이어가 붙어 있어
          * Tomcat이 실트래픽을 처리했는데, init에서 MockMvc를 건드리자 복원 후 LWA가 8080에
@@ -130,11 +130,11 @@ class LambdaHandler : RequestStreamHandler {
          * 경로가 된 뒤에야 이 워밍업이 성립한다. 자세한 경위는 docs/PERFORMANCE.md 5장 참고.
          *
          * HikariCP 풀은 Spring Boot의 HikariCheckpointRestoreLifecycle이 체크포인트 직전에 멈추고
-         * 커넥션을 닫으므로(복원 때 다시 연다) 이 DB 워밍업과 충돌하지 않는다. 워밍업이 실패해도
-         * 부팅은 계속한다 — 배포 시점에 DB가 닿지 않아도 Lambda는 기동되어야 한다.
+         * 커넥션을 닫으므로(복원 때 다시 연다) 커넥션은 스냅샷에 담기지 않고 이 DB 워밍업과 충돌하지도 않는다.
+         * 워밍업이 실패해도 부팅은 계속한다 — 배포 시점에 DB가 닿지 않아도 Lambda는 기동되어야 한다.
          */
         private fun warmUp() {
-            // JIT를 인터프리터 단계 밖으로 밀어내기 위해 반복 호출한다
+            // 횟수는 측정으로 정한 값이 아니다 - 근거와 한계는 docs/PERFORMANCE.md 4.1 참고
             repeat(WARMUP_ITERATIONS) {
                 WARMUP_PATHS.forEach { path ->
                     try {

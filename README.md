@@ -460,8 +460,9 @@ API 요청 → CloudFront(/api/*) → Lambda Function URL(prod alias)
 ### 콜드스타트 대응
 
 SnapStart 체크포인트 **이전**(`companion object init`)에 읽기 전용 엔드포인트로 워밍업 요청을
-흘려보내, `DispatcherServlet` 초기화·Security 필터 체인·Hibernate 쿼리플랜·HikariCP 커넥션
-확보를 스냅샷에 포함시킵니다. 동일 조건 비교에서 **콜드 첫 요청 2,210ms → 1,046ms(53% 감소)**.
+흘려보내, 처음 쓰는 클래스 로딩·Security 필터 체인 첫 통과·Hibernate 쿼리 처리 같은 준비를
+스냅샷에 포함시킵니다. DB 커넥션은 스냅샷에 남지 않아 복원 뒤 다시 맺습니다. 동일 조건 비교에서
+**콜드 첫 요청 2,210ms → 1,046ms(53% 감소)**.
 
 > ⚠️ 이 워밍업은 **Lambda Web Adapter 레이어가 없는 상태**를 전제로 합니다. 레이어를 되돌리면
 > 워밍업이 깨져 502가 발생합니다. 측정 데이터·장애 사후 분석·측정 방법론은
