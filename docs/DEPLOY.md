@@ -1,6 +1,6 @@
 # AWS Lambda SnapStart 배포 가이드
 
-> 마지막 검토: 2026-11-05 (TLS 인자·임시 조회 이메일 제외·덤프 처리·로그 가림·cursor 스모크 테스트·요청 경로·Lambda 실행 역할·백업 보존 설정·CDK 안내만 다시 봄. 전체 검토는 2026-10-30)
+> 마지막 검토: 2026-11-06 ("MockMvc 방식을 사용하는 이유"만 다시 봄. 2026-11-05에는 TLS 인자·임시 조회 이메일 제외·덤프 처리·로그 가림·cursor 스모크 테스트·요청 경로·Lambda 실행 역할·백업 보존 설정·CDK 안내만 다시 봄. 전체 검토는 2026-10-30)
 
 ## 아키텍처 개요
 
@@ -64,12 +64,14 @@ API 요청 (linksphere.click, HTTPS)
 
 ### MockMvc 방식을 사용하는 이유
 
-SnapStart는 Lambda init phase를 스냅샷으로 저장해 cold start를 단축한다. 그런데 일반적인 Spring Boot + Tomcat 방식은 두 가지 문제가 있다.
+SnapStart는 Lambda init phase를 스냅샷으로 저장해 cold start를 단축한다. 2026-03에 이 경로를 만들 때는 Spring Boot + Tomcat 방식에서 두 가지 문제를 겪었다(아래 시행착오 2·3).
 
-1. **CRaC 체크포인트 실패**: Tomcat이 8080 소켓을 열고 있는 상태에서 SnapStart 체크포인트를 시도하면 열린 소켓이 있어서 `State:Failed`가 된다.
-2. **restore 후 rebind 실패**: 체크포인트를 통과하더라도 복원 후 Tomcat이 8080 포트에 재바인딩하지 못해 요청을 처리할 수 없다.
+1. **CRaC 체크포인트 실패**: Tomcat이 8080 소켓을 열고 있는 상태에서 SnapStart 체크포인트를 시도하면 열린 소켓이 있어서 `State:Failed`가 됐다. `org.crac` 의존성을 넣어 풀었다.
+2. **restore 후 rebind 실패**: 복원 후 Tomcat이 8080 포트에 재바인딩하지 못한다고 보고 MockMvc 경로를 만들었다. 원인은 추정이었고, 이후 기록과 맞지 않는다 — 2026-07-25까지 Tomcat이 복원 뒤에도 실제 트래픽을 처리했고, 2026-10-26까지 8080에 바인딩했다(아래). Lambda에서 Tomcat을 못 쓰는 것은 아니다.
 
-**해결책**: 요청을 Tomcat 소켓이 아니라 `MockMvc`로 `DispatcherServlet`에 직접 넣는다. 서블릿 웹 컨텍스트에 필요한 내장 Tomcat
+MockMvc가 실제 서빙 경로가 된 것은 2026-07-25다. init에서 MockMvc를 돌리는 워밍업이 Lambda Web Adapter와 충돌해, 어댑터를 없애고 이 경로로 서빙을 옮겼다([PERFORMANCE.md](./PERFORMANCE.md) 5장).
+
+**지금 동작**: 요청을 Tomcat 소켓이 아니라 `MockMvc`로 `DispatcherServlet`에 직접 넣는다. 서블릿 웹 컨텍스트에 필요한 내장 Tomcat
 컨텍스트는 만들지만 `LambdaHandler`가 `--server.port=-1`로 기동해 8080에 바인딩하지 않는다 — 기동·복원 때 커넥터가 임시
 포트(0)에 잠깐 bind했다가 바로 멈추므로(spring-boot 3.5.16 `TomcatWebServer.start`의 `stopProtocolHandler`) 요청을 처리하는
 동안에는 리스닝 소켓이 없다.
