@@ -1,6 +1,6 @@
 # Link-Sphere BE — 성능 (Lambda 콜드스타트)
 
-> 마지막 검토: 2026-11-05 (§4.6 AWS SDK 첫 호출 데우기와 §7 측정 방법 추가)
+> 마지막 검토: 2026-11-06 (§3·§4.1 워밍업이 스냅샷에 담는 것과 3회의 근거만 다시 봄. 2026-11-05에는 §4.6 AWS SDK 첫 호출 데우기와 §7 측정 방법 추가)
 
 이 문서는 **"왜 느렸고, 무엇을 근거로 무엇을 바꿨는지"** 를 남긴다.
 배포 절차는 [DEPLOY.md](./DEPLOY.md), 무엇이 바뀌었는지는 [CHANGELOG.md](../CHANGELOG.md)를 참고.
@@ -36,14 +36,16 @@
 **SnapStart 자체는 정상 동작했다.** restore는 659ms로 문제가 아니었다.
 진짜 병목은 **restore 이후 첫 요청 2.9초**다.
 
-`LambdaHandler`의 `companion object init`은 Spring 컨텍스트를 띄우고 `MockMvc`를 만드는 데서 끝났다.
-그래서 아래 초기화가 전부 **스냅샷 바깥**에 남아 복원 후 첫 요청이 한꺼번에 뒤집어썼다.
+이 기준선을 잰 당시 실제 요청은 Tomcat이 처리했다(5장). 이 절은 처음에 MockMvc 경로로 잘못 알고 "아래 초기화가 전부 스냅샷
+바깥에 남았다"고 썼고, 2026-11-06에 항목별로 바로잡았다.
 
-- `DispatcherServlet` 최초 초기화 (`Initializing Servlet 'dispatcherServlet'`)
-- Spring Security 필터 체인 첫 통과
-- Hibernate 메타모델·쿼리플랜 캐시 생성
-- HikariCP 실제 커넥션 확보 (Supabase 풀러까지 왕복)
-- JVM이 해당 코드 경로를 인터프리터로 실행 (JIT 미적용)
+| 첫 요청 비용으로 꼽은 항목 | 지금 구조에서 스냅샷에 들어가나 | 근거 |
+| --- | --- | --- |
+| `DispatcherServlet` 초기화(`Initializing Servlet 'dispatcherServlet'`는 Tomcat 경로의 로그) | 워밍업과 무관하게 들어간다. init의 `builder.build()`가 초기화한다 | spring-test 6.2.19 `MockMvcBuilderSupport.java:78` |
+| Hibernate 메타모델 | 워밍업과 무관하게 들어간다. 컨텍스트 기동 때 만들어진다 | hibernate-core 6.6.53 `SessionFactoryImpl.java:297-373` |
+| Spring Security 필터 체인 첫 통과, 쿼리 플랜, 처음 쓰는 클래스 로딩 | 워밍업이 지나간 경로만 들어간다 | 4.1 |
+| HikariCP 커넥션 확보(Supabase 풀러까지 왕복) | **들어가지 않는다.** 체크포인트 직전에 닫고 복원 뒤 다시 맺는다 | spring-boot 3.5.16 `HikariCheckpointRestoreLifecycle.java:125-145`, 운영 로그 `Evicting Hikari connections` |
+| 인터프리터 실행(JIT 미적용) | 확인하지 못했다 | 4.1의 3회 근거 |
 
 여기에 1024MB(≈0.58 vCPU)라 CPU 바운드인 클래스 로딩·JIT이 더 느렸다.
 
@@ -54,11 +56,19 @@
 ### 4.1 SnapStart 스냅샷에 워밍업 굽기 — 적용 중 (한 번 실패 후 재적용)
 
 `companion object init`은 체크포인트 **이전**에 실행되므로, 여기서 실제 요청을 흘려보내면
-초기화 비용이 스냅샷에 포함된다. `LambdaHandler.warmUp()`이 이를 수행한다.
+처음 쓸 때 하는 준비가 스냅샷에 포함된다. `LambdaHandler.warmUp()`이 이를 수행한다. 버전을 발행할 때 init에서 돌고,
+복원 때는 다시 돌지 않아 사용자 요청을 늦추지 않는다. 발행 뒤에도 init이 다시 돌 수 있다 — 버전 197은 2026-11-06 UTC 11:41과
+11:57에 `Evicting Hikari connections`가 찍혔다(직접 확인, CloudWatch 로그). [AWS SnapStart 문서](https://docs.aws.amazon.com/lambda/latest/dg/snapstart.html)는
+소프트웨어 업데이트를 적용할 때 init을 다시 돌린다고 쓰지만(번역, 요약), 이번 재실행이 그 경우인지는 확인하지 못했다.
 
-- `GET /actuator/health` → DispatcherServlet, HandlerMapping, Security 필터 체인, Jackson
-- `GET /common/category-option` → 추가로 Hibernate 쿼리플랜, HikariCP 커넥션
-- JIT를 인터프리터 밖으로 밀기 위해 3회 반복
+- `GET /actuator/health` → 요청 처리 공통 경로(Security 필터 체인, `DispatcherServlet` 요청 처리, Jackson)와 DB 연결 확인
+- `GET /common/category-option` → 추가로 Controller부터 Repository까지, Hibernate 쿼리 처리
+- 두 경로를 3회씩, 총 6번 호출한다. 컨트롤러 API 중 지나가는 것은 `GET /common/category-option`뿐이다. 글 목록·쓰기와
+  토큰이 있을 때의 세션 조회는 복원 뒤 첫 호출 때 준비한다
+- **3회는 측정으로 정한 값이 아니다.** 도입 때(`ee0cdae`)의 코드 주석은 JIT를 인터프리터 밖으로 민다는 이유를 댔지만, 6장은 워밍업
+  유무만 비교했고 1회와 3회를 비교한 기록은 없다. C1 컴파일 기준은 호출 200회다(직접 확인, 로컬 Corretto 17.0.14에서
+  `java -XX:+PrintFlagsFinal -version`의 `Tier3InvocationThreshold`. Lambda 런타임의 값은 확인하지 못했다). 요청당 한 번 불리는
+  메서드는 3회로 닿지 않으므로 효과 대부분은 첫 1회의 준비에서 나올 것으로 보지만, 측정하지 않은 추정이다
 - 응답이 2xx가 아니면 WARN — 조용한 실패(경로 오타 등)를 막는다
 
 > ⚠️ **2026-07-25에 첫 시도가 프로덕션 502 장애를 일으켰다.** 원인은 워밍업 자체가 아니라
