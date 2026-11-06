@@ -122,6 +122,13 @@
 
 ### Fixed
 
+- `post` 공백이 든 검색어가 한 단어로 처리돼 검색 결과가 적게 나오던 문제
+  <details><summary>배경·구현</summary>
+
+  FE의 `URLSearchParams`는 공백을 `+`로 보낸다. 서블릿 컨테이너는 쿼리의 `+`를 공백으로 읽지만 운영 요청 경로인 MockMvc는 `%XX`만 해석해 `+`를 글자로 남겼고, 그래서 "Spring Boot"가 "Spring+Boot" 한 단어로 검색됐다. 2026-11-06 운영에서 같은 검색어를 `%20`으로 보내 비교하니 "Spring Boot"는 5건과 1건, "리액트 성능"은 20건(요청 상한)과 4건으로 갈렸다. `FunctionUrlQuery`가 MockMvc에 넘기기 전에 `+`를 `%20`으로 바꾼다. 글자 그대로의 `+`는 `%2B`로 오고 cursor는 URL-safe Base64라 영향이 없다. 쿼리를 읽는 모든 API에 함께 적용되며, API 계약은 그대로다. (`FunctionUrlQuery.kt`(신규), `LambdaHandler.kt`, `docs/DEPLOY.md`, [PR #177](https://github.com/BAECHAN/link-sphere_BE_NEW/pull/177))
+
+  </details>
+
 - `post`·`interaction` 의미 검색 cursor로 이어 읽을 때 쪽 경계의 글이 다시 나오던 문제
   <details><summary>배경·구현</summary>
 
