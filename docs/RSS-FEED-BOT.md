@@ -8,7 +8,7 @@
 > **읽고 나면**: 이 문서만 보고 피드 소스를 추가/제거하거나, 수집 주기·건수를 조정하거나,
 > 버그를 재현·수정할 수 있다 (§9 참고).
 >
-> **마지막 검토**: 2026-09-29 (EventBridge 룰이 `account-purge`와 공유되는 사실,
+> **마지막 검토**: 2026-11-05(룰 값을 CDK 코드가 기록한다는 서술만 고침). 2026-09-29 (EventBridge 룰이 `account-purge`와 공유되는 사실,
 > Stage C의 임베딩 생성 단계, 오래된 절 참조 정정 반영)
 
 ## 1. RSS가 뭔가요?
@@ -243,7 +243,7 @@ nullable + `ON DELETE SET NULL`로 둬서, 봇 글을 관리자가 지워도 원
 
 | 파라미터 | 값 | 실제 위치 |
 | --- | --- | --- |
-| 실행 주기 | 4일마다 UTC 22:00 (KST 오전 7시) | **AWS EventBridge 룰 자체** (`link-sphere-feed-crawl`, `cron(0 22 */4 * ? *)`) — 이 프로젝트는 IaC가 없어서 레포 안 어떤 파일에도 이 cron 표현식을 담은 "설정 파일"은 없다. `docs/DEPLOY.md` 8장의 `aws events put-rule` 커맨드가 유일한 기록이자 값을 바꾸는 방법. **이 룰은 봇 전용이 아니다** — 같은 룰에 `account-purge`(회원탈퇴 14일 유예 정리) 타겟도 붙어 있다([`docs/ACCOUNT-DELETION.md`](./ACCOUNT-DELETION.md) 참고) |
+| 실행 주기 | 4일마다 UTC 22:00 (KST 오전 7시) | **AWS EventBridge 룰 자체** (`link-sphere-feed-crawl`, `cron(0 22 */4 * ? *)`) — 이 레포 안 어떤 파일에도 이 cron 표현식을 담은 "설정 파일"은 없다. 값을 바꾸는 방법은 `docs/DEPLOY.md` 8장의 `aws events put-rule` 커맨드이고, 2026-11-05부터 비공개 저장소 `link-sphere-infra`의 CDK 코드가 이 값을 기록해 매일 실제와 비교하므로 바꾼 뒤 그 코드도 맞춘다. **이 룰은 봇 전용이 아니다** — 같은 룰에 `account-purge`(회원탈퇴 14일 유예 정리) 타겟도 붙어 있다([`docs/ACCOUNT-DELETION.md`](./ACCOUNT-DELETION.md) 참고) |
 | 소스당 최대 건수 | 1 | `FeedCrawlService.kt:30` `MAX_ITEMS_PER_SOURCE` |
 | 전체 최대 건수 | 5 | `FeedCrawlService.kt:31` `MAX_ITEMS_TOTAL` |
 | self-invoke chunk 크기 | 5 | `FeedCrawlService.kt:32` `CHUNK_SIZE` |

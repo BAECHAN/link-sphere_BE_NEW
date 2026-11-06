@@ -563,7 +563,7 @@ CloudFront 보안 대시보드에서 10-02부터 차단이 늘고 국가가 다�
   한도를 걸지 않았다
 - 댓글·좋아요·북마크 회원별 한도 (WAF IP 제한으로 충분하다고 보고 보류)
 - Gemini 서킷 브레이커, SQS/DLQ 전환
-- WAF·CloudFront·Lambda 설정의 코드화(IaC) — 지금은 콘솔 수동이라 레포와 어긋날 수 있다
+- WAF·CloudFront 설정의 코드화(IaC) — Lambda·알람·IAM 등은 2026-11-05 비공개 저장소 `link-sphere-infra`에 감지 전용으로 코드화했다(FE `docs/DEPLOY.md` "AWS 설정 코드화(CDK)"). WAF·CloudFront는 그 3단계 후보로 남아 있어 레포와 어긋날 수 있다(CloudFront는 FE 매일 검사가 본다)
 
 ## 12. 용어 사전
 
