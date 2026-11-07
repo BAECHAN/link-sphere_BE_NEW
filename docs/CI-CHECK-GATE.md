@@ -1,6 +1,6 @@
 # Link-Sphere BE — CI 검사 게이트 정비 (2026-09-03)
 
-> 마지막 검토: 2026-10-31
+> 마지막 검토: 2026-11-07
 
 ## 1. 쉬운 설명
 
@@ -126,6 +126,19 @@ flowchart TD
   (`{id}` → `{postId}`)은 요청 URL이 그대로라 기본 설정에서 깨지는 변경으로 보지 않는다 — 직접 측정(2026-10-30, v1.35.0):
   운영 스펙의 `/post/{id}`를 `/post/{postId}`로 바꾼 사본은 기본 설정에서 `No breaking changes to report` exit 0,
   `--include-path-params`를 주면 `api-path-removed-without-deprecation` 3건으로 exit 1이었다.
+- **통과시키는 요청 변경**: 요청 제약은 조이는 쪽만 막는다. 직접 측정(2026-11-07, v1.35.0, `breaking --fail-on ERR`): FE에
+  커밋된 스펙 사본을 `jq`로 고쳐 원본과 비교했다. 표본은 폴더 `name`, 가입 `password`, 댓글 `images`·`content`다.
+
+  | 변경                                                                      | 결과               |
+  | ------------------------------------------------------------------------- | ------------------ |
+  | `maxLength`·`maxItems` 내림, `minLength` 올림, 필수 필드 추가·개명        | ERR, exit 1        |
+  | `pattern` 변경, 선택 필드 삭제                                            | WARN, exit 0       |
+  | `maxLength`·`maxItems` 올림·제거, `minLength` 내림·제거, `pattern` 제거   | 보고 없음, exit 0  |
+  | `x-max-bytes` 올림·내림·제거                                              | 보고 없음, exit 0  |
+
+  통과한 변경은 운영 배포 뒤 FE `openapi-drift-check.yml`(매일, 스펙 전체 비교)이 이슈로 알리고, FE가 스펙을 갱신하면
+  계약 테스트가 실패한다. 그 사이에는 `pattern`을 바꾸거나 `x-max-bytes`를 내린 경우 FE 폼을 통과한 입력을 BE가 거부할 수
+  있다. 의도한 변경이면 FE 동기화 PR을 함께 준비한다.
 
 ### 4.2 커버리지 보고 (2026-10-31 추가, 정보용)
 
