@@ -6,7 +6,7 @@
 >
 > **읽고 나면**: 요청 한도 값을 바꾸거나 새 엔드포인트에 한도를 걸 수 있고, WAF·알람 콘솔 작업을 이 문서만 보고 할 수 있다
 >
-> **마지막 검토**: 2026-11-07 (코드화 범위 서술만 다시 봄)
+> **마지막 검토**: 2026-11-07 (코드화 범위 서술과 8-2 앱 500 지표 필터만 다시 봄)
 
 ## 1. 쉬운 설명
 
@@ -363,24 +363,25 @@ WAF 차단은 429가 아니라 **403**으로 나간다. FE는 이를 `EDGE_BLOCK
 예전 판단("`Errors` 알람은 만들지 않는다", 2026-10-03)은 "앱 500은 안 잡힌다"는 사실에서 나왔는데, 그 사실은
 그대로이고 위 두 경우를 놓쳤던 것이다(2026-11-02 정정).
 
-**로그 지표 패턴.** Lambda 로그는 한 줄에 JSON 하나다(Spring Boot logstash 형식, `LambdaHandler.kt:97-107` —
-키는 `@timestamp`·`level`·`logger_name`·`message`·`stack_trace`·`awsRequestId` 등). 앱 500은
+**로그 지표 패턴.** 지표 필터 `link-sphere-api-app-5xx`(비공개 저장소 `link-sphere-infra`의 `lib/baseline-stack.ts`)가
+아래 패턴에 맞는 로그 한 줄을 `App5xx` 1로 센다. Lambda 로그는 한 줄에 JSON 하나다(Spring Boot logstash 형식,
+`LambdaHandler.kt:97-107` — 키는 `@timestamp`·`level`·`logger_name`·`message`·`stack_trace`·`awsRequestId` 등). 앱 500은
 `GlobalExceptionHandler`가 ERROR로 남기는 두 줄뿐이라(`Spring MVC error`·`Unhandled exception`) 그 로거로
 좁힌다. 모든 ERROR에 걸면 FCM·Gemini·메일의 일상적인 실패(각 서비스가 ERROR로 남기고 계속 진행)로 메일이
 쏟아진다. 2026-11-02 Logs Insights로 지난 30일을 세어 보니 ERROR는 1건(`PostAIService`)이었고
 `GlobalExceptionHandler`는 0건이었다.
 
-**적용 (CloudShell, ap-northeast-1).** 한 줄씩 붙여넣는다(여러 줄 스크립트는 깨진 적이 있다 — 8-1). 이메일은
-변수로만 쓰고 레포에 남기지 않는다. 첫 줄은 로그 형식 확인이다 — 최근 하루의 로그 한 줄을 받아 `level`·
-`logger_name` 키가 그대로인지 본다. ERROR는 드물어(위 측정) 금방 끝나는 INFO 줄로 본다. 키 이름이 바뀌었으면
-아래 지표 패턴도 고쳐야 한다.
+**처음 적용한 기록 (2026-11-02, CloudShell, ap-northeast-1).** 주제·구독·지표 필터·알람은 지금 `link-sphere-infra`
+코드가 정본이라 값을 바꾸려면 그 저장소의 PR로 한다. 아래 명령은 어떻게 만들었는지의 기록이고 다시 실행하지 않는다.
+당시 한 줄씩 붙여넣었다(여러 줄 스크립트는 깨진 적이 있다 — 8-1). 이메일은 변수로만 쓰고 레포에 남기지 않는다. 첫
+줄은 로그 형식 확인이다 — 최근 하루의 로그 한 줄을 받아 `level`·`logger_name` 키가 그대로인지 본다. ERROR는
+드물어(위 측정) 금방 끝나는 INFO 줄로 본다. 키 이름이 바뀌었으면 코드의 지표 패턴도 고쳐야 한다.
 
 ```bash
 aws logs filter-log-events --region ap-northeast-1 --log-group-name /aws/lambda/link-sphere-api --start-time $(( ($(date +%s) - 86400) * 1000 )) --filter-pattern '{ $.level = "INFO" }' --max-items 1 --query 'events[0].message' --output text
 ALERT_EMAIL='운영자 메일 주소'
 TOPIC_ARN=$(aws sns create-topic --region ap-northeast-1 --name link-sphere-alerts --query TopicArn --output text)
 aws sns subscribe --region ap-northeast-1 --topic-arn "$TOPIC_ARN" --protocol email --notification-endpoint "$ALERT_EMAIL"
-aws logs put-metric-filter --region ap-northeast-1 --log-group-name /aws/lambda/link-sphere-api --filter-name app-5xx --filter-pattern '{ ($.level = "ERROR") && ($.logger_name = "com.example.linksphere.global.exception.GlobalExceptionHandler") }' --metric-transformations metricName=App5xx,metricNamespace=LinkSphere,metricValue=1
 aws cloudwatch put-metric-alarm --region ap-northeast-1 --alarm-name link-sphere-api-app-5xx --namespace LinkSphere --metric-name App5xx --statistic Sum --period 300 --evaluation-periods 1 --threshold 1 --comparison-operator GreaterThanOrEqualToThreshold --treat-missing-data notBreaching --alarm-actions "$TOPIC_ARN"
 aws cloudwatch put-metric-alarm --region ap-northeast-1 --alarm-name link-sphere-api-errors --namespace AWS/Lambda --metric-name Errors --dimensions Name=FunctionName,Value=link-sphere-api --statistic Sum --period 300 --evaluation-periods 1 --threshold 1 --comparison-operator GreaterThanOrEqualToThreshold --treat-missing-data notBreaching --alarm-actions "$TOPIC_ARN"
 aws cloudwatch put-metric-alarm --region ap-northeast-1 --alarm-name link-sphere-api-throttles --namespace AWS/Lambda --metric-name Throttles --dimensions Name=FunctionName,Value=link-sphere-api --statistic Sum --period 300 --evaluation-periods 1 --threshold 1 --comparison-operator GreaterThanOrEqualToThreshold --treat-missing-data notBreaching --alarm-actions "$TOPIC_ARN"
@@ -388,8 +389,11 @@ aws cloudwatch put-metric-alarm --region ap-northeast-1 --alarm-name link-sphere
 
 `subscribe` 직후 받은 메일에서 "Confirm subscription"을 눌러야 알림이 간다. 누락된 데이터는 "양호"로
 처리한다(요청 없는 시간대에 경보 상태가 되지 않게). 복구(OK) 메일은 받지 않는다 — 세 지표 모두 실패 횟수라,
-OK는 "지난 5분에 실패가 없었다"는 뜻일 뿐 복구 확인이 아니고 사건마다 메일이 2통이 된다. 같은 명령을 다시
-실행해도 같은 이름의 주제·지표·알람을 덮어쓸 뿐이라 안전하다.
+OK는 "지난 5분에 실패가 없었다"는 뜻일 뿐 복구 확인이 아니고 사건마다 메일이 2통이 된다.
+
+지표 필터는 이때 CLI로 `app-5xx`라는 이름으로 만들어 스택 밖에 있었다. 필터가 지워지면 500이 나도 알람이 울리지 않을 수
+있고 스택만 보는 drift 검사도 못 잡아서, 2026-11-07 같은 값의 `link-sphere-api-app-5xx`를 코드로 만들고 옛 필터를
+지웠다. 기존 리소스를 스택에 넣는(`cdk import`) 경로가 없어 새 이름으로 옮겼다.
 
 **확인.**
 
@@ -409,6 +413,24 @@ aws cloudwatch describe-alarms --region ap-northeast-1 --alarm-name-prefix link-
 4. `lambda invoke`는 `Errors`를 실제로 한 번 올린다. 빈 `event`는 `CommentPostProcessEvent`의 필수 값
    `commentId`가 없어 역직렬화(`LambdaHandler.kt:326`)에서 실패하므로 서비스는 호출되지 않는다(부작용 없음).
    동기 호출이라 재시도도 없다. 응답에 `"FunctionError": "Unhandled"`가 찍히고 5분 안에 errors 알람 메일이 온다.
+
+**전체 경로 확인.** 위 2·3번은 패턴과 메일 경로를 따로 볼 뿐이라, 로그 → 필터 → 지표 → 알람이 이어지는지는 실제 500이
+나야 알 수 있다. 2026-11-07 기준 지난 30일 실제 앱 500 로그가 0건이어서(`filter-log-events`로 직접 잼) 시험용
+스트림에 같은 형식의 줄을 직접 썼다. 알람 메일이 1통 오니 진짜 장애가 아닌 줄 알고 실행하고, 쓴 줄이 ERROR 검색에
+나오지 않게 끝나면 스트림을 지운다. 로그를 쓰는 권한이 있어야 해서 CloudShell에서 한 줄씩 실행한다.
+
+```bash
+aws logs create-log-stream --region ap-northeast-1 --log-group-name /aws/lambda/link-sphere-api --log-stream-name manual-filter-test
+printf '[{"timestamp":%s000,"message":"{\\"level\\":\\"ERROR\\",\\"logger_name\\":\\"com.example.linksphere.global.exception.GlobalExceptionHandler\\",\\"message\\":\\"manual filter test\\"}"}]' "$(date +%s)" > /tmp/filter-test.json
+aws logs put-log-events --region ap-northeast-1 --log-group-name /aws/lambda/link-sphere-api --log-stream-name manual-filter-test --log-events file:///tmp/filter-test.json
+aws cloudwatch describe-alarms --region ap-northeast-1 --alarm-names link-sphere-api-app-5xx --query 'MetricAlarms[0].[StateValue,StateReason]' --output text
+aws logs delete-log-stream --region ap-northeast-1 --log-group-name /aws/lambda/link-sphere-api --log-stream-name manual-filter-test
+```
+
+필터가 하나인 지금은 `StateReason`의 값이 `1.0`이어야 한다. 2026-11-07 시험에서는 줄을 쓴 지 약 20초 뒤 `ALARM`이 됐고
+값이 `2.0`이었다. 옛 필터와 새 필터가 함께 있어 한 줄이 두 번 세진 것이고, 이것으로 두 필터가 모두 동작하는 걸 확인한 뒤 옛
+필터를 지웠다. 알람은 15분 뒤(15:19:07 → 15:34:07 KST) `OK`로 돌아왔다. 지표 `LinkSphere/App5xx`의 2026-11-07 15:18(KST)
+값 2는 이 시험 값이고 실제 500이 아니다.
 
 비용: CloudWatch 표준 알람은 지표 10개까지 무료이고 넘으면 개당 월 $0.10이다
 ([CloudWatch 가격](https://aws.amazon.com/cloudwatch/pricing/)). 같은 페이지의 무료 한도에는 _"지표 10개(사용자
