@@ -140,7 +140,7 @@ flowchart LR
 | 값 | 현재 | 위치 | 왜 이 값인가 |
 | --- | --- | --- | --- |
 | 이메일 정규식 | `[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}` | `global/common/EmailMaskingLogCustomizer.kt:23` | `user@localhost`처럼 TLD가 없으면 안 가린다 |
-| `sslmode` | `require` | `LambdaHandler.kt:101` | 기본값 `PREFER`는 평문으로 넘어갈 수 있다. `verify-full`은 §11 |
+| `sslmode` | `require` | `LambdaHandler.kt:105` | 기본값 `PREFER`는 평문으로 넘어갈 수 있다. `verify-full`은 §11 |
 | 레이트리밋 행 보존 | 1일 | `global/common/RateLimitService.kt:41` | 가장 긴 창이 1시간이다. 더 긴 창을 쓰면 늘린다 |
 | 행 삭제 주기 | 4일 | `account-purge` EventBridge 룰(레포 밖, [`DEPLOY.md`](./DEPLOY.md) 10장) | 새 룰 없이 기존 잡에 얹었다. 그래서 최대 약 5일 |
 | 중복 검사 한도 | IP당 1시간 60회 | `domain/auth/AuthController.kt:56-57` | 계측값이 아닌 판단. 링크 미리보기 한도와 같은 값이고 FE는 500ms 디바운스로 호출한다 |
@@ -150,9 +150,9 @@ flowchart LR
 
 | 동작 | 파일 |
 | --- | --- |
-| 로그 가림 | `global/common/EmailMaskingLogCustomizer.kt`, 등록은 `LambdaHandler.kt:100` |
-| TLS 강제 | `LambdaHandler.kt:101` |
-| 행 삭제 | `RateLimitService.purgeExpired`(`:90`) → `AuthRateLimitRepository.deleteOlderThan`, 호출은 `LambdaHandler.kt:335` |
+| 로그 가림 | `global/common/EmailMaskingLogCustomizer.kt`, 등록은 `LambdaHandler.kt:104` |
+| TLS 강제 | `LambdaHandler.kt:105` |
+| 행 삭제 | `RateLimitService.purgeExpired`(`:90`) → `AuthRateLimitRepository.deleteOlderThan`, 호출은 `LambdaHandler.kt:366` |
 | 중복 검사 한도 | `AuthController.checkEmailAvailability` |
 | 임시 조회 권한 | Supabase, SQL은 [`DEPLOY.md`](./DEPLOY.md) 12장 |
 

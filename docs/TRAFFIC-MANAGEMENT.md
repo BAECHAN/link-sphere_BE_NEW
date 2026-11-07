@@ -352,7 +352,7 @@ WAF 차단은 429가 아니라 **403**으로 나간다. FE는 이를 `EDGE_BLOCK
 
 - 백그라운드 잡(`LambdaHandler.dispatch`의 `ai-analysis`·`comment-postprocess`·`feed-crawl`·`feed-item`·
   `account-purge`·`orphan-image-gc`)은 예외를 잡지 않아 그대로 함수 밖으로 나간다
-  (`src/main/kotlin/com/example/linksphere/LambdaHandler.kt:166-191`). 비동기 호출은 두 번 재시도하므로 실패 1건이
+  (`src/main/kotlin/com/example/linksphere/LambdaHandler.kt:186-211`). 비동기 호출은 두 번 재시도하므로 실패 1건이
   `Errors`를 최대 3번 올리지만, 임계값이 1이라 메일은 같다.
 - 인증 필터(`SessionAuthenticationFilter`)에서 난 예외는 `GlobalExceptionHandler`를 거치지 않아 로그 지표에
   안 잡히고, 함수 실패로 끝난다.
@@ -363,7 +363,7 @@ WAF 차단은 429가 아니라 **403**으로 나간다. FE는 이를 `EDGE_BLOCK
 예전 판단("`Errors` 알람은 만들지 않는다", 2026-10-03)은 "앱 500은 안 잡힌다"는 사실에서 나왔는데, 그 사실은
 그대로이고 위 두 경우를 놓쳤던 것이다(2026-11-02 정정).
 
-**로그 지표 패턴.** Lambda 로그는 한 줄에 JSON 하나다(Spring Boot logstash 형식, `LambdaHandler.kt:92-102` —
+**로그 지표 패턴.** Lambda 로그는 한 줄에 JSON 하나다(Spring Boot logstash 형식, `LambdaHandler.kt:96-106` —
 키는 `@timestamp`·`level`·`logger_name`·`message`·`stack_trace`·`awsRequestId` 등). 앱 500은
 `GlobalExceptionHandler`가 ERROR로 남기는 두 줄뿐이라(`Spring MVC error`·`Unhandled exception`) 그 로거로
 좁힌다. 모든 ERROR에 걸면 FCM·Gemini·메일의 일상적인 실패(각 서비스가 ERROR로 남기고 계속 진행)로 메일이
@@ -407,7 +407,7 @@ aws cloudwatch describe-alarms --region ap-northeast-1 --alarm-name-prefix link-
 3. `set-alarm-state`는 실제 지표와 상관없이 상태만 바꿔 메일 경로를 시험한다 — 경보 메일이 오고, 다음 평가(최대
    5분)에 조용히 OK로 돌아온다. 나머지 두 알람도 이름만 바꿔 같은 방법으로 시험한다.
 4. `lambda invoke`는 `Errors`를 실제로 한 번 올린다. 빈 `event`는 `CommentPostProcessEvent`의 필수 값
-   `commentId`가 없어 역직렬화(`LambdaHandler.kt:305`)에서 실패하므로 서비스는 호출되지 않는다(부작용 없음).
+   `commentId`가 없어 역직렬화(`LambdaHandler.kt:336`)에서 실패하므로 서비스는 호출되지 않는다(부작용 없음).
    동기 호출이라 재시도도 없다. 응답에 `"FunctionError": "Unhandled"`가 찍히고 5분 안에 errors 알람 메일이 온다.
 
 비용: CloudWatch 표준 알람은 지표 10개까지 무료이고 넘으면 개당 월 $0.10이다

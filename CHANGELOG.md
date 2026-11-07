@@ -122,6 +122,13 @@
 
 ### Fixed
 
+- `infra` 주소가 깨진 요청이 함수 실패 대신 400으로 끝나도록 수정
+  <details><summary>배경·구현</summary>
+
+  운영 요청 경로 비교 실험에서 쿼리·경로의 `%ZZ`·`|`가 `LambdaHandler`의 `URI.create`에서 예외를 내 함수 실패로 끝나는 것을 찾았다. Lambda까지 오면 502와 `Errors` 알람 조건이 된다. FE는 인코딩해 보내고 최근 90일 운영 로그에는 0건이며, 실제 Function URL까지 오는지는 모른다. `FunctionUrlRequestUri`가 이런 입력을 판별하고 `LambdaHandler`가 `INVALID_INPUT` 400으로 끝낸다. (`FunctionUrlRequestUri.kt`(신규), `LambdaHandler.kt`, `docs/DEPLOY.md`, [PR #181](https://github.com/BAECHAN/link-sphere_BE_NEW/pull/181))
+
+  </details>
+
 - `post` 공백이 든 검색어가 한 단어로 처리돼 검색 결과가 적게 나오던 문제
   <details><summary>배경·구현</summary>
 
