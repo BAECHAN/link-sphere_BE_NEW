@@ -2,7 +2,7 @@ package com.example.linksphere.domain.interaction
 
 /**
  * 북마크 폴더 만들기·이름 바꾸기가 공유하는 입력 한도. BookmarkFolderService가 검사하고, CreateFolderRequest·
- * UpdateFolderRequest가 같은 값을 OpenAPI 스펙에 싣는다(FE는 손으로 둔 상수를 스펙에서 생성한 상수와 테스트로 대조한다 -
+ * UpdateFolderRequest가 같은 값을 OpenAPI 스펙에 싣는다(FE는 손으로 둔 상수를 스펙 값과 테스트로 대조한다 -
  * docs/BE-ARCHITECTURE.md §7-12).
  */
 object BookmarkFolderLimits {

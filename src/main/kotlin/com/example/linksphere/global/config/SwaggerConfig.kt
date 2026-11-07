@@ -38,7 +38,7 @@ class SwaggerConfig {
                         // SecureToken.generate()가 만드는 불투명 문자열이 돼, "JWT"라고
                         // 표시하면 스펙을 읽는 사람에게 형식을 잘못 알리게 된다.
                         // name은 apiKey 스킴 전용 필드라 넣지 않는다 - HTTP 스킴에 있으면 OpenAPI 3.1 스키마 검증에서
-                        // 거부돼 FE의 스펙 생성기(orval)가 생성을 멈춘다(2026-11-02 확인).
+                        // 거부된다(2026-11-02 당시 FE가 쓰던 orval이 이 오류로 생성을 멈춰 알았다).
                         SecurityScheme()
                             .type(SecurityScheme.Type.HTTP)
                             .scheme("bearer"),

@@ -2,7 +2,7 @@ package com.example.linksphere.domain.comment
 
 /**
  * 댓글 등록·답글·수정이 공유하는 입력 한도. CommentService가 검사하고, CreateCommentRequest가 같은 값을 OpenAPI 스펙에
- * 싣는다(FE는 손으로 둔 상수를 스펙에서 생성한 상수와 테스트로 대조한다 - docs/BE-ARCHITECTURE.md §7-12).
+ * 싣는다(FE는 손으로 둔 상수를 스펙 값과 테스트로 대조한다 - docs/BE-ARCHITECTURE.md §7-12).
  */
 object CommentLimits {
 
