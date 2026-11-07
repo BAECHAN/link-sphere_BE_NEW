@@ -252,7 +252,7 @@ AND deleted_at IS NULL` 조건)도 같은 파일에 있다.
 | 경합 처리용 조건부 UPDATE 3개 | `domain/member/MemberRepository.kt:25-45`(`findIdsPendingPurge`·`cancelDeletionRequest`·`claimForPurge`) | 예 |
 | 유예 만료 확정 + 실제 익명화(2단계) | `domain/auth/AccountDeletionService.kt`의 `purge` | 예 |
 | 배치 진입점(회원별 트랜잭션 분리) | `domain/auth/AccountPurgeService.kt` | 예 |
-| EventBridge → Lambda 진입점 | `LambdaHandler.kt:203-206, 363`(`"account-purge"` case) | 예 |
+| EventBridge → Lambda 진입점 | `LambdaHandler.kt:204-207, 353`(`"account-purge"` case) | 예 |
 | 남에게 보이는 표시(공개 기준) | `domain/member/TableMember.kt:47-54`(`isWithdrawn`·`publicNickname`·`publicImage`) | 예 |
 | 댓글 작성자 표시 | `domain/comment/CommentService.kt`(`toCommentResponse`, `getComments`) | 예 |
 | 게시글 작성자 표시 | `domain/post/PostResponseAssembler.kt`(`convertToResponse`·`buildResponsesFromPosts`) | 예 |

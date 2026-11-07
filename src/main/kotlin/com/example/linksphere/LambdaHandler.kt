@@ -32,6 +32,7 @@ import software.amazon.awssdk.services.lambda.LambdaClient
 import software.amazon.awssdk.services.ses.SesClient
 import java.io.InputStream
 import java.io.OutputStream
+import java.net.URI
 import java.util.Base64
 
 /**
@@ -240,18 +241,7 @@ class LambdaHandler : RequestStreamHandler {
                 if (isBase64) Base64.getDecoder().decode(it) else it.toByteArray()
             }
 
-        val uri = FunctionUrlRequestUri.parseOrNull(path, rawQuery)
-        if (uri == null) {
-            mapper.writeValue(
-                output,
-                mapOf(
-                    "statusCode" to 400,
-                    "headers" to mapOf("Content-Type" to "application/json"),
-                    "body" to mapper.writeValueAsString(mapOf("status" to 400, "code" to "INVALID_INPUT", "message" to "Invalid request URI")),
-                ),
-            )
-            return
-        }
+        val uri = if (rawQuery != null) URI.create("$path?$rawQuery") else URI.create(path)
 
         // multipart 요청을 받는 엔드포인트는 없다(이미지는 서명 URL로 클라이언트가 직접 올린다) - raw 바이트를 그대로
         // 본문에 싣는다. 예전에는 MultipartRequestParser로 파싱해 multipart 빌더에 등록했지만, 쓰는 곳이 없어진 뒤로는
