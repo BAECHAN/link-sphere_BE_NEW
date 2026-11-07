@@ -6,7 +6,7 @@
 >
 > **읽고 나면**: 요청 한도 값을 바꾸거나 새 엔드포인트에 한도를 걸 수 있고, WAF·알람 콘솔 작업을 이 문서만 보고 할 수 있다
 >
-> **마지막 검토**: 2026-11-06 (Hikari 풀 위치의 줄 번호만 다시 봄)
+> **마지막 검토**: 2026-11-07 (코드화 범위 서술만 다시 봄)
 
 ## 1. 쉬운 설명
 
@@ -563,7 +563,7 @@ CloudFront 보안 대시보드에서 10-02부터 차단이 늘고 국가가 다�
   한도를 걸지 않았다
 - 댓글·좋아요·북마크 회원별 한도 (WAF IP 제한으로 충분하다고 보고 보류)
 - Gemini 서킷 브레이커, SQS/DLQ 전환
-- WAF·CloudFront 설정의 코드화(IaC) — Lambda·알람·IAM 등은 2026-11-05 비공개 저장소 `link-sphere-infra`에 감지 전용으로 코드화했다(FE `docs/DEPLOY.md` "AWS 설정 코드화(CDK)"). WAF·CloudFront는 그 3단계 후보로 남아 있어 레포와 어긋날 수 있다(CloudFront는 FE 매일 검사가 본다)
+- WAF·CloudFront 설정의 코드화(IaC) — Lambda·알람·IAM 등은 비공개 저장소 `link-sphere-infra`의 코드로 관리해 PR로 바꾼다(2026-11-06부터, FE `docs/DEPLOY.md` "AWS 설정 코드화(CDK)"). WAF·CloudFront는 아직 그 범위 밖의 다음 후보라 레포와 어긋날 수 있다(CloudFront는 FE 매일 검사가 본다)
 
 ## 12. 용어 사전
 
