@@ -1,0 +1,326 @@
+diff --git a/build.gradle.kts b/build.gradle.kts
+index 53086f7..ca1fe06 100644
+--- a/build.gradle.kts
++++ b/build.gradle.kts
+@@ -217,8 +217,8 @@ dependencies {
+     // Lambda RequestStreamHandler 인터페이스
+     implementation("com.amazonaws:aws-lambda-java-core:1.4.1")
+ 
+-    // MockMvc로 DispatcherServlet을 직접 호출하기 위해 필요 (Tomcat 소켓 불사용)
+-    implementation("org.springframework:spring-test")
++    // 후보 B: 이벤트를 서블릿 요청으로 바꿔 필터 체인을 돌린다 (Tomcat 소켓 불사용)
++    implementation("com.amazonaws.serverless:aws-serverless-java-container-springboot3:2.1.7")
+ 
+     // SnapStart CRaC 지원: 체크포인트 전 Tomcat/HikariCP 소켓을 자동으로 닫고 복원 후 재연결
+     // 이 의존성 없이는 열린 소켓 때문에 SnapStart 체크포인트가 State:Failed가 된다
+diff --git a/src/main/kotlin/com/example/linksphere/FunctionUrlResponse.kt b/src/main/kotlin/com/example/linksphere/FunctionUrlResponse.kt
+index 8f39822..a06de3d 100644
+--- a/src/main/kotlin/com/example/linksphere/FunctionUrlResponse.kt
++++ b/src/main/kotlin/com/example/linksphere/FunctionUrlResponse.kt
+@@ -1,7 +1,7 @@
+ package com.example.linksphere
+ 
+ import org.springframework.http.HttpHeaders
+-import org.springframework.mock.web.MockHttpServletResponse
++import com.amazonaws.serverless.proxy.model.AwsProxyResponse
+ 
+ /**
+  * MockMvc 응답을 Lambda Function URL 응답 페이로드(statusCode·headers·cookies·body)로 바꾼다.
+@@ -17,20 +17,22 @@ import org.springframework.mock.web.MockHttpServletResponse
+  */
+ internal object FunctionUrlResponse {
+ 
+-    fun from(response: MockHttpServletResponse): Map<String, Any> {
+-        val cookies = response.getHeaders(HttpHeaders.SET_COOKIE)
++    fun from(response: AwsProxyResponse): Map<String, Any> {
++        val multi = response.multiValueHeaders ?: com.amazonaws.serverless.proxy.model.Headers()
++        val cookies = multi.entries.filter { it.key.equals(HttpHeaders.SET_COOKIE, ignoreCase = true) }.flatMap { it.value }
+         val headers =
+-            response.headerNames
+-                .filterNot { it.equals(HttpHeaders.SET_COOKIE, ignoreCase = true) }
+-                .associateWith { response.getHeaders(it).joinToString(", ") }
++            multi.entries
++                .filterNot { it.key.equals(HttpHeaders.SET_COOKIE, ignoreCase = true) }
++                .associate { it.key to it.value.joinToString(", ") }
+ 
+         return buildMap {
+-            put("statusCode", response.status)
++            put("statusCode", response.statusCode)
+             put("headers", headers)
+             if (cookies.isNotEmpty()) {
+                 put("cookies", cookies)
+             }
+-            put("body", response.contentAsString)
++            put("body", response.body ?: "")
++            put("isBase64Encoded", response.isBase64Encoded)
+         }
+     }
+ }
+diff --git a/src/main/kotlin/com/example/linksphere/LambdaHandler.kt b/src/main/kotlin/com/example/linksphere/LambdaHandler.kt
+index 9e766ae..24ab474 100644
+--- a/src/main/kotlin/com/example/linksphere/LambdaHandler.kt
++++ b/src/main/kotlin/com/example/linksphere/LambdaHandler.kt
+@@ -1,6 +1,17 @@
+ package com.example.linksphere
+ 
++import com.amazonaws.serverless.proxy.InitializationWrapper
++import com.amazonaws.serverless.proxy.internal.LambdaContainerHandler
++import com.amazonaws.serverless.proxy.model.AwsProxyResponse
++import com.amazonaws.serverless.proxy.model.HttpApiV2HttpContext
++import com.amazonaws.serverless.proxy.model.HttpApiV2ProxyRequest
++import com.amazonaws.serverless.proxy.model.HttpApiV2ProxyRequestContext
++import com.amazonaws.serverless.proxy.spring.SpringBootLambdaContainerHandler
++import com.amazonaws.serverless.proxy.spring.SpringBootProxyHandlerBuilder
++import com.amazonaws.services.lambda.runtime.ClientContext
++import com.amazonaws.services.lambda.runtime.CognitoIdentity
+ import com.amazonaws.services.lambda.runtime.Context
++import com.amazonaws.services.lambda.runtime.LambdaLogger
+ import com.amazonaws.services.lambda.runtime.RequestStreamHandler
+ import com.example.linksphere.domain.auth.AccountPurgeService
+ import com.example.linksphere.domain.comment.CommentPostProcessEvent
+@@ -14,26 +25,15 @@ import com.example.linksphere.global.common.EmailMaskingLogCustomizer
+ import com.example.linksphere.global.common.RateLimitService
+ import com.fasterxml.jackson.databind.JsonNode
+ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+-import jakarta.servlet.http.Cookie
+ import org.slf4j.MDC
+-import org.springframework.boot.SpringApplication
+-import org.springframework.boot.WebApplicationType
+-import org.springframework.boot.web.servlet.context.AnnotationConfigServletWebServerApplicationContext
+ import org.springframework.context.ConfigurableApplicationContext
+-import org.springframework.http.HttpMethod
+ import org.springframework.orm.ObjectOptimisticLockingFailureException
+-import org.springframework.test.web.servlet.MockMvc
+-import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder
+-import org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+-import org.springframework.test.web.servlet.setup.MockMvcBuilders
+-import org.springframework.web.context.WebApplicationContext
++import org.springframework.web.context.support.WebApplicationContextUtils
+ import software.amazon.awssdk.core.warmup.SdkWarmUp
+ import software.amazon.awssdk.services.lambda.LambdaClient
+ import software.amazon.awssdk.services.ses.SesClient
+ import java.io.InputStream
+ import java.io.OutputStream
+-import java.net.URI
+-import java.util.Base64
+ 
+ /**
+  * AWS Lambda SnapStart 핸들러.
+@@ -53,6 +53,21 @@ import java.util.Base64
+  * 2. Cold start: 스냅샷 복원 → handleRequest() 즉시 호출 (Spring 재시작 없음)
+  * 3. 요청 처리: Lambda 이벤트(rawPath, headers, body) → MockMvc → DispatcherServlet → 응답
+  */
++// 스냅샷 전 연습 요청에 넘기는 빈 Context. 이 시점에는 실제 호출이 없다
++private object WarmUpContext : Context {
++    override fun getAwsRequestId() = "warmup"
++    override fun getLogGroupName() = ""
++    override fun getLogStreamName() = ""
++    override fun getFunctionName() = ""
++    override fun getFunctionVersion() = ""
++    override fun getInvokedFunctionArn() = ""
++    override fun getIdentity(): CognitoIdentity? = null
++    override fun getClientContext(): ClientContext? = null
++    override fun getRemainingTimeInMillis() = 0
++    override fun getMemoryLimitInMB() = 0
++    override fun getLogger(): LambdaLogger? = null
++}
++
+ class LambdaHandler : RequestStreamHandler {
+ 
+     companion object {
+@@ -61,57 +76,37 @@ class LambdaHandler : RequestStreamHandler {
+         // AI 작업 페이로드(PostCreatedEvent)의 Kotlin data class 역직렬화에 KotlinModule이 필요하다.
+         // readTree/writeValue(Map) 용도에는 영향 없어 기존 동작은 그대로 유지된다.
+         private val mapper = jacksonObjectMapper()
+-        private val mockMvc: MockMvc
++        private val container: SpringBootLambdaContainerHandler<HttpApiV2ProxyRequest, AwsProxyResponse>
+         private val applicationContext: ConfigurableApplicationContext
+ 
+-        // handleRequest가 context-path(/api)를 제거하므로 MockMvc에는 서블릿 경로만 전달한다.
+-        // 실제 매핑과 정확히 일치해야 한다 — 404가 나면 DispatcherServlet만 데워지고
+-        // 정작 중요한 Hibernate·HikariCP는 건너뛴다(CategoryController는 category-option 단수형).
+-        private val WARMUP_PATHS = listOf("/actuator/health", "/common/category-option")
++        private val WARMUP_PATHS = listOf("/api/actuator/health", "/api/common/category-option")
+         private const val REQUEST_ID_MDC_KEY = "awsRequestId"
+         private const val WARMUP_ITERATIONS = 3
+ 
+         init {
+-            // Lambda 시스템 classloader에는 shadow JAR의 jakarta.servlet.Servlet이 없다.
+-            // WebApplicationType.deduceFromClasspath()가 NONE으로 감지되는 것을 막기 위해
+-            // shadow JAR의 classloader로 교체한다.
+             Thread.currentThread().contextClassLoader = LambdaHandler::class.java.classLoader
+ 
+-            // createApplicationContext()를 오버라이드해 AnnotationConfigServletWebServerApplicationContext를 직접 생성한다.
+-            // Shadow JAR에서 spring.factories가 올바르게 병합되지 않으면 ApplicationContextFactory 조회가 실패해
+-            // AnnotationConfigApplicationContext(비웹)로 폴백되고 WebApplicationContext 캐스팅에서 오류가 난다.
+-            // 이 오버라이드는 spring.factories 조회 자체를 건너뛰는 이중 방어책이다.
+-            val app = object : SpringApplication(LinkSphereBeApplication::class.java) {
+-                override fun createApplicationContext(): ConfigurableApplicationContext = AnnotationConfigServletWebServerApplicationContext()
+-            }
+-            app.webApplicationType = WebApplicationType.SERVLET
+-            // 요청은 MockMvc로 직접 처리하므로 Tomcat이 포트를 열 필요가 없다. 이 인자가 없으면 application.yml의
+-            // server.port(8080)로 실제로 바인딩했다(운영 로그 "Tomcat started on port 8080"이 14일간 1,703회, 2026-10-26
+-            // 확인) - init 비용이 들고, 같은 프로세스의 루프백 8080이 SSRF가 노릴 수 있는 대상으로 남는다. -1이면 autoStart가
+-            // false가 되고(spring-boot 3.5.16 TomcatServletWebServerFactory:517 autoStart = port >= 0), start() 때 커넥터를
+-            // 다시 붙이며 시작된 protocol handler를 곧바로 멈춘다(TomcatWebServer:304-316) - 커넥터 포트는 0이라 그 사이 임시
+-            // 포트에 잠깐 bind했다가 닫고, 요청 처리 중에는 리스닝 소켓이 없다. Boot 문서도 "HTTP 엔드포인트는 끄고 WebApplicationContext는 만들려면
+-            // server.port=-1"이라고 쓴다(번역, how-to/webserver.adoc). 커맨드라인 인자라 yml보다 우선하고, 로컬
+-            // bootRun(LinkSphereBeApplication)에는 영향이 없다.
+-            //
+-            // 로그는 Lambda에서만 logstash JSON 한 줄로 낸다(spring-boot 3.5 structured logging). Text 로그는 RequestId가
+-            // 없고 예외 1건의 스택이 CloudWatch 이벤트 약 110개로 쪼개졌다(2026-10-26 운영 로그). JSON은 스택을
+-            // stack_trace 필드 한 줄에 담고 MDC(아래 handleRequest의 awsRequestId)를 최상위 키로 싣는다. 로컬 로그는 그대로다.
+-            // 이메일 가림과 TLS 강제도 운영에만 건다 - pgjdbc 기본값은 PREFER라(42.7.11 SslMode.of) TLS를 못 쓰면 평문으로
+-            // 넘어가고, 테스트 컨테이너와 로컬 DB는 TLS가 없을 수 있다(docs/DATA-PROTECTION.md).
+-            val ctx = app.run(
+-                "--server.port=-1",
+-                "--logging.structured.format.console=logstash",
+-                "--logging.structured.json.customizer=${EmailMaskingLogCustomizer::class.java.name}",
+-                "--spring.datasource.hikari.data-source-properties.sslmode=require",
+-            )
+-            applicationContext = ctx
+-            // webAppContextSetup()만으로는 FilterChainProxy(Spring Security)가 MockMvc 필터 체인에
+-            // 자동 포함되지 않는다. 명시적으로 추가해야 SessionAuthenticationFilter 등 보안 필터가 실행된다.
+-            val securityFilter = ctx.getBean("springSecurityFilterChain") as jakarta.servlet.Filter
+-            val builder = MockMvcBuilders.webAppContextSetup(ctx as WebApplicationContext)
+-            builder.addFilters<org.springframework.test.web.servlet.setup.DefaultMockMvcBuilder>(securityFilter)
+-            mockMvc = builder.build()
++            // 라이브러리가 인자 없이 builder.run()을 부르므로 지금의 --인자를 시스템 프로퍼티로 옮긴다
++            System.setProperty("logging.structured.format.console", "logstash")
++            System.setProperty("logging.structured.json.customizer", EmailMaskingLogCustomizer::class.java.name)
++            System.setProperty("spring.datasource.hikari.data-source-properties.sslmode", "require")
++
++            val config = LambdaContainerHandler.getContainerConfig()
++            // rawPath의 /api를 떼고, 요청의 컨텍스트 경로를 /api로 보여 준다
++            config.setServiceBasePath("/api")
++            config.setStripBasePath(true)
++            // 필터 예외를 응답으로 바꾸지 않고 함수 실패로 남긴다. 지금 운영의 실패 의미와 같다
++            config.setDisableExceptionMapper(true)
++
++            container = SpringBootProxyHandlerBuilder<HttpApiV2ProxyRequest>()
++                .defaultHttpApiV2Proxy()
++                .initializationWrapper(InitializationWrapper())
++                .servletApplication()
++                .springBootApplication(LinkSphereBeApplication::class.java)
++                .buildAndInitialize()
++
++            applicationContext =
++                WebApplicationContextUtils.getRequiredWebApplicationContext(container.servletContext) as ConfigurableApplicationContext
+ 
+             warmUp()
+             warmUpAwsSdk()
+@@ -138,7 +133,7 @@ class LambdaHandler : RequestStreamHandler {
+             repeat(WARMUP_ITERATIONS) {
+                 WARMUP_PATHS.forEach { path ->
+                     try {
+-                        val status = mockMvc.perform(MockMvcRequestBuilders.get(path)).andReturn().response.status
++                        val status = container.proxy(warmUpRequest(path), WarmUpContext).statusCode
+                         // 경로 오타로 404가 나도 조용히 지나가면 "워밍업했다"는 착각만 남는다
+                         if (status !in 200..299) {
+                             logger.warn("Warmup did not succeed: {} -> {}", path, status)
+@@ -157,6 +152,20 @@ class LambdaHandler : RequestStreamHandler {
+          * 필요 없다(https://docs.aws.amazon.com/sdk-for-java/latest/developer-guide/sdk-warmup.html). 실제
+          * 클라이언트는 그대로 by lazy라 복원 뒤에 만들어진다. 효과 측정은 docs/PERFORMANCE.md 4.6 참고.
+          */
++        private fun warmUpRequest(path: String): HttpApiV2ProxyRequest {
++            val http = HttpApiV2HttpContext()
++            http.method = "GET"
++            http.path = path
++            http.protocol = "HTTP/1.1"
++            http.sourceIp = "127.0.0.1"
++            val requestContext = HttpApiV2ProxyRequestContext()
++            requestContext.http = http
++            val request = HttpApiV2ProxyRequest()
++            request.rawPath = path
++            request.requestContext = requestContext
++            return request
++        }
++
+         private fun warmUpAwsSdk() {
+             try {
+                 SdkWarmUp.warmUp(LambdaClient::class.java, SesClient::class.java)
+@@ -172,13 +181,13 @@ class LambdaHandler : RequestStreamHandler {
+     override fun handleRequest(input: InputStream, output: OutputStream, context: Context) {
+         MDC.put(REQUEST_ID_MDC_KEY, context.awsRequestId)
+         try {
+-            dispatch(input, output)
++            dispatch(input, output, context)
+         } finally {
+             MDC.remove(REQUEST_ID_MDC_KEY)
+         }
+     }
+ 
+-    private fun dispatch(input: InputStream, output: OutputStream) {
++    private fun dispatch(input: InputStream, output: OutputStream, context: Context) {
+         val event = mapper.readTree(input)
+ 
+         // self-invoke(AiJobDispatcher·CommentJobDispatcher·FeedJobDispatcher)나 EventBridge 룰이 보낸 내부 작업이면
+@@ -226,65 +235,9 @@ class LambdaHandler : RequestStreamHandler {
+             return
+         }
+ 
+-        // rawPath에는 CloudFront가 forward한 전체 경로(/api/auth/login)가 담겨있다.
+-        // MockMvc는 Tomcat과 달리 context-path(/api)를 자동으로 스트립하지 않으므로,
+-        // Spring Security의 requestMatchers("/auth/login")가 /api/auth/login과 매칭 실패해 401이 된다.
+-        // context-path를 제거한 서블릿 경로만 MockMvc에 전달한다.
+-        val rawPath = event.get("rawPath")?.asText() ?: "/"
+-        val path = rawPath.removePrefix("/api").ifEmpty { "/" }
+-        val rawQuery = event.get("rawQueryString")?.asText()?.takeIf { it.isNotEmpty() }?.let(FunctionUrlQuery::toMockMvcQuery)
+-        val method = event.at("/requestContext/http/method").asText("GET")
+-        val body = event.get("body")?.asText()
+-        val isBase64 = event.get("isBase64Encoded")?.asBoolean() ?: false
+-        val bytes: ByteArray? =
+-            body?.takeIf { it.isNotEmpty() }?.let {
+-                if (isBase64) Base64.getDecoder().decode(it) else it.toByteArray()
+-            }
+-
+-        val uri = if (rawQuery != null) URI.create("$path?$rawQuery") else URI.create(path)
+-
+-        // multipart 요청을 받는 엔드포인트는 없다(이미지는 서명 URL로 클라이언트가 직접 올린다) - raw 바이트를 그대로
+-        // 본문에 싣는다. 예전에는 MultipartRequestParser로 파싱해 multipart 빌더에 등록했지만, 쓰는 곳이 없어진 뒤로는
+-        // 깨진 본문이 인증 전에 파서 예외로 호출 자체를 실패시키는 경로만 남아 2026-10-26에 지웠다.
+-        val requestBuilder: MockHttpServletRequestBuilder = MockMvcRequestBuilders.request(HttpMethod.valueOf(method), uri)
+-        // Function URL 트래픽은 항상 HTTPS다. 이 표시가 없으면 Spring Security의 HSTS
+-        // 헤더 작성기가 "보안 연결 아님"으로 보고 응답에 아예 헤더를 안 싣는다(F5,
+-        // docs/plans/2026-09-28-auth-hardening.md 참고).
+-        requestBuilder.secure(true)
+-
+-        var cookieHeader: String? = null
+-        event.get("headers")?.let { headers ->
+-            val names = headers.fieldNames()
+-            while (names.hasNext()) {
+-                val key = names.next()
+-                val value = headers.get(key).asText()
+-                if (key.equals("cookie", ignoreCase = true)) {
+-                    cookieHeader = value
+-                } else {
+-                    requestBuilder.header(key, value)
+-                }
+-            }
+-        }
+-        // Lambda 이벤트의 cookies 배열 우선 처리 (AllViewerExceptHostHeader 정책에서 cookies 필드로 전달될 수 있음)
+-        val cookiesNode = event.get("cookies")
+-        if (cookiesNode != null && cookiesNode.isArray && cookiesNode.size() > 0) {
+-            cookieHeader = cookiesNode.joinToString("; ") { it.asText() }
+-        }
+-        // MockMvc는 Cookie 헤더를 자동 파싱하지 않으므로 명시적으로 Cookie 객체로 변환해야 @CookieValue가 동작한다.
+-        cookieHeader?.split(";")?.forEach { part ->
+-            val trimmed = part.trim()
+-            val idx = trimmed.indexOf('=')
+-            if (idx > 0) {
+-                requestBuilder.cookie(Cookie(trimmed.substring(0, idx).trim(), trimmed.substring(idx + 1).trim()))
+-            }
+-        }
+-
+-        if (bytes != null) {
+-            requestBuilder.content(bytes)
+-        }
+-
+-        val result = mockMvc.perform(requestBuilder).andReturn()
+-        mapper.writeValue(output, FunctionUrlResponse.from(result.response))
++        val request = LambdaContainerHandler.getObjectMapper().treeToValue(event, HttpApiV2ProxyRequest::class.java)
++        val response = container.proxy(request, context)
++        mapper.writeValue(output, FunctionUrlResponse.from(response))
+     }
+ 
+     // Lambda 이벤트의 headers 필드는 대소문자가 원본 그대로 들어오므로(예: X-Origin-Verify vs

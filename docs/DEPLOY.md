@@ -1,6 +1,6 @@
 # AWS Lambda SnapStart 배포 가이드
 
-> 마지막 검토: 2026-11-06 (AWS 설정 변경 경로와 명령 실행 위치만 다시 봄. 같은 날 "MockMvc 방식을 사용하는 이유", "init 단계에서 워밍업을 실행하는 이유", "메모리 2048MB인 이유"만 다시 봄. 2026-11-05에는 TLS 인자·임시 조회 이메일 제외·덤프 처리·로그 가림·cursor 스모크 테스트·요청 경로·Lambda 실행 역할·백업 보존 설정·CDK 안내만 다시 봄. 전체 검토는 2026-10-30)
+> 마지막 검토: 2026-11-07 ("MockMvc 방식을 사용하는 이유"에 비교 실험 결과만 더함. 2026-11-06에는 AWS 설정 변경 경로와 명령 실행 위치만 다시 봄. 같은 날 "MockMvc 방식을 사용하는 이유", "init 단계에서 워밍업을 실행하는 이유", "메모리 2048MB인 이유"만 다시 봄. 2026-11-05에는 TLS 인자·임시 조회 이메일 제외·덤프 처리·로그 가림·cursor 스모크 테스트·요청 경로·Lambda 실행 역할·백업 보존 설정·CDK 안내만 다시 봄. 전체 검토는 2026-10-30)
 
 ## 아키텍처 개요
 
@@ -83,6 +83,8 @@ MockMvc가 실제 서빙 경로가 된 것은 2026-07-25다. init에서 MockMvc�
 공백으로 변환(`FunctionUrlQuery`), 응답 변환(`FunctionUrlResponse`). MockMvc는 테스트용 도구라 실제 서버와 동작이 다를 수 있고, 로컬
 `bootRun`은 Tomcat이라 이런 차이가 로컬에서는 드러나지 않는다. 쿼리의 `+`는 2026-07-25에 이 경로로 옮긴 뒤로 빠져 있던 것으로 보이며(추정),
 2026-11-06에 운영 측정으로 찾았다 — 두 단어 검색이 한 단어로 처리돼 "Spring Boot"가 5건 대신 1건만 나왔다.
+
+**표준 Tomcat과 비교한 결과(2026-11-07, 직접 측정, 로컬 RIE)**: 같은 요청 82개(Tomcat은 Lambda 전용을 뺀 67개)를 Tomcat·MockMvc·Web Adapter + Tomcat·serverless-java-container에 보냈다. FE가 실제로 보내는 형태의 정상 동작에서 MockMvc가 다른 곳은 없었다. 쿼리·경로의 깨진 문자(`%ZZ`, `|`)는 Lambda까지 오면 `LambdaHandler`의 `URI.create`에서 예외가 나 함수 실패로 끝난다. FE는 인코딩해 보내고 최근 90일 운영 로그에 0건이며, 실제 Function URL까지 오는지는 모른다. 구조를 바꿀지는 아직 정하지 않았고 콜드 스타트는 재지 않았다. 항목별 표와 후보별 위험은 [`scripts/serving-path-experiment/results/2026-11-07.md`](../scripts/serving-path-experiment/results/2026-11-07.md), 계획은 [`docs/plans/2026-11-07-serving-path-comparison.md`](./plans/2026-11-07-serving-path-comparison.md)다.
 
 ### SnapStart 동작 흐름
 

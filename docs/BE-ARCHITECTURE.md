@@ -7,7 +7,7 @@
 > **읽고 나면**: 요청이 어느 코드를 거치는지, 레이어끼리 무엇을 참조하고 어떤 타입을 주고받는지(§3) 따라갈 수 있고, 자동 검사(§2)와 선례 패턴(§7)에 맞춰 새 코드를 쓸 수 있다.
 > 지금 코드가 규칙과 어긋나는 곳은 §9에 모아 두었다 — 그쪽을 본떠 쓰지 않는다.
 >
-> **마지막 검토**: 2026-11-06
+> **마지막 검토**: 2026-11-07
 
 시스템 전체(CloudFront·S3·Lambda·배포 파이프라인)는 FE 레포
 [`docs/SYSTEM-ARCHITECTURE.md`](https://github.com/BAECHAN/link-sphere_FE_NEW/blob/main/docs/SYSTEM-ARCHITECTURE.md)가,
@@ -838,7 +838,7 @@ FE와 BE가 같은 테스트 원칙을 쓰면서 층 구성과 도구를 다르�
   - `@Valid` 확대(23곳 중 10곳) — `PostCreateRequest`는 봇 경로(`FeedItemProcessor`)도 써서 Service 검증이 어차피 필요하고,
     폴더 이름 변경은 검사 순서가 바뀐다(소유 확인 403/404 → 입력 400). 대신 **제약을 단 DTO는 반드시 `@Valid`로 받는다**
     (`제약 어노테이션이 있는 요청 본문은 @Valid로 받는다`).
-  - 201 `Location` 헤더 — 아래 항목.
+  - 201 `Location` 헤더 — 201은 `@ResponseStatus`로만 내고 `Location`을 만드는 코드가 없다. FE는 쓰지 않는다.
 - **그대로 둔 방식 혼재**(각자 쓰임이 달라 하나로 합치지 않았다):
   - 엔티티 ID 생성 4종 — §7-13이 이미 "바꾸지 않음"으로 정했다. 새 엔티티의 `@GeneratedValue`만 검사로 막는다
     (`generatedIdsOnlyOnLegacyEntities`).
@@ -861,8 +861,6 @@ FE와 BE가 같은 테스트 원칙을 쓰면서 층 구성과 도구를 다르�
 - **Spring Boot 4 이동**: 2026-10-26에 OSS 마지막 3.5.x 패치(3.5.16)로 올렸지만 3.5.x OSS 지원은 2026-06-30에 끝났다 —
   이후 3.5.x 보안 수정은 상용(enterprise) 빌드로만 나온다([api.spring.io](https://api.spring.io/projects/spring-boot/generations)).
   새 권고가 3.5.16에 걸리면 4.x(springdoc 3·Hibernate 7 동반)로 옮겨야 한다 — 따로 계획한다. Dependabot은 메이저를 무시한다.
-- **201의 `Location` 헤더**: `LambdaHandler`가 `/api`를 떼고 MockMvc에 넘겨 `ServletUriComponentsBuilder.fromCurrentRequest()`가
-  틀린 경로를 만든다. FE는 쓰지 않는다.
 - **순환 해소 후보**(§9의 간선 중 도메인 사이 3개, 2026-10-26 사용자 결정으로 미룸):
   - `interaction → comment`: 댓글 좋아요(`TableCommentReaction`·`CommentReactionRepository`·엔드포인트 2개)를 comment로 옮기면
     `comment → interaction`과 함께 사라진다(약 13파일, 같은 `@Tag`·메서드명이면 스펙은 그대로).
