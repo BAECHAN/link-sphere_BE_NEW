@@ -3,6 +3,7 @@
 
   compare.py run --target mockmvc --kind rie --port 19001 --container serving-mockmvc --phase main --out raw/mockmvc.json
   compare.py report --dir raw
+  compare.py report --dir raw --gate accepted-differences.json   # PR 검사(run.sh GATE=1)
 
 run.sh가 컨테이너를 띄우고 이 스크립트를 부른다. 이벤트 형식은 AWS 문서를 따른다
 (https://docs.aws.amazon.com/lambda/latest/dg/urls-invocation.html). 응답도 그 문서의 필드(statusCode·headers·cookies·body·
@@ -114,6 +115,11 @@ def header_bytes(method, path, headers):
 def request_parts(spec, variables):
     headers = dict(COMMON_HEADERS)
     headers.update(expand(spec.get('headers', {}), variables))
+
+    # 공통 헤더 중 일부가 없는 요청. CloudFront는 X-Forwarded-Proto를 지우고 오리진에 넘긴다(AWS CloudFront 문서
+    # "Request and response behavior for custom origins"의 요청 헤더 표)
+    for key in spec.get('dropHeaders', []):
+        headers.pop(key, None)
     cookies = expand(spec.get('cookies', []), variables)
     method = spec.get('method', 'GET')
     path = expand(spec.get('path', '/'), variables)
@@ -655,7 +661,7 @@ def command_report(args):
     specs = json.loads((HERE / 'requests.json').read_text())
     directory = pathlib.Path(args.dir)
     runs = {path.stem: json.loads(path.read_text()) for path in directory.glob('*.json')}
-    names = [name for name in ('tomcat', 'mockmvc', 'candidate-a', 'candidate-b') if name in runs]
+    names = [name for name in ('tomcat', 'mockmvc', 'candidate-a', 'candidate-b', 'head') if name in runs]
     out = []
     groups = []
 
@@ -766,6 +772,62 @@ def command_report(args):
 
     print('\n'.join(out))
 
+    if args.gate:
+        accepted = json.loads(pathlib.Path(args.gate).read_text())['accepted']
+        failures = gate_failures(specs, runs, accepted)
+        print('\n## PR 검사\n')
+
+        if failures:
+            print('\n'.join(failures))
+            sys.exit(1)
+
+        print(f'통과: 기대값 실패 0건, Tomcat과의 차이가 허용 목록 {len(accepted)}개와 같다.')
+
+
+def gate_failures(specs, runs, accepted):
+    """head가 기대값을 지키고, Tomcat과의 차이가 허용 목록과 글자까지 같아야 통과한다.
+
+    목록에 있는데 차이가 사라져도 실패다. 동작을 일부러 바꿨으면 그 PR에서 목록을 같이 고쳐 리뷰에 드러나게 한다.
+    Lambda 전용 항목은 Tomcat이 받지 않으므로 기대값과 로그 확인만 본다.
+    """
+    head = runs.get('head', {}).get('records', {})
+    tomcat = runs.get('tomcat', {}).get('records', {})
+    ids = {spec['id'] for spec in specs}
+    lambda_only = {spec['id'] for spec in specs if spec.get('lambdaOnly')}
+    failures = [f'- `{key}`: 허용 목록에만 있고 요청 목록에 없다' for key in sorted(set(accepted) - ids)]
+    # Lambda 전용 항목은 아래에서 Tomcat 비교를 건너뛰므로, 목록에 잘못 적으면 조용히 무시된다
+    failures += [f'- `{key}`: Lambda 전용 요청이라 Tomcat과의 차이 목록에 둘 수 없다' for key in sorted(set(accepted) & lambda_only)]
+
+    for spec in specs:
+        record = head.get(spec['id'])
+
+        if record is None or 'notRun' in record:
+            failures.append(f"- `{spec['id']}`: 미실행({(record or {}).get('notRun', '결과 없음')})")
+            continue
+
+        if record.get('expect'):
+            failures.append(f"- `{spec['id']}`: 기대값 실패 {'; '.join(record['expect'])}")
+
+        if record.get('logCheck') and not all(record['logCheck'].values()):
+            failures.append(f"- `{spec['id']}`: 로그 확인 실패 {record['logCheck']}")
+
+        if spec.get('lambdaOnly'):
+            continue
+
+        base = tomcat.get(spec['id'])
+
+        if base is None or 'response' not in base:
+            failures.append(f"- `{spec['id']}`: Tomcat 결과 없음")
+            continue
+
+        found = differences(base['response'], record['response'])
+        expected = accepted.get(spec['id'], {}).get('differences', [])
+
+        if found != expected:
+            failures.append(f"- `{spec['id']}`: Tomcat과의 차이가 허용 목록과 다르다. 지금 차이: {json.dumps(found, ensure_ascii=False)}")
+
+    return failures
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -779,6 +841,7 @@ def main():
     run.add_argument('--out', required=True)
     report = commands.add_parser('report')
     report.add_argument('--dir', required=True)
+    report.add_argument('--gate')
     args = parser.parse_args()
 
     if args.command == 'run':

@@ -1,0 +1,62 @@
+name: Serving Path
+
+# Lambda가 요청을 처리하는 경로(LambdaHandler)가 표준 Tomcat과 다르게 읽는 곳이 새로 생기면 병합 전에 잡는다.
+# 같은 HEAD 빌드를 Tomcat과 Lambda 런타임(RIE)에 띄워 requests.json의 요청을 모두 보내고, 차이가 accepted-differences.json과
+# 글자까지 같아야 통과한다. 공백을 +로 보낸 검색이 한 단어로 처리된 버그(#177)는 이런 비교가 없어 3개월 넘게 남았다.
+# 하네스와 판정 규칙은 scripts/serving-path-experiment/run.sh 머리말, 계획은
+# docs/plans/2026-11-10-serving-path-switch.md다.
+on:
+  # 서빙 경로를 건드리는 파일이 바뀔 때만 돈다. 필수 체크가 아니라서 경로 필터가 해당 없는 PR을 멈추게 하지 않는다
+  pull_request:
+    paths:
+      - "src/main/kotlin/com/example/linksphere/LambdaHandler.kt"
+      - "src/main/kotlin/com/example/linksphere/FunctionUrl*.kt"
+      - "build.gradle.kts"
+      - "scripts/serving-path-experiment/**"
+      - ".github/workflows/serving-path.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: serving-path-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          java-version: '17'
+          distribution: 'corretto'
+
+      - name: Cache Gradle packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: ${{ runner.os }}-gradle-
+
+      # 더미 환경변수와 임시 Postgres만 쓴다. 운영 DB·AWS·외부 API에 연결하지 않는다(run.sh 머리말)
+      - name: Tomcat과 비교
+        run: |
+          set -o pipefail
+          GATE=1 ./scripts/serving-path-experiment/run.sh | tee "$RUNNER_TEMP/serving-path.md"
+
+      - name: 결과 요약
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/serving-path.md" ]; then
+            cat "$RUNNER_TEMP/serving-path.md" >> "$GITHUB_STEP_SUMMARY"
+          fi

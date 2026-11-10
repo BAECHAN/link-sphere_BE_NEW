@@ -1,0 +1,197 @@
+{
+  "description": "serving-path 검사(run.sh GATE=1)가 받아들이는 Tomcat과의 차이. 요청 id별로 이유와 차이 문자열을 compare.py differences()가 낸 그대로 적는다. 차이가 하나라도 다르거나 사라지면 검사가 실패한다. 항목별 사용자 영향과 도달 여부의 근거는 results/2026-11-07.md \"차이별 사용자 영향\"이다.",
+  "accepted": {
+    "q-broken": {
+      "reason": "쿼리의 깨진 %ZZ. LambdaHandler의 URI.create가 예외를 내 함수 실패로 끝난다. CloudFront가 400으로 먼저 막아 Lambda까지 오지 않는다(2026-11-07 운영 측정, #181을 #182로 되돌림)",
+      "differences": [
+        "상태 200 → 502",
+        "함수 실패 False → True",
+        "헤더 cache-control: 'no-cache, no-store, max-age=0, must-revalidate' → None",
+        "헤더 content-type: 'application/json' → None",
+        "헤더 expires: '0' → None",
+        "헤더 pragma: 'no-cache' → None",
+        "헤더 referrer-policy: 'no-referrer' → None",
+        "헤더 strict-transport-security: 'max-age=31536000 ; includeSubDomains' → None",
+        "헤더 vary: 'Origin, Access-Control-Request-Method, Access-Control-Request-Headers' → None",
+        "헤더 x-content-type-options: 'nosniff' → None",
+        "헤더 x-frame-options: 'DENY' → None",
+        "헤더 x-xss-protection: '0' → None",
+        "본문: '{\"data\": {\"content\": [{\"aiStatus\": \"NONE\", \"aiSummary\": null, \"author\": {\"id\": \"00000000-0000-4000-8000-000000000001\", \"' → ''"
+      ]
+    },
+    "q-bracket": {
+      "reason": "인코딩 안 한 [. Tomcat은 400이고 이 경로는 받아 준다. 더 너그러운 쪽이라 사용자 영향이 없다",
+      "differences": [
+        "상태 400 → 200",
+        "헤더 cache-control: None → 'no-cache, no-store, max-age=0, must-revalidate'",
+        "헤더 content-language: 'en' → None",
+        "헤더 content-type: 'text/html;charset=utf-8' → 'application/json'",
+        "헤더 expires: None → '0'",
+        "헤더 pragma: None → 'no-cache'",
+        "헤더 referrer-policy: None → 'no-referrer'",
+        "헤더 strict-transport-security: None → 'max-age=31536000 ; includeSubDomains'",
+        "헤더 vary: None → 'Origin, Access-Control-Request-Method, Access-Control-Request-Headers'",
+        "헤더 x-content-type-options: None → 'nosniff'",
+        "헤더 x-frame-options: None → 'DENY'",
+        "헤더 x-xss-protection: None → '0'",
+        "본문: '<!doctype html><html lang=\"en\"><head><title>HTTP Status 400 – Bad Request</title><style type=\"text/css\">body {font-famil' → '{\"data\": {\"content\": [{\"aiStatus\": \"NONE\", \"aiSummary\": null, \"author\": {\"id\": \"00000000-0000-4000-8000-000000000001\", \"'"
+      ]
+    },
+    "q-pipe": {
+      "reason": "쿼리의 |. URI.create가 예외를 내 함수 실패로 끝난다. CloudFront가 400으로 먼저 막아 Lambda까지 오지 않는다(2026-11-07 운영 측정, #181을 #182로 되돌림)",
+      "differences": [
+        "상태 400 → 502",
+        "함수 실패 False → True",
+        "헤더 content-language: 'en' → None",
+        "헤더 content-type: 'text/html;charset=utf-8' → None",
+        "본문: '<!doctype html><html lang=\"en\"><head><title>HTTP Status 400 – Bad Request</title><style type=\"text/css\">body {font-famil' → ''"
+      ]
+    },
+    "p-enc-slash": {
+      "reason": "방화벽 400의 본문. 상태는 같고 이 경로는 빈 본문이다(sendError 뒤 /error 페이지가 없다). FE가 보내지 않는 경로다",
+      "differences": [
+        "헤더 content-language: 'en' → None",
+        "헤더 content-type: 'text/html;charset=utf-8' → None",
+        "본문: '<!doctype html><html lang=\"en\"><head><title>HTTP Status 400 – Bad Request</title><style type=\"text/css\">body {font-famil' → ''"
+      ]
+    },
+    "p-jsessionid": {
+      "reason": "방화벽 400의 본문. 상태는 같고 이 경로는 빈 본문이다(sendError 뒤 /error 페이지가 없다). FE가 보내지 않는 경로다",
+      "differences": [
+        "헤더 content-type: 'application/json' → None",
+        "본문: '{\"error\": \"Bad Request\", \"path\": \"/api/post;jsessionid=abc\", \"status\": 400, \"timestamp\": \"<time>\"}' → ''"
+      ]
+    },
+    "p-dot": {
+      "reason": "방화벽 400의 본문. 상태는 같고 이 경로는 빈 본문이다(sendError 뒤 /error 페이지가 없다). FE가 보내지 않는 경로다",
+      "differences": [
+        "헤더 content-type: 'application/json' → None",
+        "본문: '{\"error\": \"Bad Request\", \"path\": \"/api/post/%2e%2e/auth/account\", \"status\": 400, \"timestamp\": \"<time>\"}' → ''"
+      ]
+    },
+    "p-pipe": {
+      "reason": "경로의 |. URI.create가 예외를 내 함수 실패로 끝난다. CloudFront가 400으로 먼저 막아 Lambda까지 오지 않는다(2026-11-07 운영 측정, #181을 #182로 되돌림)",
+      "differences": [
+        "상태 400 → 502",
+        "함수 실패 False → True",
+        "헤더 content-language: 'en' → None",
+        "헤더 content-type: 'text/html;charset=utf-8' → None",
+        "본문: '<!doctype html><html lang=\"en\"><head><title>HTTP Status 400 – Bad Request</title><style type=\"text/css\">body {font-famil' → ''"
+      ]
+    },
+    "p-broken": {
+      "reason": "경로의 깨진 %ZZ. URI.create가 예외를 내 함수 실패로 끝난다. CloudFront가 400으로 먼저 막아 Lambda까지 오지 않는다(2026-11-07 운영 측정, #181을 #182로 되돌림)",
+      "differences": [
+        "상태 400 → 502",
+        "함수 실패 False → True",
+        "헤더 content-language: 'en' → None",
+        "헤더 content-type: 'text/html;charset=utf-8' → None",
+        "본문: '<!doctype html><html lang=\"en\"><head><title>HTTP Status 400 – Bad Request</title><style type=\"text/css\">body {font-famil' → ''"
+      ]
+    },
+    "p-api-only": {
+      "reason": "context-path 밖의 /api. CloudFront /api/* 규칙이 Lambda로 보내지 않아 도달하지 않는다",
+      "differences": [
+        "상태 302 → 401",
+        "헤더 cache-control: None → 'no-cache, no-store, max-age=0, must-revalidate'",
+        "헤더 content-type: None → 'application/json;charset=UTF-8'",
+        "헤더 expires: None → '0'",
+        "헤더 location: 'http://example.lambda-url.ap-northeast-1.on.aws/api/' → None",
+        "헤더 pragma: None → 'no-cache'",
+        "헤더 referrer-policy: None → 'no-referrer'",
+        "헤더 strict-transport-security: None → 'max-age=31536000 ; includeSubDomains'",
+        "헤더 vary: None → 'Origin, Access-Control-Request-Method, Access-Control-Request-Headers'",
+        "헤더 x-content-type-options: None → 'nosniff'",
+        "헤더 x-frame-options: None → 'DENY'",
+        "헤더 x-xss-protection: None → '0'",
+        "본문: '' → '{\"code\": \"NOT_LOGGED_IN\", \"message\": \"Authentication required\", \"status\": 401, \"timestamp\": \"<time>\"}'"
+      ]
+    },
+    "p-outside": {
+      "reason": "context-path 밖의 경로. CloudFront /api/* 규칙이 Lambda로 보내지 않아 도달하지 않는다",
+      "differences": [
+        "상태 404 → 401",
+        "헤더 cache-control: None → 'no-cache, no-store, max-age=0, must-revalidate'",
+        "헤더 content-language: 'en' → None",
+        "헤더 content-type: 'text/html;charset=utf-8' → 'application/json;charset=UTF-8'",
+        "헤더 expires: None → '0'",
+        "헤더 pragma: None → 'no-cache'",
+        "헤더 referrer-policy: None → 'no-referrer'",
+        "헤더 strict-transport-security: None → 'max-age=31536000 ; includeSubDomains'",
+        "헤더 vary: None → 'Origin, Access-Control-Request-Method, Access-Control-Request-Headers'",
+        "헤더 x-content-type-options: None → 'nosniff'",
+        "헤더 x-frame-options: None → 'DENY'",
+        "헤더 x-xss-protection: None → '0'",
+        "본문: '<!doctype html><html lang=\"en\"><head><title>HTTP Status 404 – Not Found</title><style type=\"text/css\">body {font-family:' → '{\"code\": \"NOT_LOGGED_IN\", \"message\": \"Authentication required\", \"status\": 401, \"timestamp\": \"<time>\"}'"
+      ]
+    },
+    "m-head": {
+      "reason": "HEAD 응답의 본문. 브라우저는 HEAD 본문을 쓰지 않는다",
+      "differences": [
+        "본문: '' → '{\"code\": \"NOT_LOGGED_IN\", \"message\": \"Authentication required\", \"status\": 401, \"timestamp\": \"<time>\"}'"
+      ]
+    },
+    "m-415": {
+      "reason": "415 메시지의 charset. CharacterEncodingFilter가 이 경로에서 돌지 않는다. 메시지 글자만 다르다",
+      "differences": [
+        "본문: 'E\", \"message\": \"Content-Type \\'text/plain;charset=UTF-8\\' is not supported\", \"status\": 415, \"timestamp\": \"<time>\"}' → 'E\", \"message\": \"Content-Type \\'text/plain\\' is not supported\", \"status\": 415, \"timestamp\": \"<time>\"}' / 다른 JSON 경로 1개: ['$.message']"
+      ]
+    },
+    "m-form": {
+      "reason": "415 메시지의 charset. CharacterEncodingFilter가 이 경로에서 돌지 않는다. 메시지 글자만 다르다",
+      "differences": [
+        "본문: '-Type \\'application/x-www-form-urlencoded;charset=UTF-8\\' is not supported\", \"status\": 415, \"timestamp\": \"<time>\"}' → '-Type \\'application/x-www-form-urlencoded\\' is not supported\", \"status\": 415, \"timestamp\": \"<time>\"}' / 다른 JSON 경로 1개: ['$.message']"
+      ]
+    },
+    "c-quoted": {
+      "reason": "따옴표로 감싼 쿠키 값. 서버가 따옴표 쿠키를 만들지 않아 브라우저가 이렇게 보내지 않는다",
+      "differences": [
+        "상태 200 → 401",
+        "쿠키: ['__Host-refreshToken=<token>; Path=/; Max-Age=604799; Expires=<date>; Secure; HttpOnly; SameSite=Lax'] → []",
+        "본문: '{\"data\": {\"accessToken\": \"<token>\", \"deletionCancelled\": false}, \"message\": \"Token refreshed\", \"status\": 200, \"timestamp\":' → '{\"code\": \"INVALID_REFRESH_TOKEN\", \"message\": \"Invalid refresh token\", \"status\": 401, \"timestamp\": \"<time>\"}' / 다른 JSON 경로 4개: ['$.code', '$.data', '$.message', '$.status']"
+      ]
+    },
+    "r-api-docs": {
+      "reason": "OpenAPI servers 주소. forward-headers 필터가 이 경로에서 돌지 않는 흔적이다. FE 코드 생성과 Pages가 이 값을 덮어써 영향이 없다",
+      "differences": [
+        "본문: 'n\": \"Generated server url\", \"url\": \"https://example.lambda-url.ap-northeast-1.on.aws/api\"}], \"tags\": [{\"description\": \"게시글·댓글 좋아요, 게시글 북마크, 북마크-폴더 소속 관리\", \"name' → 'n\": \"Generated server url\", \"url\": \"http://example.lambda-url.ap-northeast-1.on.aws\"}], \"tags\": [{\"description\": \"게시글·댓글 좋아요, 게시글 북마크, 북마크-폴더 소속 관리\", \"name\": \"좋' / 다른 JSON 경로 1개: ['$.servers[0].url']"
+      ]
+    },
+    "h-9000": {
+      "reason": "9KB 헤더. Tomcat은 8KB 한도로 400이고 이 경로는 받아 준다. 더 너그러운 쪽이라 사용자 영향이 없다",
+      "differences": [
+        "상태 400 → 200",
+        "헤더 cache-control: None → 'no-cache, no-store, max-age=0, must-revalidate'",
+        "헤더 content-language: 'en' → None",
+        "헤더 content-type: 'text/html;charset=utf-8' → 'application/json'",
+        "헤더 expires: None → '0'",
+        "헤더 pragma: None → 'no-cache'",
+        "헤더 referrer-policy: None → 'no-referrer'",
+        "헤더 strict-transport-security: None → 'max-age=31536000 ; includeSubDomains'",
+        "헤더 vary: None → 'Origin, Access-Control-Request-Method, Access-Control-Request-Headers'",
+        "헤더 x-content-type-options: None → 'nosniff'",
+        "헤더 x-frame-options: None → 'DENY'",
+        "헤더 x-xss-protection: None → '0'",
+        "본문: '<!doctype html><html lang=\"en\"><head><title>HTTP Status 400 – Bad Request</title><style type=\"text/css\">body {font-famil' → '{\"data\": {\"content\": [{\"aiStatus\": \"NONE\", \"aiSummary\": null, \"author\": {\"id\": \"00000000-0000-4000-8000-000000000001\", \"'"
+      ]
+    },
+    "d-filter": {
+      "reason": "인증 필터의 DB 예외. 운영 요구대로 함수 실패로 끝나 Errors 알람이 울린다. Tomcat은 JSON 500 응답이다",
+      "differences": [
+        "상태 500 → 502",
+        "함수 실패 False → True",
+        "헤더 cache-control: 'no-cache, no-store, max-age=0, must-revalidate' → None",
+        "헤더 content-type: 'application/json' → None",
+        "헤더 expires: '0' → None",
+        "헤더 pragma: 'no-cache' → None",
+        "헤더 referrer-policy: 'no-referrer' → None",
+        "헤더 strict-transport-security: 'max-age=31536000 ; includeSubDomains' → None",
+        "헤더 vary: 'Origin, Access-Control-Request-Method, Access-Control-Request-Headers' → None",
+        "헤더 x-content-type-options: 'nosniff' → None",
+        "헤더 x-frame-options: 'DENY' → None",
+        "헤더 x-xss-protection: '0' → None",
+        "본문: '{\"error\": \"Internal Server Error\", \"path\": \"/api/auth/account\", \"status\": 500, \"timestamp\": \"<time>\"}' → ''"
+      ]
+    }
+  }
+}
