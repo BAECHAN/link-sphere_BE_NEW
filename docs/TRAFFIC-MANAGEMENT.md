@@ -6,7 +6,7 @@
 >
 > **읽고 나면**: 요청 한도 값을 바꾸거나 새 엔드포인트에 한도를 걸 수 있고, WAF·알람 콘솔 작업을 이 문서만 보고 할 수 있다
 >
-> **마지막 검토**: 2026-11-07 (코드화 범위 서술과 8-2 앱 500 지표 필터만 다시 봄)
+> **마지막 검토**: 2026-11-10 (5-6의 서빙 경로 서술과 `LambdaHandler.kt` 줄 번호만 고침). 2026-11-07에는 코드화 범위 서술과 8-2 앱 500 지표 필터만 다시 봄
 
 ## 1. 쉬운 설명
 
@@ -141,9 +141,9 @@ Google SRE 책은 과부하 대응으로 기능을 낮춰 응답하는 방법(gr
 ### 5-6. 동시 처리 한계는 Spring 설정이 아니라 Lambda 칸 수가 정한다
 
 일반 서버(EC2, 예전 App Runner)라면 Spring Boot의 `server.tomcat.threads.max`(기본 200)가 서버 한
-대의 동시 처리 수를 정한다. 이 레포의 Lambda에서는 **Tomcat이 요청을 받지 않는다** — 내장 Tomcat 컨텍스트는 만들지만
-8080을 열지 않고(`--server.port=-1`, 요청 처리 중 리스닝 소켓 없음), `LambdaHandler`가 `DispatcherServlet`을 MockMvc로 직접 호출한다
-([`DEPLOY.md`](DEPLOY.md) "MockMvc 방식을 사용하는 이유"). 그리고 Lambda는 실행 환경(이하 "칸")
+대의 동시 처리 수를 정한다. 이 레포의 Lambda에서는 **Tomcat이 요청을 받지 않는다** — Tomcat을 만들지 않고(리스닝 소켓 없음),
+`LambdaHandler`가 받은 이벤트를 serverless-java-container가 서블릿 요청으로 바꿔 같은 스레드에서 `DispatcherServlet`까지 돌린다
+([`DEPLOY.md`](DEPLOY.md) "요청 경로를 serverless-java-container로 처리하는 이유"). 그리고 Lambda는 실행 환경(이하 "칸")
 하나에 요청을 한 번에 1건만 넣는다.
 
 ```
@@ -352,7 +352,7 @@ WAF 차단은 429가 아니라 **403**으로 나간다. FE는 이를 `EDGE_BLOCK
 
 - 백그라운드 잡(`LambdaHandler.dispatch`의 `ai-analysis`·`comment-postprocess`·`feed-crawl`·`feed-item`·
   `account-purge`·`orphan-image-gc`)은 예외를 잡지 않아 그대로 함수 밖으로 나간다
-  (`src/main/kotlin/com/example/linksphere/LambdaHandler.kt:187-212`). 비동기 호출은 두 번 재시도하므로 실패 1건이
+  (`src/main/kotlin/com/example/linksphere/LambdaHandler.kt:221-246`). 비동기 호출은 두 번 재시도하므로 실패 1건이
   `Errors`를 최대 3번 올리지만, 임계값이 1이라 메일은 같다.
 - 인증 필터(`SessionAuthenticationFilter`)에서 난 예외는 `GlobalExceptionHandler`를 거치지 않아 로그 지표에
   안 잡히고, 함수 실패로 끝난다.
@@ -365,7 +365,7 @@ WAF 차단은 429가 아니라 **403**으로 나간다. FE는 이를 `EDGE_BLOCK
 
 **로그 지표 패턴.** 지표 필터 `link-sphere-api-app-5xx`(비공개 저장소 `link-sphere-infra`의 `lib/baseline-stack.ts`)가
 아래 패턴에 맞는 로그 한 줄을 `App5xx` 1로 센다. Lambda 로그는 한 줄에 JSON 하나다(Spring Boot logstash 형식,
-`LambdaHandler.kt:97-107` — 키는 `@timestamp`·`level`·`logger_name`·`message`·`stack_trace`·`awsRequestId` 등). 앱 500은
+`LambdaHandler.kt:98-107` — 키는 `@timestamp`·`level`·`logger_name`·`message`·`stack_trace`·`awsRequestId` 등). 앱 500은
 `GlobalExceptionHandler`가 ERROR로 남기는 두 줄뿐이라(`Spring MVC error`·`Unhandled exception`) 그 로거로
 좁힌다. 모든 ERROR에 걸면 FCM·Gemini·메일의 일상적인 실패(각 서비스가 ERROR로 남기고 계속 진행)로 메일이
 쏟아진다. 2026-11-02 Logs Insights로 지난 30일을 세어 보니 ERROR는 1건(`PostAIService`)이었고
@@ -411,7 +411,7 @@ aws cloudwatch describe-alarms --region ap-northeast-1 --alarm-name-prefix link-
 3. `set-alarm-state`는 실제 지표와 상관없이 상태만 바꿔 메일 경로를 시험한다 — 경보 메일이 오고, 다음 평가(최대
    5분)에 조용히 OK로 돌아온다. 나머지 두 알람도 이름만 바꿔 같은 방법으로 시험한다.
 4. `lambda invoke`는 `Errors`를 실제로 한 번 올린다. 빈 `event`는 `CommentPostProcessEvent`의 필수 값
-   `commentId`가 없어 역직렬화(`LambdaHandler.kt:326`)에서 실패하므로 서비스는 호출되지 않는다(부작용 없음).
+   `commentId`가 없어 역직렬화(`LambdaHandler.kt:306`)에서 실패하므로 서비스는 호출되지 않는다(부작용 없음).
    동기 호출이라 재시도도 없다. 응답에 `"FunctionError": "Unhandled"`가 찍히고 5분 안에 errors 알람 메일이 온다.
 
 **전체 경로 확인.** 위 2·3번은 패턴과 메일 경로를 따로 볼 뿐이라, 로그 → 필터 → 지표 → 알람이 이어지는지는 실제 500이

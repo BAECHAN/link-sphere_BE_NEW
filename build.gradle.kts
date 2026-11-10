@@ -217,8 +217,9 @@ dependencies {
     // Lambda RequestStreamHandler 인터페이스
     implementation("com.amazonaws:aws-lambda-java-core:1.4.1")
 
-    // MockMvc로 DispatcherServlet을 직접 호출하기 위해 필요 (Tomcat 소켓 불사용)
-    implementation("org.springframework:spring-test")
+    // Function URL 이벤트를 서블릿 요청으로 바꿔 필터 체인과 DispatcherServlet을 돌린다 (Tomcat 소켓 불사용).
+    // 2.x가 Spring Boot 3.x 라인이다(3.x는 Boot 4.x). 고른 근거: docs/plans/2026-11-10-serving-path-switch.md
+    implementation("com.amazonaws.serverless:aws-serverless-java-container-springboot3:2.1.7")
 
     // SnapStart CRaC 지원: 체크포인트 전 Tomcat/HikariCP 소켓을 자동으로 닫고 복원 후 재연결
     // 이 의존성 없이는 열린 소켓 때문에 SnapStart 체크포인트가 State:Failed가 된다

@@ -39,10 +39,10 @@
 
 ```
 src/main/kotlin/com/example/linksphere/
-├── LambdaHandler.kt                     # AWS Lambda 진입점 (MockMvc 기반)
+├── LambdaHandler.kt                     # AWS Lambda 진입점 (serverless-java-container)
 ├── LinkSphereBeApplication.kt           # 메인 애플리케이션
 ├── FunctionUrlOriginGuard.kt            # Function URL 직접 호출 차단(비밀 헤더 비교, 미설정이면 통과)
-├── FunctionUrlResponse.kt               # MockMvc 응답 → Function URL 응답(cookies 배열·다중값 헤더)
+├── FunctionUrlResponse.kt               # 라이브러리 응답 → Function URL 응답(cookies 배열·다중값 헤더)
 ├── domain/
 │   ├── auth/                            # 인증 도메인
 │   │   ├── AuthController.kt            # 회원가입, 로그인, 토큰 갱신, 로그아웃, 내 정보, 비밀번호 변경, 회원탈퇴
@@ -441,20 +441,20 @@ git config core.hooksPath .githooks
 2. **GitHub Actions**: `./gradlew ktlintCheck test integrationTest shadowJar`로 검사·단위 테스트·통합 테스트 통과 후 fat JAR를 빌드하고 **AWS S3**에 업로드합니다.
 3. **Lambda 코드 업데이트**: S3의 새 JAR를 참조하도록 Lambda 함수를 업데이트합니다.
 4. **버전 발행**: `publish-version`으로 **SnapStart 스냅샷**을 생성합니다.
-5. **연속 호출 검증**: 방금 발행한 버전을 5회 연속 직접 호출해 전부 `statusCode 200`인지 확인하고, cursor로 첫 쪽과 다음 쪽도 읽습니다. 하나라도 실패하면 아래 승격 없이 워크플로우가 실패합니다.
+5. **연속 호출 검증**: 방금 발행한 버전을 5회 연속 직접 호출해 전부 `statusCode 200`인지 확인하고, cursor로 첫 쪽과 다음 쪽도 읽고, 로그아웃 응답의 삭제 쿠키와 HSTS를 확인합니다. 하나라도 실패하면 아래 승격 없이 워크플로우가 실패합니다.
 6. **alias 업데이트**: 검증을 통과했을 때만 `prod` alias가 새 버전을 가리키도록 교체합니다.
 
 자세한 배포 과정은 [**docs/DEPLOY.md**](./docs/DEPLOY.md) 문서를 참고해주세요.
 
 ### Lambda 핵심 구조
 
-Lambda에서는 **MockMvc**로 `DispatcherServlet`을 직접 호출합니다(경위는 [docs/DEPLOY.md](./docs/DEPLOY.md) "MockMvc 방식을 사용하는 이유"):
+Lambda에서는 **serverless-java-container**가 이벤트를 서블릿 요청으로 바꿔 필터 체인과 `DispatcherServlet`을 돌립니다(Tomcat 소켓 없음, 경위는 [docs/DEPLOY.md](./docs/DEPLOY.md) "요청 경로를 serverless-java-container로 처리하는 이유"):
 
 ```
 API 요청 → CloudFront(/api/*) → Lambda Function URL(prod alias)
   → LambdaHandler.handleRequest()
-    → MockMvc.perform()
-      → Spring DispatcherServlet → 응답
+    → serverless-java-container(container.proxy)
+      → 서블릿 필터 → Spring DispatcherServlet → 응답
 ```
 
 ### 콜드스타트 대응

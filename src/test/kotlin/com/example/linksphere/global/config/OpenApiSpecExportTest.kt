@@ -25,8 +25,8 @@ import java.nio.file.Path
  * - FCM 키 파일은 로컬에만 있어서 경로를 비워 로컬과 CI가 같은 상태(FCM 꺼짐)에서 스펙을 만든다.
  * - DB는 통합 테스트와 같은 pgvector 컨테이너를 쓴다. 그래서 @Tag("openapi")로 묶어 ./gradlew openApiSpec에서만
  *   돈다(Docker 필요, test·integrationTest에서는 빠진다).
- * - MockMvc는 context-path(/api) 없이 디스패처를 직접 부른다 - 운영 LambdaHandler도 같은 방식이다. 경로 차이는
- *   springdoc이 채우는 servers 필드에만 남고, CI가 비교 전에 지운다.
+ * - MockMvc는 context-path(/api) 없이 디스패처를 직접 부른다. 운영 LambdaHandler는 /api를 붙인 채 serverless-java-container로
+ *   부른다. 경로 차이는 springdoc이 채우는 servers 필드에만 남고, CI가 비교 전에 지운다.
  */
 @SpringBootTest(
     properties = [
