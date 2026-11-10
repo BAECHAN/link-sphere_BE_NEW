@@ -1,6 +1,6 @@
 # Link-Sphere BE — 성능 (Lambda 콜드스타트)
 
-> 마지막 검토: 2026-11-06 (§3·§4.1 워밍업이 스냅샷에 담는 것과 3회의 근거, §8 메모리 요금 문장만 다시 봄. 2026-11-05에는 §4.6 AWS SDK 첫 호출 데우기와 §7 측정 방법 추가)
+> 마지막 검토: 2026-11-10 (§4.6 효과 판정과 구간 값 설명, §7 구간 쿼리만 다시 봄. 2026-11-06에는 §3·§4.1 워밍업이 스냅샷에 담는 것과 3회의 근거, §8 메모리 요금 문장, 2026-11-05에는 §4.6 AWS SDK 첫 호출 데우기와 §7 측정 방법 추가)
 
 이 문서는 **"왜 느렸고, 무엇을 근거로 무엇을 바꿨는지"** 를 남긴다.
 배포 절차는 [DEPLOY.md](./DEPLOY.md), 무엇이 바뀌었는지는 [CHANGELOG.md](../CHANGELOG.md)를 참고.
@@ -115,7 +115,7 @@ Lambda는 메모리에 비례해 vCPU를 준다(1024MB ≈ 0.58 vCPU → 2048MB 
 **전체 스택트레이스**를 ERROR로 남기고 있었다. 만료는 FE가 refresh로 복구하는 정상 흐름이라
 스택 생성 + 로그 쓰기가 낭비였다. WARN 한 줄로 낮췄다(위변조·서명 불일치는 ERROR 유지).
 
-### 4.6 AWS SDK 첫 호출을 스냅샷 전에 데우기 — 적용 중, 효과 판정 전 (2026-11-05)
+### 4.6 AWS SDK 첫 호출을 스냅샷 전에 데우기 — 적용 중, 줄었지만 목표 미달 (2026-11-05, 판정 2026-11-10)
 
 복원된 인스턴스가 처음 작업을 발행할 때 `LambdaSelfInvoker`의 `by lazy` 클라이언트가 만들어진다. 이 호출은 커밋 뒤 요청
 스레드에서 동기로 돌아 댓글·글 등록 응답을 늦춘다.
@@ -169,10 +169,10 @@ TLS 연결도 그대로다. 메일 쪽은 `MailService`가 실패 때만 로그�
 
 | 값 | 잰 구간 |
 | --- | --- |
-| `totalMs` | 아래 넷의 합에 가깝고, 위임 로그에서 `작업 발행` 로그까지의 간격과 거의 같다 |
+| `totalMs` | 위임 로그에서 `작업 발행` 로그까지의 간격과 거의 같다(운영 댓글 791ms ↔ 793ms). 운영에서는 아래 넷의 합보다 약 190ms 크다. `apiMs`가 재지 않는 `invoke` 앞뒤가 들어가기 때문이다(로컬은 p50끼리 차이 2~6ms) |
 | `jsonMs`, `requestMs` | 작업 내용 JSON 직렬화, `InvokeRequest` 조립 |
 | `clientMs` | `by lazy` 클라이언트 생성 |
-| `apiMs` | SDK `invoke` 전체(`ApiCallDuration`). 아래 값의 합을 뺀 나머지는 SDK 내부 처리다 |
+| `apiMs` | SDK가 재는 API 호출 시간(`ApiCallDuration`). `BaseSyncClientHandler.measureApiCall` 안만 재고, `DefaultLambdaClient.invoke`의 앞(응답 처리기 생성, `updateSdkClientConfiguration`, `InvokeRequestMarshaller` 생성 등)과 뒤(`publishMetrics`)는 들어가지 않는다(sdk-core 2.57.4 `javap`). 아래 값의 합을 뺀 나머지는 SDK 내부 처리다 |
 | `credentialsMs`, `endpointMs`, `marshallingMs`, `signingMs`, `unmarshallingMs` | 자격 증명 읽기, 엔드포인트 결정, 요청 직렬화, 서명, 응답 해석 |
 | `serviceCallMs` | 연결부터 응답 첫 바이트까지. 첫 호출 172ms, 둘째 66ms로 새 연결 비용이 여기 들어간다(직접 측정, 1회) |
 
@@ -190,6 +190,42 @@ p50이다. TLS와 AWS 왕복이 없고 작업 내용이 단순한 `Map`이라 �
 **판정 기준(우리 판단, 외부 기준 아님).** 새 버전의 첫 발행 5건 이상에서 p50 500ms 이하이고 이후 발행이 그대로면 달성으로 본다.
 Restore Duration(기준선: 최근 14일 n=499, p50 684ms, p90 944ms, 최대 1,412ms)이 p50 기준 200ms 넘게 늘면 득실을 다시 본다.
 못 미치면 구간 로그로 남은 비용을 보고 별도로 다룬다.
+
+**판정(2026-11-10, BE 이슈 #167): 줄었지만 목표 미달.** 직접 측정, Logs Insights, 버전 195~203(2026-11-05T09:28Z~11-10T05:41Z).
+
+| 기준 | 결과 | 판정 |
+| --- | --- | --- |
+| 첫 발행 p50 500ms 이하 | n=4: 787·793·856·1,035ms(댓글 1, AI 3), 중앙값 825ms. 기준선 1,713ms에서 약 0.9초 줄었다 | 미달 |
+| 이후 발행 유지 | n=10, p50 35ms, 최대 68ms | 충족 |
+| Restore Duration p50 증가 200ms 이내 | n=128, p50 723ms(+39ms), p90 1,044ms, 최대 1,398ms | 충족 |
+| 스냅샷·함수 오류(`SnapStart…Exception`, `Status: error·timeout`), 워밍 실패 로그(대소문자 무시 `warm-up failed`) | 0건 | |
+
+4건으로 판정했다. "5건 이상"에서 벗어나며 사용자 결정이다. 다섯 번째가 어떤 값이든 5건의 p50은 793~856ms라 결과가 같고, 11-08~11-10에
+사용자 등록으로 생긴 첫 발행이 0건이었다.
+
+남은 비용은 구간 로그 6건(피드 2건 포함)의 중앙값으로 나누면 아래와 같다. 짝수라 가운데 두 값의 평균으로 직접 계산했다. 7장 쿼리의 `pct`는
+평균을 내지 않아 같은 6건에서 `totalP50` 791이 나온다.
+
+| 구간 | 중앙값(ms) | 워밍이 그 코드를 지나가는가 |
+| --- | --- | --- |
+| `totalMs` | 823 | |
+| `apiMs` 밖 | 189 | 아니다. `invoke`를 부르지 않는다 |
+| `clientMs` | 154 | 아니다. 별도 임시 클라이언트를 쓴다 |
+| `credentialsMs` | 131 | 아니다. anonymous 자격 증명을 쓴다 |
+| `marshallingMs` | 131 | 아니다. `listEventSourceMappings`를 직렬화한다 |
+| `requestMs` | 85 | 아니다 |
+| `serviceCallMs` | 67 | 복원 뒤 새 연결이라 워밍과 무관하다 |
+
+같은 인스턴스의 다음 발행이 35ms라 이 비용은 복원 뒤 처음 실행되는 경로의 몫이다. 그 경로가 왜 느린지(클래스 로딩, 인터프리터 실행 등)는
+재지 않았다(추정). 원래 1.7초의 구성은 워밍 전 구간을 재지 않아 알 수 없다. 남은 비용은 별도 계획으로 다룬다.
+
+init의 `SdkWarmUp`이 네트워크 호출을 하지만 195~203의 스냅샷 생성과 복원은 정상이었다(위 오류 0건, 복원 128건). AWS
+문서도 init의 연결을 실패 원인으로 꼽지 않는다.
+
+> 초기화 단계에서 함수가 맺은 연결의 상태는 Lambda가 스냅샷에서 재개할 때 보장되지 않는다. 대부분의 경우 AWS SDK가 맺은 네트워크 연결은
+> 자동으로 재개된다. (번역)
+>
+> — AWS Lambda 개발자 안내서 "SnapStart 성능 최대화", https://docs.aws.amazon.com/lambda/latest/dg/snapstart-best-practices.html#snapstart-networking
 
 제약:
 - 실패해도 부팅은 계속한다 — 이 최적화 때문에 배포가 막히지 않게 한다
@@ -481,7 +517,7 @@ filter @type = "REPORT" and @message like /Restore Duration/
 ```
 filter @message like /첫 발행 구간/
 | parse @message /totalMs=(?<total>\d+), jsonMs=(?<json>\d+), requestMs=(?<req>\d+), clientMs=(?<client>\d+), apiMs=(?<api>\d+), credentialsMs=(?<cred>\d+), endpointMs=(?<endpoint>\d+), marshallingMs=(?<marshal>\d+), signingMs=(?<sign>\d+), serviceCallMs=(?<call>\d+), unmarshallingMs=(?<unmarshal>\d+)/
-| stats count() as n, pct(total, 50) as totalP50, pct(json, 50) as jsonP50, pct(req, 50) as reqP50, pct(client, 50) as clientP50, pct(api, 50) as apiP50, pct(cred, 50) as credP50, pct(sign, 50) as signP50, pct(call, 50) as callP50
+| stats count() as n, pct(total, 50) as totalP50, pct(json, 50) as jsonP50, pct(req, 50) as reqP50, pct(client, 50) as clientP50, pct(api, 50) as apiP50, pct(cred, 50) as credP50, pct(marshal, 50) as marshalP50, pct(sign, 50) as signP50, pct(call, 50) as callP50, pct(unmarshal, 50) as unmarshalP50
 ```
 
 ---
