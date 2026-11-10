@@ -78,6 +78,13 @@
 
 ### Changed
 
+- `infra` 운영 Lambda의 요청 처리를 MockMvc에서 serverless-java-container로 옮김
+  <details><summary>배경·구현</summary>
+
+  테스트 도구인 MockMvc로 `DispatcherServlet`을 직접 불러 서블릿 필터 중 보안 필터만 돌았고, 쿼리·헤더를 Tomcat과 다르게 읽은 일이 세 번 있었다(#177 공백 `+` 검색, #121 `Vary`, #40 HSTS). 비교 실험(#180·#189)에서 serverless-java-container 2.1.7은 정상 동작 차이가 없고 콜드 스타트도 같은 수준이라(실제 SnapStart 콜드 p50 MockMvc 1,746ms, 이 라이브러리 1,713ms, 직접 측정) 옮긴다. 라이브러리가 Function URL 이벤트를 서블릿 요청으로 바꿔 필터 전체와 `DispatcherServlet`을 돌리고, Tomcat은 만들지 않는다. 기본값이 Tomcat과 다른 곳은 init에서 맞췄다 — `/api` 제거, 쿼리 키 대소문자 구분, UTF-8 기본 문자셋, 필터 예외는 지금처럼 함수 실패, 요청마다 IP를 남기는 접속 로그 끔, 기동 인자는 시스템 프로퍼티로. 라이브러리가 쿼리 쌍을 `split("=")`로 나눠 `search=a=b`는 검색어가 사라지고 `?=`는 함수 실패가 되므로(운영에서는 Function URL이 먼저 막는다) `FunctionUrlQuery.normalize`가 넘기기 전에 고친다. `Set-Cookie`는 `FunctionUrlResponse`가 `cookies` 배열로 옮긴다. 달라지는 응답은 끝 슬래시 주소(`/api/post/`)가 404 대신 200인 것(2026-11-10 사용자 결정, FE는 보내지 않는다)과 OpenAPI 문서의 `servers` 주소가 Tomcat처럼 `https`·`/api`가 되는 것이다. 운영 JAR에서 `spring-test`가 빠진다. 승격 전 점검에 쿠키 없는 로그아웃 1회(삭제 쿠키·HSTS)를 더했고, Tomcat 비교 검사 `serving-path`를 모든 PR의 필수 체크로 바꿨다. 구조는 `docs/DEPLOY.md` "요청 경로를 serverless-java-container로 처리하는 이유", 계획은 `docs/plans/2026-11-10-serving-path-switch.md`. (`build.gradle.kts`, `LambdaHandler.kt`, `FunctionUrlQuery.kt`, `FunctionUrlResponse.kt`, `deploy.yml`, `serving-path.yml`, `accepted-differences.json`, [PR #192](https://github.com/BAECHAN/link-sphere_BE_NEW/pull/192))
+
+  </details>
+
 - `infra` 복원 뒤 첫 작업 발행이 어느 구간에서 시간을 쓰는지 로그로 남김
   <details><summary>배경·구현</summary>
 

@@ -1,6 +1,6 @@
 # Link-Sphere BE — 성능 (Lambda 콜드스타트)
 
-> 마지막 검토: 2026-11-10 (§4.6 효과 판정과 구간 값 설명, §7 구간 쿼리만 다시 봄. 2026-11-06에는 §3·§4.1 워밍업이 스냅샷에 담는 것과 3회의 근거, §8 메모리 요금 문장, 2026-11-05에는 §4.6 AWS SDK 첫 호출 데우기와 §7 측정 방법 추가)
+> 마지막 검토: 2026-11-10 (§4.6 효과 판정과 구간 값 설명, §7 구간 쿼리만 다시 봄. 같은 날 서빙 경로 전환에 맞춰 §3 `DispatcherServlet` 행과 5장 머리 메모만 고침. 2026-11-06에는 §3·§4.1 워밍업이 스냅샷에 담는 것과 3회의 근거, §8 메모리 요금 문장, 2026-11-05에는 §4.6 AWS SDK 첫 호출 데우기와 §7 측정 방법 추가)
 
 이 문서는 **"왜 느렸고, 무엇을 근거로 무엇을 바꿨는지"** 를 남긴다.
 배포 절차는 [DEPLOY.md](./DEPLOY.md), 무엇이 바뀌었는지는 [CHANGELOG.md](../CHANGELOG.md)를 참고.
@@ -41,7 +41,7 @@
 
 | 첫 요청 비용으로 꼽은 항목 | 지금 구조에서 스냅샷에 들어가나 | 근거 |
 | --- | --- | --- |
-| `DispatcherServlet` 초기화(`Initializing Servlet 'dispatcherServlet'`는 Tomcat 경로의 로그) | 워밍업과 무관하게 들어간다. init의 `builder.build()`가 초기화한다 | spring-test 6.2.19 `MockMvcBuilderSupport.java:78` |
+| `DispatcherServlet` 초기화(`Initializing Servlet 'dispatcherServlet'`) | 워밍업과 무관하게 들어간다. init에서 serverless-java-container가 `loadOnStartup`으로 초기화한다(2026-11-10 전에는 MockMvc `builder.build()`, spring-test 6.2.19 `MockMvcBuilderSupport.java:78`) | springboot3 2.1.7 `SpringBootLambdaContainerHandler.initialize`(javap 오프셋 97-116 `setLoadOnStartup` → 컨테이너 `initialize`). 직접 측정(2026-11-10, 로컬 RIE): `Started LinkSphereBeApplication` 바로 뒤, 첫 요청 전에 이 로그가 찍힌다 |
 | Hibernate 메타모델 | 워밍업과 무관하게 들어간다. 컨텍스트 기동 때 만들어진다 | hibernate-core 6.6.53 `SessionFactoryImpl.java:297-373` |
 | Spring Security 필터 체인 첫 통과, 쿼리 플랜, 처음 쓰는 클래스 로딩 | 워밍업이 지나간 경로만 들어간다 | 4.1 |
 | HikariCP 커넥션 확보(Supabase 풀러까지 왕복) | **들어가지 않는다.** 체크포인트 직전에 닫고 복원 뒤 다시 맺는다 | spring-boot 3.5.16 `HikariCheckpointRestoreLifecycle.java:125-145`, 운영 로그 `Evicting Hikari connections` |
@@ -238,6 +238,9 @@ init의 `SdkWarmUp`이 네트워크 호출을 하지만 195~203의 스냅샷 생
 ---
 
 ## 5. 사후 분석 — 워밍업 시도가 일으킨 502 장애 (2026-07-25)
+
+> 2026-07-25 기록이다. 아래 "다시 시도하려면"의 첫째 안(LWA 제거)을 그날 했고, 2026-11-10에는 MockMvc 대신 serverless-java-container로
+> 요청을 처리하게 옮겼다([DEPLOY.md](./DEPLOY.md) "요청 경로를 serverless-java-container로 처리하는 이유").
 
 ### 증상
 

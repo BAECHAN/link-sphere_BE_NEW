@@ -7,7 +7,7 @@
 > **읽고 나면**: 요청이 어느 코드를 거치는지, 레이어끼리 무엇을 참조하고 어떤 타입을 주고받는지(§3) 따라갈 수 있고, 자동 검사(§2)와 선례 패턴(§7)에 맞춰 새 코드를 쓸 수 있다.
 > 지금 코드가 규칙과 어긋나는 곳은 §9에 모아 두었다 — 그쪽을 본떠 쓰지 않는다.
 >
-> **마지막 검토**: 2026-11-07
+> **마지막 검토**: 2026-11-10 (§1 요청 파이프라인의 서빙 경로만 고침). 이전 2026-11-07
 
 시스템 전체(CloudFront·S3·Lambda·배포 파이프라인)는 FE 레포
 [`docs/SYSTEM-ARCHITECTURE.md`](https://github.com/BAECHAN/link-sphere_FE_NEW/blob/main/docs/SYSTEM-ARCHITECTURE.md)가,
@@ -18,16 +18,17 @@
 
 ## 1. 요청 파이프라인
 
-Lambda 한 함수가 두 종류의 입력을 받는다. **HTTP 요청**은 MockMvc로 Spring MVC를 그대로 태우고, **내부 잡**
-(`linksphereJob` 필드가 있는 이벤트)은 보안 필터·MockMvc를 건너뛰고 Service 빈을 직접 부른다.
+Lambda 한 함수가 두 종류의 입력을 받는다. **HTTP 요청**은 serverless-java-container가 서블릿 요청으로 바꿔 서블릿 필터와
+Spring MVC를 그대로 태우고(Tomcat 소켓 없음), **내부 잡**(`linksphereJob` 필드가 있는 이벤트)은 서블릿 경로를 건너뛰고 Service 빈을
+직접 부른다. 경위는 [DEPLOY.md](./DEPLOY.md) "요청 경로를 serverless-java-container로 처리하는 이유".
 
 ```mermaid
 flowchart TD
   CF["CloudFront /api/* (OAC 서명)"] --> URL["Lambda Function URL<br/>prod alias"]
   EB["EventBridge 룰 (4일마다)"] --> H
   URL --> H{"LambdaHandler.handleRequest<br/>linksphereJob 있나?"}
-  H -->|"있음"| JOB["잡 분기 — Service 직접 호출<br/>보안 필터·MockMvc 미경유"]
-  H -->|"없음"| G["FunctionUrlOriginGuard<br/>→ /api 제거 → MockMvc"]
+  H -->|"있음"| JOB["잡 분기 — Service 직접 호출<br/>서블릿 필터·DispatcherServlet 미경유"]
+  H -->|"없음"| G["FunctionUrlOriginGuard<br/>→ 쿼리 정규화 → serverless-java-container<br/>(/api 제거, 서블릿 필터 전체)"]
   G --> F["SessionAuthenticationFilter<br/>토큰 해시로 매 요청 DB 조회"]
   F --> C["@RestController<br/>인증 추출 · 레이트리밋 · 위임"]
   C --> S["Service (@Transactional)<br/>검증 · 권한 · 예외"]

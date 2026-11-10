@@ -83,8 +83,9 @@ class SecurityConfig(
             }
             .headers { headers ->
                 // HSTS 자체는 Spring Security 기본 헤더에 이미 포함되지만 요청이 isSecure()일
-                // 때만 실린다 - Lambda(MockMvc 재생) 경로의 secure(true) 보정과 짝이다
-                // (LambdaHandler.kt 참고). Referrer-Policy는 기본 헤더가 아니라 명시가 필요하다.
+                // 때만 실린다 - Lambda에서는 CloudFront가 붙이는 X-Forwarded-For로 ForwardedHeaderFilter
+                // (forward-headers-strategy: framework)가 돌고, serverless-java-container의 scheme 기본값이
+                // https라 보안 연결로 읽힌다(LambdaHandler.kt 참고). Referrer-Policy는 기본 헤더가 아니라 명시가 필요하다.
                 headers.httpStrictTransportSecurity {
                     it.maxAgeInSeconds(31536000).includeSubDomains(true)
                 }

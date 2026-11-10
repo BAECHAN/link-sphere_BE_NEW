@@ -1,6 +1,6 @@
 # AWS Lambda SnapStart 배포 가이드
 
-> 마지막 검토: 2026-11-07 ("MockMvc 방식을 사용하는 이유"에 비교 실험 결과와 깨진 주소의 운영 측정만 더함. 2026-11-06에는 AWS 설정 변경 경로와 명령 실행 위치만 다시 봄. 같은 날 "MockMvc 방식을 사용하는 이유", "init 단계에서 워밍업을 실행하는 이유", "메모리 2048MB인 이유"만 다시 봄. 2026-11-05에는 TLS 인자·임시 조회 이메일 제외·덤프 처리·로그 가림·cursor 스모크 테스트·요청 경로·Lambda 실행 역할·백업 보존 설정·CDK 안내만 다시 봄. 전체 검토는 2026-10-30)
+> 마지막 검토: 2026-11-10 (서빙 경로를 serverless-java-container로 옮긴 것에 맞춰 "Lambda 실행 구조", "요청 경로를 serverless-java-container로 처리하는 이유", "SnapStart 동작 흐름", spring.factories 절, 13번 검증, 시행착오 3·5·7의 메모만 고침. 2026-11-07에는 같은 절에 비교 실험 결과와 깨진 주소의 운영 측정만 더함. 2026-11-06에는 AWS 설정 변경 경로와 명령 실행 위치만 다시 봄. 같은 날 "MockMvc 방식을 사용하는 이유", "init 단계에서 워밍업을 실행하는 이유", "메모리 2048MB인 이유"만 다시 봄. 2026-11-05에는 TLS 인자·임시 조회 이메일 제외·덤프 처리·로그 가림·cursor 스모크 테스트·요청 경로·Lambda 실행 역할·백업 보존 설정·CDK 안내만 다시 봄. 전체 검토는 2026-10-30)
 
 ## 아키텍처 개요
 
@@ -12,7 +12,7 @@ GitHub push (main)
     → S3 업로드
     → Lambda 코드 업데이트
     → 버전 발행 (SnapStart 스냅샷 생성)
-    → 새 버전을 직접 5회 연속 호출하고 cursor로 2쪽 읽어 검증 (하나라도 실패하면 여기서 중단)
+    → 새 버전을 직접 5회 연속 호출하고 cursor로 2쪽 읽고 로그아웃 삭제 쿠키·HSTS를 확인 (하나라도 실패하면 여기서 중단)
     → 전부 통과하면 prod alias 자동 승격
 ```
 
@@ -40,13 +40,13 @@ API 요청 (linksphere.click, HTTPS)
       → LambdaHandler.handleRequest()
         → linksphereJob 필드로 분기: 없으면 아래 HTTP 요청 경로, 있으면
           ai-analysis/comment-postprocess/feed-crawl/feed-item/account-purge/orphan-image-gc
-          내부 작업(self-invoke·EventBridge, 목록 정본은 docs/BE-ARCHITECTURE.md §1)을 MockMvc 없이 바로 처리
+          내부 작업(self-invoke·EventBridge, 목록 정본은 docs/BE-ARCHITECTURE.md §1)을 서블릿 경로 없이 바로 처리
         → (HTTP 요청 경로) FunctionUrlOriginGuard 검사 — 지금은 ORIGIN_VERIFY_SECRET이
           미설정이라 fail-open(항상 통과)이며, OAC가 사실상 이 자리를 대신한다(§5-1
           "Phase 0 관련 정정" 참고)
-        → MockMvc.perform()
-          → Spring DispatcherServlet (Tomcat은 8080을 열지 않음 — `--server.port=-1`)
-            → 응답
+        → 쿼리 정규화(FunctionUrlQuery) → serverless-java-container(container.proxy)
+          → 서블릿 필터 전체 → Spring DispatcherServlet (Tomcat을 만들지 않아 포트를 열지 않음)
+            → 응답(Set-Cookie는 cookies 배열로, FunctionUrlResponse)
 ```
 
 ---
@@ -55,45 +55,69 @@ API 요청 (linksphere.click, HTTPS)
 
 > **2026-07-25 — Lambda Web Adapter 레이어를 제거했다.**
 > 그전까지 함수에는 `LambdaAdapterLayerArm64:24` 레이어가 붙어 있었고, Tomcat이 8080에 떠서
-> 실트래픽을 처리하고 있었다(즉 아래 "MockMvc 방식" 서술과 실제가 달랐다).
+> 실트래픽을 처리하고 있었다(즉 당시 "MockMvc 방식" 서술과 실제가 달랐다).
 > 이 레이어는 `AWS_LAMBDA_EXEC_WRAPPER`가 설정되지 않아 익스텐션으로만 떠 있었고,
 > `127.0.0.1:8080` 접속에 실패하면 panic하면서 **호출 전체를 502로 실패시켰다**
 > (2026-07-25 장애의 직접 원인 — [PERFORMANCE.md](./PERFORMANCE.md) 5장).
-> 제거 후 요청은 `LambdaHandler`(MockMvc)가 처리하며, 응답 본문은 제거 전과 동일함을 확인했다
+> 제거 후 요청은 `LambdaHandler`(당시 MockMvc, 2026-11-10부터 serverless-java-container)가 처리하며, 응답 본문은 제거 전과 동일함을 확인했다
 > (헤더명 케이싱만 `vary`→`Vary`로 바뀌는데 HTTP 헤더명은 대소문자를 구분하지 않아 무해).
 
-### MockMvc 방식을 사용하는 이유
+### 요청 경로를 serverless-java-container로 처리하는 이유
 
-SnapStart는 Lambda init phase를 스냅샷으로 저장해 cold start를 단축한다. 2026-03에 이 경로를 만들 때는 Spring Boot + Tomcat 방식에서 두 가지 문제를 겪었다(아래 시행착오 2·3).
+**지금 동작(2026-11-10부터)**: `LambdaHandler`가 Function URL 이벤트를 serverless-java-container 2.1.7
+(`aws-serverless-java-container-springboot3`, 2.x가 Spring Boot 3 라인)에 넘긴다. 라이브러리가 이벤트를 서블릿 요청으로 바꿔
+서블릿 필터 전체와 `DispatcherServlet`을 돌린다. Tomcat은 만들지 않는다 — 라이브러리가 자기 웹 서버 팩토리
+(`ServerlessServletEmbeddedServerFactory`)를 부트 소스로 넣어 포트를 열지 않는다. 로컬 `bootRun`(`LinkSphereBeApplication`)은
+그대로 Tomcat 8080이다.
+
+**왜 옮겼나**: 2026-07-25부터 11-10까지는 테스트 도구인 MockMvc로 `DispatcherServlet`을 직접 불렀다. 보안 필터만 돌았고, 쿼리·헤더를
+Tomcat과 다르게 읽은 일이 세 번 있었다(공백 `+` 검색 #177, `Vary` 첫 값 #121, HSTS #40). 아래 비교 실험과 콜드 스타트 측정에서
+serverless-java-container가 정상 동작 차이 없이 콜드 스타트도 같은 수준이라 옮겼다. 계획은
+[`docs/plans/2026-11-10-serving-path-switch.md`](./plans/2026-11-10-serving-path-switch.md)다.
+
+**라이브러리 기본값과 달라 직접 맞춘 것**(`LambdaHandler` init, core 2.1.7 `ContainerConfig.defaultConfig` 기준):
+
+| 무엇 | 어떻게 | 안 하면 |
+| --- | --- | --- |
+| `/api` | `setServiceBasePath("/api")`·`setStripBasePath(true)` | 보안 필터의 `requestMatchers("/auth/login")`가 맞지 않는다 |
+| 쿼리 | `FunctionUrlQuery.normalize` | 라이브러리가 쌍을 `split("=")`로 나눠 `search=a=b`는 검색어가 사라지고, `?=`는 `ArrayIndexOutOfBoundsException`으로 함수 실패다(운영에서는 이름 빈 쌍을 Function URL이 먼저 400·403으로 막는다, 2026-11-10 측정) |
+| 쿼리 키 대소문자 | `setQueryStringCaseSensitive(true)` | `?SIZE=1`이 `size`로 읽힌다(기본값은 가리지 않음) |
+| 문자셋 | `setDefaultContentCharset("UTF-8")` | charset 없는 본문을 ISO-8859-1로 읽는다 |
+| 필터 예외 | `setDisableExceptionMapper(true)` | 인증 필터의 DB 예외가 502 응답이 되어 Errors 알람이 울리지 않는다 |
+| 접속 로그 | `setLogFormatter(null)` | 요청마다 클라이언트 IP를 INFO로 남긴다 |
+| 실행 인자 | 로그 형식·이메일 가림·TLS 강제를 `System.setProperty`로 | 라이브러리가 `SpringApplicationBuilder.run()`을 인자 없이 불러 `--` 인자를 넣을 자리가 없다 |
+| `Set-Cookie` | `FunctionUrlResponse`가 `cookies` 배열로 옮긴다 | 라이브러리 응답에 `cookies` 필드가 없어 로그인이 유지되지 않는다 |
+
+HSTS는 따로 맞추지 않는다. CloudFront는 `X-Forwarded-Proto`를 지우고 `X-Forwarded-For`를 붙여 넘긴다(AWS CloudFront 문서
+[Request and response behavior for custom origins](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/RequestAndResponseBehaviorCustomOrigin.html)의
+요청 헤더 표). 이 헤더로 `ForwardedHeaderFilter`(`forward-headers-strategy: framework`)가 돌고, 라이브러리 scheme 기본값이 `https`라
+보안 연결로 읽힌다(spring-web 6.2.19 `ForwardedHeaderFilter`, core 2.1.7 `AwsHttpServletRequest.getSchemeFromHeader`). MockMvc 때의
+`secure(true)` 보정이 필요 없다.
+
+**Tomcat과 다른 채로 둔 것**: 끝 슬래시(`/api/post/`)는 라이브러리가 지워 200이다(2026-11-10 사용자 결정, FE는 보내지 않는다). 그 밖의
+차이와 이유는 [`scripts/serving-path-experiment/accepted-differences.json`](../scripts/serving-path-experiment/accepted-differences.json)에
+있다. 모든 PR에서 필수 검사 `serving-path`가 같은 HEAD를 Tomcat과 비교해 목록과 다른 차이를 막는다([CI-CHECK-GATE.md](./CI-CHECK-GATE.md) §4.3).
+
+**경위**: SnapStart는 Lambda init phase를 스냅샷으로 저장해 cold start를 단축한다. 2026-03에 이 경로를 만들 때는 Spring Boot + Tomcat 방식에서 두 가지 문제를 겪었다(아래 시행착오 2·3).
 
 1. **CRaC 체크포인트 실패**: Tomcat이 8080 소켓을 열고 있는 상태에서 SnapStart 체크포인트를 시도하면 열린 소켓이 있어서 `State:Failed`가 됐다. `org.crac` 의존성을 넣어 풀었다.
 2. **restore 후 rebind 실패**: 복원 후 Tomcat이 8080 포트에 재바인딩하지 못한다고 보고 MockMvc 경로를 만들었다. 원인은 추정이었고, 이후 기록과 맞지 않는다 — 2026-07-25까지 Tomcat이 복원 뒤에도 실제 트래픽을 처리했고, 2026-10-26까지 8080에 바인딩했다(아래). Lambda에서 Tomcat을 못 쓰는 것은 아니다.
 
 MockMvc가 실제 서빙 경로가 된 것은 2026-07-25다. init에서 MockMvc를 돌리는 워밍업이 Lambda Web Adapter와 충돌해, 어댑터를 없애고 이 경로로 서빙을 옮겼다([PERFORMANCE.md](./PERFORMANCE.md) 5장).
-
-**지금 동작**: 요청을 Tomcat 소켓이 아니라 `MockMvc`로 `DispatcherServlet`에 직접 넣는다. 서블릿 웹 컨텍스트에 필요한 내장 Tomcat
-컨텍스트는 만들지만 `LambdaHandler`가 `--server.port=-1`로 기동해 8080에 바인딩하지 않는다 — 기동·복원 때 커넥터가 임시
-포트(0)에 잠깐 bind했다가 바로 멈추므로(spring-boot 3.5.16 `TomcatWebServer.start`의 `stopProtocolHandler`) 요청을 처리하는
-동안에는 리스닝 소켓이 없다.
-2026-10-26 전에는 이 인자가 없어 실제로 8080에 바인딩했다 — 운영 로그에 `Tomcat started on port 8080`이 14일간 1,703회
-찍혔고, Spring의 SnapStart 수명주기 처리가 체크포인트 전에 커넥터를 멈췄다가 복원 때 다시 열었다(spring-framework 6.2
-`DefaultLifecycleProcessor` `beforeCheckpoint`·`afterRestore`). 문서는 그동안 "Tomcat 없음"이라고 잘못 적고 있었다.
-
-**서버와 달라 직접 맞춘 것**: `/api` 제거, `Cookie` 헤더를 Cookie 객체로 변환, `secure(true)`(`LambdaHandler.dispatch`), 쿼리의 `+`를
-공백으로 변환(`FunctionUrlQuery`), 응답 변환(`FunctionUrlResponse`). MockMvc는 테스트용 도구라 실제 서버와 동작이 다를 수 있고, 로컬
-`bootRun`은 Tomcat이라 이런 차이가 로컬에서는 드러나지 않는다. 쿼리의 `+`는 2026-07-25에 이 경로로 옮긴 뒤로 빠져 있던 것으로 보이며(추정),
-2026-11-06에 운영 측정으로 찾았다 — 두 단어 검색이 한 단어로 처리돼 "Spring Boot"가 5건 대신 1건만 나왔다.
+MockMvc 시기에는 서블릿 웹 컨텍스트를 만들며 내장 Tomcat 컨텍스트도 생겼다. 2026-10-26 전에는 실제로 8080에 바인딩했고(운영 로그
+`Tomcat started on port 8080` 14일간 1,703회), 그 뒤로는 `--server.port=-1`로 막았다. 직접 맞춘 것은 `/api` 제거, `Cookie` 헤더를
+Cookie 객체로 변환, `secure(true)`, 쿼리의 `+`를 공백으로 변환(2026-11-06 추가), 응답 변환이었다.
 
 **표준 Tomcat과 비교한 결과(2026-11-07, 직접 측정, 로컬 RIE)**: 같은 요청 82개(Tomcat은 Lambda 전용을 뺀 67개)를 Tomcat·MockMvc·Web Adapter + Tomcat·serverless-java-container에 보냈다. FE가 실제로 보내는 형태의 정상 동작에서 MockMvc가 다른 곳은 없었다. 쿼리·경로의 깨진 문자(`%ZZ`, `|`, `{`)는 Lambda에 바로 넣으면 `LambdaHandler`의 `URI.create`에서 예외가 나 함수 실패로 끝난다. 다만 운영에서는 CloudFront가 400으로 먼저 막아 Lambda까지 오지 않고(2026-11-07 운영에 읽기 요청으로 측정, 최근 90일 로그 0건과 일치), `/api//`도 서명 불일치 403으로 Lambda 앞에서 끝난다. 그래서 코드로 따로 처리하지 않는다(#181로 400 처리를 넣었다가 같은 날 되돌렸다). 항목별 표와 후보별 위험은 [`scripts/serving-path-experiment/results/2026-11-07.md`](../scripts/serving-path-experiment/results/2026-11-07.md), 계획은 [`docs/plans/2026-11-07-serving-path-comparison.md`](./plans/2026-11-07-serving-path-comparison.md)다.
 
-**실제 SnapStart에서 잰 콜드 스타트(2026-11-10, 직접 측정)**: 같은 조건의 실험 함수 두 개(도쿄, 운영과 같은 메모리·런타임)에 MockMvc와 serverless-java-container를 올리고 20분마다 같은 GET을 보냈다. 함수마다 콜드 205건에서 p50은 MockMvc 1,746ms, serverless-java-container 1,713ms로 차이가 수십 ms였고(허용치 +500ms), 복원 실패·함수 오류·앱 500은 둘 다 0건, 복원 뒤 연속 호출도 둘 다 정상이었다. 콜드 스타트는 구조를 바꾸는 이유도 막는 이유도 되지 않는다. 구조를 바꿀지는 아직 정하지 않았다. 결과와 원본 행은 [`scripts/serving-path-experiment/results/2026-11-10-cold-start.md`](../scripts/serving-path-experiment/results/2026-11-10-cold-start.md), 계획은 [`docs/plans/2026-11-07-serving-path-cold-start.md`](./plans/2026-11-07-serving-path-cold-start.md)다.
+**실제 SnapStart에서 잰 콜드 스타트(2026-11-10, 직접 측정)**: 같은 조건의 실험 함수 두 개(도쿄, 운영과 같은 메모리·런타임)에 MockMvc와 serverless-java-container를 올리고 20분마다 같은 GET을 보냈다. 함수마다 콜드 205건에서 p50은 MockMvc 1,746ms, serverless-java-container 1,713ms로 차이가 수십 ms였고(허용치 +500ms), 복원 실패·함수 오류·앱 500은 둘 다 0건, 복원 뒤 연속 호출도 둘 다 정상이었다. 콜드 스타트는 구조를 바꾸는 이유도 막는 이유도 되지 않는다. 구조는 2026-11-10에 serverless-java-container로 옮겼다(위 "지금 동작"). 결과와 원본 행은 [`scripts/serving-path-experiment/results/2026-11-10-cold-start.md`](../scripts/serving-path-experiment/results/2026-11-10-cold-start.md), 계획은 [`docs/plans/2026-11-07-serving-path-cold-start.md`](./plans/2026-11-07-serving-path-cold-start.md)다.
 
 ### SnapStart 동작 흐름
 
 ```
 1. Init phase:
    - LambdaHandler.companion.init { } 실행
-   - Spring Boot 시작 (MockMvc 초기화 포함)
+   - Spring Boot 시작 (serverless-java-container가 서블릿 컨텍스트와 필터를 등록)
    - warmUp() 실행 — 읽기 전용 엔드포인트로 실제 요청을 흘려보냄
    - warmUpAwsSdk() 실행 — LambdaClient·SesClient를 SdkWarmUp으로 데움(운영 함수·메일은 부르지 않음)
    - SnapStart가 이 상태를 스냅샷으로 저장
@@ -101,7 +125,7 @@ MockMvc가 실제 서빙 경로가 된 것은 2026-07-25다. init에서 MockMvc�
 2. 요청 수신 (cold start):
    - 스냅샷에서 JVM 복원 (Spring 재시작 없음)
    - handleRequest() 호출
-   - MockMvc → DispatcherServlet → 응답
+   - serverless-java-container → 필터 체인 → DispatcherServlet → 응답
 
 3. 요청 수신 (warm start):
    - 동일 컨테이너 재사용, 즉시 handleRequest() 호출
@@ -129,9 +153,9 @@ Shadow JAR 플러그인의 `mergeServiceFiles()`는 `META-INF/services/**` 파�
 이 파일이 누락되면:
 - `DefaultApplicationContextFactory.getFromSpringFactories()` → 구현체 없음
 - 폴백: `AnnotationConfigApplicationContext` 생성 (웹 컨텍스트가 아님)
-- `MockMvcBuilders.webAppContextSetup(ctx as WebApplicationContext)` → **ClassCastException**
+- serverless-java-container가 컨텍스트를 `ConfigurableWebApplicationContext`로 바꿀 때 **ClassCastException**(init 실패)
 
-따라서 `append("META-INF/spring.factories")`를 명시적으로 추가해야 한다. 추가로, `LambdaHandler`에서 `createApplicationContext()`를 오버라이드해 spring.factories 조회 자체를 우회하는 이중 방어도 적용되어 있다.
+따라서 `append("META-INF/spring.factories")`를 명시적으로 추가해야 한다. 2026-11-10 전환 전에는 `LambdaHandler`가 `createApplicationContext()`를 오버라이드해 spring.factories 조회 자체를 우회하는 이중 방어도 있었다. 지금은 라이브러리가 컨텍스트를 만들어 이 우회가 없고 `append`가 유일한 방어다 — 빠지면 init이 실패해 13번 검증에서 승격 전에 멈춘다.
 
 **Shadow 9(`com.gradleup.shadow`)에서 더 필요한 설정** (2026-10-30, Gradle 9로 올리며 옛 `com.github.johnrengelman.shadow`
 8.1.1에서 옮김 — 8.1.1은 Gradle 9에서 JAR를 만들지 못한다):
@@ -1179,7 +1203,7 @@ configuration에도 강제해 ktlint 1.5.0이 Kotlin 2.4 컴파일러로 깨지�
 | 10. 업데이트 대기 | `function-updated` waiter로 완료 확인 |
 | 11. 버전 발행 | `publish-version` → SnapStart 스냅샷 생성 트리거 |
 | 12. SnapStart 대기 | `published-version-active` waiter (1~5분, 스냅샷 완성까지) |
-| 13. 연속 호출 검증 | 방금 발행한 **버전 번호를 직접 지정**해 `GET /post`를 5회 연속 호출한 뒤, `page` 없이 첫 쪽을 읽고 `nextCursor`로 다음 쪽까지 읽는다. 하나라도 `statusCode != 200`이거나 첫 쪽에 `nextCursor`가 없으면 워크플로우 실패, 아래 승격 스텝은 실행 안 됨(`prod`는 이전 버전 유지) |
+| 13. 연속 호출 검증 | 방금 발행한 **버전 번호를 직접 지정**해 `GET /post`를 5회 연속 호출한 뒤, `page` 없이 첫 쪽을 읽고 `nextCursor`로 다음 쪽까지 읽는다. 끝으로 쿠키 없는 `POST /auth/logout`을 CloudFront가 넘기는 헤더 모양(`X-Forwarded-For`만)으로 보내 `cookies`에 `__Host-refreshToken=`·`Max-Age=0`이 있고 HSTS 헤더가 있는지 본다(DB에 쓰지 않는다). 하나라도 `statusCode != 200`이거나 첫 쪽에 `nextCursor`가 없거나 로그아웃 확인이 실패하면 워크플로우 실패, 아래 승격 스텝은 실행 안 됨(`prod`는 이전 버전 유지) |
 | 14. prod alias 승격 | 13번을 전부 통과했을 때만 `update-alias`로 `prod`를 이 버전으로 이동 |
 | 15. Function URL 출력 | 승격된(=현재 서빙 중인) `prod` URL을 로그에 표시 |
 
@@ -1398,7 +1422,8 @@ Lambda에서는 이 파일 없이 환경변수로 동일한 값을 주입한다.
 crac로 체크포인트는 통과했지만, 복원 후 Tomcat이 8080 포트에 다시 바인딩하지 못하는 문제가 발생했다. Lambda 환경의 네트워크 제약으로 인한 것으로 추정.
 
 **해결**: 요청을 Tomcat 소켓 대신 MockMvc로 `DispatcherServlet`에 직접 넣는 방식으로 전환. (정정 2026-10-26: 그 뒤로도 내장
-Tomcat 커넥터는 8080에 계속 바인딩하고 있었다 — 위 "핵심 동작 원리"와 `LambdaHandler`의 `--server.port=-1` 참고.)
+Tomcat 커넥터는 8080에 계속 바인딩하고 있었다 — 그 뒤 `--server.port=-1`로 막았다. 2026-11-10부터는 serverless-java-container로
+처리해 Tomcat을 만들지 않는다 — 위 "요청 경로를 serverless-java-container로 처리하는 이유".)
 
 ### 4. WebApplicationType.NONE 감지 문제
 
@@ -1425,7 +1450,7 @@ ClassCastException: AnnotationConfigApplicationContext cannot be cast to WebAppl
 append("META-INF/spring.factories")
 ```
 
-**해결 2 — 코드 레벨 (이중 방어)**:
+**해결 2 — 코드 레벨 (이중 방어, 2026-11-10 전환으로 없어졌다 — 위 spring.factories 절)**:
 ```kotlin
 // LambdaHandler.kt - spring.factories 조회 자체를 우회
 val app = object : SpringApplication(LinkSphereBeApplication::class.java) {
@@ -1445,6 +1470,8 @@ app.applicationContextFactory = ApplicationContextFactory.ofContextClass(...)
 **해결**: `createApplicationContext()`를 익명 서브클래스로 오버라이드.
 
 ### 7. MockMvc에 Spring Security 필터 미적용 → 500 + CORS 에러
+
+> 2026-11-10 serverless-java-container로 옮겨 MockMvc가 없어졌다. 지금은 라이브러리가 서블릿 필터 전체를 돈다.
 
 `MockMvcBuilders.webAppContextSetup(ctx).build()`만으로는 `FilterChainProxy`(Spring Security 전체 필터 체인)가 MockMvc에 자동 포함되지 않는다.
 

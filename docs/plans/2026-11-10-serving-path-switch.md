@@ -4,13 +4,24 @@
 
 ## 구현 결과
 
-> Phase 1 #191 · 2026-11-10 대조 · 이탈 2 · 미구현 1(보완함) · Phase 2~4는 다음 PR에서 이 블록을 갱신 — 판정 근거(파일:줄)는 PR 본문 "계획 대비 구현"
+> Phase 1 #191 · Phase 2 #192 · 2026-11-10 대조 · 이탈 4 · 미구현 3(1건 보완함, 2건은 내용이 맞아 고치지 않음) · Phase 3·4는 다음 PR에서 이 블록을 갱신 — 판정 근거(파일:줄)는 각 PR 본문 "계획 대비 구현"
+
+**Phase 1(#191)**
 
 - 이탈(계획보다 엄격): PR 검사는 목록에 없는 차이뿐 아니라, 목록에 있는데 사라지거나 글자가 달라진 차이, 요청 목록에 없거나 Lambda 전용인 허용 항목, 미실행, 로그 확인 실패, Tomcat 결과 없음도 실패로 친다. 허용 목록에는 이유와 차이 문자열을 그대로 적는다. 동작을 일부러 바꾼 PR이 목록을 같이 고쳐 리뷰에 드러나게 하려는 것이다.
 - 이탈(나눔): `q-empty-name` 하나에 넣기로 한 두 요청을 `q-empty-name`(`?size=20&=`)과 `q-eq-only`(`?=`)로 나눴다. 요청 하나가 한 형태만 재야 어느 쪽이 깨졌는지 보인다. `size`는 다른 쿼리 요청과 같은 20이다.
 - 미구현 → 보완함: `q-bare`(`?search`)를 대조 뒤 넣었다.
 - 계획에 없던 변경: `docs/CI-CHECK-GATE.md`에 `serving-path` 검사 절과 운영 파라미터 두 줄을 더했다(문서 동기화). 이 검사를 필수 체크로 걸지 않는다는 점도 이 문서에 적었다.
 - 계획에 없던 변경(뒤집힌 전제): CloudFront는 `X-Forwarded-Proto`를 지우고 넘긴다(AWS CloudFront 문서의 요청 헤더 표). 계획의 "HSTS는 `x-forwarded-proto: https`로 만든다"는 운영 이벤트에 이 헤더가 있다는 근거가 없다. 그래서 이 헤더·포트를 뺀 요청에도 HSTS가 실려야 하는 `l-no-proto`를 넣었다(지금 MockMvc 통과). 전환 뒤에는 CloudFront가 붙이는 `X-Forwarded-For`로 `ForwardedHeaderFilter`가 돌고, 라이브러리 scheme 기본값이 `https`라 HSTS가 실린다(spring-web 6.2.19·core 2.1.7 바이트코드, 실행 확인은 Phase 2).
+
+**Phase 2(#192)**
+
+- 이탈(뒤집힌 전제 반영): 승격 전 로그아웃 점검 이벤트에 `x-forwarded-proto: https` 대신 CloudFront가 실제로 넘기는 `x-forwarded-for`만 넣었다. 계획대로면 운영에 없는 헤더로 HSTS를 확인하게 된다. 같은 이벤트(`l-logout-gate`)와 `l-no-proto`가 이 PR의 비교 검사에서 HSTS와 함께 통과해, Phase 1에 바이트코드로만 확인했던 HSTS 경로를 실행으로 확인했다.
+- 이탈(사용자 결정, 계획 승인 뒤): `serving-path` 검사의 경로 필터를 없애 모든 PR에서 돌게 하고, 잡 이름을 `compare`에서 `serving-path`로 바꿨다. 규칙셋 필수 체크로 걸기 위해서다. 필수 체크에 경로 필터가 있으면 해당 없는 PR이 "Expected"로 멈추고, `application.yml`·`SecurityConfig`·필터만 바꿔도 응답이 달라진다. 규칙셋 변경은 병합 뒤 따로 한다. Phase 1에서 문서에 적은 "필수 체크로 걸지 않는다"를 뒤집는다.
+- 미구현 → 고치지 않음: `docs/CI-CHECK-GATE.md`와 `.github/workflows/api-docs-pages.yml` 주석의 MockMvc 언급. 둘 다 스펙을 만드는 테스트(`OpenApiSpecExportTest`)가 MockMvc를 쓴다는 설명이라 전환 뒤에도 내용이 맞다.
+- 계획에 없던 변경: 하네스 요청에 `l-logout-gate`를 더했다. 배포 관문과 같은 로그아웃 이벤트를 PR 검사에서 먼저 돌려, 승격 전 점검이 새 버전에서 통과하는지 병합 전에 본다.
+- 계획에 없던 변경(문서 동기화): README·`docs/DEPLOY.md`의 배포 검증 서술에 로그아웃 점검을, `docs/CI-CHECK-GATE.md`·`docs/DEPLOY.md`·`CHANGELOG.md`에 필수 체크 전환을 반영하고, 고친 문서의 "마지막 검토" 줄을 갱신했다.
+- 계획에 없던 발견(운영 측정): `?=`는 Function URL이 Lambda를 부르기 전에 400(`InvalidQueryStringException`)으로, `?size=5&=`는 403(`InvalidSignatureException`)으로 막는다. 계획이 걱정한 "`?=` 함수 실패"는 운영 밖에서 도달하지 않는다. 정규화의 이름 빈 쌍 처리는 방어로 남기고, Phase 4의 "`?=`가 200이다" 기준은 "배포 전후 같은 400이다"로 바꾼다. `?search`는 도달한다(200).
 
 <!-- plan-result:end -->
 

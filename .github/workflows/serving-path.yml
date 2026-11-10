@@ -6,14 +6,10 @@ name: Serving Path
 # 하네스와 판정 규칙은 scripts/serving-path-experiment/run.sh 머리말, 계획은
 # docs/plans/2026-11-10-serving-path-switch.md다.
 on:
-  # 서빙 경로를 건드리는 파일이 바뀔 때만 돈다. 필수 체크가 아니라서 경로 필터가 해당 없는 PR을 멈추게 하지 않는다
+  # 필수 체크라 ci.yml과 같은 이유로 경로 필터를 두지 않는다 - 필수 체크에 경로 필터가 걸리면 해당 없는 PR이
+  # "Expected" 상태로 멈춘다. application.yml·SecurityConfig·필터만 바꿔도 응답이 달라지므로 모든 PR에서 돈다
+  # (2026-11-10 사용자 결정)
   pull_request:
-    paths:
-      - "src/main/kotlin/com/example/linksphere/LambdaHandler.kt"
-      - "src/main/kotlin/com/example/linksphere/FunctionUrl*.kt"
-      - "build.gradle.kts"
-      - "scripts/serving-path-experiment/**"
-      - ".github/workflows/serving-path.yml"
   workflow_dispatch:
 
 concurrency:
@@ -24,7 +20,8 @@ permissions:
   contents: read
 
 jobs:
-  compare:
+  # 규칙셋 필수 체크가 이 잡 이름(serving-path)을 가리킨다
+  serving-path:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:

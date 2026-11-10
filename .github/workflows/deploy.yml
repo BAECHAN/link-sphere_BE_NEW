@@ -227,6 +227,28 @@ jobs:
             exit 1
           fi
 
+          # 위 GET은 상태 코드만 본다. Set-Cookie를 응답의 cookies 배열로 옮기는 건 LambdaHandler(FunctionUrlResponse)가
+          # 하는 일이라 깨지면 로그인이 전부 깨진다. 쿠키 없는 로그아웃은 DB에 쓰지 않고 삭제 쿠키만 돌려준다.
+          # 헤더는 CloudFront가 실제로 넘기는 모양(X-Forwarded-For만, X-Forwarded-Proto는 CloudFront가 지운다)으로 넣어
+          # 운영과 같은 경로로 HSTS가 실리는지도 본다(docs/plans/2026-11-10-serving-path-switch.md).
+          echo '{"rawPath":"/api/auth/logout","headers":{"x-forwarded-for":"192.0.2.1"},"requestContext":{"http":{"method":"POST"}}}' \
+            > /tmp/verify-logout-event.json
+
+          aws lambda invoke \
+            --function-name "${{ vars.LAMBDA_FUNCTION_NAME }}:$VERSION" \
+            --payload fileb:///tmp/verify-logout-event.json \
+            /tmp/verify-logout.json > /dev/null
+
+          if ! jq -e '.statusCode == 200
+            and any(.cookies[]?; startswith("__Host-refreshToken=") and contains("Max-Age=0"))
+            and any(.headers | keys[]; ascii_downcase == "strict-transport-security")' /tmp/verify-logout.json > /dev/null; then
+            echo "::error::버전 $VERSION 로그아웃 응답에 삭제 쿠키나 HSTS가 없다 — 승격 중단, prod는 이전 버전 유지"
+            cat /tmp/verify-logout.json
+            exit 1
+          fi
+
+          echo "로그아웃 삭제 쿠키·HSTS 확인 완료"
+
       # ─────────────────────────────────────────────
       # 14. 검증 통과 → prod alias 자동 승격
       # ─────────────────────────────────────────────
