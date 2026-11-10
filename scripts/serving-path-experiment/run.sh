@@ -4,6 +4,10 @@
 #
 #   ./scripts/serving-path-experiment/run.sh                    # 빌드부터 전체
 #   WORK=/tmp/x SKIP_BUILD=1 ./scripts/serving-path-experiment/run.sh   # 빌드 재사용
+#   GATE=1 ./scripts/serving-path-experiment/run.sh             # PR 검사: 커밋된 HEAD를 Tomcat과 비교
+#
+# GATE=1이면 HEAD 하나를 빌드해 Tomcat(LinkSphereBeApplicationKt)과 LambdaHandler 두 대상으로 띄운다. 기대값 실패가 있거나
+# Tomcat과의 차이가 accepted-differences.json과 다르면 종료 코드 1이다(.github/workflows/serving-path.yml).
 #
 # 결과 표는 stdout, 진행 상황은 stderr로 나온다. 계획: docs/plans/2026-11-07-serving-path-comparison.md
 set -euo pipefail
@@ -18,6 +22,8 @@ IMAGE="public.ecr.aws/lambda/java:17"
 ADAPTER_IMAGE="public.ecr.aws/awsguru/aws-lambda-adapter:1.1.0"
 NETWORK="serving-exp"
 TARGETS="${TARGETS:-tomcat mockmvc candidate-a candidate-b control}"
+# Tomcat 대상이 쓰는 빌드. GATE=1이면 HEAD 빌드로 바꾼다
+TOMCAT_CLASSES="base"
 
 ENV_ARGS=(
   -e SPRING_DATASOURCE_URL=jdbc:postgresql://db:5432/exp
@@ -46,7 +52,7 @@ log() {
 }
 
 cleanup() {
-  docker rm -f serving-db serving-tomcat serving-mockmvc serving-candidate-a serving-candidate-b serving-control >/dev/null 2>&1 || true
+  docker rm -f serving-db serving-tomcat serving-mockmvc serving-candidate-a serving-candidate-b serving-control serving-head >/dev/null 2>&1 || true
   docker network rm "$NETWORK" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
@@ -114,6 +120,7 @@ port_of() {
     candidate-a) echo 19002 ;;
     candidate-b) echo 19003 ;;
     control) echo 19004 ;;
+    head) echo 19005 ;;
   esac
 }
 
@@ -137,7 +144,7 @@ start_target() { # 이름 [docker 인자...]
   case "$name" in
     tomcat)
       docker run -d --name "$container" --network "$NETWORK" -p "$port:8080" "${ENV_ARGS[@]}" "$@" \
-        -v "$WORK/classes/base:/var/task:ro" --entrypoint /var/lang/bin/java "$IMAGE" \
+        -v "$WORK/classes/$TOMCAT_CLASSES:/var/task:ro" --entrypoint /var/lang/bin/java "$IMAGE" \
         -cp /var/task com.example.linksphere.LinkSphereBeApplicationKt \
         --server.port=8080 \
         --logging.structured.format.console=logstash \
@@ -155,6 +162,10 @@ start_target() { # 이름 [docker 인자...]
     candidate-b)
       docker run -d --name "$container" --network "$NETWORK" -p "$port:8080" "${ENV_ARGS[@]}" "$@" \
         -v "$WORK/classes/candidate-b:/var/task:ro" "$IMAGE" com.example.linksphere.LambdaHandler::handleRequest >/dev/null
+      ;;
+    head)
+      docker run -d --name "$container" --network "$NETWORK" -p "$port:8080" "${ENV_ARGS[@]}" "$@" \
+        -v "$WORK/classes/head:/var/task:ro" "$IMAGE" com.example.linksphere.LambdaHandler::handleRequest >/dev/null
       ;;
     candidate-a)
       docker run -d --name "$container" --network "$NETWORK" -p "$port:8080" "${ENV_ARGS[@]}" "$@" \
@@ -247,6 +258,22 @@ print(f'- #177 이전 코드(대조군)의 `q-plus`가 Tomcat과 다른가: {con
 sys.exit(0 if mockmvc_same and control_differs else 1)
 PY
 }
+
+if [[ -n "${GATE:-}" ]]; then
+  if [[ -z "${SKIP_BUILD:-}" ]]; then
+    build_variant head HEAD
+  fi
+
+  TOMCAT_CLASSES="head"
+  start_db
+
+  for target in tomcat head; do
+    run_target "$target"
+  done
+
+  python3 "$DIR/compare.py" report --dir "$WORK/raw" --gate "$DIR/accepted-differences.json"
+  exit 0
+fi
 
 if [[ -z "${SKIP_BUILD:-}" ]]; then
   build_variant base "$BASE"

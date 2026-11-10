@@ -1,6 +1,6 @@
 # Link-Sphere BE — CI 검사 게이트 정비 (2026-09-03)
 
-> 마지막 검토: 2026-11-07
+> 마지막 검토: 2026-11-10
 
 ## 1. 쉬운 설명
 
@@ -170,6 +170,34 @@ flowchart TD
   PR과 같은 마크다운은 `python3 scripts/coverage-report.py --targets origin/main > /tmp/t.txt` 뒤
   `python3 scripts/coverage-report.py --report build/reports/jacoco/coverageReport/coverageReport.xml /tmp/t.txt origin/main`.
 
+### 4.3 서빙 경로 비교 검사 `serving-path` (2026-11-10 추가)
+
+Lambda가 요청을 처리하는 경로(`LambdaHandler`)가 표준 Tomcat과 다르게 읽는 곳이 새로 생기면 병합 전에 잡는다. 공백을
+`+`로 보낸 검색이 한 단어로 처리된 버그(#177)는 이런 비교가 없어 3개월 넘게 남았다. 하네스는 운영 요청 경로 비교
+실험(#180)에서 만든 `scripts/serving-path-experiment/`를 그대로 쓰고, 계획은 `docs/plans/2026-11-10-serving-path-switch.md`다.
+
+```mermaid
+flowchart TD
+  pr["PR: LambdaHandler.kt · FunctionUrl*.kt ·<br/>build.gradle.kts · 하네스가 바뀜"] --> build["run.sh GATE=1<br/>HEAD를 한 번 빌드"]
+  build --> up["같은 빌드를 두 컨테이너로<br/>Tomcat(LinkSphereBeApplicationKt) · Lambda RIE(LambdaHandler)<br/>임시 Postgres, 더미 환경변수"]
+  up --> send["requests.json 요청을 같은 순서로 보냄<br/>DB 중단·DB 없이 기동 단계 포함"]
+  send --> judge{"compare.py report --gate"}
+  judge -- "기대값 실패 0 · 차이가 허용 목록과 같음" --> ok["✅"]
+  judge -- "목록에 없는 차이 · 사라진 차이 · 미실행" --> fail["❌ 지금 차이를 JSON으로 출력"]
+```
+
+- **무엇을 비교하나**: 요청마다 상태·헤더·쿠키·본문을 Tomcat 응답과 맞춘다. 시각·토큰·`Expires` 같은 값은 정규화한다
+  (`compare.py` `canonical`). Lambda 전용 요청(내부 작업·워밍 핑 등)은 Tomcat이 받지 않아 기대값과 로그 확인만 본다.
+- **허용 목록**: `accepted-differences.json`에 요청 id별로 이유와 차이 문자열을 글자 그대로 적는다. 목록에 있는데 차이가
+  사라져도 실패다 — 동작을 일부러 바꾼 PR이 목록을 같이 고치게 해서 리뷰에 드러나게 한다. 실패하면 지금 차이가 JSON으로
+  찍히므로 그대로 옮겨 적으면 된다. Lambda 전용 요청 id를 적으면 Tomcat 비교를 안 하므로 그 자체로 실패한다.
+- **잡지 못하는 것**: Tomcat도 같은 HEAD로 빌드하므로 양쪽에 똑같이 생긴 변화는 차이로 나오지 않는다. 기대값이 없는
+  Lambda 전용 요청(`l-ext-hook`·`d-ping`)은 실행됐는지만 본다. 허용 목록에 있는 요청의 본문은 첫 차이 앞뒤(`snippet`)와
+  JSON 경로만 비교하므로, Tomcat 본문이 HTML·빈 본문인 항목은 그 창 밖의 변화를 놓친다. CI는 1회만 돈다.
+- **필수 체크가 아니다**: 경로 필터가 있어 필수로 걸면 해당 없는 PR이 "Expected"로 멈춘다(`api-compat.yml` 머리말 주석과 같은 이유). 그래서
+  실패해도 병합은 막히지 않는다.
+- **로컬 재현**: Docker가 필요하다. `GATE=1 ./scripts/serving-path-experiment/run.sh`(커밋한 HEAD를 잰다).
+
 ## 5. 운영 파라미터
 
 | 파라미터 | 값 | 실제 위치 |
@@ -190,6 +218,8 @@ flowchart TD
 | 비교 기준 스펙 | `https://linksphere.click/api/v3/api-docs`(운영, curl 재시도 3회, 받지 못하면 실패) | `api-compat.yml`의 `PROD_SPEC_URL` |
 | oasdiff 버전 | `tufin/oasdiff:v1.35.0` 멀티 아키텍처 인덱스 digest 고정, `breaking --fail-on ERR` | `api-compat.yml`의 `OASDIFF_IMAGE` |
 | 깨지는 변경 승인 라벨 | `breaking-api` — 종료 코드 1만 통과, 경고 주석을 남김 | `api-compat.yml` "깨지는 변경 검사" 스텝 |
+| 서빙 경로 비교 트리거 | `pull_request` 경로 필터(`LambdaHandler.kt`·`FunctionUrl*.kt`·`build.gradle.kts`·`scripts/serving-path-experiment/**`·이 워크플로), 동시성 그룹 `serving-path-${{ github.ref }}`, 제한 30분 | `.github/workflows/serving-path.yml` |
+| 서빙 경로 비교 판정 | 기대값 실패 0건, Tomcat과의 차이가 허용 목록과 글자까지 같음 | `compare.py`의 `gate_failures`, `accepted-differences.json` |
 | 스펙 생성 태스크 | `./gradlew openApiSpec` → `build/openapi/openapi.json`, 경로 하한 30개(2026-10 기준 37개) | `build.gradle.kts`의 `openApiSpec`, `OpenApiSpecExportTest.kt` |
 | main 브랜치 규칙셋 | `Main Branch Protect`(2026-10-13): 브랜치 삭제 금지·강제 push 금지, 우회 없음(관리자에게도 적용). 만든 뒤 임시 브랜치를 대상에 잠깐 넣어 강제 push(`Cannot force-push to this branch`)와 삭제(`Cannot delete this branch`)가 거절되는 것을 확인했다. 2026-10-14부터 필수 상태 검사 `check`(출처를 GitHub Actions로 고정, 최신 main 기준 재실행 요구는 끔)를 건다 — `check`가 초록이어야 PR이 머지되고, 관리자 예외가 없어 `main` 직접 push(릴리즈 커밋 포함)도 `GH013`으로 거절된다. 2026-10-30부터 필수 체크에 `api-compat`(§4.1)를 더했다 — 같은 규칙의 `required_status_checks` 배열에 `{"context": "api-compat", "integration_id": 15368}`을 넣어 `PUT`했다. 되돌리려면 이 규칙셋을 `PUT`해 `required_status_checks` 규칙을 뺀다 | GitHub 설정(코드 아님, 규칙셋 id 25000908) — 적용 규칙: `gh api repos/BAECHAN/link-sphere_BE_NEW/rules/branches/main`, 대상·우회 목록: `gh api repos/BAECHAN/link-sphere_BE_NEW/rulesets/25000908` |
 
