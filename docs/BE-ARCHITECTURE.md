@@ -7,7 +7,7 @@
 > **읽고 나면**: 요청이 어느 코드를 거치는지, 레이어끼리 무엇을 참조하고 어떤 타입을 주고받는지(§3) 따라갈 수 있고, 자동 검사(§2)와 선례 패턴(§7)에 맞춰 새 코드를 쓸 수 있다.
 > 지금 코드가 규칙과 어긋나는 곳은 §9에 모아 두었다 — 그쪽을 본떠 쓰지 않는다.
 >
-> **마지막 검토**: 2026-11-11 (§3 Service에 두는 한도와 §7-3 조회 기록만 고침). 이전 2026-11-10 (§1 요청 파이프라인의 서빙 경로만 고침), 2026-11-07
+> **마지막 검토**: 2026-11-11 (§3 컨트롤러·Service에 두는 한도와 §7-3 조회 기록만 고침). 이전 2026-11-10 (§1 요청 파이프라인의 서빙 경로만 고침), 2026-11-07
 
 시스템 전체(CloudFront·S3·Lambda·배포 파이프라인)는 FE 레포
 [`docs/SYSTEM-ARCHITECTURE.md`](https://github.com/BAECHAN/link-sphere_FE_NEW/blob/main/docs/SYSTEM-ARCHITECTURE.md)가,
@@ -274,9 +274,10 @@ flowchart TD
   `controllersMustNotDependOnEntities`가 막는다.
 
 - **컨트롤러 레이트리밋** — 한도는 사용자 요청 경로에만 걸어야 한다. 봇(`FeedItemProcessor`)은 `PostService`를 직접
-  부르므로, 한도를 Service에 두면 봇까지 막힌다(`PostController` companion 주석). 그래서 글 등록·검색·링크 미리보기·
-  업로드 서명은 컨트롤러가 `rateLimitService.consume(...)`을 먼저 부른다. 로그인·가입·비밀번호 재설정처럼 Service 안에서
-  판정이 갈리는 한도는 지금처럼 Service에서 건다. 조회 기록의 조회자 판단(`PostService.recordView`)도 Service에 둔다 —
+  부르므로, 한도를 Service에 두면 봇까지 막힌다(`PostController` companion 주석). 그래서 글 등록·링크 미리보기·업로드 서명·
+  이메일 중복 검사는 컨트롤러가 `rateLimitService.consume(...)`을 먼저 부른다. 검색 임베딩 한도는 컨트롤러가 `tryConsume`으로
+  만들어 넘기고 임베딩이 필요한 요청에서만 쓴다(넘어도 막지 않고 키워드 검색으로 강등한다). 로그인·가입·비밀번호 재설정처럼 Service
+  안에서 판정이 갈리는 한도는 지금처럼 Service에서 건다. 조회 기록의 조회자 판단(`PostService.recordView`)도 Service에 둔다 —
   요청을 막는 한도가 아니라 조회수를 올릴지 정하는 규칙이고, 봇은 이 메서드를 부르지 않는다(§7-3).
 - **다른 도메인 Repository 직접 사용** — 예: `PostService`가 interaction의 `BookmarkRepository`를 쓴다. 금지하는 것은
   **Service끼리의 순환**뿐이다(`servicesMustNotHaveCrossDomainCycles`). 순환이 생기면 `PostResponseAssembler`처럼 어느
@@ -545,7 +546,7 @@ if (memberActionTokenRepository.consumeIfActive(token.id, Instant.now()) == 0) {
   보내 조회로 세졌기 때문이다(`docs/plans/2026-11-05-post-view-record.md`).
 - **조회수는 같은 조회자를 UTC 하루에 한 번만 올린다**. 조회자는 로그인하면 회원, 아니면 IP다. `RateLimitService.tryConsume`
   (`post-view:<글 id>:member|ip:<값>`, 24시간 창에 1회)이 처음이라고 답할 때만 `incrementViewCount`를 부르고, IP도 모르면
-  매번 센다. `post_views`는 셌는지와 상관없이 매번 갱신한다. 세는 규칙을 FE가 따라 하지 않도록 응답
+  매번 센다. 로그인 조회면 `post_views`는 셌는지와 상관없이 매번 갱신한다. 세는 규칙을 FE가 따라 하지 않도록 응답
   (`PostViewRecordResponse`)에 판단 뒤 조회수를 싣는다 — 벌크 UPDATE는 읽어 둔 엔티티에 반영되지 않아
   `PostRepository.findViewCountById`로 다시 읽는다(`docs/plans/2026-11-11-post-view-dedupe.md`).
 

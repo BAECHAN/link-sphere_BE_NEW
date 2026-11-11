@@ -51,7 +51,7 @@ src/main/kotlin/com/example/linksphere/
 │   │   ├── AccountDeletionService.kt    # 회원탈퇴 신청(14일 유예)·유예 만료 시 익명화
 │   │   ├── AccountPurgeService.kt       # 유예 만료 계정을 4일마다 익명화하는 예약 작업(feed-crawl EventBridge 룰과 공유)
 │   │   ├── PasswordResetService.kt      # 비밀번호 찾기 요청/확인
-│   │   ├── TableAuthRateLimit.kt        # 로그인 실패·가입 시도 카운터(고정 윈도)
+│   │   ├── TableAuthRateLimit.kt        # 고정 윈도 카운터 행(인증·요청 한도와 조회수 집계가 함께 씀)
 │   │   ├── AuthRateLimitRepository.kt
 │   │   ├── TableMemberActionToken.kt    # 비밀번호재설정·이메일인증용 단발성 토큰(해시 저장)
 │   │   ├── MemberActionTokenRepository.kt

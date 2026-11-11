@@ -106,6 +106,7 @@
   수정 화면·CI Lighthouse까지 조회로 세졌다. GET은 읽기만 하게 하고(`readOnly` 트랜잭션), 상세 화면이 뜰 때 FE가 부르는
   `POST /post/{id}/view`(`PostService.recordView`)만 기록한다. 비로그인 조회도 세려고 공개 조회와 같은 보안 규칙을 걸었고,
   응답에 숫자는 싣지 않는다. 쓰이지 않게 된 `findViewCountById`는 지웠다. 계획 `docs/plans/2026-11-05-post-view-record.md`.
+  응답의 숫자와 `findViewCountById`는 같은 미릴리즈 구간의 아래 #194 항목에서 다시 바뀐다(응답에 조회수를 싣고 쿼리를 되살림).
   (`PostService.kt`, `PostController.kt`, `PostRepository.kt`, `SecurityConfig.kt`,
   [PR #159](https://github.com/BAECHAN/link-sphere_BE_NEW/pull/159))
 
