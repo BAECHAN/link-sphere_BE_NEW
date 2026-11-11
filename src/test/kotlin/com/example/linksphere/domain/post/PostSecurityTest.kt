@@ -276,13 +276,15 @@ class PostSecurityTest {
     }
 
     @Test
-    fun `토큰 없이 조회를 기록하면 비로그인으로 기록한다`() {
+    fun `토큰 없이 조회를 기록하면 비로그인으로 기록하고 판단 뒤 조회수를 돌려준다`() {
         val postId = UUID.randomUUID()
+        `when`(postService.recordView(postId, null, null)).thenReturn(PostViewRecordResponse(viewCount = 42))
 
         mockMvc.perform(post("/post/$postId/view"))
             .andExpect(status().isOk)
+            .andExpect(jsonPath("$.data.viewCount").value(42))
 
-        verify(postService).recordView(postId, null)
+        verify(postService).recordView(postId, null, null)
     }
 
     @Test
@@ -290,11 +292,26 @@ class PostSecurityTest {
         val userId = UUID.randomUUID()
         `when`(memberSessionService.checkAccessToken("valid-token")).thenReturn(AccessTokenCheck.Valid(userId, UUID.randomUUID(), MemberRole.DEMO))
         val postId = UUID.randomUUID()
+        `when`(postService.recordView(postId, userId, null)).thenReturn(PostViewRecordResponse(viewCount = 42))
 
         mockMvc.perform(post("/post/$postId/view").header("X-Access-Token", "valid-token"))
             .andExpect(status().isOk)
+            .andExpect(jsonPath("$.data.viewCount").value(42))
 
-        verify(postService).recordView(postId, userId)
+        verify(postService).recordView(postId, userId, null)
+    }
+
+    // 비로그인 조회자는 IP로 가린다 - CloudFront가 붙인 "ip:port"에서 IP만 서비스로 넘어가야 한다
+    @Test
+    fun `조회 기록은 CloudFront가 넘긴 요청자 IP를 서비스에 넘긴다`() {
+        val postId = UUID.randomUUID()
+        `when`(postService.recordView(postId, null, "203.0.113.7")).thenReturn(PostViewRecordResponse(viewCount = 42))
+
+        mockMvc.perform(post("/post/$postId/view").header("CloudFront-Viewer-Address", "203.0.113.7:51234"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.data.viewCount").value(42))
+
+        verify(postService).recordView(postId, null, "203.0.113.7")
     }
 
     @Test

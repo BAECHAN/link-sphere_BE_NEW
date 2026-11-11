@@ -6,7 +6,7 @@
 >
 > **읽고 나면**: 어떤 목록에서 cursor가 이득인지 수치로 말할 수 있고, 새 정렬을 추가하거나 cursor 형식을 바꿀 수 있으며, 실험을 다시 돌리거나 조건을 바꿔 잴 수 있다.
 >
-> **마지막 검토**: 2026-11-05 (Phase 3 FE 전환 반영)
+> **마지막 검토**: 2026-11-11 (`PostService.kt` 줄 번호만 고침). 2026-11-05 (Phase 3 FE 전환 반영)
 
 ## 1. 쉬운 설명
 
@@ -99,7 +99,7 @@ flowchart TD
 
 | 목록 | cursor 경로 | 옛 경로(Phase 4에서 제거) |
 | --- | --- | --- |
-| 피드·검색 | [`PostRepositoryImpl.kt:111`](../src/main/kotlin/com/example/linksphere/domain/post/PostRepositoryImpl.kt#L111) `findPostsAfter`, [`PostService.kt:218`](../src/main/kotlin/com/example/linksphere/domain/post/PostService.kt#L218) | `findPosts`, `getAllPosts` |
+| 피드·검색 | [`PostRepositoryImpl.kt:111`](../src/main/kotlin/com/example/linksphere/domain/post/PostRepositoryImpl.kt#L111) `findPostsAfter`, [`PostService.kt:226`](../src/main/kotlin/com/example/linksphere/domain/post/PostService.kt#L226) | `findPosts`, `getAllPosts` |
 | 북마크 | [`BookmarkRepositoryImpl.kt:132`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkRepositoryImpl.kt#L132) `findBookmarkedPostsAfter`, [`BookmarkFolderService.kt:289`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkFolderService.kt#L289) | `findBookmarkedPosts`, `getBookmarkedPosts` |
 | 내 댓글 | [`CommentRepository.kt:48`](../src/main/kotlin/com/example/linksphere/domain/comment/CommentRepository.kt#L48) `findMyCommentsFirst`·`findMyCommentsAfter`, [`CommentService.kt:130`](../src/main/kotlin/com/example/linksphere/domain/comment/CommentService.kt#L130) | `findMyComments`, `getMyComments` |
 
@@ -196,7 +196,7 @@ flowchart TD
 | "이 키 다음부터" 조건식 | [`SeekPredicate.kt`](../src/main/kotlin/com/example/linksphere/global/common/SeekPredicate.kt) |
 | WHERE 형태·파생 테이블 형태 조회 | [`KeysetQuery.kt`](../src/main/kotlin/com/example/linksphere/global/common/KeysetQuery.kt) |
 | 정렬별 키 구성 | [`PostRepositoryCustom.kt:41`](../src/main/kotlin/com/example/linksphere/domain/post/PostRepositoryCustom.kt#L41) `PostListSort`, [`BookmarkRepositoryCustom.kt:54`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkRepositoryCustom.kt#L54) `BookmarkListSort` |
-| 검색 상태 이어 가기 | [`PostService.kt:218`](../src/main/kotlin/com/example/linksphere/domain/post/PostService.kt#L218), [`BookmarkFolderService.kt:289`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkFolderService.kt#L289) |
+| 검색 상태 이어 가기 | [`PostService.kt:226`](../src/main/kotlin/com/example/linksphere/domain/post/PostService.kt#L226), [`BookmarkFolderService.kt:289`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkFolderService.kt#L289) |
 | 끝까지 읽기·SQL 형태 테스트 | [`CursorPaginationIntegrationTest.kt`](../src/test/kotlin/com/example/linksphere/domain/post/CursorPaginationIntegrationTest.kt) |
 
 | 하고 싶은 일 | 방법 | 재배포 |

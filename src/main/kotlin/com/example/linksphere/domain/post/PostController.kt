@@ -132,7 +132,8 @@ class PostController(
 
     @Operation(
         summary = "게시글 조회 기록",
-        description = "상세 화면이 뜰 때 FE가 한 번 부른다. 조회수를 1 올리고, 로그인 상태면 최근 열람 시각도 갱신한다. " +
+        description = "상세 화면이 뜰 때 FE가 한 번 부른다. 같은 회원(비로그인은 같은 IP)은 UTC 하루에 한 번만 조회수를 올리고, " +
+            "로그인 상태면 최근 열람 시각은 매번 갱신한다. 응답의 viewCount는 이 판단 뒤의 조회수다. " +
             "볼 수 없는 글은 상세 조회와 같은 기준으로 404. 실패: 404 POST_NOT_FOUND",
     )
     @SecurityRequirements
@@ -140,9 +141,10 @@ class PostController(
     fun recordPostView(
         @PathVariable id: UUID,
         authentication: Authentication?,
-    ): ApiResponse<Unit> {
-        postService.recordView(id, authentication.getUserId())
-        return ApiResponse(HttpStatus.OK.value(), "Post view recorded", Unit)
+        httpRequest: HttpServletRequest,
+    ): ApiResponse<PostViewRecordResponse> {
+        val record = postService.recordView(id, authentication.getUserId(), ClientIpResolver.resolve(httpRequest))
+        return ApiResponse(HttpStatus.OK.value(), "Post view recorded", record)
     }
 
     @Operation(

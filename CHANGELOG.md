@@ -111,6 +111,21 @@
 
   </details>
 
+- `post` 같은 회원·IP의 조회는 글마다 하루 한 번만 조회수를 올리고 조회 기록 응답에 조회수를 실음
+  <details><summary>배경·구현</summary>
+
+  상세를 새로고침하거나 다시 들어올 때마다 조회수가 올랐다. `POST /post/{id}/view`가 글과 조회자(로그인하면 회원, 아니면
+  CloudFront가 넘긴 IP)로 키를 만들어 `RateLimitService.tryConsume`(24시간 창에 1회)에 묻고, 처음일 때만 조회수를 올린다.
+  창은 시계 기준이라 UTC 0시(한국 시각 오전 9시)에 바뀌고, IP를 모르는 요청은 지금처럼 매번 센다. 최근 열람 시각은 셌는지와
+  상관없이 매번 갱신한다. 새 테이블 없이 `auth_rate_limits`를 쓰며, 비로그인 조회는 IP와 글 id가 든 행이 정리 잡이 돌 때까지
+  (최대 약 5일) 남는다(`docs/DATA-PROTECTION.md` §6). 응답 `data`가 빈 객체에서 `{ viewCount }`로 바뀐다 — 세는 규칙을 FE가
+  따라 하지 않고 이 숫자를 그대로 보여 주게 하려는 것이라 BE를 먼저 배포한다. 다른 제품 사례와 기각한 대안은
+  `docs/plans/2026-11-11-post-view-dedupe.md`.
+  (`PostService.kt`, `PostController.kt`, `PostDTO.kt`, `PostRepository.kt`, `RateLimitService.kt`,
+  [PR #194](https://github.com/BAECHAN/link-sphere_BE_NEW/pull/194))
+
+  </details>
+
 - `config` OpenAPI 스펙에 요청 입력 한도를 싣고 비밀번호 형식 규칙을 정규식 하나로 합침
   <details><summary>배경·구현</summary>
 

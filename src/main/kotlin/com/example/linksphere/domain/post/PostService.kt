@@ -11,6 +11,7 @@ import com.example.linksphere.global.common.AdvisoryLock
 import com.example.linksphere.global.common.CursorCodec
 import com.example.linksphere.global.common.KeysetSlice
 import com.example.linksphere.global.common.Paging
+import com.example.linksphere.global.common.RateLimitService
 import com.example.linksphere.global.exception.BookmarkFolderNotFoundException
 import com.example.linksphere.global.exception.DuplicatePostException
 import com.example.linksphere.global.exception.ForbiddenException
@@ -42,6 +43,7 @@ class PostService(
     private val memberRepository: MemberRepository,
     private val linkPreviewService: LinkPreviewService,
     private val advisoryLock: AdvisoryLock,
+    private val rateLimitService: RateLimitService,
 ) {
 
     private val logger = LoggerFactory.getLogger(PostService::class.java)
@@ -50,6 +52,12 @@ class PostService(
         // 같은 회원이 같은 URL을 다른 키로 다시 등록하면 막는 창. 표준 값이 없어 운영 간격을 보고 정했다
         // (2026-11-04 사용자 결정, docs/plans/2026-11-04-idempotent-create.md "판단이 필요했던 항목").
         private val DUPLICATE_URL_WINDOW = Duration.ofHours(1)
+
+        // 같은 조회자가 같은 글을 다시 열어도 이 창에서는 조회수를 한 번만 올린다. RateLimitService의 고정 윈도라
+        // "마지막으로 센 때부터 24시간"이 아니라 UTC 하루(한국 시각 오전 9시 경계)에 한 번이다
+        // (2026-11-11 사용자 결정, docs/plans/2026-11-11-post-view-dedupe.md "판단이 필요했던 항목").
+        private val VIEW_COUNT_WINDOW = Duration.ofHours(24)
+        private const val VIEW_COUNT_LIMIT = 1
     }
 
     fun findByIdempotencyKey(userId: UUID, idempotencyKey: UUID): PostResponse? = postRepository.findByUserIdAndIdempotencyKey(userId, idempotencyKey)
@@ -316,13 +324,28 @@ class PostService(
     /**
      * 상세 화면이 뜰 때 FE가 부르는 조회 기록. 읽기(getPostById)와 나눈 이유는 카드 hover 미리 받기·탭 복귀 재조회·수정 화면도
      * 같은 GET을 보내 조회로 세지던 것이다(docs/plans/2026-11-05-post-view-record.md).
+     *
+     * 같은 조회자는 VIEW_COUNT_WINDOW에 한 번만 센다 - 새로고침·재진입마다 오르던 것을 막는다
+     * (docs/plans/2026-11-11-post-view-dedupe.md). 최근 열람 시각은 셌는지와 상관없이 매번 갱신한다. 세는 규칙을 FE가
+     * 따라 하지 않도록 판단 뒤의 조회수를 돌려준다. 판단(tryConsume)은 별도 트랜잭션으로 먼저 커밋돼, 그 뒤에 이
+     * 메서드가 실패하면 그 조회자의 이번 창 조회는 빠진다.
      */
     @Transactional
-    fun recordView(id: UUID, currentUserId: UUID?) {
+    fun recordView(id: UUID, currentUserId: UUID?, clientIp: String?): PostViewRecordResponse {
         val post = postRepository.findById(id).orElseThrow { PostNotFoundException(id) }
         PostVisibility.assertVisible(post, currentUserId, id)
-        postRepository.incrementViewCount(id)
+        if (rateLimitService.tryConsume(viewBucketKey(id, currentUserId, clientIp), VIEW_COUNT_LIMIT, VIEW_COUNT_WINDOW)) {
+            postRepository.incrementViewCount(id)
+        }
         currentUserId?.let { postViewRepository.upsertView(it, id) }
+        return PostViewRecordResponse(postRepository.findViewCountById(id))
+    }
+
+    // 조회자를 로그인하면 회원, 아니면 IP로 가린다. IP도 모르면(CloudFront 헤더 없음) null을 돌려줘 tryConsume이 매번 통과시킨다
+    private fun viewBucketKey(postId: UUID, userId: UUID?, clientIp: String?): String? = when {
+        userId != null -> "post-view:$postId:member:$userId"
+        clientIp != null -> "post-view:$postId:ip:$clientIp"
+        else -> null
     }
 
     @Transactional

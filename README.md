@@ -214,6 +214,7 @@ src/main/kotlin/com/example/linksphere/
 | `POST`   | `/post`                   | 게시글 생성 (AI 분석 포함, 이메일 미인증 시 403) | ✅   |
 | `GET`    | `/post`                   | 게시글 목록 조회 (검색·필터)   | 선택(로그인 시 좋아요·북마크 반영) |
 | `GET`    | `/post/{id}`              | 게시글 상세 조회               | 선택(로그인 시 좋아요·북마크 반영) |
+| `POST`   | `/post/{id}/view`         | 조회 기록 (같은 회원·IP는 하루 한 번만 조회수 증가, 응답에 조회수) | 선택(로그인 시 최근 열람 시각 갱신) |
 | `PATCH`  | `/post/{id}`              | 게시글 수정                    | ✅   |
 | `PATCH`  | `/post/{id}/visibility`   | 게시글 공개/비공개 토글        | ✅   |
 | `DELETE` | `/post/{id}`              | 게시글 삭제                    | ✅   |
