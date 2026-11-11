@@ -1,6 +1,6 @@
 # Link-Sphere BE — 게시글 AI 분석 비동기화 (2026-08-01)
 
-> 마지막 검토: 2026-11-10 (§2 내부 작업 분기 설명의 서빙 경로 이름만 고침). 이전 2026-11-04
+> 마지막 검토: 2026-11-11 (YouTube 본문 흐름 그림의 `PostService.kt` 줄 번호만 고침). 2026-11-10 (§2 내부 작업 분기 설명의 서빙 경로 이름만 고침). 이전 2026-11-04
 
 ## 1. 문제
 
@@ -585,8 +585,8 @@ flowchart TD
     F --> H["pageContent 채워짐"]
     G --> I["pageContent = null<br/>resolvePageContent 1번 분기 실패"]
 
-    H --> J["aiStatus = PENDING<br/>PostService.kt:76"]
-    I --> K["aiStatus = NONE<br/>PostService.kt:76"]
+    H --> J["aiStatus = PENDING<br/>PostService.kt:120"]
+    I --> K["aiStatus = NONE<br/>PostService.kt:120"]
 
     J --> L["PostCreatedEvent 발행"]
     K --> M["이벤트 발행 안 함<br/>= Gemini 호출 자체가 없음<br/>그래서 에러 로그도 없었다"]

@@ -8,7 +8,7 @@
 > **읽고 나면**: 이메일 컬럼을 왜 암호화하지 않는지 설명할 수 있고, 언제 다시 검토해야 하는지 알며, 로그 가림·행 삭제·보존
 > 기간·중복 검사 한도를 고칠 수 있다.
 >
-> **마지막 검토**: 2026-11-11 (조회 기록 키와 레이트리밋 행 보존 서술만 고침). 2026-11-10 (`LambdaHandler.kt` 줄 번호만 고침). 2026-11-06 로그 보존 기간을 바꾸는 경로만 고침. 2026-11-05 최초 작성
+> **마지막 검토**: 2026-11-11 (조회 기록 키와 레이트리밋 행 보존 서술, 행 삭제 주기의 룰 이름만 고침). 2026-11-10 (`LambdaHandler.kt` 줄 번호만 고침). 2026-11-06 로그 보존 기간을 바꾸는 경로만 고침. 2026-11-05 최초 작성
 
 ## 1. 쉬운 설명
 
@@ -144,7 +144,7 @@ flowchart LR
 | 이메일 정규식 | `[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}` | `global/common/EmailMaskingLogCustomizer.kt:23` | `user@localhost`처럼 TLD가 없으면 안 가린다 |
 | `sslmode` | `require` | `LambdaHandler.kt:107` | 기본값 `PREFER`는 평문으로 넘어갈 수 있다. `verify-full`은 §11 |
 | 레이트리밋 행 보존 | 1일 | `global/common/RateLimitService.kt:42` | 가장 긴 창(조회 기록 24시간)과 같다. 삭제 조건이 "창 시작이 1일보다 오래됨"이라 끝난 창만 지워진다. 더 긴 창을 쓰면 늘린다 |
-| 행 삭제 주기 | 4일 | `account-purge` EventBridge 룰(레포 밖, [`DEPLOY.md`](./DEPLOY.md) 10장) | 새 룰 없이 기존 잡에 얹었다. 그래서 최대 약 5일 |
+| 행 삭제 주기 | 4일 | `link-sphere-feed-crawl` EventBridge 룰의 `account-purge` 타겟(레포 밖, [`DEPLOY.md`](./DEPLOY.md) 10장) | 새 룰 없이 기존 잡에 얹었다. 그래서 최대 약 5일 |
 | 중복 검사 한도 | IP당 1시간 60회 | `domain/auth/AuthController.kt:56-57` | 계측값이 아닌 판단. 링크 미리보기 한도와 같은 값이고 FE는 500ms 디바운스로 호출한다 |
 | 로그 보존 | 90일 | CloudWatch 설정(레포 밖). 그룹 4개: `/aws/lambda/link-sphere-api`, `/aws/lambda/link-sphere-be-lambda`, `/aws/apprunner/link-sphere-be/c09223138fad464093519b142e13daf3/application`, 같은 경로의 `/service` | 사고를 늦게 발견해도 볼 수 있는 기간으로 잡은 판단. 지난 로그는 되돌릴 수 없다 |
 
