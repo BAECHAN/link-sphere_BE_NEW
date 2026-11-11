@@ -43,6 +43,9 @@ data class PostLikeResponse(
     val likeCount: Int,
 )
 
+/** 조회 기록(POST /post/{id}/view) 응답. viewCount는 이번 조회를 셀지 판단한 뒤의 조회수다. */
+data class PostViewRecordResponse(val viewCount: Int)
+
 data class PostUserInteractions(
     val isLiked: Boolean,
     val isBookmarked: Boolean,

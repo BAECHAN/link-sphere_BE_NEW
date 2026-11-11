@@ -8,7 +8,7 @@
 > **읽고 나면**: 이메일 컬럼을 왜 암호화하지 않는지 설명할 수 있고, 언제 다시 검토해야 하는지 알며, 로그 가림·행 삭제·보존
 > 기간·중복 검사 한도를 고칠 수 있다.
 >
-> **마지막 검토**: 2026-11-10 (`LambdaHandler.kt` 줄 번호만 고침). 2026-11-06 로그 보존 기간을 바꾸는 경로만 고침. 2026-11-05 최초 작성
+> **마지막 검토**: 2026-11-11 (조회 기록 키와 레이트리밋 행 보존 서술만 고침). 2026-11-10 (`LambdaHandler.kt` 줄 번호만 고침). 2026-11-06 로그 보존 기간을 바꾸는 경로만 고침. 2026-11-05 최초 작성
 
 ## 1. 쉬운 설명
 
@@ -98,7 +98,7 @@ flowchart LR
 | --- | --- | --- | --- |
 | 비밀번호 | bcrypt 일방향 해시(제7조 제1항) | TLS | 퍼지 때까지 |
 | 이메일 원문 `members.email` | 평문, Supabase 저장소 암호화에 의존 | TLS | 탈퇴 유예 14일 뒤 잡이 `deleted-<id>@deleted.invalid`로 치환 |
-| 이메일 해시·IP `auth_rate_limits.bucket_key` | 솔트 없는 SHA-256, IP 원문. **개인정보로 다룬다** | TLS | 하루 지난 행을 잡이 삭제, 최대 약 5일. 덤프에는 구조만 들어감 |
+| 이메일 해시·IP `auth_rate_limits.bucket_key` | 솔트 없는 SHA-256, IP 원문. 조회 기록 키에는 IP와 본 글 id가 함께 든다. **개인정보로 다룬다** | TLS | 하루 지난 행을 잡이 삭제, 최대 약 5일. 덤프에는 구조만 들어감 |
 | 앱 로그 | 이메일 형태를 `<email>`로 가림. 로컬 텍스트 로그는 제외 | AWS 내부 | 90일 |
 | DB 덤프 | SSE-S3 | HTTPS | 30일 + 이전 버전 30일(최대 약 60일) |
 | FCM 토큰 | 평문(현행 유지, §11) | TLS | 해제·탈퇴 때까지 |
@@ -110,7 +110,7 @@ flowchart LR
 | Supabase 쪽 유출 | 저장소 암호화(업체 주장), 공개 테이블 RLS 켬(정책 0개, `schema.sql`) | 앱 계정으로 읽히면 평문. 받아들임(§5-1) |
 | S3 덤프 | SSE-S3, 수명 규칙 | `link-sphere-user` 키가 새면 읽힘. 이 로컬 키는 사용자 결정으로 유지 중 |
 | 앱 로그 | 값 처리기 한 곳에서 가림 | 이메일이 아닌 식별자(닉네임 등)는 안 가림. 가리기 전 8건은 늦어도 2027-01-31에 사라짐 |
-| 레이트리밋 행 | 하루 지난 행 삭제 | 삭제 전 최대 약 5일은 남음. 솔트가 없어 후보 주소가 있으면 대조 가능 |
+| 레이트리밋 행 | 하루 지난 행 삭제 | 삭제 전 최대 약 5일은 남음. 솔트가 없어 후보 주소가 있으면 대조 가능. 그동안 어느 IP가 어느 글을 열었는지도 남음(조회 기록 키, 2026-11-11) |
 | DB 전송 구간 | `sslmode=require`(TLS 없으면 연결 실패) | 인증서는 검증하지 않음. 풀러 인증서가 기본 신뢰 저장소로 검증되지 않아(`openssl` 검증 코드 19) `verify-full`은 CA 인증서를 따로 배포해야 한다. 범위 밖 |
 | 임시 조회 | `members.email` 권한 회수 | 이메일로 회원을 찾으려면 Supabase 콘솔 |
 | 이메일 중복 검사 API | IP당 1시간 60회 | IP를 돌리면 우회됨. 가입 여부 응답 자체는 그대로(가입 화면 UX) |
@@ -132,6 +132,8 @@ flowchart LR
 | `login-fail:<sha256(email)>`, `email-verify:…`, `password-reset:…` | 이메일 파생값(솔트 없음) |
 | `*:ip:<IP>` (`email-availability:ip:<IP>` 포함) | IP 원문 |
 | `*:member:<회원ID>` | 회원 id |
+| `post-view:<글ID>:ip:<IP>` | IP 원문 + 그 IP가 연 글 id. 비로그인 조회를 하루에 한 번만 세려고 둔다 |
+| `post-view:<글ID>:member:<회원ID>` | 회원 id + 연 글 id. 같은 사실이 `post_views`에 이미 있다 |
 
 ## 7. 운영 파라미터
 
@@ -141,7 +143,7 @@ flowchart LR
 | --- | --- | --- | --- |
 | 이메일 정규식 | `[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}` | `global/common/EmailMaskingLogCustomizer.kt:23` | `user@localhost`처럼 TLD가 없으면 안 가린다 |
 | `sslmode` | `require` | `LambdaHandler.kt:107` | 기본값 `PREFER`는 평문으로 넘어갈 수 있다. `verify-full`은 §11 |
-| 레이트리밋 행 보존 | 1일 | `global/common/RateLimitService.kt:41` | 가장 긴 창이 1시간이다. 더 긴 창을 쓰면 늘린다 |
+| 레이트리밋 행 보존 | 1일 | `global/common/RateLimitService.kt:42` | 가장 긴 창(조회 기록 24시간)과 같다. 삭제 조건이 "창 시작이 1일보다 오래됨"이라 끝난 창만 지워진다. 더 긴 창을 쓰면 늘린다 |
 | 행 삭제 주기 | 4일 | `account-purge` EventBridge 룰(레포 밖, [`DEPLOY.md`](./DEPLOY.md) 10장) | 새 룰 없이 기존 잡에 얹었다. 그래서 최대 약 5일 |
 | 중복 검사 한도 | IP당 1시간 60회 | `domain/auth/AuthController.kt:56-57` | 계측값이 아닌 판단. 링크 미리보기 한도와 같은 값이고 FE는 500ms 디바운스로 호출한다 |
 | 로그 보존 | 90일 | CloudWatch 설정(레포 밖). 그룹 4개: `/aws/lambda/link-sphere-api`, `/aws/lambda/link-sphere-be-lambda`, `/aws/apprunner/link-sphere-be/c09223138fad464093519b142e13daf3/application`, 같은 경로의 `/service` | 사고를 늦게 발견해도 볼 수 있는 기간으로 잡은 판단. 지난 로그는 되돌릴 수 없다 |
@@ -152,7 +154,7 @@ flowchart LR
 | --- | --- |
 | 로그 가림 | `global/common/EmailMaskingLogCustomizer.kt`, 등록은 `LambdaHandler.kt:106` |
 | TLS 강제 | `LambdaHandler.kt:107` |
-| 행 삭제 | `RateLimitService.purgeExpired`(`:90`) → `AuthRateLimitRepository.deleteOlderThan`, 호출은 `LambdaHandler.kt:336` |
+| 행 삭제 | `RateLimitService.purgeExpired`(`:91`) → `AuthRateLimitRepository.deleteOlderThan`, 호출은 `LambdaHandler.kt:336` |
 | 중복 검사 한도 | `AuthController.checkEmailAvailability` |
 | 임시 조회 권한 | Supabase, SQL은 [`DEPLOY.md`](./DEPLOY.md) 12장 |
 
@@ -160,7 +162,7 @@ flowchart LR
 | --- | --- | --- |
 | 다른 값도 로그에서 가리기 | `EmailMaskingLogCustomizer`에 치환을 더하고 `EmailMaskingLogCustomizerTest`에 형태를 추가 | 필요 |
 | 한도 값 바꾸기 | 위 상수를 바꾸고 `AuthControllerTest`의 기대값과 `TRAFFIC-MANAGEMENT.md` §7-1을 함께 고침 | 필요 |
-| 1일보다 긴 레이트리밋 창 추가 | `RETENTION`을 그 창보다 길게 늘린다. 안 늘리면 창이 끝나기 전에 행이 지워져 한도가 풀린다 | 필요 |
+| 1일보다 긴 레이트리밋 창 추가 | `RETENTION`을 그 창 이상으로 늘린다. 창보다 짧으면 창이 끝나기 전에 행이 지워져 한도가 풀린다 | 필요 |
 | 로그 보존 기간 바꾸기 | `aws logs put-retention-policy --log-group-name <그룹> --retention-in-days <일>`을 4개 그룹에 실행. `link-sphere-user`에는 권한이 없어 관리자 권한의 CloudShell에서 한다. `/aws/lambda/link-sphere-api`만은 `link-sphere-infra` 코드(`ApiLogGroup`)로 바꾼다 | 불필요 |
 | 로그 속 이메일 건수 세기 | `aws logs filter-log-events --log-group-name /aws/lambda/link-sphere-api --start-time <ms> --filter-pattern '%[a-zA-Z0-9._-]+@[a-zA-Z0-9-]+\.[a-zA-Z]{2,}%'`. 값을 대화나 파일에 남기지 않고 건수만 본다 | 불필요 |
 

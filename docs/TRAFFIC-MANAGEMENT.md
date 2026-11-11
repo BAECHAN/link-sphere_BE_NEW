@@ -6,7 +6,7 @@
 >
 > **읽고 나면**: 요청 한도 값을 바꾸거나 새 엔드포인트에 한도를 걸 수 있고, WAF·알람 콘솔 작업을 이 문서만 보고 할 수 있다
 >
-> **마지막 검토**: 2026-11-10 (5-6의 서빙 경로 서술과 `LambdaHandler.kt` 줄 번호만 고침). 2026-11-07에는 코드화 범위 서술과 8-2 앱 500 지표 필터만 다시 봄
+> **마지막 검토**: 2026-11-11 (조회수 집계의 버킷 키·한도 행과 5-5만 고침). 2026-11-10 (5-6의 서빙 경로 서술과 `LambdaHandler.kt` 줄 번호만 고침). 2026-11-07에는 코드화 범위 서술과 8-2 앱 500 지표 필터만 다시 봄
 
 ## 1. 쉬운 설명
 
@@ -138,6 +138,10 @@ Google SRE 책은 과부하 대응으로 기능을 낮춰 응답하는 방법(gr
 회원 한도에 걸릴 수 있어, 사용자 요청 경로인 컨트롤러에서만 건다. `consume`은 자기 트랜잭션으로
 짧게 끝나므로 크롤링(수십 초) 동안 카운터 행을 잠그지 않는다.
 
+조회수 집계(`PostService.recordView`)는 같은 카운터를 쓰지만 Service에 있다. 요청을 막는 한도가 아니라 조회수를
+올릴지 정하는 규칙이라 결과를 쓰는 곳과 한데 두었고, 봇은 이 메서드를 부르지 않는다(2026-11-11,
+[`BE-ARCHITECTURE.md`](BE-ARCHITECTURE.md) §7-3).
+
 ### 5-6. 동시 처리 한계는 Spring 설정이 아니라 Lambda 칸 수가 정한다
 
 일반 서버(EC2, 예전 App Runner)라면 Spring Boot의 `server.tomcat.threads.max`(기본 200)가 서버 한
@@ -183,6 +187,8 @@ Google SRE 책은 과부하 대응으로 기능을 낮춰 응답하는 방법(gr
 | `link-preview:member:<회원ID>` | 회원 | 링크 미리보기(작성 중) |
 | `search-embed:ip:<IP>` | IP | 검색 임베딩 |
 | `email-availability:ip:<IP>` | IP | 이메일 중복 검사 |
+| `post-view:<글ID>:member:<회원ID>` | 글 + 회원 | 조회수 집계(로그인) |
+| `post-view:<글ID>:ip:<IP>` | 글 + IP | 조회수 집계(비로그인) |
 
 끝난 윈도 행은 `account-purge` 잡이 하루가 지나면 지운다(2026-11-05, 키에 이메일 해시와 IP 원문이 들어가 쌓아 둘 이유가 없다.
 `docs/DATA-PROTECTION.md` §7). 잡 주기가 4일이라 최대 약 5일 남는다.
@@ -203,6 +209,7 @@ Google SRE 책은 과부하 대응으로 기능을 낮춰 응답하는 방법(gr
 | 인증메일 재발송 | 이메일당 1시간 3회, IP당 1시간 10회 | `domain/auth/AuthService.kt:53-56` |
 | 비밀번호 재설정 요청 | 이메일당 1시간 3회, IP당 1시간 10회 | `domain/auth/PasswordResetService.kt:39-42` |
 | 이메일 중복 검사 | IP당 1시간 60회 (초과하면 FE는 확인 전 상태로 돌아가고 실제 중복은 가입 때 409) | `domain/auth/AuthController.kt:56-57` |
+| 조회수 집계 | 같은 글을 회원(비로그인은 IP)당 24시간 창에 1회 (넘으면 429가 아니라 조회수를 올리지 않음. 창은 UTC 0시에 바뀜) | `domain/post/PostService.kt:59-60` |
 
 (경로는 `src/main/kotlin/com/example/linksphere/` 기준)
 

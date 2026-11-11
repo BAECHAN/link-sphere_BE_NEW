@@ -37,7 +37,8 @@ class RateLimitService(private val repository: AuthRateLimitRepository) {
     companion object {
         private const val EXCEEDED_MESSAGE = "Too many requests, please try again later"
 
-        // 지금 가장 긴 윈도(1시간)보다 넉넉하게 잡는다. 더 긴 윈도를 쓰게 되면 그보다 길게 늘린다.
+        // 지금 가장 긴 윈도(조회 기록의 24시간)와 같다. purgeExpired는 윈도 시작이 이 값보다 오래된 행만 지워, 같으면 끝난
+        // 윈도만 지워지고 진행 중인 윈도는 남는다. 더 긴 윈도를 쓰게 되면 그만큼 늘린다.
         private val RETENTION = Duration.ofDays(1)
     }
 
@@ -85,7 +86,7 @@ class RateLimitService(private val repository: AuthRateLimitRepository) {
         return incrementAndGet(bucketKey, windowStart) <= limit
     }
 
-    /** 끝난 지 RETENTION이 지난 윈도의 행을 지우고 지운 행 수를 돌려준다. */
+    /** 시작한 지 RETENTION이 넘은 윈도의 행을 지우고 지운 행 수를 돌려준다. */
     @Transactional
     fun purgeExpired(now: Instant = Instant.now()): Int = repository.deleteOlderThan(now.minus(RETENTION))
 

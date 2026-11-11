@@ -62,7 +62,7 @@
   {"id": "r-hsts", "group": "응답", "title": "HSTS", "method": "GET", "path": "/api/post?size=1", "expect": {"header": {"strict-transport-security": "max-age=31536000"}}, "requirement": "HTTPS 응답에 HSTS가 붙어야 한다(#40)"},
   {"id": "r-type", "group": "응답", "title": "Content-Type charset·한글 본문", "method": "GET", "path": "/api/common/category-option", "expect": {"bodyHas": "개발"}, "requirement": "한글 응답이 UTF-8로 나가야 한다"},
   {"id": "r-health", "group": "응답", "title": "헬스 체크", "method": "GET", "path": "/api/actuator/health", "expect": {"status": 200}, "requirement": "헬스 체크가 200과 UP이어야 한다"},
-  {"id": "r-view", "group": "응답", "title": "빈 data 응답(조회 기록)", "method": "POST", "path": "/api/post/00000000-0000-4000-8000-000000000102/view"},
+  {"id": "r-view", "group": "응답", "title": "조회 기록 응답(조회수)", "method": "POST", "path": "/api/post/00000000-0000-4000-8000-000000000102/view"},
   {"id": "r-api-docs", "group": "응답", "title": "OpenAPI 문서의 서버 주소", "method": "GET", "path": "/api/v3/api-docs"},
   {"id": "r-validation", "group": "응답", "title": "검증 실패 본문", "method": "POST", "path": "/api/auth/signup", "headers": {"content-type": "application/json"}, "body": "{\"email\":\"not-an-email\",\"password\":\"x\",\"nickname\":\"x\"}", "expect": {"status": 400, "bodyHas": "code"}, "requirement": "오류 본문에 code가 있어야 한다"},
 

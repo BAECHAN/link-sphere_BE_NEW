@@ -71,6 +71,16 @@ class PostRepositoryIntegrationTest {
         assertEquals(before + 1, viewCountInDb(notLiked))
     }
 
+    // 벌크 UPDATE는 읽어 둔 엔티티에 반영되지 않는다 — 조회 기록 응답이 쓰는 재조회는 엔티티를 읽은 뒤에도 올린 값을 돌려줘야 한다
+    @Test
+    fun `조회수 재조회는 엔티티를 읽어 둔 트랜잭션에서도 올린 값을 돌려준다`() {
+        val before = postRepository.findById(notLiked).orElseThrow().viewCount ?: 0
+
+        postRepository.incrementViewCount(notLiked)
+
+        assertEquals(before + 1, postRepository.findViewCountById(notLiked))
+    }
+
     private fun viewCountInDb(postId: UUID): Int = jdbc.queryForObject("SELECT COALESCE(view_count, 0) FROM posts WHERE id = ?", Int::class.java, postId)!!
 
     private fun findPosts(filter: String, currentUserId: UUID?) = postRepository.findPosts(

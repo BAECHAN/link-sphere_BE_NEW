@@ -12,6 +12,7 @@ import com.example.linksphere.global.common.AdvisoryLock
 import com.example.linksphere.global.common.CursorCodec
 import com.example.linksphere.global.common.KeysetSlice
 import com.example.linksphere.global.common.Paging
+import com.example.linksphere.global.common.RateLimitService
 import com.example.linksphere.global.exception.BookmarkFolderNotFoundException
 import com.example.linksphere.global.exception.DuplicatePostException
 import com.example.linksphere.global.exception.EmailNotVerifiedException
@@ -37,6 +38,7 @@ import org.mockito.Mockito.`when`
 import org.mockito.junit.jupiter.MockitoExtension
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.data.domain.PageImpl
+import java.time.Duration
 import java.time.LocalDateTime
 import java.util.Optional
 import java.util.UUID
@@ -73,6 +75,8 @@ class PostServiceTest {
     @Mock private lateinit var linkPreviewService: LinkPreviewService
 
     @Mock private lateinit var advisoryLock: AdvisoryLock
+
+    @Mock private lateinit var rateLimitService: RateLimitService
 
     @InjectMocks private lateinit var postService: PostService
 
@@ -175,29 +179,69 @@ class PostServiceTest {
         verifyNoInteractions(postViewRepository)
     }
 
+    // 조회자 키·한도·창은 값을 그대로 적어 stub한다 - 서비스가 다른 값으로 부르면 strict stub이 테스트를 실패시킨다
     @Test
-    fun `recordView 는 로그인 사용자면 조회수를 올리고 post_views 를 upsert 한다`() {
+    fun `recordView 는 이번 창에서 처음 본 회원이면 조회수를 올리고 올린 뒤 값을 돌려준다`() {
         val ownerId = UUID.randomUUID()
         val postId = UUID.randomUUID()
         val post = TablePost(id = postId, userId = ownerId, url = "https://example.com", title = "제목", isPrivate = false)
 
         `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
+        `when`(rateLimitService.tryConsume("post-view:$postId:member:$ownerId", 1, Duration.ofHours(24))).thenReturn(true)
+        `when`(postRepository.findViewCountById(postId)).thenReturn(8)
 
-        postService.recordView(postId, ownerId)
+        val record = postService.recordView(postId, ownerId, "203.0.113.7")
 
+        assertEquals(PostViewRecordResponse(viewCount = 8), record)
         verify(postRepository).incrementViewCount(postId)
         verify(postViewRepository).upsertView(ownerId, postId)
     }
 
     @Test
-    fun `recordView 는 비로그인이면 조회수만 올리고 post_views 를 건드리지 않는다`() {
+    fun `recordView 는 이번 창에서 이미 센 회원이면 조회수는 그대로 두고 post_views 만 upsert 한다`() {
         val ownerId = UUID.randomUUID()
         val postId = UUID.randomUUID()
         val post = TablePost(id = postId, userId = ownerId, url = "https://example.com", title = "제목", isPrivate = false)
 
         `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
+        `when`(rateLimitService.tryConsume("post-view:$postId:member:$ownerId", 1, Duration.ofHours(24))).thenReturn(false)
+        `when`(postRepository.findViewCountById(postId)).thenReturn(7)
 
-        postService.recordView(postId, null)
+        val record = postService.recordView(postId, ownerId, "203.0.113.7")
+
+        assertEquals(PostViewRecordResponse(viewCount = 7), record)
+        verify(postRepository, never()).incrementViewCount(anyUuid())
+        verify(postViewRepository).upsertView(ownerId, postId)
+    }
+
+    @Test
+    fun `recordView 는 비로그인이면 IP로 조회자를 가려 세고 post_views 를 건드리지 않는다`() {
+        val ownerId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val post = TablePost(id = postId, userId = ownerId, url = "https://example.com", title = "제목", isPrivate = false)
+
+        `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
+        `when`(rateLimitService.tryConsume("post-view:$postId:ip:203.0.113.7", 1, Duration.ofHours(24))).thenReturn(true)
+        `when`(postRepository.findViewCountById(postId)).thenReturn(8)
+
+        postService.recordView(postId, null, "203.0.113.7")
+
+        verify(postRepository).incrementViewCount(postId)
+        verifyNoInteractions(postViewRepository)
+    }
+
+    // RateLimitService는 키가 null이면 통과시킨다 - IP 헤더가 없는 요청은 지금처럼 매번 센다
+    @Test
+    fun `recordView 는 비로그인이고 IP도 모르면 조회자 키 없이 센다`() {
+        val ownerId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val post = TablePost(id = postId, userId = ownerId, url = "https://example.com", title = "제목", isPrivate = false)
+
+        `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
+        `when`(rateLimitService.tryConsume(null, 1, Duration.ofHours(24))).thenReturn(true)
+        `when`(postRepository.findViewCountById(postId)).thenReturn(8)
+
+        postService.recordView(postId, null, null)
 
         verify(postRepository).incrementViewCount(postId)
         verifyNoInteractions(postViewRepository)
@@ -212,10 +256,10 @@ class PostServiceTest {
         `when`(postRepository.findById(postId)).thenReturn(Optional.of(privatePost(postId, ownerId)))
 
         assertThrows(PostNotFoundException::class.java) {
-            postService.recordView(postId, otherUserId)
+            postService.recordView(postId, otherUserId, "203.0.113.7")
         }
         verify(postRepository, never()).incrementViewCount(anyUuid())
-        verifyNoInteractions(postViewRepository)
+        verifyNoInteractions(postViewRepository, rateLimitService)
     }
 
     @Test
