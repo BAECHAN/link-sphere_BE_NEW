@@ -2,10 +2,8 @@ package com.example.linksphere.domain.comment
 
 import com.example.linksphere.global.common.ApiResponse
 import com.example.linksphere.global.common.IdempotentCreate
-import com.example.linksphere.global.common.Paging
 import com.example.linksphere.global.common.getUserId
 import io.swagger.v3.oas.annotations.Operation
-import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.security.SecurityRequirements
 import io.swagger.v3.oas.annotations.tags.Tag
 import org.springframework.http.HttpStatus
@@ -38,19 +36,14 @@ class CommentController(private val commentService: CommentService) {
         description = "로그인한 사용자가 작성한 댓글을 최신순으로 cursor·size 로 이어 읽는다. 첫 쪽은 cursor 없이 요청하고, 다음 쪽은 " +
             "응답의 nextCursor 를 그대로 보낸다. nextCursor 가 null 이면 마지막 쪽이다. 삭제된(톰스톤) 댓글은 제외한다. " +
             "댓글을 단 뒤 원글이 비공개로 전환되면 본인 소유가 아닌 한 목록에서도 제외된다. " +
-            "실패: 400 INVALID_INPUT(잘못된 cursor, 없어진 page 파라미터)",
+            "실패: 400 INVALID_INPUT(잘못된 cursor)",
     )
     @GetMapping("/comment/my")
     fun getMyComments(
         @RequestParam(required = false) cursor: String?,
-        // cursor 전환 전 번들이 보내는 값 - 받기만 하고 400으로 끝낸다(Paging.rejectPageParam)
-        @Parameter(hidden = true)
-        @RequestParam(required = false)
-        page: String?,
         @RequestParam(defaultValue = "10") size: Int,
         authentication: Authentication,
     ): ApiResponse<MyCommentPageResponse> {
-        Paging.rejectPageParam(page)
         val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
         val comments = commentService.getMyCommentsByCursor(userId, cursor, size)
         return ApiResponse(HttpStatus.OK.value(), "내 댓글 목록 조회 성공", comments)
