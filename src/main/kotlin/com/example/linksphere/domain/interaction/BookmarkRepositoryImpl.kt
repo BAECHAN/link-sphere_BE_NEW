@@ -11,123 +11,12 @@ import jakarta.persistence.EntityManager
 import jakarta.persistence.PersistenceContext
 import jakarta.persistence.criteria.JoinType
 import jakarta.persistence.criteria.Predicate
-import org.springframework.data.domain.Page
-import org.springframework.data.domain.PageImpl
-import org.springframework.data.domain.Pageable
 import java.time.LocalDateTime
 import java.util.UUID
 
 class BookmarkRepositoryImpl : BookmarkRepositoryCustom {
 
     @PersistenceContext private lateinit var entityManager: EntityManager
-
-    override fun findBookmarkedPosts(
-        userId: UUID,
-        folderId: UUID?,
-        onlyUncategorized: Boolean,
-        sort: String,
-        search: String?,
-        pageable: Pageable,
-        queryEmbedding: FloatArray?,
-    ): Page<TablePost> {
-        val cb = entityManager.criteriaBuilder
-        // count/data 쿼리가 정확히 같은 후보 집합을 봐야 총 건수가 실제 반환 건수와
-        // 일치한다 - 여기서 한 번만 계산해 양쪽에 그대로 넘긴다.
-        val semanticMatches = PostSearchQuery.resolveSemanticMatches(entityManager, queryEmbedding)
-
-        // 1) count query — bookmark 기준 (post와 1:1 매칭이므로 동일). 폴더 필터는 EXISTS 세미조인이라 row가 증식하지 않는다.
-        val countQuery = cb.createQuery(Long::class.java)
-        val countBookmarkRoot = countQuery.from(TableBookmark::class.java)
-        val countPostJoin = countBookmarkRoot.join<TableBookmark, TablePost>("post", JoinType.INNER)
-        countQuery
-            .select(cb.count(countBookmarkRoot))
-            .where(
-                *buildPredicates(
-                    cb,
-                    countQuery,
-                    countBookmarkRoot,
-                    countPostJoin,
-                    userId,
-                    folderId,
-                    onlyUncategorized,
-                    search,
-                    semanticMatches,
-                ).toTypedArray(),
-            )
-        val total = entityManager.createQuery(countQuery).singleResult
-
-        if (total == 0L) return PageImpl(emptyList(), pageable, 0L)
-
-        // 2) data query — Post 반환
-        val query = cb.createQuery(TablePost::class.java)
-        val bookmarkRoot = query.from(TableBookmark::class.java)
-        val postJoin = bookmarkRoot.join<TableBookmark, TablePost>("post", JoinType.INNER)
-
-        query
-            .select(postJoin)
-            .where(
-                *buildPredicates(
-                    cb,
-                    query,
-                    bookmarkRoot,
-                    postJoin,
-                    userId,
-                    folderId,
-                    onlyUncategorized,
-                    search,
-                    semanticMatches,
-                ).toTypedArray(),
-            )
-
-        // sort — 검색어가 있고 기본(latest) 정렬이면 관련도순, 그 외엔 사용자 선택 유지
-        // 모든 뷰(전체/미분류/폴더)에서 "최신순"은 bookmarks.created_at 기준 — 폴더별 소속 시각이 아니다.
-        val searchTokens = PostSearchQuery.tokenize(search)
-        val orders =
-            if (searchTokens.isNotEmpty() && sort == "latest") {
-                listOf(
-                    cb.desc(PostSearchQuery.relevanceScore(cb, postJoin, searchTokens, semanticMatches)),
-                    cb.desc(bookmarkRoot.get<Any>("createdAt")),
-                    cb.desc(bookmarkRoot.get<Any>("postId")),
-                )
-            } else {
-                when (sort) {
-                    "oldest" -> listOf(cb.asc(bookmarkRoot.get<Any>("createdAt")), cb.asc(bookmarkRoot.get<Any>("postId")))
-                    "title" -> listOf(cb.asc(postJoin.get<Any>("title")))
-                    "views" -> listOf(cb.desc(postJoin.get<Any>("viewCount")))
-                    "viewed" -> {
-                        // TablePost ↔ TablePostView는 연관관계로 매핑돼 있지 않아 JOIN 대신
-                        // buildPredicates의 폴더 EXISTS 필터와 같은 상관 서브쿼리 모양을 쓴다.
-                        val viewedAtSub = query.subquery(LocalDateTime::class.java)
-                        val viewRoot = viewedAtSub.from(TablePostView::class.java)
-                        viewedAtSub.select(viewRoot.get("viewedAt"))
-                        viewedAtSub.where(
-                            cb.equal(viewRoot.get<UUID>("postId"), postJoin.get<UUID>("id")),
-                            cb.equal(viewRoot.get<UUID>("userId"), userId),
-                        )
-                        listOf(
-                            // 한 번도 안 본 글은 NULL → 아주 오래된 값으로 치환해 DESC 정렬 시 맨 뒤로 밀린다
-                            cb.desc(cb.coalesce(viewedAtSub, LocalDateTime.of(1970, 1, 1, 0, 0))),
-                            // 미열람 글끼리는 전부 동점(위 값이 똑같음)이라 DB가 순서를 보장하지
-                            // 않는다 — 2차 정렬로 안정시킨다("latest"와 동일 기준: 최근 북마크순).
-                            // createdAt도 동점이면 postId로 최종 결정 — 복합 PK라 단일 id 없음
-                            cb.desc(bookmarkRoot.get<Any>("createdAt")),
-                            cb.desc(bookmarkRoot.get<Any>("postId")),
-                        )
-                    }
-                    else -> listOf(cb.desc(bookmarkRoot.get<Any>("createdAt")), cb.desc(bookmarkRoot.get<Any>("postId"))) // "latest" default
-                }
-            }
-        query.orderBy(orders)
-
-        val resultList =
-            entityManager
-                .createQuery(query)
-                .setFirstResult(pageable.offset.toInt())
-                .setMaxResults(pageable.pageSize)
-                .resultList
-
-        return PageImpl(resultList, pageable, total)
-    }
 
     override fun findBookmarkedPostsAfter(
         userId: UUID,
@@ -141,7 +30,7 @@ class BookmarkRepositoryImpl : BookmarkRepositoryCustom {
         withTotal: Boolean,
     ): KeysetSlice<TablePost> {
         val cb = entityManager.criteriaBuilder
-        // 건수와 본 쿼리가 같은 후보 집합을 보도록 한 번만 계산한다 - findBookmarkedPosts와 같다
+        // 건수와 본 쿼리가 같은 후보 집합을 보도록 한 번만 계산한다
         val semanticMatches = PostSearchQuery.resolveSemanticMatches(entityManager, queryEmbedding)
 
         val total =

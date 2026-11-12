@@ -29,8 +29,6 @@ import org.mockito.Mockito.verifyNoMoreInteractions
 import org.mockito.Mockito.`when`
 import org.mockito.junit.jupiter.MockitoExtension
 import org.springframework.dao.DataIntegrityViolationException
-import org.springframework.data.domain.PageImpl
-import org.springframework.data.domain.PageRequest
 import java.time.LocalDateTime
 import java.util.Optional
 import java.util.UUID
@@ -208,125 +206,53 @@ class BookmarkFolderServiceTest {
         assertEquals(listOf(pinnedAt, null), result.folders.map { it.pinnedAt })
     }
 
-    // ── getBookmarkedPosts: folderKey 3-way 매핑 ────────────────────
+    // ── getBookmarkedPostsByCursor: folderKey 3-way 매핑(all은 아래 정렬 매핑 테스트가 함께 본다) ──
 
     @Test
-    fun `getBookmarkedPosts 는 folderKey all 이면 폴더 필터 없이 조회한다`() {
+    fun `getBookmarkedPostsByCursor 는 folderKey uncategorized 면 미분류만 조회한다`() {
         val userId = UUID.randomUUID()
-        val pageable = PageRequest.of(0, 10)
-        val page = PageImpl<TablePost>(emptyList(), pageable, 0)
+        `when`(bookmarkRepository.findBookmarkedPostsAfter(userId, null, true, BookmarkListSort.LATEST, null, null, 10, null, false))
+            .thenReturn(KeysetSlice(emptyList()))
 
-        `when`(bookmarkRepository.findBookmarkedPosts(userId, null, false, "latest", null, pageable))
-            .thenReturn(page)
-        `when`(postResponseAssembler.buildResponsesFromPosts(emptyList(), userId)).thenReturn(emptyList())
+        bookmarkFolderService.getBookmarkedPostsByCursor(userId, "uncategorized", null, null, null, 10)
 
-        bookmarkFolderService.getBookmarkedPosts(userId, "all", null, null, 0, 10)
-
-        verify(bookmarkRepository).findBookmarkedPosts(userId, null, false, "latest", null, pageable)
+        verify(bookmarkRepository).findBookmarkedPostsAfter(userId, null, true, BookmarkListSort.LATEST, null, null, 10, null, false)
     }
 
     @Test
-    fun `getBookmarkedPosts 는 sort viewed 를 그대로 전달한다`() {
-        val userId = UUID.randomUUID()
-        val pageable = PageRequest.of(0, 10)
-        val page = PageImpl<TablePost>(emptyList(), pageable, 0)
-
-        `when`(bookmarkRepository.findBookmarkedPosts(userId, null, false, "viewed", null, pageable))
-            .thenReturn(page)
-        `when`(postResponseAssembler.buildResponsesFromPosts(emptyList(), userId)).thenReturn(emptyList())
-
-        bookmarkFolderService.getBookmarkedPosts(userId, "all", "viewed", null, 0, 10)
-
-        verify(bookmarkRepository).findBookmarkedPosts(userId, null, false, "viewed", null, pageable)
-    }
-
-    @Test
-    fun `getBookmarkedPosts 는 folderKey uncategorized 면 미분류만 조회한다`() {
-        val userId = UUID.randomUUID()
-        val pageable = PageRequest.of(0, 10)
-        val page = PageImpl<TablePost>(emptyList(), pageable, 0)
-
-        `when`(bookmarkRepository.findBookmarkedPosts(userId, null, true, "latest", null, pageable))
-            .thenReturn(page)
-        `when`(postResponseAssembler.buildResponsesFromPosts(emptyList(), userId)).thenReturn(emptyList())
-
-        bookmarkFolderService.getBookmarkedPosts(userId, "uncategorized", null, null, 0, 10)
-
-        verify(bookmarkRepository).findBookmarkedPosts(userId, null, true, "latest", null, pageable)
-    }
-
-    @Test
-    fun `getBookmarkedPosts 는 folderKey 가 UUID 면 해당 폴더로 조회한다`() {
+    fun `getBookmarkedPostsByCursor 는 folderKey 가 UUID 면 해당 폴더로 조회한다`() {
         val userId = UUID.randomUUID()
         val folderId = UUID.randomUUID()
         val folder = TableBookmarkFolder(id = folderId, userId = userId, name = "개발")
-        val pageable = PageRequest.of(0, 10)
-        val page = PageImpl<TablePost>(emptyList(), pageable, 0)
 
         `when`(bookmarkFolderRepository.findById(folderId)).thenReturn(Optional.of(folder))
-        `when`(bookmarkRepository.findBookmarkedPosts(userId, folderId, false, "latest", null, pageable))
-            .thenReturn(page)
-        `when`(postResponseAssembler.buildResponsesFromPosts(emptyList(), userId)).thenReturn(emptyList())
+        `when`(bookmarkRepository.findBookmarkedPostsAfter(userId, folderId, false, BookmarkListSort.LATEST, null, null, 10, null, false))
+            .thenReturn(KeysetSlice(emptyList()))
 
-        bookmarkFolderService.getBookmarkedPosts(userId, folderId.toString(), null, null, 0, 10)
+        bookmarkFolderService.getBookmarkedPostsByCursor(userId, folderId.toString(), null, null, null, 10)
 
-        verify(bookmarkRepository).findBookmarkedPosts(userId, folderId, false, "latest", null, pageable)
+        verify(bookmarkRepository).findBookmarkedPostsAfter(userId, folderId, false, BookmarkListSort.LATEST, null, null, 10, null, false)
     }
 
     @Test
-    fun `getBookmarkedPosts 는 잘못된 folderKey 면 InvalidInputException`() {
+    fun `getBookmarkedPostsByCursor 는 잘못된 folderKey 면 InvalidInputException`() {
         val userId = UUID.randomUUID()
 
         assertThrows(InvalidInputException::class.java) {
-            bookmarkFolderService.getBookmarkedPosts(userId, "not-a-uuid", null, null, 0, 10)
+            bookmarkFolderService.getBookmarkedPostsByCursor(userId, "not-a-uuid", null, null, null, 10)
         }
     }
 
     @Test
-    fun `getBookmarkedPosts 는 없는 폴더면 BookmarkFolderNotFoundException`() {
+    fun `getBookmarkedPostsByCursor 는 없는 폴더면 BookmarkFolderNotFoundException`() {
         val userId = UUID.randomUUID()
         val folderId = UUID.randomUUID()
 
         `when`(bookmarkFolderRepository.findById(folderId)).thenReturn(Optional.empty())
 
         assertThrows(BookmarkFolderNotFoundException::class.java) {
-            bookmarkFolderService.getBookmarkedPosts(userId, folderId.toString(), null, null, 0, 10)
+            bookmarkFolderService.getBookmarkedPostsByCursor(userId, folderId.toString(), null, null, null, 10)
         }
-    }
-
-    @Test
-    fun `getBookmarkedPosts 는 타인 폴더면 ForbiddenException`() {
-        val userId = UUID.randomUUID()
-        val otherUserId = UUID.randomUUID()
-        val folderId = UUID.randomUUID()
-        val folder = TableBookmarkFolder(id = folderId, userId = otherUserId, name = "개발")
-
-        `when`(bookmarkFolderRepository.findById(folderId)).thenReturn(Optional.of(folder))
-
-        assertThrows(ForbiddenException::class.java) {
-            bookmarkFolderService.getBookmarkedPosts(userId, folderId.toString(), null, null, 0, 10)
-        }
-    }
-
-    @Test
-    fun `getBookmarkedPosts 는 검색 결과 0건이면 한영 자판 보정으로 한 번 더 검색한다`() {
-        val userId = UUID.randomUUID()
-        val postId = UUID.randomUUID()
-        val pageable = PageRequest.of(0, 10)
-        val emptyPage = PageImpl<TablePost>(emptyList(), pageable, 0)
-        val post = TablePost(id = postId, userId = userId, url = "https://naver.com", title = "네이버", isPrivate = false)
-        val correctedPage = PageImpl(listOf(post), pageable, 1)
-
-        // "spdlqj" 를 2벌식 자판으로 그대로 치면 "네이버" — HangulKeyboardConverter 보정 대상
-        `when`(bookmarkRepository.findBookmarkedPosts(userId, null, false, "latest", "spdlqj", pageable))
-            .thenReturn(emptyPage)
-        `when`(bookmarkRepository.findBookmarkedPosts(userId, null, false, "latest", "네이버", pageable))
-            .thenReturn(correctedPage)
-        `when`(postResponseAssembler.buildResponsesFromPosts(listOf(post), userId, listOf("네이버"))).thenReturn(emptyList())
-
-        val result = bookmarkFolderService.getBookmarkedPosts(userId, "all", null, "spdlqj", 0, 10)
-
-        assertEquals("네이버", result.correctedSearch)
     }
 
     // ── cursor 목록 ──────────────────────────────────────

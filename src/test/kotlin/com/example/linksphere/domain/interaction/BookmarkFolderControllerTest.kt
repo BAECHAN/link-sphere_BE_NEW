@@ -5,6 +5,7 @@ import com.example.linksphere.domain.post.PostPageResponse
 import com.example.linksphere.global.exception.InvalidInputException
 import org.hamcrest.Matchers.nullValue
 import org.junit.jupiter.api.Test
+import org.mockito.Mockito.verifyNoInteractions
 import org.mockito.Mockito.`when`
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest
@@ -75,7 +76,7 @@ class BookmarkFolderControllerTest {
 
     @Test
     @WithMockUser(username = USER_ID)
-    fun `폴더 글 목록은 page 없이 조회하면 cursor로 읽는다`() {
+    fun `폴더 글 목록은 cursor로 읽는다`() {
         `when`(bookmarkFolderService.getBookmarkedPostsByCursor(UUID.fromString(USER_ID), "all", "title", null, "next", 10))
             .thenReturn(PostPageResponse(emptyList(), nextCursor = "after-next"))
 
@@ -84,16 +85,15 @@ class BookmarkFolderControllerTest {
             .andExpect(jsonPath("$.data.nextCursor").value("after-next"))
     }
 
+    // cursor 전환 전 번들이 보내는 값 - PostSecurityTest의 같은 테스트 참고
     @Test
     @WithMockUser(username = USER_ID)
-    fun `폴더 글 목록은 page를 보내면 옛 경로로 읽는다`() {
-        `when`(bookmarkFolderService.getBookmarkedPosts(UUID.fromString(USER_ID), "all", "views", null, 1, 10))
-            .thenReturn(PostPageResponse(emptyList(), page = 1, size = 10, totalElements = 11, totalPages = 2, last = true))
+    fun `폴더 글 목록은 page를 보내면 400 INVALID_INPUT을 주고 목록을 읽지 않는다`() {
+        mockMvc.perform(get("/bookmark/folders/all/posts").param("sort", "views").param("page", "NaN"))
+            .andExpect(status().isBadRequest)
+            .andExpect(jsonPath("$.code").value("INVALID_INPUT"))
 
-        mockMvc.perform(get("/bookmark/folders/all/posts").param("sort", "views").param("page", "1"))
-            .andExpect(status().isOk)
-            .andExpect(jsonPath("$.data.page").value(1))
-            .andExpect(jsonPath("$.data.nextCursor").value(nullValue()))
+        verifyNoInteractions(bookmarkFolderService)
     }
 
     @Test

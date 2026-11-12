@@ -3,6 +3,7 @@ package com.example.linksphere.domain.post
 import com.example.linksphere.global.common.ApiResponse
 import com.example.linksphere.global.common.ClientIpResolver
 import com.example.linksphere.global.common.IdempotentCreate
+import com.example.linksphere.global.common.Paging
 import com.example.linksphere.global.common.RateLimitService
 import com.example.linksphere.global.common.getUserId
 import io.swagger.v3.oas.annotations.Operation
@@ -78,8 +79,7 @@ class PostController(
             "다음 쪽은 응답의 nextCursor 를 그대로 보낸다. nextCursor 가 null 이면 마지막 쪽이다. " +
             "인증 토큰을 보내면 본인의 좋아요·북마크 여부가 응답에 반영된다. size 는 최대 50 으로 잘린다. " +
             "같은 IP의 검색이 몰리면 의미 검색을 건너뛰고 키워드 검색 결과만 돌려준다(에러 아님). " +
-            "page 는 아직 새로고침하지 않은 옛 번들용이고 곧 없어진다. page 를 보내면 cursor 는 무시하고 옛 응답 필드를 채운다. " +
-            "실패: 400 INVALID_INPUT(잘못된 cursor, 검색어 유무가 달라진 cursor)",
+            "실패: 400 INVALID_INPUT(잘못된 cursor, 검색어 유무가 달라진 cursor, 없어진 page 파라미터)",
     )
     @SecurityRequirements
     @GetMapping
@@ -89,13 +89,15 @@ class PostController(
         @RequestParam(required = false) filter: String?,
         @RequestParam(required = false) nickname: String?,
         @RequestParam(required = false) cursor: String?,
-        @Parameter(deprecated = true)
+        // cursor 전환 전 번들이 보내는 값 - 받기만 하고 400으로 끝낸다(Paging.rejectPageParam)
+        @Parameter(hidden = true)
         @RequestParam(required = false)
-        page: Int?,
+        page: String?,
         @RequestParam(defaultValue = "10") size: Int,
         authentication: Authentication?,
         httpRequest: HttpServletRequest,
     ): ApiResponse<PostPageResponse> {
+        Paging.rejectPageParam(page)
         val currentUserId = authentication.getUserId()
         val tryConsumeEmbedding = {
             rateLimitService.tryConsume(
@@ -104,12 +106,7 @@ class PostController(
                 SEARCH_EMBED_IP_WINDOW,
             )
         }
-        val posts =
-            if (page != null) {
-                postService.getAllPosts(category, search, filter, nickname, page, size, currentUserId, search.isNullOrBlank() || tryConsumeEmbedding())
-            } else {
-                postService.getPostsByCursor(category, search, filter, nickname, cursor, size, currentUserId, tryConsumeEmbedding)
-            }
+        val posts = postService.getPostsByCursor(category, search, filter, nickname, cursor, size, currentUserId, tryConsumeEmbedding)
         return ApiResponse(HttpStatus.OK.value(), "Posts retrieved", posts)
     }
 

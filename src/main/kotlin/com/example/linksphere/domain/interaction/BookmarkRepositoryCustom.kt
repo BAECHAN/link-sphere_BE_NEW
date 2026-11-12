@@ -3,39 +3,21 @@ package com.example.linksphere.domain.interaction
 import com.example.linksphere.domain.post.TablePost
 import com.example.linksphere.global.common.CursorKeyType
 import com.example.linksphere.global.common.KeysetSlice
-import org.springframework.data.domain.Page
-import org.springframework.data.domain.Pageable
 import java.util.UUID
 
 interface BookmarkRepositoryCustom {
     /**
-     * 본인의 북마크에 해당하는 Post 페이지 반환.
+     * 본인의 북마크에 해당하는 Post를 cursor로 이어 읽는다. after(이전 쪽 마지막 행의 키 값) 다음부터 size개를 읽는다.
+     * 첫 쪽이면 after는 null이다. withTotal이면 후보 건수를 함께 센다.
      *
      * folderId/onlyUncategorized 조합 (다중 폴더 소속 — bookmark_folder_items 기준):
      *  - folderId=null, onlyUncategorized=false → 전체 북마크 (소속 무관, 중복 없이 1회)
      *  - folderId=null, onlyUncategorized=true  → 미분류 (소속 0개, NOT EXISTS)
      *  - folderId=UUID, onlyUncategorized=false → 해당 폴더에 소속 (EXISTS)
      *
-     * sort: "latest"(default) / "oldest" / "title" / "views"
-     *
      * search: 제목/설명/태그 부분 검색 (null/blank면 미적용)
      *
      * Post visibility 적용: isPrivate=false OR post.userId=userId
-     */
-    fun findBookmarkedPosts(
-        userId: UUID,
-        folderId: UUID?,
-        onlyUncategorized: Boolean,
-        sort: String,
-        search: String?,
-        pageable: Pageable,
-        // 검색어 임베딩 - null이면 키워드 전용(기존 동작 그대로).
-        queryEmbedding: FloatArray? = null,
-    ): Page<TablePost>
-
-    /**
-     * findBookmarkedPosts의 cursor 판. after(이전 쪽 마지막 행의 키 값) 다음부터 size개를 읽는다. 첫 쪽이면 after는 null이다.
-     * 폴더·검색·공개 범위 조건은 findBookmarkedPosts와 같다. withTotal이면 후보 건수를 함께 센다.
      */
     fun findBookmarkedPostsAfter(
         userId: UUID,

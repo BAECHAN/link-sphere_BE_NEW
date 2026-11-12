@@ -69,7 +69,7 @@ class GlobalExceptionHandlerTest {
     }
 
     // 앱 코드는 IllegalArgumentException을 던지지 않으므로(AppWideArchitectureRulesTest) 여기 오는 건 라이브러리가
-    // 잘못된 인자로 던진 것뿐이다(예: page=-1) - 예전의 404 NOT_FOUND가 아니라 입력 오류로 낸다.
+    // 잘못된 인자로 던진 것뿐이다 - 예전의 404 NOT_FOUND가 아니라 입력 오류로 낸다.
     @Test
     @WithMockUser
     fun `IllegalArgumentException은 400 INVALID_INPUT으로 나간다`() {

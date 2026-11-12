@@ -2,6 +2,7 @@ package com.example.linksphere.domain.interaction
 
 import com.example.linksphere.domain.post.PostPageResponse
 import com.example.linksphere.global.common.ApiResponse
+import com.example.linksphere.global.common.Paging
 import com.example.linksphere.global.common.getUserId
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
@@ -108,8 +109,7 @@ class BookmarkFolderController(private val bookmarkFolderService: BookmarkFolder
         summary = "폴더별 북마크 게시글 조회",
         description = "folderKey 는 all(전체) · uncategorized(미분류) · 폴더 UUID 중 하나다. cursor·size 로 이어 읽는다. 첫 쪽은 cursor 없이 " +
             "요청하고, 다음 쪽은 응답의 nextCursor 를 그대로 보낸다. nextCursor 가 null 이면 마지막 쪽이다. sort 는 latest · oldest · title · viewed 다. " +
-            "page 는 아직 새로고침하지 않은 옛 번들용이고 곧 없어진다. page 를 보내면 cursor 는 무시하고 옛 응답 필드를 채운다. " +
-            "실패: 400 INVALID_INPUT(잘못된 key, 잘못된 cursor, 정렬이 달라진 cursor) · 403 FORBIDDEN(남의 폴더) · 404 FOLDER_NOT_FOUND",
+            "실패: 400 INVALID_INPUT(잘못된 key, 잘못된 cursor, 정렬이 달라진 cursor, 없어진 page 파라미터) · 403 FORBIDDEN(남의 폴더) · 404 FOLDER_NOT_FOUND",
     )
     @GetMapping("/{folderKey}/posts")
     fun getBookmarkedPosts(
@@ -117,19 +117,16 @@ class BookmarkFolderController(private val bookmarkFolderService: BookmarkFolder
         @RequestParam(required = false) sort: String?,
         @RequestParam(required = false) search: String?,
         @RequestParam(required = false) cursor: String?,
-        @Parameter(deprecated = true)
+        // cursor 전환 전 번들이 보내는 값 - 받기만 하고 400으로 끝낸다(Paging.rejectPageParam)
+        @Parameter(hidden = true)
         @RequestParam(required = false)
-        page: Int?,
+        page: String?,
         @RequestParam(defaultValue = "10") size: Int,
         authentication: Authentication,
     ): ApiResponse<PostPageResponse> {
+        Paging.rejectPageParam(page)
         val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
-        val posts =
-            if (page != null) {
-                bookmarkFolderService.getBookmarkedPosts(userId, folderKey, sort, search, page, size)
-            } else {
-                bookmarkFolderService.getBookmarkedPostsByCursor(userId, folderKey, sort, search, cursor, size)
-            }
+        val posts = bookmarkFolderService.getBookmarkedPostsByCursor(userId, folderKey, sort, search, cursor, size)
         return ApiResponse(HttpStatus.OK.value(), "북마크 게시글 조회 성공", posts)
     }
 }

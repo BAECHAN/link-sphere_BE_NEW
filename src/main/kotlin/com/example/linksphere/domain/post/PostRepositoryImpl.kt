@@ -10,9 +10,6 @@ import com.example.linksphere.global.common.SeekKey
 import jakarta.persistence.EntityManager
 import jakarta.persistence.PersistenceContext
 import jakarta.persistence.criteria.*
-import org.springframework.data.domain.Page
-import org.springframework.data.domain.PageImpl
-import org.springframework.data.domain.Pageable
 import java.time.Instant
 import java.time.LocalDateTime
 import java.util.UUID
@@ -20,93 +17,6 @@ import java.util.UUID
 class PostRepositoryImpl : PostRepositoryCustom {
 
     @PersistenceContext private lateinit var entityManager: EntityManager
-
-    override fun findPosts(
-        category: String?,
-        search: String?,
-        filter: String?,
-        nickname: String?,
-        currentUserId: UUID?,
-        pageable: Pageable,
-        queryEmbedding: FloatArray?,
-    ): Page<TablePost> {
-        val cb = entityManager.criteriaBuilder
-        // count/data 쿼리가 정확히 같은 후보 집합을 봐야 총 건수가 실제 반환 건수와
-        // 일치한다 - 여기서 한 번만 계산해 양쪽에 그대로 넘긴다.
-        val semanticMatches = PostSearchQuery.resolveSemanticMatches(entityManager, queryEmbedding)
-
-        // 1. Create count query
-        val countQuery = cb.createQuery(Long::class.java)
-        val countRoot = countQuery.from(TablePost::class.java)
-
-        val countPredicates =
-            buildPredicates(
-                cb,
-                countRoot,
-                countQuery,
-                category,
-                search,
-                filter,
-                nickname,
-                currentUserId,
-                semanticMatches,
-            )
-        countQuery
-            .select(cb.countDistinct(countRoot))
-            .where(*countPredicates.toTypedArray())
-
-        val total = entityManager.createQuery(countQuery).singleResult
-
-        // 2. Create data query
-        val query = cb.createQuery(TablePost::class.java)
-        val root = query.from(TablePost::class.java)
-
-        val predicates =
-            buildPredicates(
-                cb,
-                root,
-                query,
-                category,
-                search,
-                filter,
-                nickname,
-                currentUserId,
-                semanticMatches,
-            )
-        query.select(root).where(*predicates.toTypedArray())
-
-        // Sort order — 검색어가 있으면 관련도순, 없으면 기존 정렬
-        val searchTokens = PostSearchQuery.tokenize(search)
-        if (searchTokens.isNotEmpty()) {
-            query.orderBy(
-                cb.desc(PostSearchQuery.relevanceScore(cb, root, searchTokens, semanticMatches)),
-                cb.desc(root.get<Any>("createdAt")),
-            )
-        } else if (pageable.sort.isSorted) {
-            val orders =
-                pageable.sort
-                    .map { order ->
-                        if (order.isAscending) {
-                            cb.asc(root.get<Any>(order.property))
-                        } else {
-                            cb.desc(root.get<Any>(order.property))
-                        }
-                    }
-                    .toList()
-            query.orderBy(orders)
-        } else {
-            query.orderBy(cb.desc(root.get<Any>("createdAt")), cb.desc(root.get<Any>("id")))
-        }
-
-        val resultList =
-            entityManager
-                .createQuery(query)
-                .setFirstResult(pageable.offset.toInt())
-                .setMaxResults(pageable.pageSize)
-                .resultList
-
-        return PageImpl(resultList, pageable, total)
-    }
 
     override fun findPostsAfter(
         category: String?,
@@ -121,7 +31,7 @@ class PostRepositoryImpl : PostRepositoryCustom {
         withTotal: Boolean,
     ): KeysetSlice<TablePost> {
         val cb = entityManager.criteriaBuilder
-        // 건수와 본 쿼리가 같은 후보 집합을 보도록 한 번만 계산한다 - findPosts와 같다
+        // 건수와 본 쿼리가 같은 후보 집합을 보도록 한 번만 계산한다
         val semanticMatches = PostSearchQuery.resolveSemanticMatches(entityManager, queryEmbedding)
         val predicatesOf = { root: Root<TablePost>, query: AbstractQuery<*> ->
             buildPredicates(cb, root, query, category, search, filter, nickname, currentUserId, semanticMatches)

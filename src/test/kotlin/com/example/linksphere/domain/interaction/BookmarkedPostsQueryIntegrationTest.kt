@@ -6,13 +6,12 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.data.domain.PageRequest
 import org.springframework.jdbc.core.JdbcTemplate
 import java.util.UUID
 
-// 북마크 목록 조회(BookmarkRepositoryImpl.findBookmarkedPosts)를 실제 Postgres에서 검증한다 — Criteria API로 만든
+// 북마크 목록 조회(BookmarkRepositoryImpl.findBookmarkedPostsAfter)를 실제 Postgres에서 검증한다 — Criteria API로 만든
 // 폴더 EXISTS 세미조인·가시성·정렬·검색 조건은 서비스 단위 테스트가 저장소를 목으로 바꿔 한 번도 실행되지 않았다
-// (2026-10-31 JaCoCo 1회 측정에서 이 메서드 90줄 중 1줄만 실행됨, claude-base docs/METRICS.md)
+// (2026-10-31 JaCoCo 1회 측정에서 당시 offset 메서드 90줄 중 1줄만 실행됨, claude-base docs/METRICS.md)
 @PostgresIntegrationTest
 class BookmarkedPostsQueryIntegrationTest {
 
@@ -44,7 +43,7 @@ class BookmarkedPostsQueryIntegrationTest {
         val page = find()
 
         assertEquals(listOf(newer, older), page.content.map { it.id })
-        assertEquals(2, page.totalElements)
+        assertEquals(2L, page.total)
     }
 
     @Test
@@ -64,9 +63,9 @@ class BookmarkedPostsQueryIntegrationTest {
 
         // 두 폴더에 든 글도 EXISTS 세미조인이라 한 번만 나온다
         assertEquals(listOf(inAandB, inA), folderPage.content.map { it.id })
-        assertEquals(2, folderPage.totalElements)
+        assertEquals(2L, folderPage.total)
         assertEquals(listOf(uncategorized), uncategorizedPage.content.map { it.id })
-        assertEquals(1, uncategorizedPage.totalElements)
+        assertEquals(1L, uncategorizedPage.total)
     }
 
     @Test
@@ -81,21 +80,20 @@ class BookmarkedPostsQueryIntegrationTest {
         val page = find()
 
         assertEquals(listOf(othersPublic, myPrivate), page.content.map { it.id })
-        assertEquals(2, page.totalElements)
+        assertEquals(2L, page.total)
     }
 
     @Test
-    fun `정렬은 oldest·title·views가 각각의 기준을 따른다`() {
-        val b = insertPost("b title", viewCount = 5)
-        val a = insertPost("a title", viewCount = 1)
-        val c = insertPost("c title", viewCount = 9)
+    fun `정렬은 oldest·title이 각각의 기준을 따른다`() {
+        val b = insertPost("b title")
+        val a = insertPost("a title")
+        val c = insertPost("c title")
         bookmark(userId, b, hoursAgo = 3)
         bookmark(userId, a, hoursAgo = 2)
         bookmark(userId, c, hoursAgo = 1)
 
         assertEquals(listOf(b, a, c), find(sort = "oldest").content.map { it.id })
         assertEquals(listOf(a, b, c), find(sort = "title").content.map { it.id })
-        assertEquals(listOf(c, b, a), find(sort = "views").content.map { it.id })
     }
 
     @Test
@@ -128,7 +126,7 @@ class BookmarkedPostsQueryIntegrationTest {
         val page = find(search = "react")
 
         assertEquals(listOf(match), page.content.map { it.id })
-        assertEquals(1, page.totalElements)
+        assertEquals(1L, page.total)
     }
 
     @Test
@@ -141,20 +139,20 @@ class BookmarkedPostsQueryIntegrationTest {
         val page = find(search = "react", queryEmbedding = unitVector(0).toFloatArray())
 
         assertEquals(listOf(semantic), page.content.map { it.id })
-        assertEquals(1, page.totalElements)
+        assertEquals(1L, page.total)
     }
 
     @Test
-    fun `페이지를 나눠도 총 건수는 전체 건수이고 두 페이지가 겹치지 않는다`() {
+    fun `쪽을 나눠도 첫 쪽 총 건수는 전체 건수이고 다음 쪽은 첫 쪽 마지막 키 뒤부터 겹치지 않게 읽는다`() {
         val ids = (1..3).map { hoursAgo -> insertPost("post $hoursAgo").also { bookmark(userId, it, hoursAgo) } }
 
-        val first = find(pageable = PageRequest.of(0, 2))
-        val second = find(pageable = PageRequest.of(1, 2))
+        val first = find(size = 2)
+        val second = find(after = first.nextKeys, size = 2)
 
         assertEquals(listOf(ids[0], ids[1]), first.content.map { it.id })
         assertEquals(listOf(ids[2]), second.content.map { it.id })
-        assertEquals(3, first.totalElements)
-        assertEquals(3, second.totalElements)
+        assertEquals(3L, first.total)
+        assertEquals(null, second.nextKeys)
     }
 
     @Test
@@ -162,7 +160,7 @@ class BookmarkedPostsQueryIntegrationTest {
         val page = find(folderId = folderA)
 
         assertTrue(page.content.isEmpty())
-        assertEquals(0, page.totalElements)
+        assertEquals(0L, page.total)
     }
 
     private fun find(
@@ -170,26 +168,36 @@ class BookmarkedPostsQueryIntegrationTest {
         onlyUncategorized: Boolean = false,
         sort: String = "latest",
         search: String? = null,
-        pageable: PageRequest = PageRequest.of(0, 20),
+        after: List<Comparable<*>>? = null,
+        size: Int = 20,
         queryEmbedding: FloatArray? = null,
-    ) = bookmarkRepository.findBookmarkedPosts(userId, folderId, onlyUncategorized, sort, search, pageable, queryEmbedding)
+    ) = bookmarkRepository.findBookmarkedPostsAfter(
+        userId,
+        folderId,
+        onlyUncategorized,
+        // 서비스와 같은 규칙으로 정렬을 고른다 - 검색 중 latest는 관련도순
+        BookmarkListSort.of(sort, searching = search != null),
+        search,
+        after,
+        size,
+        queryEmbedding,
+        withTotal = after == null,
+    )
 
     private fun insertPost(
         title: String,
         owner: UUID = userId,
         isPrivate: Boolean = false,
-        viewCount: Int = 0,
         embedding: List<Float>? = null,
     ): UUID {
         val id = UUID.randomUUID()
         jdbc.update(
-            "INSERT INTO posts (id, user_id, url, title, is_private, view_count, embedding) " +
-                "VALUES (?, ?, 'https://example.com', ?, ?, ?, CAST(? AS extensions.vector))",
+            "INSERT INTO posts (id, user_id, url, title, is_private, embedding) " +
+                "VALUES (?, ?, 'https://example.com', ?, ?, CAST(? AS extensions.vector))",
             id,
             owner,
             title,
             isPrivate,
-            viewCount,
             embedding?.joinToString(",", "[", "]"),
         )
         return id

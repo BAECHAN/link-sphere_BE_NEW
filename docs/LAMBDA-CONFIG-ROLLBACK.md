@@ -1,6 +1,6 @@
 # Lambda 배포 설정 롤백 런북
 
-> 마지막 검토: 2026-11-06 (명령 실행 위치와 개별 설정 되돌리기 경로만 다시 봄. 2026-09-30에는 즉시
+> 마지막 검토: 2026-11-12 (즉시 검증의 목록 호출에서 없어진 `page`만 뺌). 2026-11-06 (명령 실행 위치와 개별 설정 되돌리기 경로만 다시 봄. 2026-09-30에는 즉시
 > 검증의 CloudFront 경유 예시 URL을 커스텀 도메인 `linksphere.click`으로 교체)
 >
 > **이 문서의 `aws` 쓰기·호출 명령은 CloudShell에서 실행한다.** 로컬 키 `link-sphere-user`는 2026-11-06부터
@@ -198,7 +198,7 @@ curl -o /dev/null -w '%{http_code}\n' \
 # 200 기대 (NONE으로 롤백했으므로 직접 호출도 다시 열림)
 
 curl -o /dev/null -w '%{http_code}\n' \
-  https://linksphere.click/api/post?page=0\&size=1
+  https://linksphere.click/api/post?size=1
 # 200 기대
 ```
 

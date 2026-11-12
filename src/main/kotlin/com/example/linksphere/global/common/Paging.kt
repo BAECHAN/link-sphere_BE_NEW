@@ -1,6 +1,6 @@
 package com.example.linksphere.global.common
 
-import org.springframework.data.domain.PageRequest
+import com.example.linksphere.global.exception.InvalidInputException
 
 /**
  * 목록 API의 size를 상한으로 묶는다 - size는 클라이언트가 정하는 쿼리 파라미터라 상한이 없으면
@@ -11,7 +11,15 @@ import org.springframework.data.domain.PageRequest
 object Paging {
     const val MAX_PAGE_SIZE = 50
 
-    fun pageRequest(page: Int, size: Int): PageRequest = PageRequest.of(page, coerceSize(size))
-
     fun coerceSize(size: Int): Int = size.coerceIn(1, MAX_PAGE_SIZE)
+
+    /**
+     * 목록은 cursor로만 읽는다(docs/PAGINATION.md). page는 cursor 전환 전 번들만 보내므로 값이 무엇이든 400으로 끝낸다.
+     * 무시하면 그 번들이 매번 첫 쪽을 받아 다음 쪽 요청을 멈추지 않는다 - 400이면 재시도 화면이 뜨고 새로고침으로 복구된다.
+     */
+    fun rejectPageParam(page: String?) {
+        if (page != null) {
+            throw InvalidInputException("page is no longer supported, use cursor")
+        }
+    }
 }

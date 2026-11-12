@@ -4,7 +4,6 @@ import io.swagger.v3.oas.annotations.extensions.Extension
 import io.swagger.v3.oas.annotations.extensions.ExtensionProperty
 import io.swagger.v3.oas.annotations.media.ArraySchema
 import io.swagger.v3.oas.annotations.media.Schema
-import org.springframework.data.domain.Page
 import java.time.LocalDateTime
 import java.util.UUID
 
@@ -74,26 +73,9 @@ data class MyCommentResponse(
 
 data class MyCommentPageResponse(
     val content: List<MyCommentResponse>,
-    // 다음 쪽을 읽을 cursor. null이면 마지막 쪽이다. page로 요청하면 채우지 않는다.
+    // 다음 쪽을 읽을 cursor. null이면 마지막 쪽이다.
     val nextCursor: String? = null,
-    // 아래 5개는 page로 요청한 옛 번들에만 채운다. cursor로 요청하면 null이다.
-    @field:Schema(deprecated = true) val page: Int? = null,
-    @field:Schema(deprecated = true) val size: Int? = null,
-    @field:Schema(deprecated = true) val totalElements: Long? = null,
-    @field:Schema(deprecated = true) val totalPages: Int? = null,
-    @field:Schema(deprecated = true) val last: Boolean? = null,
-) {
-    companion object {
-        fun from(page: Page<TableComment>): MyCommentPageResponse = MyCommentPageResponse(
-            content = page.content.map { MyCommentResponse.from(it) },
-            page = page.number,
-            size = page.size,
-            totalElements = page.totalElements,
-            totalPages = page.totalPages,
-            last = page.isLast,
-        )
-    }
-}
+)
 
 // 댓글 생성/수정 커밋 후 발행되는 후처리 이벤트 (알림 발송 + 링크 프리뷰 크롤링).
 // commentId만 싣고 나머지는 처리 시점에 DB에서 다시 읽는다 - stale 데이터 방지.

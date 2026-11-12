@@ -1,12 +1,12 @@
 # Link-Sphere BE — 목록 페이지네이션: offset과 cursor 비교
 
-> **문서 성격**: 서사형(설명) — offset을 cursor로 바꾸게 한 실험과 전환된 구조를 기록한다. 지금 BE는 두 방식을 모두 받는다. `page`가 오면 옛 offset 경로, 없으면 cursor 경로다. FE는 [FE #549](https://github.com/BAECHAN/link-sphere_FE_NEW/pull/549)(2026-11-05 배포)부터 cursor로 요청하고, `page`는 그 전에 연 옛 탭만 보낸다.
+> **문서 성격**: 서사형(설명) — offset을 cursor로 바꾸게 한 실험과 전환된 구조를 기록한다. 지금 BE는 cursor로만 읽는다. FE는 [FE #549](https://github.com/BAECHAN/link-sphere_FE_NEW/pull/549)(2026-11-05 배포)부터 cursor로 요청하고, 그 전에 연 옛 탭이 보내는 `page`는 400으로 끝낸다(Phase 4, 2026-11-12). offset 경로는 실험과 비교 기록으로만 남는다.
 >
 > **대상 독자**: 이 레포 BE를 처음 보거나, 무한 스크롤 목록을 새로 설계할 때 참고하려는 개발자.
 >
 > **읽고 나면**: 어떤 목록에서 cursor가 이득인지 수치로 말할 수 있고, 새 정렬을 추가하거나 cursor 형식을 바꿀 수 있으며, 실험을 다시 돌리거나 조건을 바꿔 잴 수 있다.
 >
-> **마지막 검토**: 2026-11-11 (`PostService.kt` 줄 번호만 고침). 2026-11-05 (Phase 3 FE 전환 반영)
+> **마지막 검토**: 2026-11-12 (Phase 4 옛 경로 제거 반영). 2026-11-05 (Phase 3 FE 전환 반영)
 
 ## 1. 쉬운 설명
 
@@ -20,7 +20,7 @@
 ```mermaid
 flowchart TD
   A["사용자가 목록을 스크롤"] --> B{"어느 방식인가"}
-  B -->|"offset, 옛 번들용. Phase 4에서 제거"| C["GET /post?page=3&size=10"]
+  B -->|"offset, Phase 4에서 없앰. 지금은 400"| C["GET /post?page=3&size=10"]
   C --> D["DB: count 쿼리로 전체 건수 계산"]
   D --> E["DB: 앞의 30행을 읽어 버리고 10행 반환"]
   E --> F["응답: content, page, totalElements 등"]
@@ -65,7 +65,7 @@ flowchart TD
 - **북마크 조회수순 누락**: 조회수순에는 고유 키가 없어 쪽 경계에서 순서가 흔들린다. 북마크가 가장 많은 계정으로 재 보니 75행 중 서로 다른 글이 74개였다(운영 읽기 계정, 1회).
 - **피드에서 글을 지운 뒤 1개 건너뜀**: 삭제가 글 목록을 다시 받지 않아 다음 쪽 offset이 한 칸 밀린다(`bookmark-folder.keys.ts`, 코드 추적만 했고 실행 재현은 안 했다).
 
-두 결함은 FE 전환([FE #549](https://github.com/BAECHAN/link-sphere_FE_NEW/pull/549))으로 새 화면에서 사라졌다. 조회수순은 정렬 메뉴에서 뺐고(옛 탭의 `page` 경로에는 Phase 4까지 남는다), 삭제 뒤 다음 쪽은 지운 글과 상관없이 키 값으로 이어 읽는다(모킹 녹화로 확인).
+두 결함은 FE 전환([FE #549](https://github.com/BAECHAN/link-sphere_FE_NEW/pull/549))으로 새 화면에서 사라졌다. 조회수순은 정렬 메뉴에서 뺐고(옛 탭의 `page` 경로에 남아 있던 것도 Phase 4에서 지웠다), 삭제 뒤 다음 쪽은 지운 글과 상관없이 키 값으로 이어 읽는다(모킹 녹화로 확인).
 
 외부 자료도 같은 방향을 가리키지만, 이 실험의 조건과 똑같지는 않다.
 
@@ -80,7 +80,7 @@ flowchart TD
 ```mermaid
 flowchart TD
   R["GET 목록<br/>/post, /bookmark/folders/{key}/posts, /comment/my"] --> P{"page 파라미터가 있나"}
-  P -->|"예, 옛 번들"| O["옛 offset 경로<br/>쪽마다 count, 옛 응답 필드"]
+  P -->|"예, 옛 번들"| O["400 INVALID_INPUT<br/>Paging.rejectPageParam"]
   P -->|아니오| C{"cursor가 있나"}
   C -->|없음, 첫 쪽| S["정렬 결정<br/>검색이면 임베딩 호출·첫 쪽만 건수"]
   C -->|있음| V["CursorCodec.decode<br/>실패·정렬 불일치는 400 INVALID_INPUT"]
@@ -97,11 +97,13 @@ flowchart TD
   N -->|없음| NN["nextCursor = null"]
 ```
 
-| 목록 | cursor 경로 | 옛 경로(Phase 4에서 제거) |
+| 목록 | cursor 경로 | Phase 4에서 지운 옛 경로 |
 | --- | --- | --- |
-| 피드·검색 | [`PostRepositoryImpl.kt:111`](../src/main/kotlin/com/example/linksphere/domain/post/PostRepositoryImpl.kt#L111) `findPostsAfter`, [`PostService.kt:226`](../src/main/kotlin/com/example/linksphere/domain/post/PostService.kt#L226) | `findPosts`, `getAllPosts` |
-| 북마크 | [`BookmarkRepositoryImpl.kt:132`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkRepositoryImpl.kt#L132) `findBookmarkedPostsAfter`, [`BookmarkFolderService.kt:289`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkFolderService.kt#L289) | `findBookmarkedPosts`, `getBookmarkedPosts` |
-| 내 댓글 | [`CommentRepository.kt:48`](../src/main/kotlin/com/example/linksphere/domain/comment/CommentRepository.kt#L48) `findMyCommentsFirst`·`findMyCommentsAfter`, [`CommentService.kt:130`](../src/main/kotlin/com/example/linksphere/domain/comment/CommentService.kt#L130) | `findMyComments`, `getMyComments` |
+| 피드·검색 | [`PostRepositoryImpl.kt:21`](../src/main/kotlin/com/example/linksphere/domain/post/PostRepositoryImpl.kt#L21) `findPostsAfter`, [`PostService.kt:176`](../src/main/kotlin/com/example/linksphere/domain/post/PostService.kt#L176) | `findPosts`, `getAllPosts` |
+| 북마크 | [`BookmarkRepositoryImpl.kt:21`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkRepositoryImpl.kt#L21) `findBookmarkedPostsAfter`, [`BookmarkFolderService.kt:227`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkFolderService.kt#L227) | `findBookmarkedPosts`, `getBookmarkedPosts` |
+| 내 댓글 | [`CommentRepository.kt:34`](../src/main/kotlin/com/example/linksphere/domain/comment/CommentRepository.kt#L34) `findMyCommentsFirst`·`findMyCommentsAfter`, [`CommentService.kt:124`](../src/main/kotlin/com/example/linksphere/domain/comment/CommentService.kt#L124) | `findMyComments`, `getMyComments` |
+
+`page`는 세 컨트롤러가 스펙에서 숨긴 파라미터로 받아 [`Paging.rejectPageParam`](../src/main/kotlin/com/example/linksphere/global/common/Paging.kt)이 400으로 끝낸다. 그냥 없애면 옛 번들이 다음 쪽에 보내는 `page=NaN`이 무시돼 매번 첫 쪽을 받고, 자동 다음 쪽 요청이 멈추지 않는다. 400이면 FE가 재시도 화면을 띄우고 새로고침으로 복구된다. 이 400 코드를 언제 지울지는 정하지 않았다. 옛 탭 요청 수를 셀 방법이 없어서다(§11).
 
 **정렬 키**(마지막 키가 동점을 끊는 고유 값)
 
@@ -173,12 +175,12 @@ flowchart TD
 
 | 값 | 현재 | 위치 |
 | --- | --- | --- |
-| 쪽 크기 기본값 | 10 | [`PostController.kt:95`](../src/main/kotlin/com/example/linksphere/domain/post/PostController.kt#L95) |
+| 쪽 크기 기본값 | 10 | [`PostController.kt:96`](../src/main/kotlin/com/example/linksphere/domain/post/PostController.kt#L96) |
 | 쪽 크기 상한 | 50 | [`Paging.kt:12`](../src/main/kotlin/com/example/linksphere/global/common/Paging.kt#L12) |
-| 임베딩 호출 제한 | IP당 10분 60회. `semantic=false` cursor면 쓰지 않음 | [`PostController.kt:36-37`](../src/main/kotlin/com/example/linksphere/domain/post/PostController.kt#L36-L37) |
+| 임베딩 호출 제한 | IP당 10분 60회. `semantic=false` cursor면 쓰지 않음 | [`PostController.kt:37-38`](../src/main/kotlin/com/example/linksphere/domain/post/PostController.kt#L37-L38) |
 | 점수 키 단위 | 10,000(소수 넷째 자리까지 본다) | [`PostSearchQuery.kt:61`](../src/main/kotlin/com/example/linksphere/domain/post/PostSearchQuery.kt#L61) |
-| 제목 키 길이 | 앞 200자 | [`BookmarkRepositoryImpl.kt:199`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkRepositoryImpl.kt#L199) |
-| 열람 기록 없는 글의 키 | 1970-01-01 | [`BookmarkRepositoryImpl.kt:200`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkRepositoryImpl.kt#L200) |
+| 제목 키 길이 | 앞 200자 | [`BookmarkRepositoryImpl.kt:88`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkRepositoryImpl.kt#L88) |
+| 열람 기록 없는 글의 키 | 1970-01-01 | [`BookmarkRepositoryImpl.kt:89`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkRepositoryImpl.kt#L89) |
 | cursor 형식 버전 | 1 | [`CursorCodec.kt:41`](../src/main/kotlin/com/example/linksphere/global/common/CursorCodec.kt#L41) |
 | 질의 임베딩 읽기 제한 시간 | 1,500ms | [`GeminiService.kt:39`](../src/main/kotlin/com/example/linksphere/infra/ai/GeminiService.kt#L39) |
 | 쿼리 문자열 크기 한도 | 2,048바이트 | AWS WAF `SizeRestrictions_QUERYSTRING`, 콘솔 관리. AWS 문서는 _"2,048바이트를 넘는 URI 쿼리 문자열을 검사한다"_ (번역, [AWS](https://docs.aws.amazon.com/waf/latest/developerguide/aws-managed-rule-groups-baseline.html))고 쓴다. cursor가 이 안에 들어야 한다 |
@@ -195,8 +197,8 @@ flowchart TD
 | cursor 인코딩·검증 | [`CursorCodec.kt`](../src/main/kotlin/com/example/linksphere/global/common/CursorCodec.kt) |
 | "이 키 다음부터" 조건식 | [`SeekPredicate.kt`](../src/main/kotlin/com/example/linksphere/global/common/SeekPredicate.kt) |
 | WHERE 형태·파생 테이블 형태 조회 | [`KeysetQuery.kt`](../src/main/kotlin/com/example/linksphere/global/common/KeysetQuery.kt) |
-| 정렬별 키 구성 | [`PostRepositoryCustom.kt:41`](../src/main/kotlin/com/example/linksphere/domain/post/PostRepositoryCustom.kt#L41) `PostListSort`, [`BookmarkRepositoryCustom.kt:54`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkRepositoryCustom.kt#L54) `BookmarkListSort` |
-| 검색 상태 이어 가기 | [`PostService.kt:226`](../src/main/kotlin/com/example/linksphere/domain/post/PostService.kt#L226), [`BookmarkFolderService.kt:289`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkFolderService.kt#L289) |
+| 정렬별 키 구성 | [`PostRepositoryCustom.kt:29`](../src/main/kotlin/com/example/linksphere/domain/post/PostRepositoryCustom.kt#L29) `PostListSort`, [`BookmarkRepositoryCustom.kt:36`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkRepositoryCustom.kt#L36) `BookmarkListSort` |
+| 검색 상태 이어 가기 | [`PostService.kt:176`](../src/main/kotlin/com/example/linksphere/domain/post/PostService.kt#L176), [`BookmarkFolderService.kt:227`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkFolderService.kt#L227) |
 | 끝까지 읽기·SQL 형태 테스트 | [`CursorPaginationIntegrationTest.kt`](../src/test/kotlin/com/example/linksphere/domain/post/CursorPaginationIntegrationTest.kt) |
 
 | 하고 싶은 일 | 방법 | 재배포 |
@@ -341,7 +343,7 @@ offset 경로는 쪽마다 전체 건수를 센다. 화면에서 이 값을 읽�
 
 ### 9.8 실제 코드 경로 측정 (Phase 2)
 
-앞 절들은 손으로 쓴 SQL이다. 전환 뒤 저장소 메서드를 그대로 불러 다시 쟀다(직접 측정, 2026-11-05, 1회 실행). 글 10만 건(30%가 검색어 포함), 내 북마크·댓글 각 1만 건, 열람 5천 건이고, 위치는 1,000번째이며 Hibernate 시간까지 포함한다. 첫 회를 버린 5회의 중앙값이다. 운영과 같게 `jit=off`, `prepareThreshold=0`으로 맞췄다. 임베딩 컬럼은 비웠고 인덱스는 전환 뒤 상태라 §9.1의 "인덱스 없는 offset"과 다르다. 재현 소스는 [`CursorMeasureIntegrationTest.kt.txt`](../scripts/pagination-experiment/CursorMeasureIntegrationTest.kt.txt), 원본은 [`results/2026-11-05-code-path.md`](../scripts/pagination-experiment/results/2026-11-05-code-path.md)다.
+앞 절들은 손으로 쓴 SQL이다. 전환 뒤 저장소 메서드를 그대로 불러 다시 쟀다(직접 측정, 2026-11-05, 1회 실행). 글 10만 건(30%가 검색어 포함), 내 북마크·댓글 각 1만 건, 열람 5천 건이고, 위치는 1,000번째이며 Hibernate 시간까지 포함한다. 첫 회를 버린 5회의 중앙값이다. 운영과 같게 `jit=off`, `prepareThreshold=0`으로 맞췄다. 임베딩 컬럼은 비웠고 인덱스는 전환 뒤 상태라 §9.1의 "인덱스 없는 offset"과 다르다. 재현 소스는 [`CursorMeasureIntegrationTest.kt.txt`](../scripts/pagination-experiment/CursorMeasureIntegrationTest.kt.txt)이고 offset 쪽을 부르므로 Phase 4 이전 커밋(예: `2d5a49f`)에서만 돈다. 원본은 [`results/2026-11-05-code-path.md`](../scripts/pagination-experiment/results/2026-11-05-code-path.md)다.
 
 | 목록 | offset(본 쿼리 + count, ms) | cursor(ms) |
 | --- | --- | --- |
@@ -436,7 +438,7 @@ flowchart TD
 
 ## 11. 남은 것
 
-- [계획](plans/2026-11-05-cursor-pagination.md) Phase 4([#169](https://github.com/BAECHAN/link-sphere_BE_NEW/issues/169)): 2026-11-12 이후에 `page` 경로와 옛 응답 필드를 없앤다.
+- `page`를 받아 400으로 끝내는 코드를 언제 지울지 — 계획은 운영 로그의 `page=` 요청이 사라지는 것을 보고 정한다고 했지만, Lambda 로그에 요청 주소가 남지 않고(2026-11-06 확인) 옛 경로에 로그를 더하는 안은 2026-11-07 하지 않기로 했다. 셀 방법이 없어 정하지 않고 남겨 둔다. 지우면 그때까지 남은 옛 탭이 첫 쪽을 거듭 받으며 다음 쪽 요청을 멈추지 않는다(§5.1).
 - 범위 밖: 결과 스냅샷, 전용 검색 엔진, 임베딩 캐시, 목록 조회에서 쓰지 않는 `embedding` 컬럼 제외.
 
 ## 12. 용어 사전

@@ -6,12 +6,12 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.data.domain.PageRequest
+import org.springframework.data.domain.Limit
 import org.springframework.jdbc.core.JdbcTemplate
 import java.time.LocalDateTime
 import java.util.UUID
 
-// "내 댓글" 목록(findMyComments)의 WHERE·정렬·count를 실제 Postgres에서 검증한다
+// "내 댓글" 목록(findMyCommentsFirst/After)의 WHERE·정렬을 실제 Postgres에서 검증한다
 @PostgresIntegrationTest
 class CommentRepositoryIntegrationTest {
 
@@ -57,52 +57,53 @@ class CommentRepositoryIntegrationTest {
     }
 
     @Test
-    fun `findMyComments 는 내가 쓴 댓글만 돌려준다`() {
-        val page = commentRepository.findMyComments(me, PageRequest.of(0, 20))
+    fun `findMyCommentsFirst 는 내가 쓴 댓글만 돌려준다`() {
+        val comments = commentRepository.findMyCommentsFirst(me, Limit.of(20))
 
-        assertEquals(false, page.content.any { it.id == othersComment })
-        assertTrue(page.content.all { it.userId == me })
+        assertEquals(false, comments.any { it.id == othersComment })
+        assertTrue(comments.all { it.userId == me })
     }
 
     // 댓글을 단 뒤 원글이 비공개로 바뀌면 남의 글 제목이 새지 않도록 막는 게이트
     @Test
     fun `남의 비공개 글에 단 내 댓글은 빠진다`() {
-        val page = commentRepository.findMyComments(me, PageRequest.of(0, 20))
+        val comments = commentRepository.findMyCommentsFirst(me, Limit.of(20))
 
-        assertEquals(false, page.content.any { it.id == mineOnOthersPrivate })
+        assertEquals(false, comments.any { it.id == mineOnOthersPrivate })
     }
 
     @Test
     fun `내 비공개 글에 단 내 댓글은 나온다`() {
-        val page = commentRepository.findMyComments(me, PageRequest.of(0, 20))
+        val comments = commentRepository.findMyCommentsFirst(me, Limit.of(20))
 
-        assertEquals(true, page.content.any { it.id == mineOnMyPrivate })
+        assertEquals(true, comments.any { it.id == mineOnMyPrivate })
     }
 
     @Test
     fun `삭제된 댓글(톰스톤)은 빠진다`() {
-        val page = commentRepository.findMyComments(me, PageRequest.of(0, 20))
+        val comments = commentRepository.findMyCommentsFirst(me, Limit.of(20))
 
-        assertEquals(false, page.content.any { it.id == myTombstone })
+        assertEquals(false, comments.any { it.id == myTombstone })
     }
 
     @Test
     fun `최신순으로, 작성 시각이 같으면 id 역순으로 정렬한다`() {
-        val page = commentRepository.findMyComments(me, PageRequest.of(0, 20))
+        val comments = commentRepository.findMyCommentsFirst(me, Limit.of(20))
 
-        assertEquals(listOf(mineOnMyPublic, mineOnMyPrivate, mineOnOthersPublic), page.content.map { it.id })
+        assertEquals(listOf(mineOnMyPublic, mineOnMyPrivate, mineOnOthersPublic), comments.map { it.id })
     }
 
-    // 첫 페이지 결과가 페이지 크기보다 적으면 Spring Data가 count 쿼리를 건너뛰므로, 3개를 크기 2로 나눠 countQuery를 실제로 돌린다
+    // 다음 쪽 쿼리는 첫 쪽과 WHERE를 따로 적는다. 빠져야 할 댓글(12시)이 기준보다 뒤에 있으면 조건이 깨져도 안 드러나므로
+    // 기준을 모든 댓글보다 뒤(13시)에 둔 호출로 같은 조건인지 보고, 첫 쪽 마지막 행 기준으로 이어 읽는 것도 본다
     @Test
-    fun `count 쿼리도 본문과 같은 조건으로 센다`() {
-        val first = commentRepository.findMyComments(me, PageRequest.of(0, 2))
-        val second = commentRepository.findMyComments(me, PageRequest.of(1, 2))
+    fun `findMyCommentsAfter 도 첫 쪽과 같은 조건으로 거르고 기준 뒤부터 이어 읽는다`() {
+        val first = commentRepository.findMyCommentsFirst(me, Limit.of(2))
+        val second = commentRepository.findMyCommentsAfter(me, first.last().createdAt, first.last().id, Limit.of(20))
+        val fromTop = commentRepository.findMyCommentsAfter(me, at(13), UUID.randomUUID(), Limit.of(20))
 
-        assertEquals(2, first.content.size)
-        assertEquals(3, first.totalElements)
-        assertEquals(2, first.totalPages)
-        assertEquals(listOf(mineOnOthersPublic), second.content.map { it.id })
+        assertEquals(listOf(mineOnMyPublic, mineOnMyPrivate), first.map { it.id })
+        assertEquals(listOf(mineOnOthersPublic), second.map { it.id })
+        assertEquals(listOf(mineOnMyPublic, mineOnMyPrivate, mineOnOthersPublic), fromTop.map { it.id })
     }
 
     private fun at(hour: Int): LocalDateTime = LocalDateTime.of(2026, 10, 1, hour, 0)

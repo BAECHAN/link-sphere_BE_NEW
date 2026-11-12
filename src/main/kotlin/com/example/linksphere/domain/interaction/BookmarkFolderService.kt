@@ -215,74 +215,12 @@ class BookmarkFolderService(
     }
 
     /**
-     * 북마크된 게시글 페이지 조회.
+     * 북마크된 게시글을 cursor로 이어 읽는다.
      * folderKey: "all" / "uncategorized" / 폴더 UUID 문자열
-     * sort: "latest"(default) / "oldest" / "title" / "views"
+     * sort: "latest"(default) / "oldest" / "title" / "viewed" - 모르는 값은 latest로 본다(BookmarkListSort.of)
      * search: 제목/설명/태그 부분 검색 (null/blank면 미적용)
      *
-     * 아직 새로고침하지 않은 옛 번들용 - 새 번들은 getBookmarkedPostsByCursor를 쓴다.
-     */
-    @Transactional(readOnly = true)
-    fun getBookmarkedPosts(
-        userId: UUID,
-        folderKey: String,
-        sort: String?,
-        search: String?,
-        page: Int,
-        size: Int,
-    ): PostPageResponse {
-        val (folderId, onlyUncategorized) = resolveFolderKey(userId, folderKey)
-
-        val pageable = Paging.pageRequest(page, size)
-        val searchTokens = PostSearchQuery.tokenize(search)
-        // 실패·타임아웃이면 null - findBookmarkedPosts가 키워드 전용으로 동작한다.
-        val queryEmbedding = search?.takeIf { searchTokens.isNotEmpty() }?.let { geminiService.embedQuery(PostEmbeddingText.query(it)) }
-        val postPage =
-            bookmarkRepository.findBookmarkedPosts(
-                userId,
-                folderId,
-                onlyUncategorized,
-                sort ?: "latest",
-                search,
-                pageable,
-                queryEmbedding,
-            )
-
-        // 검색 결과가 없으면 한/영 자판 미스매칭 보정 후보로 한 번 더 검색한다 (예: spdlqj -> 네이버).
-        // 보정 검색은 키워드 전용으로만 한다 - 드문 폴백 경로에 임베딩 호출을 추가하지 않는다.
-        if (postPage.totalElements == 0L && !search.isNullOrBlank()) {
-            val correctedSearch = HangulKeyboardConverter.convertIfMislayout(search)
-            if (correctedSearch != null) {
-                val correctedPage =
-                    bookmarkRepository.findBookmarkedPosts(
-                        userId,
-                        folderId,
-                        onlyUncategorized,
-                        sort ?: "latest",
-                        correctedSearch,
-                        pageable,
-                    )
-                if (correctedPage.totalElements > 0L) {
-                    logSearch(search = search, total = correctedPage.totalElements, corrected = true, semantic = false)
-                    return PostPageResponse.from(
-                        correctedPage,
-                        postResponseAssembler.buildResponsesFromPosts(
-                            correctedPage.content,
-                            userId,
-                            PostSearchQuery.tokenize(correctedSearch),
-                        ),
-                        correctedSearch,
-                    )
-                }
-            }
-        }
-
-        logSearch(search = search, total = postPage.totalElements, corrected = false, semantic = queryEmbedding != null)
-        return PostPageResponse.from(postPage, postResponseAssembler.buildResponsesFromPosts(postPage.content, userId, searchTokens))
-    }
-
-    /**
-     * getBookmarkedPosts의 cursor 판. 첫 쪽의 의미 검색·자판 보정 여부를 cursor에 담아 뒤쪽도 같은 기준으로 읽는다
+     * 첫 쪽의 의미 검색·자판 보정 여부를 cursor에 담아 뒤쪽도 같은 기준으로 읽는다
      * (PostService.getPostsByCursor와 같은 규칙, 이유는 그쪽 주석 참고).
      */
     @Transactional(readOnly = true)

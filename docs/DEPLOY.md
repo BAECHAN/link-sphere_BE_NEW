@@ -1,6 +1,6 @@
 # AWS Lambda SnapStart 배포 가이드
 
-> 마지막 검토: 2026-11-11 (SES 승인 전 영향 문단의 `PostService`·`CommentService` 줄 번호만 고침). 2026-11-10 (서빙 경로를 serverless-java-container로 옮긴 것에 맞춰 "Lambda 실행 구조", "요청 경로를 serverless-java-container로 처리하는 이유", "SnapStart 동작 흐름", spring.factories 절, 13번 검증, 시행착오 3·5·7의 메모만 고침. 2026-11-07에는 같은 절에 비교 실험 결과와 깨진 주소의 운영 측정만 더함. 2026-11-06에는 AWS 설정 변경 경로와 명령 실행 위치만 다시 봄. 같은 날 "MockMvc 방식을 사용하는 이유", "init 단계에서 워밍업을 실행하는 이유", "메모리 2048MB인 이유"만 다시 봄. 2026-11-05에는 TLS 인자·임시 조회 이메일 제외·덤프 처리·로그 가림·cursor 스모크 테스트·요청 경로·Lambda 실행 역할·백업 보존 설정·CDK 안내만 다시 봄. 전체 검토는 2026-10-30)
+> 마지막 검토: 2026-11-12 (13번 검증의 호출 구성만 고침). 2026-11-11 (SES 승인 전 영향 문단의 `PostService`·`CommentService` 줄 번호만 고침). 2026-11-10 (서빙 경로를 serverless-java-container로 옮긴 것에 맞춰 "Lambda 실행 구조", "요청 경로를 serverless-java-container로 처리하는 이유", "SnapStart 동작 흐름", spring.factories 절, 13번 검증, 시행착오 3·5·7의 메모만 고침. 2026-11-07에는 같은 절에 비교 실험 결과와 깨진 주소의 운영 측정만 더함. 2026-11-06에는 AWS 설정 변경 경로와 명령 실행 위치만 다시 봄. 같은 날 "MockMvc 방식을 사용하는 이유", "init 단계에서 워밍업을 실행하는 이유", "메모리 2048MB인 이유"만 다시 봄. 2026-11-05에는 TLS 인자·임시 조회 이메일 제외·덤프 처리·로그 가림·cursor 스모크 테스트·요청 경로·Lambda 실행 역할·백업 보존 설정·CDK 안내만 다시 봄. 전체 검토는 2026-10-30)
 
 ## 아키텍처 개요
 
@@ -1203,7 +1203,7 @@ configuration에도 강제해 ktlint 1.5.0이 Kotlin 2.4 컴파일러로 깨지�
 | 10. 업데이트 대기 | `function-updated` waiter로 완료 확인 |
 | 11. 버전 발행 | `publish-version` → SnapStart 스냅샷 생성 트리거 |
 | 12. SnapStart 대기 | `published-version-active` waiter (1~5분, 스냅샷 완성까지) |
-| 13. 연속 호출 검증 | 방금 발행한 **버전 번호를 직접 지정**해 `GET /post`를 5회 연속 호출한 뒤, `page` 없이 첫 쪽을 읽고 `nextCursor`로 다음 쪽까지 읽는다. 끝으로 쿠키 없는 `POST /auth/logout`을 CloudFront가 넘기는 헤더 모양(`X-Forwarded-For`만)으로 보내 `cookies`에 `__Host-refreshToken=`·`Max-Age=0`이 있고 HSTS 헤더가 있는지 본다(DB에 쓰지 않는다). 하나라도 `statusCode != 200`이거나 첫 쪽에 `nextCursor`가 없거나 로그아웃 확인이 실패하면 워크플로우 실패, 아래 승격 스텝은 실행 안 됨(`prod`는 이전 버전 유지) |
+| 13. 연속 호출 검증 | 방금 발행한 **버전 번호를 직접 지정**해 `GET /post?size=5`(cursor 첫 쪽)를 5회 연속 호출하고, 5회차 응답의 `nextCursor`로 다음 쪽까지 읽는다. 끝으로 쿠키 없는 `POST /auth/logout`을 CloudFront가 넘기는 헤더 모양(`X-Forwarded-For`만)으로 보내 `cookies`에 `__Host-refreshToken=`·`Max-Age=0`이 있고 HSTS 헤더가 있는지 본다(DB에 쓰지 않는다). 하나라도 `statusCode != 200`이거나 첫 쪽에 `nextCursor`가 없거나 로그아웃 확인이 실패하면 워크플로우 실패, 아래 승격 스텝은 실행 안 됨(`prod`는 이전 버전 유지) |
 | 14. prod alias 승격 | 13번을 전부 통과했을 때만 `update-alias`로 `prod`를 이 버전으로 이동 |
 | 15. Function URL 출력 | 승격된(=현재 서빙 중인) `prod` URL을 로그에 표시 |
 

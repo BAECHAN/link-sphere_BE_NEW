@@ -34,8 +34,6 @@ import org.mockito.Mockito.`when`
 import org.mockito.junit.jupiter.MockitoExtension
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.data.domain.Limit
-import org.springframework.data.domain.PageImpl
-import org.springframework.data.domain.PageRequest
 import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.time.Instant
 import java.time.LocalDateTime
@@ -817,28 +815,26 @@ class CommentServiceTest {
         }
     }
 
-    // 비공개 글 제외·톰스톤 제외는 CommentRepository.findMyComments의 JPQL WHERE 절 자체가
-    // 담당해 Mockito로는 검증할 수 없다. 여기서는 Service가 만든 Page를 DTO로 정확히 옮기는지만
+    // 비공개 글 제외·톰스톤 제외는 CommentRepository.findMyCommentsFirst/After의 JPQL WHERE 절 자체가
+    // 담당해 Mockito로는 검증할 수 없다. 여기서는 Service가 읽은 행을 DTO로 정확히 옮기는지만
     // 검증한다. 작성 당시엔 실 DB 대상 테스트 인프라가 없어 필터 자체는 계획 문서의 수동 검증
     // 절차로 확인했다. 필터 자체는 지금 CommentRepositoryIntegrationTest가 실제 Postgres에서 검증한다.
     @Test
-    fun `getMyComments maps a comment page into MyCommentPageResponse with post titles`() {
+    fun `getMyCommentsByCursor maps comments into MyCommentPageResponse with post titles`() {
         val userId = UUID.randomUUID()
         val postId = UUID.randomUUID()
         val post = TablePost(id = postId, userId = userId, url = "https://example.com", title = "타입스크립트 5.9 정리")
         val comment = TableComment(postId = postId, userId = userId, content = "감사합니다", post = post)
-        val page = PageImpl(listOf(comment), PageRequest.of(0, 10), 1)
 
-        `when`(commentRepository.findMyComments(userId, PageRequest.of(0, 10))).thenReturn(page)
+        `when`(commentRepository.findMyCommentsFirst(userId, Limit.of(11))).thenReturn(listOf(comment))
 
-        val result = commentService.getMyComments(userId, 0, 10)
+        val result = commentService.getMyCommentsByCursor(userId, null, 10)
 
         assertEquals(1, result.content.size)
         assertEquals(postId, result.content[0].postId)
         assertEquals("타입스크립트 5.9 정리", result.content[0].postTitle)
         assertEquals("감사합니다", result.content[0].content)
-        assertEquals(1L, result.totalElements)
-        assertEquals(true, result.last)
+        assertNull(result.nextCursor)
     }
 
     @Test
@@ -856,7 +852,6 @@ class CommentServiceTest {
         assertEquals(listOf("댓글 0", "댓글 1"), first.content.map { it.content })
         assertEquals("제목", first.content[0].postTitle)
         assertEquals(listOf<Comparable<*>>(rows[1].createdAt, rows[1].id), CursorCodec.decode(first.nextCursor!!, "LATEST", keyTypes).keys)
-        assertNull(first.totalElements)
 
         `when`(commentRepository.findMyCommentsAfter(userId, rows[1].createdAt, rows[1].id, Limit.of(3))).thenReturn(rows.drop(2))
         val second = commentService.getMyCommentsByCursor(userId, first.nextCursor, 2)
@@ -873,14 +868,13 @@ class CommentServiceTest {
     }
 
     @Test
-    fun `getMyComments falls back to an empty postTitle when the post relation is not loaded`() {
+    fun `getMyCommentsByCursor falls back to an empty postTitle when the post relation is not loaded`() {
         val userId = UUID.randomUUID()
         val comment = TableComment(postId = UUID.randomUUID(), userId = userId, content = "댓글", post = null)
-        val page = PageImpl(listOf(comment), PageRequest.of(0, 10), 1)
 
-        `when`(commentRepository.findMyComments(userId, PageRequest.of(0, 10))).thenReturn(page)
+        `when`(commentRepository.findMyCommentsFirst(userId, Limit.of(11))).thenReturn(listOf(comment))
 
-        val result = commentService.getMyComments(userId, 0, 10)
+        val result = commentService.getMyCommentsByCursor(userId, null, 10)
 
         assertEquals("", result.content[0].postTitle)
     }

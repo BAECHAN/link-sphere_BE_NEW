@@ -5,11 +5,10 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.data.domain.PageRequest
 import org.springframework.jdbc.core.JdbcTemplate
 import java.util.UUID
 
-// 피드 조회(findPosts)의 filter 조건을 실제 Postgres에서 검증한다 — 지금은 isLiked만 다룬다
+// 피드 조회(findPostsAfter)의 filter 조건을 실제 Postgres에서 검증한다 — 지금은 isLiked만 다룬다
 @PostgresIntegrationTest
 class PostRepositoryIntegrationTest {
 
@@ -50,7 +49,7 @@ class PostRepositoryIntegrationTest {
     fun `isLiked 는 내가 좋아요한 남의 비공개 글을 빼고 센다`() {
         val page = findPosts(filter = "isLiked", currentUserId = me)
 
-        assertEquals(1, page.totalElements)
+        assertEquals(1L, page.total)
         assertEquals(false, page.content.any { it.id == othersPrivateLikedByMe })
     }
 
@@ -83,13 +82,16 @@ class PostRepositoryIntegrationTest {
 
     private fun viewCountInDb(postId: UUID): Int = jdbc.queryForObject("SELECT COALESCE(view_count, 0) FROM posts WHERE id = ?", Int::class.java, postId)!!
 
-    private fun findPosts(filter: String, currentUserId: UUID?) = postRepository.findPosts(
+    private fun findPosts(filter: String, currentUserId: UUID?) = postRepository.findPostsAfter(
         category = null,
         search = null,
         filter = filter,
         nickname = null,
         currentUserId = currentUserId,
-        pageable = PageRequest.of(0, 20),
+        sort = PostListSort.LATEST,
+        after = null,
+        size = 20,
+        withTotal = true,
     )
 
     private fun insertMember(id: UUID) {

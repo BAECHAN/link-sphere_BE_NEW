@@ -177,11 +177,34 @@
 
   </details>
 
+### Removed
+
+- `post`·`interaction`·`comment` 목록의 `page` 조회와 옛 응답 필드 제거, `page`를 보내면 400
+  <details><summary>배경·구현</summary>
+
+  cursor 조회를 더하면서(#164) 새로고침하지 않은 옛 탭을 위해 `page`로 읽는 offset 경로와 옛 응답 필드를 남겼다. FE가 cursor로
+  바꿔 배포한 뒤(FE #549, 2026-11-05) 7일을 기다려 지운다. 7일은 계획에서 여유로 정한 기간이고 측정값이 아니다. Lambda 로그에 요청
+  주소가 남지 않아 옛 탭 요청 수를 세지 못했고, 옛 경로에 로그를 더하는 안은 쓰지 않기로 했다. 세 목록의 offset 조회(`findPosts`·
+  `findBookmarkedPosts`·`findMyComments`)와 서비스 경로, 응답의 `page`·`size`·`totalElements`·`totalPages`·`last`,
+  `Paging.pageRequest`, 옛 조회수순(`views`) 분기를 지웠다. `page`는 스펙에서 숨긴 파라미터로 받아 값이 무엇이든 400
+  `INVALID_INPUT`으로 끝낸다. 그냥 없애면 옛 번들이 다음 쪽에 보내는 `page=NaN`이 무시돼 매번 첫 쪽을 받고 다음 쪽 요청을 멈추지
+  않는다. 400이면 재시도 화면이 뜨고 새로고침으로 복구된다. 배포 관문과 운영 요청 경로 비교의 호출도 `size=5`로 바꿨다. 옛
+  경로를 쓰던 테스트는 cursor 경로로 옮기고, 같은 동작을 이미 보는 테스트가 있으면 지웠다. 구조는 `docs/PAGINATION.md` §5, 계획은
+  `docs/plans/2026-11-05-cursor-pagination.md` Phase 4([#169](https://github.com/BAECHAN/link-sphere_BE_NEW/issues/169)).
+  (`Paging.kt`, `PostController.kt`, `CommentController.kt`, `BookmarkFolderController.kt`, `PostService.kt`, `CommentService.kt`,
+  `BookmarkFolderService.kt`, `PostRepositoryImpl.kt`, `BookmarkRepositoryImpl.kt`, `CommentRepository.kt`, `PostDTO.kt`,
+  `CommentDTO.kt`, `.github/workflows/deploy.yml`)
+
+  </details>
+
 ### Migration
 
 - DB 먼저: 이 버전을 배포하기 **전에** `sql/add_cursor_pagination_indexes.sql`을 세션 풀러(5432)로 실행한다. 정렬 키 인덱스 3개를 만들고
-  `posts.created_at`을 `NOT NULL`로 바꾼다. 없이 배포해도 결과는 같지만 정렬 키를 처음부터 훑는다. 옛 번들은 `page` 경로로 그대로 동작한다.
-  되돌릴 때는 FE를 먼저 되돌린다. 옛 BE는 `cursor`를 무시해 모든 목록이 10개에서 조용히 끝난다.
+  `posts.created_at`을 `NOT NULL`로 바꾼다. 없이 배포해도 결과는 같지만 정렬 키를 처음부터 훑는다. 옛 번들은 아래 `page` 제거 전까지
+  `page` 경로로 동작한다. 되돌릴 때는 FE를 먼저 되돌린다. 옛 BE는 `cursor`를 무시해 모든 목록이 10개에서 조용히 끝난다.
+- FE 의존: `page` 제거는 cursor로 요청하는 FE(#549)가 배포된 뒤에만 나간다. 그 전 번들을 띄워 둔 탭은 다음 쪽에서 재시도 화면을 보고
+  새로고침하면 회복한다. FE는 생성 스펙을 다시 만들어 옛 응답 필드를 지운다 — 안 하면 다음 날 `openapi-drift-check` 이슈가 열린다.
+  이 버전 뒤로는 FE만 #549 전으로 되돌릴 수 없다(옛 FE는 `page`를 보낸다). 되돌리려면 BE를 먼저 되돌린다.
 - DB 먼저: 이 버전을 배포하기 **전에** `sql/add_idempotency_keys.sql`을 세션 풀러(5432)로 실행한다. 컬럼 없이 나가면 posts·comments
   조회가 전부 500이다. FE 의존: 글·댓글·메일 요청이 `Idempotency-Key`를 보내는 FE(#535)가 먼저 배포돼 있어야 한다. 그 전 번들을
   띄워 둔 탭은 400을 받고 새로고침하면 회복한다.

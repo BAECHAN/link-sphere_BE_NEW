@@ -5,7 +5,6 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.data.domain.PageRequest
 import org.springframework.jdbc.core.JdbcTemplate
 import java.util.UUID
 
@@ -35,7 +34,7 @@ class PostSearchIntegrationTest {
         val page = search("rea")
 
         assertEquals(listOf(rea, reactPrefix, threads), page.content.map { it.id })
-        assertEquals(3, page.totalElements)
+        assertEquals(3L, page.total)
     }
 
     // 한글이 단어 경계로 인식되는지(로케일과 무관하게) — 둘 다 제목이 react로 시작해 단어 일치 보너스만 다르다
@@ -64,13 +63,16 @@ class PostSearchIntegrationTest {
         assertEquals(listOf(withParticle, spaced), search("리액트").content.map { it.id })
     }
 
-    private fun search(keyword: String) = postRepository.findPosts(
+    private fun search(keyword: String) = postRepository.findPostsAfter(
         category = null,
         search = keyword,
         filter = null,
         nickname = null,
         currentUserId = null,
-        pageable = PageRequest.of(0, 20),
+        sort = PostListSort.RELEVANCE,
+        after = null,
+        size = 20,
+        withTotal = true,
     )
 
     private fun insertPost(title: String, tags: String? = null, hoursAgo: Int): UUID {

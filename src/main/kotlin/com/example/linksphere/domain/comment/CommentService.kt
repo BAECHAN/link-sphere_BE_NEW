@@ -119,13 +119,7 @@ class CommentService(
         return rootComments
     }
 
-    @Transactional(readOnly = true)
-    fun getMyComments(userId: UUID, page: Int, size: Int): MyCommentPageResponse {
-        val pageable = Paging.pageRequest(page, size)
-        return MyCommentPageResponse.from(commentRepository.findMyComments(userId, pageable))
-    }
-
-    /** getMyComments의 cursor 판(docs/PAGINATION.md). size+1개 읽어 다음 쪽 유무를 정한다. */
+    /** 내 댓글 목록을 cursor로 이어 읽는다(docs/PAGINATION.md). size+1개 읽어 다음 쪽 유무를 정한다. */
     @Transactional(readOnly = true)
     fun getMyCommentsByCursor(userId: UUID, cursor: String?, size: Int): MyCommentPageResponse {
         val limit = Paging.coerceSize(size)
