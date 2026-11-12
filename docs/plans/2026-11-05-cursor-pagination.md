@@ -40,6 +40,11 @@
 - 계획에 없던 변경: `docs/TRAFFIC-MANAGEMENT.md`의 검색 카운터 서술을 지금 구조로 고쳤다. Phase 2부터 낡아 있던 서술이다.
 - 계획에 없던 변경: 테스트는 cursor 경로로 옮기되, 같은 동작을 cursor 테스트가 이미 보면 지웠다(피드 서비스 2개, 북마크 서비스 4개). 내 댓글 저장소의 count 검증은 다음 쪽 쿼리도 첫 쪽과 같은 조건으로 거르는지 보는 검증으로 바꿨다.
 - 계획에 없던 변경(문서 동기화): 지운 함수를 가리키던 주석과 `page=-1` 예, `deploy.yml` 주석이 가리키던 `docs/PERFORMANCE.md` 장 번호(5장 → 7장), 문서의 `파일:줄` 링크와 "마지막 검토" 날짜.
+- 병합 뒤 운영 확인: `page=0`은 400 `INVALID_INPUT`, cursor 첫 쪽과 다음 쪽은 200(겹침 0). 결과는 `docs/PAGINATION.md` §9.11.
+
+> FE #602 · 2026-11-12 대조 · 이탈 0 · 미구현 0 — Phase 4 FE PR 범위, 내용은 FE 레포의 같은 파일 블록, 판정 근거(파일:줄)는 그 PR 본문 "계획 대비 구현"
+
+- 운영 스펙을 다시 받아 생성 타입에서 `page`와 옛 응답 필드를 뺐다. 계획의 마지막 PR이라 [#169](https://github.com/BAECHAN/link-sphere_BE_NEW/issues/169)를 닫았다.
 
 <!-- plan-result:end -->
 
