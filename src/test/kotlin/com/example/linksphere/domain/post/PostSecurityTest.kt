@@ -20,13 +20,9 @@ import jakarta.servlet.http.Cookie
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentMatchers
-import org.mockito.ArgumentMatchers.anyBoolean
-import org.mockito.ArgumentMatchers.anyInt
-import org.mockito.ArgumentMatchers.anyString
 import org.mockito.ArgumentMatchers.eq
 import org.mockito.ArgumentMatchers.isNull
 import org.mockito.Mockito.mockingDetails
-import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.verifyNoInteractions
 import org.mockito.Mockito.`when`
@@ -68,7 +64,7 @@ class PostSecurityTest {
 
     @MockitoBean private lateinit var passwordResetService: PasswordResetService
 
-    private val emptyPage = PostPageResponse(emptyList(), page = 0, size = 10, totalElements = 0, totalPages = 0, last = true)
+    private val emptyPage = PostPageResponse(emptyList())
 
     private val postBody = """{"url":"https://example.com"}"""
 
@@ -188,12 +184,13 @@ class PostSecurityTest {
 
     @Test
     fun `토큰 없이 조회하면 지금처럼 비로그인으로 목록을 준다`() {
-        `when`(postService.getAllPosts(null, null, "isPrivate", null, 0, 10, null, true)).thenReturn(emptyPage)
+        `when`(postService.getPostsByCursor(isNull(), isNull(), eq("isPrivate"), isNull(), isNull(), eq(10), isNull(), anyEmbeddingGate()))
+            .thenReturn(emptyPage)
 
-        mockMvc.perform(get("/post").param("filter", "isPrivate").param("page", "0"))
+        mockMvc.perform(get("/post").param("filter", "isPrivate"))
             .andExpect(status().isOk)
 
-        verify(postService).getAllPosts(null, null, "isPrivate", null, 0, 10, null, true)
+        verify(postService).getPostsByCursor(isNull(), isNull(), eq("isPrivate"), isNull(), isNull(), eq(10), isNull(), anyEmbeddingGate())
         verifyNoInteractions(memberSessionService)
     }
 
@@ -201,12 +198,13 @@ class PostSecurityTest {
     fun `유효 토큰으로 조회하면 본인 기준으로 목록을 준다`() {
         val memberId = UUID.randomUUID()
         `when`(memberSessionService.checkAccessToken("valid-token")).thenReturn(AccessTokenCheck.Valid(memberId, UUID.randomUUID(), MemberRole.USER))
-        `when`(postService.getAllPosts(null, null, "isPrivate", null, 0, 10, memberId, true)).thenReturn(emptyPage)
+        `when`(postService.getPostsByCursor(isNull(), isNull(), eq("isPrivate"), isNull(), isNull(), eq(10), eq(memberId), anyEmbeddingGate()))
+            .thenReturn(emptyPage)
 
-        mockMvc.perform(get("/post").param("filter", "isPrivate").param("page", "0").header("X-Access-Token", "valid-token"))
+        mockMvc.perform(get("/post").param("filter", "isPrivate").header("X-Access-Token", "valid-token"))
             .andExpect(status().isOk)
 
-        verify(postService).getAllPosts(null, null, "isPrivate", null, 0, 10, memberId, true)
+        verify(postService).getPostsByCursor(isNull(), isNull(), eq("isPrivate"), isNull(), isNull(), eq(10), eq(memberId), anyEmbeddingGate())
     }
 
     // any()의 실제 반환값(null)을 Kotlin 비-null 인자에 그대로 넘기면 NPE가 난다 - PostServiceTest.anyUuid와 같은 우회
@@ -216,7 +214,7 @@ class PostSecurityTest {
     }
 
     @Test
-    fun `page 없이 조회하면 cursor로 읽고 호출 한도는 서비스가 임베딩을 부를 때만 쓴다`() {
+    fun `호출 한도는 서비스가 임베딩을 부를 때만 쓴다`() {
         `when`(postService.getPostsByCursor(isNull(), eq("spring"), isNull(), isNull(), eq("next"), eq(5), isNull(), anyEmbeddingGate()))
             .thenAnswer { invocation ->
                 assertEquals(0, mockingDetails(rateLimitService).invocations.size)
@@ -229,20 +227,16 @@ class PostSecurityTest {
             .andExpect(jsonPath("$.data.nextCursor").value("after-next"))
 
         assertEquals(1, mockingDetails(rateLimitService).invocations.size)
-        verify(postService, never()).getAllPosts(isNull(), anyString(), isNull(), isNull(), anyInt(), anyInt(), isNull(), anyBoolean())
     }
 
-    // 옛 번들은 항상 page를 보낸다. 옛 응답 필드를 그대로 채워야 다음 쪽 계산이 깨지지 않는다.
+    // cursor 전환 전 번들은 다음 쪽에서 page=NaN을 보낸다(undefined + 1). 무시하면 매번 첫 쪽을 받아 다음 쪽 요청이 멈추지 않는다.
     @Test
-    fun `page를 보내면 옛 경로로 읽고 옛 응답 필드를 채운다`() {
-        `when`(rateLimitService.tryConsume(isNull(), anyInt(), anyDuration())).thenReturn(true)
-        `when`(postService.getAllPosts(null, "spring", null, null, 2, 10, null, true)).thenReturn(emptyPage)
+    fun `page를 보내면 400 INVALID_INPUT을 주고 목록도 호출 한도도 건드리지 않는다`() {
+        mockMvc.perform(get("/post").param("search", "spring").param("page", "NaN"))
+            .andExpect(status().isBadRequest)
+            .andExpect(jsonPath("$.code").value("INVALID_INPUT"))
 
-        mockMvc.perform(get("/post").param("search", "spring").param("page", "2").param("cursor", "ignored"))
-            .andExpect(status().isOk)
-            .andExpect(jsonPath("$.data.page").value(0))
-            .andExpect(jsonPath("$.data.totalElements").value(0))
-            .andExpect(jsonPath("$.data.last").value(true))
+        verifyNoInteractions(postService, rateLimitService)
     }
 
     @Test
@@ -253,11 +247,6 @@ class PostSecurityTest {
         mockMvc.perform(get("/post").param("cursor", "broken"))
             .andExpect(status().isBadRequest)
             .andExpect(jsonPath("$.code").value("INVALID_INPUT"))
-    }
-
-    private fun anyDuration(): Duration {
-        ArgumentMatchers.any<Duration>()
-        return Duration.ZERO
     }
 
     @Test

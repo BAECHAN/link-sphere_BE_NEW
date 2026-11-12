@@ -166,60 +166,10 @@ class PostService(
         }
     }
 
-    fun getAllPosts(
-        category: String?,
-        search: String?,
-        filter: String?,
-        nickname: String?,
-        page: Int,
-        size: Int,
-        currentUserId: UUID?,
-        allowSemanticSearch: Boolean = true,
-    ): PostPageResponse {
-        val pageable = Paging.pageRequest(page, size)
-        val searchTokens = PostSearchQuery.tokenize(search)
-        // embedQuery는 실패·타임아웃이면 null을 돌려준다 - 그러면 findPosts가 키워드 전용으로
-        // 동작해 검색 자체가 Gemini 장애로 실패하는 일은 없다. allowSemanticSearch=false(호출부
-        // 레이트리밋 초과)도 같은 키워드 전용 경로로 강등한다.
-        val queryEmbedding =
-            search
-                ?.takeIf { allowSemanticSearch && searchTokens.isNotEmpty() }
-                ?.let { geminiService.embedQuery(PostEmbeddingText.query(it)) }
-        val postPage = postRepository.findPosts(category, search, filter, nickname, currentUserId, pageable, queryEmbedding)
-
-        // 검색 결과가 없으면 한/영 자판 미스매칭 보정 후보로 한 번 더 검색한다 (예: spdlqj -> 네이버).
-        // 보정 검색은 키워드 전용으로만 한다 - 드문 폴백 경로에 임베딩 호출을 추가하지 않는다.
-        if (postPage.totalElements == 0L && !search.isNullOrBlank()) {
-            val correctedSearch = HangulKeyboardConverter.convertIfMislayout(search)
-            if (correctedSearch != null) {
-                val correctedPage =
-                    postRepository.findPosts(category, correctedSearch, filter, nickname, currentUserId, pageable)
-                if (correctedPage.totalElements > 0L) {
-                    logSearch(search = search, total = correctedPage.totalElements, corrected = true, semantic = false)
-                    return PostPageResponse.from(
-                        correctedPage,
-                        postResponseAssembler.buildResponsesFromPosts(
-                            correctedPage.content,
-                            currentUserId,
-                            PostSearchQuery.tokenize(correctedSearch),
-                        ),
-                        correctedSearch,
-                    )
-                }
-            }
-        }
-
-        logSearch(search = search, total = postPage.totalElements, corrected = false, semantic = queryEmbedding != null)
-        return PostPageResponse.from(
-            postPage,
-            postResponseAssembler.buildResponsesFromPosts(postPage.content, currentUserId, searchTokens),
-        )
-    }
-
     /**
      * cursor로 이어 읽는 목록(docs/PAGINATION.md). 첫 쪽의 의미 검색·자판 보정 여부를 cursor에 담아 뒤쪽도 같은 기준으로 읽는다.
      * 쪽마다 후보 집합이 바뀌면 점수 비교의 기준이 흔들려 글을 놓치기 때문이다. 다만 의미 검색으로 시작했어도 뒤쪽에서 임베딩을
-     * 못 받으면 막지 않고 키워드로 내려가 그대로 유지한다 - Gemini 장애로 검색이 실패하지 않게 한 getAllPosts와 같은 원칙이다.
+     * 못 받으면 막지 않고 키워드로 내려가 그대로 유지한다 - Gemini 장애로 검색이 실패하지 않게 한다.
      *
      * tryConsumeEmbedding은 임베딩을 실제로 부를 때만 불러, 의미 검색을 안 하는 쪽이 IP당 호출 한도를 쓰지 않게 한다.
      */

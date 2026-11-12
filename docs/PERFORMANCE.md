@@ -1,6 +1,6 @@
 # Link-Sphere BE — 성능 (Lambda 콜드스타트)
 
-> 마지막 검토: 2026-11-10 (§4.6 효과 판정과 구간 값 설명, §7 구간 쿼리만 다시 봄. 같은 날 서빙 경로 전환에 맞춰 §3 `DispatcherServlet` 행과 5장 머리 메모만 고침. 2026-11-06에는 §3·§4.1 워밍업이 스냅샷에 담는 것과 3회의 근거, §8 메모리 요금 문장, 2026-11-05에는 §4.6 AWS SDK 첫 호출 데우기와 §7 측정 방법 추가)
+> 마지막 검토: 2026-11-12 (§7 단건 비교 `event.json`에서 없어진 `page`만 뺌). 2026-11-10 (§4.6 효과 판정과 구간 값 설명, §7 구간 쿼리만 다시 봄. 같은 날 서빙 경로 전환에 맞춰 §3 `DispatcherServlet` 행과 5장 머리 메모만 고침. 2026-11-06에는 §3·§4.1 워밍업이 스냅샷에 담는 것과 3회의 근거, §8 메모리 요금 문장, 2026-11-05에는 §4.6 AWS SDK 첫 호출 데우기와 §7 측정 방법 추가)
 
 이 문서는 **"왜 느렸고, 무엇을 근거로 무엇을 바꿨는지"** 를 남긴다.
 배포 절차는 [DEPLOY.md](./DEPLOY.md), 무엇이 바뀌었는지는 [CHANGELOG.md](../CHANGELOG.md)를 참고.
@@ -428,8 +428,10 @@ aws lambda invoke --function-name link-sphere-api:<버전> --log-type Tail \
 `event.json`은 항상 같은 엔드포인트를 쓴다:
 
 ```json
-{"rawPath":"/api/post","rawQueryString":"page=0&size=5","requestContext":{"http":{"method":"GET"}}}
+{"rawPath":"/api/post","rawQueryString":"size=5","requestContext":{"http":{"method":"GET"}}}
 ```
+
+2026-11-12까지는 `page=0&size=5`였다. 목록이 cursor로만 읽게 되면서 `page`를 보내면 400이라 뺐다([PAGINATION.md](PAGINATION.md)). 둘 다 최신순 첫 5건을 읽는다.
 
 **반드시 지킬 조건 두 가지**:
 

@@ -1,8 +1,6 @@
 package com.example.linksphere.domain.comment
 
 import org.springframework.data.domain.Limit
-import org.springframework.data.domain.Page
-import org.springframework.data.domain.Pageable
 import org.springframework.data.jpa.repository.EntityGraph
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Query
@@ -22,23 +20,11 @@ interface CommentRepository : JpaRepository<TableComment, UUID> {
 
     fun countByPostId(postId: UUID): Long
 
-    // "내 댓글" 목록용 - 원글 제목을 같이 내려줘야 해서 join fetch로 N+1을 막는다.
+    // "내 댓글" 목록 첫 쪽 - 원글 제목을 같이 내려줘야 해서 join fetch로 N+1을 막는다.
     // 톰스톤(isDeleted)은 내용이 이미 지워져 보여줄 게 없어 제외한다. 가시성 게이트
     // (p.isPrivate = false OR p.userId = :userId)는 PostRepositoryImpl의 목록 조회
     // 게이트와 동일한 기준 - 댓글을 단 뒤 원글이 비공개로 전환되면 남의 글 제목이
-    // 새지 않도록 막는다. count 쿼리는 fetch join을 못 쓰므로 별도로 명시한다.
-    @Query(
-        value = "SELECT c FROM TableComment c JOIN FETCH c.post p " +
-            "WHERE c.userId = :userId AND c.isDeleted = false " +
-            "AND (p.isPrivate = false OR p.userId = :userId) " +
-            "ORDER BY c.createdAt DESC, c.id DESC",
-        countQuery = "SELECT COUNT(c) FROM TableComment c JOIN c.post p " +
-            "WHERE c.userId = :userId AND c.isDeleted = false " +
-            "AND (p.isPrivate = false OR p.userId = :userId)",
-    )
-    fun findMyComments(@Param("userId") userId: UUID, pageable: Pageable): Page<TableComment>
-
-    // findMyComments의 cursor 판 첫 쪽. 조건은 위와 같다. join fetch가 ManyToOne이라 limit을 DB에서 건다.
+    // 새지 않도록 막는다. join fetch가 ManyToOne이라 limit을 DB에서 건다.
     @Query(
         "SELECT c FROM TableComment c JOIN FETCH c.post p " +
             "WHERE c.userId = :userId AND c.isDeleted = false " +
@@ -47,7 +33,7 @@ interface CommentRepository : JpaRepository<TableComment, UUID> {
     )
     fun findMyCommentsFirst(@Param("userId") userId: UUID, limit: Limit): List<TableComment>
 
-    // findMyComments의 cursor 판 다음 쪽. 앞의 상한이 있어야 인덱스로 시작 지점을 찾는다(SeekPredicate 주석 참고).
+    // "내 댓글" 목록 다음 쪽. 조건은 위와 같다. 앞의 상한이 있어야 인덱스로 시작 지점을 찾는다(SeekPredicate 주석 참고).
     @Query(
         "SELECT c FROM TableComment c JOIN FETCH c.post p " +
             "WHERE c.userId = :userId AND c.isDeleted = false " +

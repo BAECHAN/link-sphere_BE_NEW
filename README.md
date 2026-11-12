@@ -223,7 +223,7 @@ src/main/kotlin/com/example/linksphere/
 `/link-preview`는 `/post` 아래가 아니다 — `GET /post/*`가 비로그인에게 열려 있어, 그 아래 두면 로그인 없이 크롤링을
 시키는 경로가 된다(`LinkPreviewController`).
 
-**게시글 목록 쿼리 파라미터**: `category`, `search`, `filter`, `nickname`, `cursor`, `size`. 첫 쪽은 `cursor` 없이 요청하고 다음 쪽은 응답의 `nextCursor`를 보낸다(`null`이면 끝). `page`는 옛 번들용이고 곧 없어진다([`docs/PAGINATION.md`](docs/PAGINATION.md)).
+**게시글 목록 쿼리 파라미터**: `category`, `search`, `filter`, `nickname`, `cursor`, `size`. 첫 쪽은 `cursor` 없이 요청하고 다음 쪽은 응답의 `nextCursor`를 보낸다(`null`이면 끝). `page`를 보내면 400 `INVALID_INPUT`이다([`docs/PAGINATION.md`](docs/PAGINATION.md)).
 
 ### 💬 Comment (`/post/{postId}/comment`, `/comment/{id}`)
 

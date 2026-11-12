@@ -214,7 +214,7 @@ class CommentControllerTest {
     }
 
     @Test
-    fun `내 댓글은 page 없이 조회하면 cursor로 읽는다`() {
+    fun `내 댓글은 cursor로 읽는다`() {
         val memberId = givenValidToken()
         `when`(commentService.getMyCommentsByCursor(memberId, "next", 10)).thenReturn(MyCommentPageResponse(emptyList(), nextCursor = "after-next"))
 
@@ -223,15 +223,16 @@ class CommentControllerTest {
             .andExpect(jsonPath("$.data.nextCursor").value("after-next"))
     }
 
+    // cursor 전환 전 번들이 보내는 값 - PostSecurityTest의 같은 테스트 참고
     @Test
-    fun `내 댓글은 page를 보내면 옛 경로로 읽는다`() {
-        val memberId = givenValidToken()
-        `when`(commentService.getMyComments(memberId, 1, 10))
-            .thenReturn(MyCommentPageResponse(emptyList(), page = 1, size = 10, totalElements = 11, totalPages = 2, last = true))
+    fun `내 댓글은 page를 보내면 400 INVALID_INPUT을 주고 목록을 읽지 않는다`() {
+        givenValidToken()
 
-        mockMvc.perform(get("/comment/my").param("page", "1").header("X-Access-Token", "valid-token"))
-            .andExpect(status().isOk)
-            .andExpect(jsonPath("$.data.page").value(1))
+        mockMvc.perform(get("/comment/my").param("page", "NaN").header("X-Access-Token", "valid-token"))
+            .andExpect(status().isBadRequest)
+            .andExpect(jsonPath("$.code").value("INVALID_INPUT"))
+
+        verifyNoInteractions(commentService)
     }
 
     @Test

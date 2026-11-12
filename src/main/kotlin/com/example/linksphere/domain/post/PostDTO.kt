@@ -1,8 +1,6 @@
 package com.example.linksphere.domain.post
 
 import com.example.linksphere.domain.category.CategoryResponse
-import io.swagger.v3.oas.annotations.media.Schema
-import org.springframework.data.domain.Page
 import java.time.LocalDateTime
 import java.util.UUID
 
@@ -82,33 +80,11 @@ data class PostResponse(
 
 data class PostPageResponse(
     val content: List<PostResponse>,
-    // 다음 쪽을 읽을 cursor. null이면 마지막 쪽이다. page로 요청하면 채우지 않는다.
+    // 다음 쪽을 읽을 cursor. null이면 마지막 쪽이다.
     val nextCursor: String? = null,
-    // 아래 5개는 page로 요청한 옛 번들에만 채운다. cursor로 요청하면 null이다.
-    @field:Schema(deprecated = true) val page: Int? = null,
-    @field:Schema(deprecated = true) val size: Int? = null,
-    @field:Schema(deprecated = true) val totalElements: Long? = null,
-    @field:Schema(deprecated = true) val totalPages: Int? = null,
-    @field:Schema(deprecated = true) val last: Boolean? = null,
     // 한/영 자판 미스매칭 보정으로 재검색했을 때만 채워진다 (예: spdlqj -> 네이버)
     val correctedSearch: String? = null,
-) {
-    companion object {
-        fun from(
-            page: Page<TablePost>,
-            postResponses: List<PostResponse>,
-            correctedSearch: String? = null,
-        ): PostPageResponse = PostPageResponse(
-            content = postResponses,
-            page = page.number,
-            size = page.size,
-            totalElements = page.totalElements,
-            totalPages = page.totalPages,
-            last = page.isLast,
-            correctedSearch = correctedSearch,
-        )
-    }
-}
+)
 
 data class PostCreatedEvent(
     val postId: UUID,

@@ -86,7 +86,7 @@ object PostSearchQuery {
     /**
      * queryEmbedding으로 임계값(MAX_COSINE_DISTANCE) 안의 게시글 id → 거리 맵을 네이티브
      * 쿼리로 미리 뽑는다. count/data 양쪽 쿼리가 이 결과를 공유해야 총 건수와 실제 반환
-     * 건수가 항상 일치한다 - findPosts/findBookmarkedPosts에서 한 번만 호출한다.
+     * 건수가 항상 일치한다 - findPostsAfter/findBookmarkedPostsAfter에서 한 번만 호출한다.
      */
     fun resolveSemanticMatches(entityManager: EntityManager, queryEmbedding: FloatArray?): Map<UUID, Double> {
         if (queryEmbedding == null) return emptyMap()
