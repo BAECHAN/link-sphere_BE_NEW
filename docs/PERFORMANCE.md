@@ -431,7 +431,7 @@ aws lambda invoke --function-name link-sphere-api:<버전> --log-type Tail \
 {"rawPath":"/api/post","rawQueryString":"size=5","requestContext":{"http":{"method":"GET"}}}
 ```
 
-2026-11-12까지는 `page=0&size=5`였다. 목록이 cursor로만 읽게 되면서 `page`를 보내면 400이라 뺐다([PAGINATION.md](PAGINATION.md)). 둘 다 최신순 첫 5건을 읽는다.
+2026-11-12까지는 `page=0&size=5`였다. 목록이 cursor로만 읽게 되면서 `page`를 받지 않아 뺐다([PAGINATION.md](PAGINATION.md) §5.1). 둘 다 최신순 첫 5건을 읽는다.
 
 **반드시 지킬 조건 두 가지**:
 

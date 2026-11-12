@@ -229,16 +229,6 @@ class PostSecurityTest {
         assertEquals(1, mockingDetails(rateLimitService).invocations.size)
     }
 
-    // cursor 전환 전 번들은 다음 쪽에서 page=NaN을 보낸다(undefined + 1). 무시하면 매번 첫 쪽을 받아 다음 쪽 요청이 멈추지 않는다.
-    @Test
-    fun `page를 보내면 400 INVALID_INPUT을 주고 목록도 호출 한도도 건드리지 않는다`() {
-        mockMvc.perform(get("/post").param("search", "spring").param("page", "NaN"))
-            .andExpect(status().isBadRequest)
-            .andExpect(jsonPath("$.code").value("INVALID_INPUT"))
-
-        verifyNoInteractions(postService, rateLimitService)
-    }
-
     @Test
     fun `잘못된 cursor는 400 INVALID_INPUT을 준다`() {
         `when`(postService.getPostsByCursor(isNull(), isNull(), isNull(), isNull(), eq("broken"), eq(10), isNull(), anyEmbeddingGate()))

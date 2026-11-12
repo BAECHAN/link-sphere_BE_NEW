@@ -1,12 +1,12 @@
 # Link-Sphere BE — 목록 페이지네이션: offset과 cursor 비교
 
-> **문서 성격**: 서사형(설명) — offset을 cursor로 바꾸게 한 실험과 전환된 구조를 기록한다. 지금 BE는 cursor로만 읽는다. FE는 [FE #549](https://github.com/BAECHAN/link-sphere_FE_NEW/pull/549)(2026-11-05 배포)부터 cursor로 요청하고, 그 전에 연 옛 탭이 보내는 `page`는 400으로 끝낸다(Phase 4, 2026-11-12). offset 경로는 실험과 비교 기록으로만 남는다.
+> **문서 성격**: 서사형(설명) — offset을 cursor로 바꾸게 한 실험과 전환된 구조를 기록한다. 지금 BE는 cursor로만 읽는다. FE는 [FE #549](https://github.com/BAECHAN/link-sphere_FE_NEW/pull/549)(2026-11-05 배포)부터 cursor로 요청하고, 그 전에 연 옛 탭이 보내는 `page`는 받지 않고 무시한다(Phase 4, 2026-11-12, §5.1). offset 경로는 실험과 비교 기록으로만 남는다.
 >
 > **대상 독자**: 이 레포 BE를 처음 보거나, 무한 스크롤 목록을 새로 설계할 때 참고하려는 개발자.
 >
 > **읽고 나면**: 어떤 목록에서 cursor가 이득인지 수치로 말할 수 있고, 새 정렬을 추가하거나 cursor 형식을 바꿀 수 있으며, 실험을 다시 돌리거나 조건을 바꿔 잴 수 있다.
 >
-> **마지막 검토**: 2026-11-12 (Phase 4 옛 경로 제거와 운영 확인 반영). 2026-11-05 (Phase 3 FE 전환 반영)
+> **마지막 검토**: 2026-11-12 (Phase 4 옛 경로 제거와 운영 확인, `page` 400 코드 제거 반영). 2026-11-05 (Phase 3 FE 전환 반영)
 
 ## 1. 쉬운 설명
 
@@ -20,7 +20,7 @@
 ```mermaid
 flowchart TD
   A["사용자가 목록을 스크롤"] --> B{"어느 방식인가"}
-  B -->|"offset, Phase 4에서 없앰. 지금은 400"| C["GET /post?page=3&size=10"]
+  B -->|"offset, Phase 4에서 없앰. 지금은 page를 무시"| C["GET /post?page=3&size=10"]
   C --> D["DB: count 쿼리로 전체 건수 계산"]
   D --> E["DB: 앞의 30행을 읽어 버리고 10행 반환"]
   E --> F["응답: content, page, totalElements 등"]
@@ -79,9 +79,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-  R["GET 목록<br/>/post, /bookmark/folders/{key}/posts, /comment/my"] --> P{"page 파라미터가 있나"}
-  P -->|"예, 옛 번들"| O["400 INVALID_INPUT<br/>Paging.rejectPageParam"]
-  P -->|아니오| C{"cursor가 있나"}
+  R["GET 목록<br/>/post, /bookmark/folders/{key}/posts, /comment/my"] --> C{"cursor가 있나"}
   C -->|없음, 첫 쪽| S["정렬 결정<br/>검색이면 임베딩 호출·첫 쪽만 건수"]
   C -->|있음| V["CursorCodec.decode<br/>실패·정렬 불일치는 400 INVALID_INPUT"]
   V --> S2["cursor의 semantic·corrected 복원<br/>semantic=false면 Gemini·호출 한도 건너뜀"]
@@ -103,7 +101,11 @@ flowchart TD
 | 북마크 | [`BookmarkRepositoryImpl.kt:21`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkRepositoryImpl.kt#L21) `findBookmarkedPostsAfter`, [`BookmarkFolderService.kt:227`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkFolderService.kt#L227) | `findBookmarkedPosts`, `getBookmarkedPosts` |
 | 내 댓글 | [`CommentRepository.kt:34`](../src/main/kotlin/com/example/linksphere/domain/comment/CommentRepository.kt#L34) `findMyCommentsFirst`·`findMyCommentsAfter`, [`CommentService.kt:124`](../src/main/kotlin/com/example/linksphere/domain/comment/CommentService.kt#L124) | `findMyComments`, `getMyComments` |
 
-`page`는 세 컨트롤러가 스펙에서 숨긴 파라미터로 받아 [`Paging.rejectPageParam`](../src/main/kotlin/com/example/linksphere/global/common/Paging.kt)이 400으로 끝낸다. 그냥 없애면 옛 번들이 다음 쪽에 보내는 `page=NaN`이 무시돼 매번 첫 쪽을 받고, 자동 다음 쪽 요청이 멈추지 않는다. 400이면 FE가 재시도 화면을 띄우고 새로고침으로 복구된다. 이 400 코드를 언제 지울지는 정하지 않았다. 옛 탭 요청 수를 셀 방법이 없어서다(§11).
+`page`는 받지 않는다. 다른 모르는 쿼리 파라미터처럼 무시되고 cursor 첫 쪽이 나간다. Phase 4(#196)에서는 숨긴 파라미터로 받아 400으로 끝냈는데, 같은 날 그 코드도 지웠다(#198, 사용자 결정). 지운 이유와 대가는 이렇다.
+
+- **400을 둔 이유.** #549(2026-11-05) 전 FE 번들은 다음 쪽에 `page=NaN`을 보낸다(응답에 `last`·`page`가 없어 `undefined + 1`). 무시하면 매번 첫 쪽을 받는데, 그 번들은 같은 id를 걸러 내 목록이 늘지 않고 끝에 머물러 다음 쪽을 다시 부른다. 실패해야만 자동 요청을 멈추므로, 400이 멈춤 신호였다.
+- **지운 이유.** 그런 탭은 2026-11-05 뒤로 한 번도 이동하지 않은 탭뿐이다(이동하면 새 버전 자동 새로고침이 새 번들로 바꾼다). 사용자가 지금 그런 탭을 쓰는 사람이 없다고 판단했다.
+- **대가.** 그런 탭이 남아 있으면 피드 끝에서 WAF IP 한도(5분 1,000회, [TRAFFIC-MANAGEMENT.md](TRAFFIC-MANAGEMENT.md) 7장)까지 첫 쪽을 반복해 받는다. 그 IP는 몇 분간 사이트 전체가 403이 되고(같은 IP를 쓰는 다른 사람 포함), 403은 실패라 그때 자동 요청이 멈춘다. 새로고침하면 새 번들로 회복된다. 옛 번들 코드를 따라간 결과이고 실행해 보지는 않았다.
 
 **정렬 키**(마지막 키가 동점을 끊는 고유 값)
 
@@ -439,6 +441,8 @@ flowchart TD
 
 **북마크와 내 댓글은 다시 넘겨 보지 않았다.** 이번 변경은 cursor 경로를 고치지 않고 옛 경로만 지웠다. 세 컨트롤러가 `page`에 400을 주는 것은 컨트롤러 테스트로 확인했다.
 
+이 400 코드는 같은 날 [#198](https://github.com/BAECHAN/link-sphere_BE_NEW/pull/198)에서 지웠다(사용자 결정, §5.1). 위 표의 `page=0` 행은 그 전 기록이다.
+
 ## 10. 시행착오
 
 - **"검색 cursor는 위험하다"는 초기 판단은 근거가 없었다.** 처음에는 의미 점수가 쪽 사이에 바뀌면 cursor가 더 많이 놓칠 거라고 봤다. 공개 글 328개로 시뮬레이션하니 offset과 비슷했고, 운영 로그 30일에서 같은 검색어의 상태가 바뀐 경우는 16쌍 중 0건이었다(표본이 작다).
@@ -453,7 +457,6 @@ flowchart TD
 
 ## 11. 남은 것
 
-- `page`를 받아 400으로 끝내는 코드를 언제 지울지 — 계획은 운영 로그의 `page=` 요청이 사라지는 것을 보고 정한다고 했지만, Lambda 로그에 요청 주소가 남지 않고(2026-11-06 확인) 옛 경로에 로그를 더하는 안은 2026-11-07 하지 않기로 했다. 셀 방법이 없어 정하지 않고 남겨 둔다. 지우면 그때까지 남은 옛 탭이 첫 쪽을 거듭 받으며 다음 쪽 요청을 멈추지 않는다(§5.1).
 - 범위 밖: 결과 스냅샷, 전용 검색 엔진, 임베딩 캐시, 목록 조회에서 쓰지 않는 `embedding` 컬럼 제외.
 
 ## 12. 용어 사전

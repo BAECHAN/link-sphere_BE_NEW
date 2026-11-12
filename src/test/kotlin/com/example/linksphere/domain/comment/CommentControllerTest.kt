@@ -223,18 +223,6 @@ class CommentControllerTest {
             .andExpect(jsonPath("$.data.nextCursor").value("after-next"))
     }
 
-    // cursor 전환 전 번들이 보내는 값 - PostSecurityTest의 같은 테스트 참고
-    @Test
-    fun `내 댓글은 page를 보내면 400 INVALID_INPUT을 주고 목록을 읽지 않는다`() {
-        givenValidToken()
-
-        mockMvc.perform(get("/comment/my").param("page", "NaN").header("X-Access-Token", "valid-token"))
-            .andExpect(status().isBadRequest)
-            .andExpect(jsonPath("$.code").value("INVALID_INPUT"))
-
-        verifyNoInteractions(commentService)
-    }
-
     @Test
     fun `내 댓글의 잘못된 cursor는 400 INVALID_INPUT을 준다`() {
         val memberId = givenValidToken()

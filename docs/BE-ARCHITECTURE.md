@@ -7,7 +7,7 @@
 > **읽고 나면**: 요청이 어느 코드를 거치는지, 레이어끼리 무엇을 참조하고 어떤 타입을 주고받는지(§3) 따라갈 수 있고, 자동 검사(§2)와 선례 패턴(§7)에 맞춰 새 코드를 쓸 수 있다.
 > 지금 코드가 규칙과 어긋나는 곳은 §9에 모아 두었다 — 그쪽을 본떠 쓰지 않는다.
 >
-> **마지막 검토**: 2026-11-12 (§4 실패 표의 `page=-1` 예, §7-8 N+1의 `countQuery` 예, §7-9 페이징의 `page` 서술만 고침). 이전 2026-11-11 (§3 컨트롤러·Service에 두는 한도와 §7-3 조회 기록만 고침). 이전 2026-11-10 (§1 요청 파이프라인의 서빙 경로만 고침), 2026-11-07
+> **마지막 검토**: 2026-11-12 (§4 실패 표의 `page=-1` 예, §7-8 N+1의 `countQuery` 예, §7-9 페이징의 `page` 서술만 고침, 같은 날 `page` 400 코드 제거를 반영). 이전 2026-11-11 (§3 컨트롤러·Service에 두는 한도와 §7-3 조회 기록만 고침). 이전 2026-11-10 (§1 요청 파이프라인의 서빙 경로만 고침), 2026-11-07
 
 시스템 전체(CloudFront·S3·Lambda·배포 파이프라인)는 FE 레포
 [`docs/SYSTEM-ARCHITECTURE.md`](https://github.com/BAECHAN/link-sphere_FE_NEW/blob/main/docs/SYSTEM-ARCHITECTURE.md)가,
@@ -613,7 +613,7 @@ for (id in ids) {
 - **언제**: 쪽 번호 없이 이어 붙이는 목록 API. 세 목록(피드·북마크·내 댓글)이 `cursor`·`size`를 받고 `nextCursor`를 돌려준다.
 - **정석**: `Paging.coerceSize(size)`로 1~50으로 묶고(무제한 size 요청 방어) size+1개를 읽어 다음 쪽 유무를 정한다. 조회는 `KeysetQuery`로 한다 — 조건을 WHERE에 바로 쓰는 `directRows`, 파생 테이블에서 계산하는 `derivedRows` 중 첫 키에 맞는 것을 고른다. cursor는 `CursorCodec`으로 만들고 읽으며, 못 읽으면 `InvalidInputException`이다. 왜 형태가 둘인지와 키 표는 [`PAGINATION.md`](PAGINATION.md) §5.
 - 마지막 정렬 키는 동점을 끊는 고유 값이고 NULL이면 안 된다. 비교에서 빠져 그 행을 다시는 읽지 못한다.
-- `page`는 받지 않는다. cursor 전환 전 번들이 보내는 값이라 세 컨트롤러가 숨긴 파라미터로 받아 `Paging.rejectPageParam`으로 400을 낸다(이유는 [`PAGINATION.md`](PAGINATION.md) §5.1).
+- `page`는 받지 않는다. cursor 전환 전 번들이 보내는 값이지만 다른 모르는 쿼리 파라미터처럼 무시한다(400으로 끝내던 코드를 지운 이유와 대가는 [`PAGINATION.md`](PAGINATION.md) §5.1).
 - **안티패턴**: 목록에 `page`(offset)를 다시 들이기, size를 `coerceSize` 없이 쓰기(상한 없음), 정렬 키 하나만 써 페이지 경계에서 중복·누락, 비싼 계산식 첫 키를 WHERE에 바로 써 행마다 다시 계산.
 
 ### 7-10. 비공개 글 404 게이트
