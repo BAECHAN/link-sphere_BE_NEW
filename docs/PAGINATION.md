@@ -6,7 +6,7 @@
 >
 > **읽고 나면**: 어떤 목록에서 cursor가 이득인지 수치로 말할 수 있고, 새 정렬을 추가하거나 cursor 형식을 바꿀 수 있으며, 실험을 다시 돌리거나 조건을 바꿔 잴 수 있다.
 >
-> **마지막 검토**: 2026-11-12 (Phase 4 옛 경로 제거 반영). 2026-11-05 (Phase 3 FE 전환 반영)
+> **마지막 검토**: 2026-11-12 (Phase 4 옛 경로 제거와 운영 확인 반영). 2026-11-05 (Phase 3 FE 전환 반영)
 
 ## 1. 쉬운 설명
 
@@ -423,6 +423,21 @@ flowchart TD
 | 북마크 폴더, 내 댓글을 로그인 계정으로 끝까지 스크롤 | 사용자 확인, 문제없음 |
 
 **북마크와 내 댓글의 운영 확인은 사용자 보고다.** 녹화에 쓸 로그인 쿠키가 없어 자동 확인은 모킹으로만 했고, 쪽 수와 건수 기록은 없다.
+
+### 9.11 옛 경로 제거 뒤 운영 확인 (Phase 4)
+
+[#196](https://github.com/BAECHAN/link-sphere_BE_NEW/pull/196)을 배포한 뒤 확인했다(2026-11-12, 직접 측정). WAF 한도 때문에 요청은 아래 표만큼만 보냈다.
+
+| 확인 | 결과 |
+| --- | --- |
+| 배포 관문(새 버전에 `size=5` 5회, 5회차 `nextCursor`로 다음 쪽) | 성공, 머지 커밋 `29a02d8`의 배포 run |
+| `GET /api/post?page=0&size=5` | 400 `INVALID_INPUT` `page is no longer supported, use cursor` |
+| `GET /api/post?size=5` | 200, 응답 키 `content`·`correctedSearch`·`nextCursor`, 5건 |
+| 위 `nextCursor`로 다음 쪽 | 200, 5건, 첫 쪽과 겹침 0 |
+| 운영 스펙과 직전 스펙 비교(CI와 같은 oasdiff 이미지) | 18건 모두 info, error 0. `page`가 deprecated, 옛 필드가 선택 필드여서 깨지는 변경으로 보지 않았다 |
+| FE 생성 스펙 다시 받기([FE #602](https://github.com/BAECHAN/link-sphere_FE_NEW/pull/602)) | 차이가 #196 변경분뿐 |
+
+**북마크와 내 댓글은 다시 넘겨 보지 않았다.** 이번 변경은 cursor 경로를 고치지 않고 옛 경로만 지웠다. 세 컨트롤러가 `page`에 400을 주는 것은 컨트롤러 테스트로 확인했다.
 
 ## 10. 시행착오
 
