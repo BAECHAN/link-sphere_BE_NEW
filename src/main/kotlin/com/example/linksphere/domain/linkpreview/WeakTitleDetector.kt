@@ -1,4 +1,4 @@
-package com.example.linksphere.domain.post
+package com.example.linksphere.domain.linkpreview
 
 /**
  * 크롤링으로 얻은 제목이 "쓸 만한 제목"인지 판정한다.

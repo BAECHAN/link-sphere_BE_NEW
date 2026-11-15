@@ -4,6 +4,8 @@ import com.example.linksphere.domain.feed.FeedEntry
 import com.example.linksphere.domain.feed.FeedParser
 import com.example.linksphere.domain.feed.FeedSourceRepository
 import com.example.linksphere.domain.feed.TableFeedSource
+import com.example.linksphere.domain.linkpreview.UrlMetadata
+import com.example.linksphere.domain.linkpreview.UrlMetadataExtractor
 import com.example.linksphere.domain.member.MemberRepository
 import com.example.linksphere.domain.member.TableMember
 import com.example.linksphere.domain.post.AiStatus
@@ -11,8 +13,6 @@ import com.example.linksphere.domain.post.PostAIService
 import com.example.linksphere.domain.post.PostCreatedEvent
 import com.example.linksphere.domain.post.PostRepository
 import com.example.linksphere.domain.post.TablePost
-import com.example.linksphere.domain.post.UrlMetadata
-import com.example.linksphere.domain.post.UrlMetadataExtractor
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith

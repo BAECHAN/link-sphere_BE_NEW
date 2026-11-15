@@ -78,10 +78,15 @@ src/main/kotlin/com/example/linksphere/
 │   │   ├── PostResponseAssembler.kt     # 목록·상세 응답 조립(작성자·좋아요·북마크·댓글수 batch fetch)
 │   │   ├── PostCategoryClassifier.kt    # AI 카테고리 분류
 │   │   ├── PostSearchQuery.kt           # 키워드·의미 검색 조건 조립
+│   │   ├── LinkPreviewController.kt     # 등록 전 링크 미리보기 API(GET /link-preview) — 부품은 linkpreview/
+│   │   └── TablePost.kt
+│   ├── linkpreview/                     # URL 검증·메타데이터 추출·미리보기 캐시(API는 post/LinkPreviewController)
 │   │   ├── SafeUrlValidator.kt          # SSRF 방어(내부망·해석 불가 URL 거부)
-│   │   ├── LinkPreviewController.kt / LinkPreviewService.kt / LinkPreviewRepository.kt  # 등록 전 링크 미리보기(10분 캐시)
-│   │   ├── TablePost.kt
-│   │   └── UrlMetadataExtractor.kt      # URL 크롤링 / YouTube 인라인 JSON·oEmbed
+│   │   ├── UrlMetadataExtractor.kt      # URL 크롤링 / YouTube 인라인 JSON·oEmbed
+│   │   ├── WeakTitleDetector.kt         # 크롤링한 제목이 URL·사이트명 수준인지 판정
+│   │   ├── LinkPreviewService.kt        # 미리보기 결과 10분 캐시(link_previews)
+│   │   ├── LinkPreviewRepository.kt
+│   │   └── TableLinkPreview.kt
 │   ├── comment/                         # 댓글 도메인
 │   │   ├── CommentController.kt         # 댓글·답글 CRUD (이미지 포함)
 │   │   ├── CommentDTO.kt

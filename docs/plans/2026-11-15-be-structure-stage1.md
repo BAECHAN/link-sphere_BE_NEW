@@ -4,7 +4,7 @@
 
 ## 구현 결과
 
-> PR-B #201 · PR-A #202 · 2026-11-15 대조(PR-C는 아직) · PR-B 이탈 0 · 미구현 2(둘 다 보완함) · PR-A 이탈 1 · 미구현 0 — 판정 근거(파일:줄)는 각 PR 본문 "계획 대비 구현"
+> PR-B #201 · PR-A #202 · PR-C #203 · 2026-11-15 대조 · PR-B 이탈 0 · 미구현 2(둘 다 보완함) · PR-A 이탈 1 · 미구현 0 · PR-C 이탈 0 · 미구현 1(보완함) — 판정 근거(파일:줄)는 각 PR 본문 "계획 대비 구현"
 
 **PR-B(#201)**
 
@@ -23,6 +23,14 @@
 - 계획에 없던 변경: 계정 수정 응답을 돌려주는 새 메서드(`updateAccountAndGet`)에 `@Transactional`을 직접 달았다 — 같은 클래스 안 호출이라 기존 `updateAccount`의 트랜잭션이 적용되지 않아서다. 트랜잭션 경계는 옮기기 전과 같다
 - 구현 때 정한 이름: `MemberService`의 `getAccount`·`updateAccountAndGet`·`checkNicknameAvailability`
 - 문서: 경로·줄을 적은 문서는 가리키는 줄이 밀리지 않아 고치지 않았다. README 트리와 BE-ARCHITECTURE 패키지 그래프(member → global.common)만 고쳤다
+
+**PR-C(#203)**
+
+- 미구현 → 보완함: `PostService`에 import 5줄이 늘면서 `TRAFFIC-MANAGEMENT.md`·`PAGINATION.md`·`AI-ASYNC-PROCESSING.md`가 적은 `PostService.kt` 줄 번호가 5줄씩 밀렸다. 대조에서 발견해 같은 PR에서 고쳤다
+- 계획대로: 6개 파일과 테스트 5개는 패키지 선언만 바뀌었고, 쓰는 쪽(post·comment·feed·tools)은 import만 바뀌었다. 특성 테스트 → 이동 → 문서 순서로 커밋을 나눴다
+- 계획에 없던 변경: 먼저 넣은 테스트에 두 가지를 더했다 — URL 검증에 실패하면 캐시를 건드리지 않는지(서비스), 한도를 넘으면 서비스를 부르지 않고 429와 `Retry-After`를 주는지(컨트롤러)
+- 계획에 없던 변경: README 트리에 전에 없던 `WeakTitleDetector.kt`·`TableLinkPreview.kt` 줄을 넣었고, BE-ARCHITECTURE §8의 순수 함수 테스트 예시 경로를 linkpreview로 고쳤다
+- 문서: README 트리, BE-ARCHITECTURE 패키지 그래프(post → infra.youtube가 빠지고 post·comment·feed → linkpreview, linkpreview → infra.youtube·global.common이 생김)와 "남은 것"의 linkpreview 경계 항목을 고쳤다. §1 패키지 역할 표·§3·§9는 바뀔 내용이 없어 그대로 뒀다
 
 <!-- plan-result:end -->
 

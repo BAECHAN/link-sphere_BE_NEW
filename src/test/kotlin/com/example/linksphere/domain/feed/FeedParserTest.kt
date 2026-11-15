@@ -7,7 +7,7 @@ import org.mockito.Mockito.mock
 class FeedParserTest {
 
     // parse()는 네트워크를 타지 않는 순수 함수라 UrlMetadataExtractor는 목으로만 채워둔다.
-    private val parser = FeedParser(mock(com.example.linksphere.domain.post.UrlMetadataExtractor::class.java))
+    private val parser = FeedParser(mock(com.example.linksphere.domain.linkpreview.UrlMetadataExtractor::class.java))
 
     @Test
     fun `parses RSS 2_0 items`() {

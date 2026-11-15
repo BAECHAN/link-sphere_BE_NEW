@@ -1,4 +1,4 @@
-package com.example.linksphere.domain.post
+package com.example.linksphere.domain.linkpreview
 
 import com.example.linksphere.infra.youtube.YoutubeVideoClient
 import com.example.linksphere.infra.youtube.dto.YoutubeSnippet

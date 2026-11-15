@@ -1,4 +1,4 @@
-package com.example.linksphere.domain.post
+package com.example.linksphere.domain.linkpreview
 
 import com.example.linksphere.global.exception.InvalidUrlException
 import org.springframework.stereotype.Component

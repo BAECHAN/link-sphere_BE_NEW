@@ -1,4 +1,4 @@
-package com.example.linksphere.domain.post
+package com.example.linksphere.domain.linkpreview
 
 import com.example.linksphere.global.common.SecureToken
 import org.junit.jupiter.api.Assertions.assertEquals

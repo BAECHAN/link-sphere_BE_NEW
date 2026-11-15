@@ -2,6 +2,10 @@ package com.example.linksphere.domain.post
 
 import com.example.linksphere.domain.category.CategoryService
 import com.example.linksphere.domain.comment.CommentService
+import com.example.linksphere.domain.linkpreview.LinkPreviewService
+import com.example.linksphere.domain.linkpreview.SafeUrlValidator
+import com.example.linksphere.domain.linkpreview.UrlMetadata
+import com.example.linksphere.domain.linkpreview.UrlMetadataExtractor
 import com.example.linksphere.global.common.AdvisoryLock
 import com.example.linksphere.global.exception.DuplicatePostException
 import com.example.linksphere.global.ratelimit.RateLimitService
