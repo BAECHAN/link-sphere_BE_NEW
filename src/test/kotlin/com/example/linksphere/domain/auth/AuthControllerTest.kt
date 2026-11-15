@@ -599,6 +599,17 @@ class AuthControllerTest {
             .andExpect(jsonPath("$.data.available").value(true))
     }
 
+    // 클래스의 @Validated가 빠지면 검증은 여전히 돌지만 Spring MVC 내장 검증(HandlerMethodValidationException)으로 바뀌어
+    // message 형식이 달라진다. 컨트롤러를 옮겨도 응답이 그대로인지 message 앞부분까지 고정한다.
+    @Test
+    @WithMockUser(username = MEMBER_ID)
+    fun `checkNicknameAvailability는 닉네임이 21자면 400 INVALID_INPUT과 파라미터 경로로 시작하는 message를 준다`() {
+        mockMvc.perform(get("/auth/account/nickname-availability").param("nickname", "a".repeat(21)))
+            .andExpect(status().isBadRequest)
+            .andExpect(jsonPath("$.code").value("INVALID_INPUT"))
+            .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.startsWith("checkNicknameAvailability.nickname:")))
+    }
+
     @Test
     @WithMockUser
     fun `login returns 401 when InvalidCredentialsException is thrown`() {
