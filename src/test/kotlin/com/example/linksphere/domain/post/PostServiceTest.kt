@@ -12,13 +12,13 @@ import com.example.linksphere.global.common.AdvisoryLock
 import com.example.linksphere.global.common.CursorCodec
 import com.example.linksphere.global.common.KeysetSlice
 import com.example.linksphere.global.common.Paging
-import com.example.linksphere.global.common.RateLimitService
 import com.example.linksphere.global.exception.BookmarkFolderNotFoundException
 import com.example.linksphere.global.exception.DuplicatePostException
 import com.example.linksphere.global.exception.EmailNotVerifiedException
 import com.example.linksphere.global.exception.ForbiddenException
 import com.example.linksphere.global.exception.InvalidInputException
 import com.example.linksphere.global.exception.PostNotFoundException
+import com.example.linksphere.global.ratelimit.RateLimitService
 import com.example.linksphere.infra.ai.GeminiService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull

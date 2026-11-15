@@ -3,7 +3,7 @@ package com.example.linksphere.domain.post
 import com.example.linksphere.domain.category.CategoryService
 import com.example.linksphere.domain.comment.CommentService
 import com.example.linksphere.global.common.AdvisoryLock
-import com.example.linksphere.global.common.RateLimitService
+import com.example.linksphere.global.ratelimit.RateLimitService
 import com.example.linksphere.infra.ai.GeminiService
 import com.example.linksphere.support.PostgresIntegrationTest
 import org.junit.jupiter.api.AfterEach

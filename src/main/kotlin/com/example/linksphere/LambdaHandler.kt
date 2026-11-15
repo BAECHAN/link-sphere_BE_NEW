@@ -22,7 +22,7 @@ import com.example.linksphere.domain.post.PostAIService
 import com.example.linksphere.domain.post.PostCreatedEvent
 import com.example.linksphere.domain.upload.OrphanImageGcService
 import com.example.linksphere.global.common.EmailMaskingLogCustomizer
-import com.example.linksphere.global.common.RateLimitService
+import com.example.linksphere.global.ratelimit.RateLimitService
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.slf4j.MDC

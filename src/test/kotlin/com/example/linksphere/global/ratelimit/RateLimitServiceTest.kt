@@ -1,7 +1,5 @@
-package com.example.linksphere.global.common
+package com.example.linksphere.global.ratelimit
 
-import com.example.linksphere.domain.auth.AuthRateLimitRepository
-import com.example.linksphere.domain.auth.TableAuthRateLimit
 import com.example.linksphere.global.exception.RateLimitExceededException
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -17,17 +15,17 @@ import org.mockito.Mockito.`when`
 import java.time.Duration
 import java.time.Instant
 
-// bucketKey·windowStart 둘 다 any()로 매칭한다 - AuthRateLimitRepository.kt 상단 주석 참고
+// bucketKey·windowStart 둘 다 any()로 매칭한다 - RateLimitRepository.kt 상단 주석 참고
 // (Kotlin non-null 파라미터를 eq()로도 감싸면 Mockito/Kotlin NPE가 나고 매처 스택이 오염돼
 // 다른 테스트까지 연쇄로 깨짐을 실측 확인해, 두 파라미터 다 nullable로 정정했다).
 class RateLimitServiceTest {
 
-    private lateinit var repository: AuthRateLimitRepository
+    private lateinit var repository: RateLimitRepository
     private lateinit var service: RateLimitService
 
     @BeforeEach
     fun setUp() {
-        repository = mock(AuthRateLimitRepository::class.java)
+        repository = mock(RateLimitRepository::class.java)
         service = RateLimitService(repository)
     }
 
@@ -41,7 +39,7 @@ class RateLimitServiceTest {
     @Test
     fun `checkNotExceeded는 누적 횟수가 한도 미만이면 통과시킨다`() {
         `when`(repository.findByBucketKeyAndWindowStart(any(), any()))
-            .thenReturn(TableAuthRateLimit(bucketKey = "bucket", windowStart = Instant.now(), hitCount = 4))
+            .thenReturn(TableRateLimit(bucketKey = "bucket", windowStart = Instant.now(), hitCount = 4))
 
         service.checkNotExceeded("bucket", 5, Duration.ofMinutes(15))
     }
@@ -49,7 +47,7 @@ class RateLimitServiceTest {
     @Test
     fun `checkNotExceeded는 누적 횟수가 한도에 도달하면 RateLimitExceededException을 던진다`() {
         `when`(repository.findByBucketKeyAndWindowStart(any(), any()))
-            .thenReturn(TableAuthRateLimit(bucketKey = "bucket", windowStart = Instant.now(), hitCount = 5))
+            .thenReturn(TableRateLimit(bucketKey = "bucket", windowStart = Instant.now(), hitCount = 5))
 
         assertThrows(RateLimitExceededException::class.java) {
             service.checkNotExceeded("bucket", 5, Duration.ofMinutes(15))
@@ -124,7 +122,7 @@ class RateLimitServiceTest {
     @Test
     fun `checkNotExceeded도 한도 도달 시 Retry-After 초를 담는다`() {
         `when`(repository.findByBucketKeyAndWindowStart(any(), any()))
-            .thenReturn(TableAuthRateLimit(bucketKey = "bucket", windowStart = Instant.now(), hitCount = 5))
+            .thenReturn(TableRateLimit(bucketKey = "bucket", windowStart = Instant.now(), hitCount = 5))
 
         val e =
             assertThrows(RateLimitExceededException::class.java) {

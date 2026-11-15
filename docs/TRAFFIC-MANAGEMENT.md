@@ -251,8 +251,8 @@ CloudWatch Logs로 보낼 때 [CloudWatch 요금](https://aws.amazon.com/cloudwa
 
 | 순서도 단계 | 파일 |
 |---|---|
-| 한도 계산 (`consume`·`tryConsume`·`checkNotExceeded`) | `global/common/RateLimitService.kt` |
-| 카운터 upsert·재조회 | `domain/auth/AuthRateLimitRepository.kt` (`incrementHit`, `findHitCount`) |
+| 한도 계산 (`consume`·`tryConsume`·`checkNotExceeded`) | `global/ratelimit/RateLimitService.kt` |
+| 카운터 upsert·재조회 | `global/ratelimit/RateLimitRepository.kt` (`incrementHit`, `findHitCount`) |
 | 429 응답 + `Retry-After` | `global/exception/GlobalExceptionHandler.kt` (`handleRateLimitExceededException`) |
 | 실제 요청자 IP | `global/common/ClientIpResolver.kt` |
 | size 상한 | `global/common/Paging.kt` |

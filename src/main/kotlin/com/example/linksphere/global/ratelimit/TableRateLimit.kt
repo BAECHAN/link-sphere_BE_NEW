@@ -1,4 +1,4 @@
-package com.example.linksphere.domain.auth
+package com.example.linksphere.global.ratelimit
 
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
@@ -8,7 +8,7 @@ import jakarta.persistence.Table
 import java.io.Serializable
 import java.time.Instant
 
-data class AuthRateLimitId(
+data class RateLimitId(
     val bucketKey: String = "",
     val windowStart: Instant = Instant.EPOCH,
 ) : Serializable
@@ -18,8 +18,8 @@ data class AuthRateLimitId(
 // IP는 원문으로 들어가므로 개인정보로 다룬다. 끝난 창의 행은 RateLimitService.purgeExpired가 지운다.
 @Entity
 @Table(name = "auth_rate_limits")
-@IdClass(AuthRateLimitId::class)
-class TableAuthRateLimit(
+@IdClass(RateLimitId::class)
+class TableRateLimit(
     @Id @Column(name = "bucket_key", nullable = false, length = 200) val bucketKey: String,
     @Id @Column(name = "window_start", nullable = false) val windowStart: Instant,
     @Column(name = "hit_count", nullable = false) var hitCount: Int = 0,

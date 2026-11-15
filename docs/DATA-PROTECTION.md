@@ -143,7 +143,7 @@ flowchart LR
 | --- | --- | --- | --- |
 | 이메일 정규식 | `[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}` | `global/common/EmailMaskingLogCustomizer.kt:23` | `user@localhost`처럼 TLD가 없으면 안 가린다 |
 | `sslmode` | `require` | `LambdaHandler.kt:107` | 기본값 `PREFER`는 평문으로 넘어갈 수 있다. `verify-full`은 §11 |
-| 레이트리밋 행 보존 | 1일 | `global/common/RateLimitService.kt:42` | 가장 긴 창(조회 기록 24시간)과 같다. 삭제 조건이 "창 시작이 1일보다 오래됨"이라 끝난 창만 지워진다. 더 긴 창을 쓰면 늘린다 |
+| 레이트리밋 행 보존 | 1일 | `global/ratelimit/RateLimitService.kt:42` | 가장 긴 창(조회 기록 24시간)과 같다. 삭제 조건이 "창 시작이 1일보다 오래됨"이라 끝난 창만 지워진다. 더 긴 창을 쓰면 늘린다 |
 | 행 삭제 주기 | 4일 | `link-sphere-feed-crawl` EventBridge 룰의 `account-purge` 타겟(레포 밖, [`DEPLOY.md`](./DEPLOY.md) 10장) | 새 룰 없이 기존 잡에 얹었다. 그래서 최대 약 5일 |
 | 중복 검사 한도 | IP당 1시간 60회 | `domain/auth/AuthController.kt:56-57` | 계측값이 아닌 판단. 링크 미리보기 한도와 같은 값이고 FE는 500ms 디바운스로 호출한다 |
 | 로그 보존 | 90일 | CloudWatch 설정(레포 밖). 그룹 4개: `/aws/lambda/link-sphere-api`, `/aws/lambda/link-sphere-be-lambda`, `/aws/apprunner/link-sphere-be/c09223138fad464093519b142e13daf3/application`, 같은 경로의 `/service` | 사고를 늦게 발견해도 볼 수 있는 기간으로 잡은 판단. 지난 로그는 되돌릴 수 없다 |
@@ -154,7 +154,7 @@ flowchart LR
 | --- | --- |
 | 로그 가림 | `global/common/EmailMaskingLogCustomizer.kt`, 등록은 `LambdaHandler.kt:106` |
 | TLS 강제 | `LambdaHandler.kt:107` |
-| 행 삭제 | `RateLimitService.purgeExpired`(`:91`) → `AuthRateLimitRepository.deleteOlderThan`, 호출은 `LambdaHandler.kt:336` |
+| 행 삭제 | `RateLimitService.purgeExpired`(`:91`) → `RateLimitRepository.deleteOlderThan`, 호출은 `LambdaHandler.kt:336` |
 | 중복 검사 한도 | `AuthController.checkEmailAvailability` |
 | 임시 조회 권한 | Supabase, SQL은 [`DEPLOY.md`](./DEPLOY.md) 12장 |
 

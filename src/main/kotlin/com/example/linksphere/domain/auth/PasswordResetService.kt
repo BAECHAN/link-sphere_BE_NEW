@@ -2,10 +2,10 @@ package com.example.linksphere.domain.auth
 
 import com.example.linksphere.domain.member.EmailNormalizer
 import com.example.linksphere.domain.member.MemberRepository
-import com.example.linksphere.global.common.RateLimitService
 import com.example.linksphere.global.common.SecureToken
 import com.example.linksphere.global.common.TransactionCallbacks
 import com.example.linksphere.global.exception.InvalidActionTokenException
+import com.example.linksphere.global.ratelimit.RateLimitService
 import com.example.linksphere.infra.mail.MailService
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.security.crypto.password.PasswordEncoder

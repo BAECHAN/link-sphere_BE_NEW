@@ -4,11 +4,11 @@ import com.example.linksphere.domain.member.MemberRole
 import com.example.linksphere.domain.member.MemberService
 import com.example.linksphere.domain.member.SignupRequest
 import com.example.linksphere.domain.member.TableMember
-import com.example.linksphere.global.common.RateLimitService
 import com.example.linksphere.global.common.SecureToken
 import com.example.linksphere.global.exception.InvalidActionTokenException
 import com.example.linksphere.global.exception.InvalidCredentialsException
 import com.example.linksphere.global.exception.RateLimitExceededException
+import com.example.linksphere.global.ratelimit.RateLimitService
 import com.example.linksphere.infra.mail.MailService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
@@ -34,7 +34,7 @@ import java.util.UUID
 // bucketKey·limit·window는 전부 AuthService가 실제로 만드는 값을 그대로 리터럴로 넘겨
 // 검증한다(any()/eq() 없이) - RateLimitService는 인터페이스가 아니라 클래스지만 Kotlin
 // non-null 파라미터에 any()를 쓰면 같은 Mockito/Kotlin NPE가 재현됨을 실측으로 확인했다
-// (AuthRateLimitRepository.kt 주석의 문제와 동일 메커니즘). "호출 안 됨"을 확인할 때는
+// (RateLimitRepository.kt 주석의 문제와 동일 메커니즘). "호출 안 됨"을 확인할 때는
 // verifyNoMoreInteractions로 대신한다.
 class AuthServiceTest {
 

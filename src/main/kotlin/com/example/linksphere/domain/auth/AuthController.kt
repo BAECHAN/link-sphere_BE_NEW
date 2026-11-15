@@ -5,8 +5,8 @@ import com.example.linksphere.domain.member.UpdateAccountRequest
 import com.example.linksphere.global.common.ApiResponse
 import com.example.linksphere.global.common.ClientIpResolver
 import com.example.linksphere.global.common.IdempotentCreate
-import com.example.linksphere.global.common.RateLimitService
 import com.example.linksphere.global.common.getUserId
+import com.example.linksphere.global.ratelimit.RateLimitService
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.security.SecurityRequirements
 import io.swagger.v3.oas.annotations.tags.Tag
