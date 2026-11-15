@@ -59,20 +59,4 @@ data class TokenResponse(val accessToken: String, val deletionCancelled: Boolean
 
 data class AuthResult(val accessToken: String, val refreshToken: String, val refreshExpiresInSeconds: Long, val deletionCancelled: Boolean = false)
 
-data class AccountResponse(
-    val id: String,
-    val nickname: String? = null,
-    val role: String = "USER", // Default role
-    val image: String? = null,
-    // 미인증이어도 로그인은 성공하므로 로그인된 사람도 false일 수 있다 - FE가 배지·글쓰기
-    // 차단 판단에 쓴다.
-    val emailVerified: Boolean = false,
-    // FE의 이메일 인증 재발송 버튼이 이 값을 그대로 요청 body에 실어 보낸다(재발송 API는
-    // 로그인 여부와 무관하게 이메일만으로 호출하도록 설계돼 세션에서 유추하지 않는다 -
-    // AuthController.requestEmailVerification 참고). 이 DTO의 다른 필드처럼 기본값을 둔다.
-    val email: String = "",
-)
-
-data class NicknameAvailabilityResponse(val available: Boolean)
-
 data class EmailAvailabilityResponse(val available: Boolean)

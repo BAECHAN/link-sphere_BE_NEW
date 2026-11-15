@@ -87,6 +87,18 @@ class MemberService(private val memberRepository: MemberRepository) {
         return memberRepository.save(member)
     }
 
+    // 아래 셋은 MemberController 전용이다 - 컨트롤러는 엔티티를 모르므로(LayerSkeletonRulesTest) 응답 DTO로 바꿔 돌려준다.
+    // 엔티티가 필요한 호출부(AuthService)는 위의 findById·updateAccount를 그대로 쓴다.
+    fun getAccount(id: UUID): AccountResponse = AccountResponse.from(findById(id))
+
+    // 같은 클래스 안의 호출은 프록시를 거치지 않아 updateAccount의 @Transactional이 적용되지 않는다 - 여기에 직접 단다
+    // (없으면 클래스의 readOnly 트랜잭션으로 돈다).
+    @Transactional
+    fun updateAccountAndGet(id: UUID, request: UpdateAccountRequest): AccountResponse = AccountResponse.from(updateAccount(id, request))
+
+    // userId가 없으면(가입 화면, 비로그인 조회) 본인 제외 없이 순수 존재 여부만 확인한다
+    fun checkNicknameAvailability(id: UUID?, nickname: String): NicknameAvailabilityResponse = NicknameAvailabilityResponse(isNicknameAvailable(id, nickname))
+
     // 새 비밀번호는 AuthService가 이미 인코딩해서 넘긴다 - updateAccount와 같은 위치에 두는
     // 이유는 "회원 데이터 변경은 MemberService를 거친다"는 규칙을 password에도 그대로
     // 적용하기 위함(AuthService는 TableMember 필드를 직접 건드리지 않는다).

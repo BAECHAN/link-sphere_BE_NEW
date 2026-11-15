@@ -127,6 +127,7 @@ flowchart LR
   domain_interaction --> domain_post
   domain_interaction --> global_common
   domain_interaction --> infra_ai
+  domain_member --> global_common
   domain_post --> domain_category
   domain_post -.-> domain_comment
   domain_post -.-> domain_interaction
