@@ -1,6 +1,9 @@
 package com.example.linksphere.domain.auth
 
+import com.example.linksphere.domain.member.AccountResponse
+import com.example.linksphere.domain.member.MemberController
 import com.example.linksphere.domain.member.MemberRole
+import com.example.linksphere.domain.member.MemberService
 import com.example.linksphere.domain.member.UpdateAccountRequest
 import com.example.linksphere.global.config.SecurityConfig
 import com.example.linksphere.global.config.security.CustomAccessDeniedHandler
@@ -25,11 +28,12 @@ import java.util.UUID
 
 /**
  * 계정 설정 4개 엔드포인트의 @PreAuthorize가 실제 SecurityConfig·SessionAuthenticationFilter로 역할 권한을 판정하는지
- * 검증한다(MemberRole.permissions). AuthControllerTest는 보안 체인을 빼고 돌아 메서드 보안을 볼 수 없다.
+ * 검증한다(MemberRole.permissions). 계정 수정은 MemberController, 나머지 셋은 AuthController에 있다.
+ * AuthControllerTest·MemberControllerTest는 보안 체인을 빼고 돌아 메서드 보안을 볼 수 없다.
  * 권한 거부는 GlobalExceptionHandler가 403 ACCESS_DENIED로 바꿔야 한다 - 처리기가 없으면 Exception 전체 처리기가
  * 500으로 내보내 App5xx 알람이 울린다.
  */
-@WebMvcTest(controllers = [AuthController::class])
+@WebMvcTest(controllers = [AuthController::class, MemberController::class])
 @Import(SecurityConfig::class, CustomAuthenticationEntryPoint::class, CustomAccessDeniedHandler::class)
 class AccountPermissionSecurityTest {
 
@@ -38,6 +42,8 @@ class AccountPermissionSecurityTest {
     @MockitoBean private lateinit var memberSessionService: MemberSessionService
 
     @MockitoBean private lateinit var authService: AuthService
+
+    @MockitoBean private lateinit var memberService: MemberService
 
     @MockitoBean private lateinit var accountDeletionService: AccountDeletionService
 
@@ -50,7 +56,7 @@ class AccountPermissionSecurityTest {
     @Test
     fun `USER 토큰이면 계정 설정 4개 엔드포인트를 모두 통과한다`() {
         tokenFor(MemberRole.USER)
-        `when`(authService.updateAccount(memberId, UpdateAccountRequest(nickname = "newNick", image = null)))
+        `when`(memberService.updateAccountAndGet(memberId, UpdateAccountRequest(nickname = "newNick", image = null)))
             .thenReturn(AccountResponse(id = memberId.toString(), nickname = "newNick"))
         `when`(authService.changePassword(memberId, ChangePasswordRequest(currentPassword = "current1!", newPassword = "newPassword1!")))
             .thenReturn(AuthResult("new-access-token", "new-refresh-token", refreshExpiresInSeconds = 604800L))
@@ -73,7 +79,7 @@ class AccountPermissionSecurityTest {
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"))
         }
 
-        verifyNoInteractions(authService, accountDeletionService)
+        verifyNoInteractions(authService, memberService, accountDeletionService)
     }
 
     private fun tokenFor(role: MemberRole) {

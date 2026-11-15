@@ -25,6 +25,27 @@ class MemberServiceTest {
 
     @InjectMocks private lateinit var memberService: MemberService
 
+    // 응답 role은 예전 고정값 "USER"가 아니라 회원 역할이다
+    @Test
+    fun `getAccount는 회원 역할을 응답 role에 담는다`() {
+        val memberId = UUID.randomUUID()
+        `when`(memberRepository.findById(memberId))
+            .thenReturn(Optional.of(TableMember(id = memberId, email = "demo@example.com", password = "encoded", role = MemberRole.DEMO)))
+
+        val account = memberService.getAccount(memberId)
+
+        assertEquals("DEMO", account.role)
+        assertEquals(memberId.toString(), account.id)
+        assertEquals("demo@example.com", account.email)
+    }
+
+    @Test
+    fun `checkNicknameAvailability는 isNicknameAvailable 결과를 응답 DTO로 감싼다`() {
+        `when`(memberRepository.existsByNicknameIgnoreCase("taken")).thenReturn(true)
+
+        assertEquals(NicknameAvailabilityResponse(false), memberService.checkNicknameAvailability(null, "taken"))
+    }
+
     @Test
     fun `signup throws DuplicateMemberException when email exists`() {
         val request = SignupRequest("test@example.com", "password", "testuser")

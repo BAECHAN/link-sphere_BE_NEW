@@ -1,7 +1,7 @@
 package com.example.linksphere.domain.auth
 
+import com.example.linksphere.domain.member.AccountResponse
 import com.example.linksphere.domain.member.SignupRequest
-import com.example.linksphere.domain.member.UpdateAccountRequest
 import com.example.linksphere.global.common.ApiResponse
 import com.example.linksphere.global.common.ClientIpResolver
 import com.example.linksphere.global.common.IdempotentCreate
@@ -156,31 +156,6 @@ class AuthController(
     }
 
     @Operation(
-        summary = "내 계정 조회",
-        description = "인증된 세션이 가리키는 회원 ID로 조회한다.",
-    )
-    @GetMapping("/account")
-    fun getAccount(authentication: Authentication): ApiResponse<AccountResponse> {
-        val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
-        return ApiResponse(HttpStatus.OK.value(), "Account retrieved", authService.getAccount(userId))
-    }
-
-    @Operation(
-        summary = "내 계정 수정",
-        description = "nickname·image 만 부분 수정한다(null 인 필드는 유지). " +
-            "실패: 409 DUPLICATE_NICKNAME(닉네임 중복) · 403 ACCESS_DENIED(데모 계정처럼 이 권한이 없는 역할)",
-    )
-    @PreAuthorize("hasAuthority('ACCOUNT_PROFILE_UPDATE')")
-    @PatchMapping("/account")
-    fun updateAccount(
-        @Valid @RequestBody request: UpdateAccountRequest,
-        authentication: Authentication,
-    ): ApiResponse<AccountResponse> {
-        val userId = authentication.getUserId() ?: throw IllegalStateException("User not authenticated")
-        return ApiResponse(HttpStatus.OK.value(), "Account updated", authService.updateAccount(userId, request))
-    }
-
-    @Operation(
         summary = "비밀번호 변경",
         description = "현재 비밀번호 확인 후 변경한다. 성공하면 이 기기를 포함한 모든 세션이 폐기되고 " +
             "이 기기에는 새 세션이 발급된다(쿠키도 새로 세팅됨) - 다른 기기는 재로그인이 필요하다. " +
@@ -295,25 +270,6 @@ class AuthController(
         authService.confirmEmailVerification(request.token)
         return ApiResponse(HttpStatus.OK.value(), "Email verified", Unit)
     }
-
-    // 마이페이지(로그인)와 가입 화면(비로그인) 둘 다에서 쓴다 - permitAll 경로라 인증 안 된
-    // 요청은 authentication이 null이 아니라 이름이 "anonymousUser"인 익명 토큰으로 들어오고,
-    // getUserId()가 UUID 파싱에 실패해 null을 반환한다(AuthService가 그 null을 "본인 제외 없이
-    // 순수 존재 여부만 확인"으로 처리)
-    @Operation(
-        summary = "닉네임 사용 가능 여부 확인",
-        description = "비로그인도 호출할 수 있다. 로그인 상태로 보내면 본인 닉네임은 사용 가능으로 판정한다.",
-    )
-    @SecurityRequirements
-    @GetMapping("/account/nickname-availability")
-    fun checkNicknameAvailability(
-        @RequestParam @Size(max = 20) nickname: String,
-        authentication: Authentication?,
-    ): ApiResponse<NicknameAvailabilityResponse> = ApiResponse(
-        HttpStatus.OK.value(),
-        "Nickname availability checked",
-        authService.isNicknameAvailable(authentication.getUserId(), nickname),
-    )
 
     @Operation(
         summary = "이메일 사용 가능 여부 확인",

@@ -45,7 +45,7 @@ src/main/kotlin/com/example/linksphere/
 ├── FunctionUrlResponse.kt               # 라이브러리 응답 → Function URL 응답(cookies 배열·다중값 헤더)
 ├── domain/
 │   ├── auth/                            # 인증 도메인
-│   │   ├── AuthController.kt            # 회원가입, 로그인, 토큰 갱신, 로그아웃, 내 정보, 비밀번호 변경, 회원탈퇴
+│   │   ├── AuthController.kt            # 회원가입, 로그인, 토큰 갱신, 로그아웃, 비밀번호 변경, 회원탈퇴
 │   │   ├── AuthDTO.kt
 │   │   ├── AuthService.kt
 │   │   ├── AccountDeletionService.kt    # 회원탈퇴 신청(14일 유예)·유예 만료 시 익명화
@@ -60,8 +60,9 @@ src/main/kotlin/com/example/linksphere/
 │   ├── member/                          # 회원 도메인
 │   │   ├── TableMember.kt
 │   │   ├── MemberRepository.kt
+│   │   ├── MemberController.kt          # 내 계정 조회·수정, 닉네임 확인(경로는 /auth/account…)
 │   │   ├── MemberService.kt
-│   │   ├── MemberDTO.kt                 # 가입·계정 수정 요청(SignupRequest·UpdateAccountRequest)
+│   │   ├── MemberDTO.kt                 # 가입·계정 수정 요청과 계정 응답(SignupRequest·UpdateAccountRequest·AccountResponse)
 │   │   ├── PasswordPattern.kt           # 가입·비밀번호 변경·재설정이 공유하는 비밀번호 정규식
 │   │   ├── EmailNormalizer.kt           # 이메일 비교·저장 전 정규화(trim·소문자)
 │   │   └── EmailVerificationGate.kt     # 이메일 인증 전 회원의 글·댓글·답글 작성과 링크 미리보기 차단

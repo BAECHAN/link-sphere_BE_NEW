@@ -140,16 +140,6 @@ class AuthServiceTest {
         verify(rateLimitService, never()).recordHit(emailBucket, Duration.ofMinutes(15))
     }
 
-    // 응답 role은 예전 고정값 "USER"가 아니라 회원 역할이다
-    @Test
-    fun `getAccount는 회원 역할을 응답 role에 담는다`() {
-        val memberId = UUID.randomUUID()
-        `when`(memberService.findById(memberId))
-            .thenReturn(TableMember(id = memberId, email = "demo@example.com", password = "encoded", role = MemberRole.DEMO))
-
-        assertEquals("DEMO", authService.getAccount(memberId).role)
-    }
-
     @Test
     fun `login은 clientIp가 null이면 IP 버킷을 건드리지 않는다(RateLimitService의 null 무시에 위임)`() {
         val request = LoginRequest("test@example.com", "wrongpassword")

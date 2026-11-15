@@ -1,10 +1,10 @@
 package com.example.linksphere.domain.auth
 
+import com.example.linksphere.domain.member.AccountResponse
 import com.example.linksphere.domain.member.EmailNormalizer
 import com.example.linksphere.domain.member.MemberService
 import com.example.linksphere.domain.member.SignupRequest
 import com.example.linksphere.domain.member.TableMember
-import com.example.linksphere.domain.member.UpdateAccountRequest
 import com.example.linksphere.global.common.SecureToken
 import com.example.linksphere.global.common.TransactionCallbacks
 import com.example.linksphere.global.exception.InvalidActionTokenException
@@ -74,7 +74,7 @@ class AuthService(
             logger.error("[AuthService] 가입 인증메일 준비 실패(memberId=${member.id}): ${e.message}")
         }
 
-        return toAccountResponse(member)
+        return AccountResponse.from(member)
     }
 
     // 공개 API - 로그인 여부와 무관하게 이메일만으로 재발송 가능하다. 존재하지 않는 이메일·
@@ -225,24 +225,5 @@ class AuthService(
         return AuthResult(session.accessToken, session.refreshToken, session.refreshExpiresInSeconds)
     }
 
-    fun getAccount(userId: UUID): AccountResponse = toAccountResponse(memberService.findById(userId))
-
-    @Transactional
-    fun updateAccount(userId: UUID, request: UpdateAccountRequest): AccountResponse = toAccountResponse(memberService.updateAccount(userId, request))
-
-    // userId가 없으면(가입 화면, 비로그인 조회) 본인 제외 없이 순수 존재 여부만 확인한다
-    fun isNicknameAvailable(userId: UUID?, nickname: String): NicknameAvailabilityResponse = NicknameAvailabilityResponse(
-        memberService.isNicknameAvailable(userId, nickname),
-    )
-
     fun isEmailAvailable(email: String): EmailAvailabilityResponse = EmailAvailabilityResponse(memberService.isEmailAvailable(email))
-
-    private fun toAccountResponse(member: TableMember): AccountResponse = AccountResponse(
-        id = member.id.toString(),
-        nickname = member.nickname,
-        role = member.role.name,
-        image = member.image,
-        emailVerified = member.emailVerified,
-        email = member.email,
-    )
 }

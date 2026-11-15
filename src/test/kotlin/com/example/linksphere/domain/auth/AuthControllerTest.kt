@@ -1,8 +1,8 @@
 package com.example.linksphere.domain.auth
 
+import com.example.linksphere.domain.member.AccountResponse
 import com.example.linksphere.domain.member.MemberService
 import com.example.linksphere.domain.member.SignupRequest
-import com.example.linksphere.domain.member.UpdateAccountRequest
 import com.example.linksphere.global.exception.DuplicateMemberException
 import com.example.linksphere.global.exception.DuplicateNicknameException
 import com.example.linksphere.global.exception.InvalidActionTokenException
@@ -11,7 +11,6 @@ import com.example.linksphere.global.exception.RateLimitExceededException
 import com.example.linksphere.global.exception.SessionMismatchException
 import com.example.linksphere.global.ratelimit.RateLimitService
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
-import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.doThrow
 import org.mockito.Mockito.verify
@@ -256,30 +255,6 @@ class AuthControllerTest {
 
     @Test
     @WithMockUser(username = MEMBER_ID)
-    fun `updateAccount returns 200 with updated AccountResponse`() {
-        val request = UpdateAccountRequest(nickname = "newNick", image = null)
-        val response = AccountResponse(
-            id = "some-uuid",
-            nickname = "newNick",
-            image = null,
-        )
-        `when`(authService.updateAccount(UUID.fromString(MEMBER_ID), request)).thenReturn(response)
-
-        val mapper = jacksonObjectMapper()
-        val json = mapper.writeValueAsString(request)
-
-        mockMvc.perform(
-            patch("/auth/account")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(json)
-                .with(csrf()),
-        )
-            .andExpect(status().isOk)
-            .andExpect(jsonPath("$.data.nickname").value("newNick"))
-    }
-
-    @Test
-    @WithMockUser(username = MEMBER_ID)
     fun `changePassword 성공 시 __Host-refreshToken 쿠키를 새로 세팅한다`() {
         val request = ChangePasswordRequest(currentPassword = "current1!", newPassword = "newPassword1!")
         `when`(authService.changePassword(UUID.fromString(MEMBER_ID), request))
@@ -496,20 +471,6 @@ class AuthControllerTest {
         verify(authService).confirmEmailVerification("good-token")
     }
 
-    // 이 클래스는 실제 SecurityFilterChain(permitAll 설정)을 제외한 슬라이스 테스트라 MockMvc로는
-    // "인증 없이 permitAll 통과" 상태를 재현할 수 없다 - 필터체인이 없으면 스프링부트 기본값이
-    // 모든 요청을 거부해 @WithMockUser 없인 401이 난다. 그래서 비로그인 경로는 컨트롤러를 직접
-    // 호출해 authentication=null을 넘기는 방식으로 검증한다.
-    @Test
-    fun `checkNicknameAvailability calls authService with null userId when unauthenticated`() {
-        `when`(authService.isNicknameAvailable(null, "newNick"))
-            .thenReturn(NicknameAvailabilityResponse(true))
-
-        val response = AuthController(authService, accountDeletionService, passwordResetService, rateLimitService).checkNicknameAvailability("newNick", null)
-
-        assertEquals(true, response.data.available)
-    }
-
     @Test
     @WithMockUser
     fun `checkEmailAvailability returns available response`() {
@@ -585,29 +546,6 @@ class AuthControllerTest {
         )
             .andExpect(status().isUnsupportedMediaType)
             .andExpect(jsonPath("$.code").value("UNSUPPORTED_MEDIA_TYPE"))
-    }
-
-    @Test
-    @WithMockUser(username = MEMBER_ID)
-    fun `checkNicknameAvailability passes the authenticated userId when logged in`() {
-        // 마이페이지(로그인)에서 호출하는 경로 - 본인 현재 닉네임은 중복에서 제외되어야 한다
-        `when`(authService.isNicknameAvailable(UUID.fromString(MEMBER_ID), "newNick"))
-            .thenReturn(NicknameAvailabilityResponse(true))
-
-        mockMvc.perform(get("/auth/account/nickname-availability").param("nickname", "newNick"))
-            .andExpect(status().isOk)
-            .andExpect(jsonPath("$.data.available").value(true))
-    }
-
-    // 클래스의 @Validated가 빠지면 검증은 여전히 돌지만 Spring MVC 내장 검증(HandlerMethodValidationException)으로 바뀌어
-    // message 형식이 달라진다. 컨트롤러를 옮겨도 응답이 그대로인지 message 앞부분까지 고정한다.
-    @Test
-    @WithMockUser(username = MEMBER_ID)
-    fun `checkNicknameAvailability는 닉네임이 21자면 400 INVALID_INPUT과 파라미터 경로로 시작하는 message를 준다`() {
-        mockMvc.perform(get("/auth/account/nickname-availability").param("nickname", "a".repeat(21)))
-            .andExpect(status().isBadRequest)
-            .andExpect(jsonPath("$.code").value("INVALID_INPUT"))
-            .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.startsWith("checkNicknameAvailability.nickname:")))
     }
 
     @Test
