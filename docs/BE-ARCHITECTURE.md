@@ -7,7 +7,7 @@
 > **읽고 나면**: 요청이 어느 코드를 거치는지, 레이어끼리 무엇을 참조하고 어떤 타입을 주고받는지(§3) 따라갈 수 있고, 자동 검사(§2)와 선례 패턴(§7)에 맞춰 새 코드를 쓸 수 있다.
 > 지금 코드가 규칙과 어긋나는 곳은 §9에 모아 두었다 — 그쪽을 본떠 쓰지 않는다.
 >
-> **마지막 검토**: 2026-11-15 (§11 도구 선택 표의 Detekt 행만 고침). 이전 2026-11-12 (§4 실패 표의 `page=-1` 예, §7-8 N+1의 `countQuery` 예, §7-9 페이징의 `page` 서술만 고침, 같은 날 `page` 400 코드 제거를 반영). 이전 2026-11-11 (§3 컨트롤러·Service에 두는 한도와 §7-3 조회 기록만 고침). 이전 2026-11-10 (§1 요청 파이프라인의 서빙 경로만 고침), 2026-11-07
+> **마지막 검토**: 2026-11-15 (§1 패키지 그래프, §8 순수 함수 테스트 예시 경로, "남은 것"의 linkpreview 항목만 고침. 같은 날 §11 도구 선택 표의 Detekt 행도 고침). 이전 2026-11-12 (§4 실패 표의 `page=-1` 예, §7-8 N+1의 `countQuery` 예, §7-9 페이징의 `page` 서술만 고침, 같은 날 `page` 400 코드 제거를 반영). 이전 2026-11-11 (§3 컨트롤러·Service에 두는 한도와 §7-3 조회 기록만 고침). 이전 2026-11-10 (§1 요청 파이프라인의 서빙 경로만 고침), 2026-11-07
 
 시스템 전체(CloudFront·S3·Lambda·배포 파이프라인)는 FE 레포
 [`docs/SYSTEM-ARCHITECTURE.md`](https://github.com/BAECHAN/link-sphere_FE_NEW/blob/main/docs/SYSTEM-ARCHITECTURE.md)가,
@@ -90,6 +90,7 @@ flowchart LR
     domain_comment["comment"]
     domain_feed["feed"]
     domain_interaction["interaction"]
+    domain_linkpreview["linkpreview"]
     domain_member["member"]
     domain_post["post"]
     domain_upload["upload"]
@@ -115,11 +116,13 @@ flowchart LR
   domain_auth --> infra_mail
   domain_category --> global_common
   domain_comment --> domain_interaction
+  domain_comment --> domain_linkpreview
   domain_comment --> domain_member
   domain_comment --> domain_post
   domain_comment --> global_common
   domain_comment --> infra_aws
   domain_comment --> infra_fcm
+  domain_feed --> domain_linkpreview
   domain_feed --> domain_member
   domain_feed --> domain_post
   domain_feed --> infra_aws
@@ -127,16 +130,18 @@ flowchart LR
   domain_interaction --> domain_post
   domain_interaction --> global_common
   domain_interaction --> infra_ai
+  domain_linkpreview --> global_common
+  domain_linkpreview --> infra_youtube
   domain_member --> global_common
   domain_post --> domain_category
   domain_post -.-> domain_comment
   domain_post -.-> domain_interaction
+  domain_post --> domain_linkpreview
   domain_post --> domain_member
   domain_post --> global_common
   domain_post --> global_ratelimit
   domain_post --> infra_ai
   domain_post --> infra_aws
-  domain_post --> infra_youtube
   domain_upload --> domain_comment
   domain_upload --> domain_member
   domain_upload --> global_common
@@ -720,7 +725,7 @@ FE와 BE가 같은 테스트 원칙을 쓰면서 층 구성과 도구를 다르�
 | 보안 규칙·사용자 추출 | `@WebMvcTest` + `@Import(SecurityConfig, CustomAuthenticationEntryPoint, CustomAccessDeniedHandler)` + `MemberSessionService` mock으로 `X-Access-Token` 판정 | `domain/comment/CommentControllerTest.kt`, `domain/post/PostSecurityTest.kt` |
 | 실제 Postgres | `@PostgresIntegrationTest`(`@DataJpaTest` + Testcontainers `pgvector:pg17` + 운영 덤프 `schema.sql` + `@Tag("integration")`) | `support/PostgresIntegrationTest.kt` |
 | 커밋 동작·동시성 | 위 + `@Import(Service)` + `@Transactional(propagation = NOT_SUPPORTED)` | `domain/auth/MemberSessionServiceIntegrationTest.kt` |
-| 순수 함수 | 일반 클래스에서 직접 호출 | `domain/post/WeakTitleDetectorTest.kt` |
+| 순수 함수 | 일반 클래스에서 직접 호출 | `domain/linkpreview/WeakTitleDetectorTest.kt` |
 | 아키텍처 | ArchUnit `@AnalyzeClasses` + `@ArchTest` | `architecture/AppWideArchitectureRulesTest.kt` |
 
 - 테스트 이름은 백틱 한국어 문장이다.
@@ -883,6 +888,10 @@ FE와 BE가 같은 테스트 원칙을 쓰면서 층 구성과 도구를 다르�
 - **이름 불일치**: `global/ratelimit`의 `TableRateLimit`·`RateLimitRepository`가 쓰는 테이블 이름은 auth 전용이던 시절의
   `auth_rate_limits` 그대로다(2026-11-15). 테이블 이름을 바꾸려면 DB 마이그레이션·SQL·백업 설정을 함께 고쳐야 해서 클래스
   이름만 바꿨다.
+- **linkpreview 경계**(2026-11-15, `docs/plans/2026-11-15-be-structure-stage1.md` PR-C): URL 검증·메타데이터 추출·미리보기 캐시만
+  `domain/linkpreview`로 옮겼다. API(`LinkPreviewController`)와 이메일 인증 확인(`PostService.previewLink`)은 "글 등록과 같은
+  게이트"라는 post의 정책이라 post에 남겼다(사용자 결정). `PostService`가 `findFresh(url) ?: extract(url)`로 캐시와 추출기를
+  따로 부르는 두 곳과, `UrlMetadataExtractor`가 `infra.youtube.dto.YoutubeSnippet`을 직접 쓰는 것은 2·3단계에서 정리한다.
 - **정리 후보**: Lambda 환경변수 `JWT_SECRET` — 코드·tracked 설정 어디서도 읽지 않는다(2026-10-26, 변수 이름만 조회).
   환경변수를 API로 고치려면 다른 비밀값까지 다시 넘겨야 해서, 값이 노출되지 않게 콘솔에서 지운다. (쓰지 않던
   `spring-boot-starter-oauth2-client` 의존성, 호출 0건인 Repository 메서드 5개, HTTP로 도달할 수 없던 `createComment`의
