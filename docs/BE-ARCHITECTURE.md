@@ -7,7 +7,7 @@
 > **읽고 나면**: 요청이 어느 코드를 거치는지, 레이어끼리 무엇을 참조하고 어떤 타입을 주고받는지(§3) 따라갈 수 있고, 자동 검사(§2)와 선례 패턴(§7)에 맞춰 새 코드를 쓸 수 있다.
 > 지금 코드가 규칙과 어긋나는 곳은 §9에 모아 두었다 — 그쪽을 본떠 쓰지 않는다.
 >
-> **마지막 검토**: 2026-11-12 (§4 실패 표의 `page=-1` 예, §7-8 N+1의 `countQuery` 예, §7-9 페이징의 `page` 서술만 고침, 같은 날 `page` 400 코드 제거를 반영). 이전 2026-11-11 (§3 컨트롤러·Service에 두는 한도와 §7-3 조회 기록만 고침). 이전 2026-11-10 (§1 요청 파이프라인의 서빙 경로만 고침), 2026-11-07
+> **마지막 검토**: 2026-11-15 (§11 도구 선택 표의 Detekt 행만 고침). 이전 2026-11-12 (§4 실패 표의 `page=-1` 예, §7-8 N+1의 `countQuery` 예, §7-9 페이징의 `page` 서술만 고침, 같은 날 `page` 400 코드 제거를 반영). 이전 2026-11-11 (§3 컨트롤러·Service에 두는 한도와 §7-3 조회 기록만 고침). 이전 2026-11-10 (§1 요청 파이프라인의 서빙 경로만 고침), 2026-11-07
 
 시스템 전체(CloudFront·S3·Lambda·배포 파이프라인)는 FE 레포
 [`docs/SYSTEM-ARCHITECTURE.md`](https://github.com/BAECHAN/link-sphere_FE_NEW/blob/main/docs/SYSTEM-ARCHITECTURE.md)가,
@@ -828,7 +828,7 @@ FE와 BE가 같은 테스트 원칙을 쓰면서 층 구성과 도구를 다르�
 | ArchUnit 1.5.1 | ✅ 이미 사용 | 바이트코드를 보므로 Kotlin도 그대로 검사한다. 필요한 API(`slices().ignoreDependency`, `Source.getFileName`)가 설치본에 있다 |
 | JUnit 리플렉션·소스 스캔 | ✅ 이미 사용 | Kotlin nullability(`ControllerSignatureRulesTest`)·상수 인자(`HttpStatusLiteralTest`)·문서 대조(`PackageGraphDocTest`)처럼 ArchUnit 규칙 문법으로 안 되는 것 |
 | Spring Modulith | ❌ | [Fundamentals](https://docs.spring.io/spring-modulith/reference/fundamentals.html)에 따르면 _"기본적으로 메인 패키지의 직계 하위 패키지 하나하나를 애플리케이션 모듈 패키지로 본다"_ (번역) — 이 레포에서는 `domain`·`global`·`infra`·`tools` 4덩어리가 돼 도메인을 구분하지 못한다. 도메인을 모듈로 나누려면 감지 방식을 따로 설정하고, 순환(§9)부터 풀어야 한다 |
-| Detekt | ❌ | 1.23.8은 Kotlin 2.0.21 기준이다([호환 표](https://detekt.dev/docs/introduction/compatibility/), 이 레포는 2.4.21). 스타일 검사는 ktlint와 겹친다 |
+| Detekt | ❌ | 아키텍처 규칙(2026-10-26)에 이어 버그·냄새 패턴 검사 용도로도 검토했다(2026-11-15). 안정판 1.23.8은 Kotlin 2.0.21 기준이고, 2.0은 Kotlin 2.4.10 기준 alpha만 있다([호환 표](https://detekt.dev/docs/introduction/compatibility/), [릴리스](https://github.com/detekt/detekt/releases), 이 레포는 2.4.21). 스타일 검사는 ktlint와 겹친다. [Allegro 기술 블로그](https://blog.allegro.tech/2026/03/static-code-analysis-kotlin.html)(2026-03)도 비교 끝에 _"ktlint를 유지하라"_ (번역)고 권하고, detekt는 반복되는 특정 문제를 막을 때 쓰라고 한다. 재검토 조건: detekt 정식판이 이 레포의 Kotlin 버전을 지원하고, 이 레포에 같은 종류의 버그가 반복될 때 |
 | Konsist | ❌ | 이번에 강제한 규칙은 모두 바이트코드·리플렉션으로 된다 |
 
 ---
