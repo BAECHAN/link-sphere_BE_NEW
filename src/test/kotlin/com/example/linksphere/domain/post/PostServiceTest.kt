@@ -17,6 +17,7 @@ import com.example.linksphere.global.exception.DuplicatePostException
 import com.example.linksphere.global.exception.EmailNotVerifiedException
 import com.example.linksphere.global.exception.ForbiddenException
 import com.example.linksphere.global.exception.InvalidInputException
+import com.example.linksphere.global.exception.InvalidUrlException
 import com.example.linksphere.global.exception.PostNotFoundException
 import com.example.linksphere.global.ratelimit.RateLimitService
 import com.example.linksphere.infra.ai.GeminiService
@@ -30,6 +31,8 @@ import org.mockito.ArgumentMatchers
 import org.mockito.ArgumentMatchers.any
 import org.mockito.InjectMocks
 import org.mockito.Mock
+import org.mockito.Mockito.doThrow
+import org.mockito.Mockito.inOrder
 import org.mockito.Mockito.never
 import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
@@ -908,5 +911,48 @@ class PostServiceTest {
         assertEquals("미리 본 제목", savedPostCaptor.value.title)
         assertEquals("https://example.com/og.png", savedPostCaptor.value.ogImage)
         verifyNoInteractions(urlMetadataExtractor)
+    }
+
+    @Test
+    fun `previewLink는 이메일 미인증 회원이면 URL 검증·크롤링 전에 EmailNotVerifiedException을 던진다`() {
+        val userId = UUID.randomUUID()
+        `when`(memberRepository.findById(userId)).thenReturn(
+            Optional.of(TableMember(id = userId, email = "a@a.com", password = "pw", nickname = "tester", emailVerified = false)),
+        )
+
+        assertThrows(EmailNotVerifiedException::class.java) {
+            postService.previewLink(userId, "https://example.com/unverified")
+        }
+
+        verifyNoInteractions(safeUrlValidator, linkPreviewService)
+    }
+
+    @Test
+    fun `previewLink는 앞뒤 공백을 뗀 URL을 검증한 뒤 캐시에서 가져와 응답으로 옮긴다`() {
+        val userId = UUID.randomUUID()
+        val url = "https://example.com/preview"
+        stubVerifiedMember(userId)
+        `when`(linkPreviewService.get(url)).thenReturn(
+            UrlMetadata(title = "제목", description = "설명", ogImage = "https://example.com/og.png", tags = listOf("example.com"), pageContent = "본문"),
+        )
+
+        val response = postService.previewLink(userId, "  $url \n")
+
+        assertEquals(LinkPreviewResponse(url = url, title = "제목", description = "설명", ogImage = "https://example.com/og.png"), response)
+        val order = inOrder(safeUrlValidator, linkPreviewService)
+        order.verify(safeUrlValidator).validate(url)
+        order.verify(linkPreviewService).get(url)
+    }
+
+    @Test
+    fun `previewLink는 URL 검증에 실패하면 캐시·크롤링을 건드리지 않는다`() {
+        val userId = UUID.randomUUID()
+        val url = "http://169.254.169.254/latest"
+        stubVerifiedMember(userId)
+        doThrow(InvalidUrlException(InvalidUrlException.URL_NOT_ALLOWED, "blocked")).`when`(safeUrlValidator).validate(url)
+
+        assertThrows(InvalidUrlException::class.java) { postService.previewLink(userId, url) }
+
+        verifyNoInteractions(linkPreviewService)
     }
 }
