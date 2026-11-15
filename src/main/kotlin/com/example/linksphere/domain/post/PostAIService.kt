@@ -1,5 +1,6 @@
 package com.example.linksphere.domain.post
 
+import com.example.linksphere.domain.linkpreview.WeakTitleDetector
 import com.example.linksphere.infra.ai.GeminiService
 import com.example.linksphere.infra.aws.AiJobDispatcher
 import org.slf4j.LoggerFactory

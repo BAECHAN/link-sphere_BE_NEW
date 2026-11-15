@@ -1,6 +1,6 @@
 package com.example.linksphere.domain.feed
 
-import com.example.linksphere.domain.post.UrlMetadataExtractor
+import com.example.linksphere.domain.linkpreview.UrlMetadataExtractor
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 import org.jsoup.parser.Parser

@@ -1,4 +1,4 @@
-package com.example.linksphere.domain.post
+package com.example.linksphere.domain.linkpreview
 
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue

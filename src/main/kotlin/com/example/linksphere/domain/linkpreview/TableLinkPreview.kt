@@ -1,4 +1,4 @@
-package com.example.linksphere.domain.post
+package com.example.linksphere.domain.linkpreview
 
 import jakarta.persistence.Column
 import jakarta.persistence.Entity

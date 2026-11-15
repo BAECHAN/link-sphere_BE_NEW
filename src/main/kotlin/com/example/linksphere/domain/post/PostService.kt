@@ -5,6 +5,11 @@ import com.example.linksphere.domain.comment.CommentService
 import com.example.linksphere.domain.interaction.BookmarkFolderItemRepository
 import com.example.linksphere.domain.interaction.BookmarkFolderRepository
 import com.example.linksphere.domain.interaction.BookmarkRepository
+import com.example.linksphere.domain.linkpreview.LinkPreviewService
+import com.example.linksphere.domain.linkpreview.SafeUrlValidator
+import com.example.linksphere.domain.linkpreview.UrlMetadata
+import com.example.linksphere.domain.linkpreview.UrlMetadataExtractor
+import com.example.linksphere.domain.linkpreview.WeakTitleDetector
 import com.example.linksphere.domain.member.EmailVerificationGate
 import com.example.linksphere.domain.member.MemberRepository
 import com.example.linksphere.global.common.AdvisoryLock

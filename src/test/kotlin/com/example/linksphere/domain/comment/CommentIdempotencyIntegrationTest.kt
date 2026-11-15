@@ -1,6 +1,6 @@
 package com.example.linksphere.domain.comment
 
-import com.example.linksphere.domain.post.UrlMetadataExtractor
+import com.example.linksphere.domain.linkpreview.UrlMetadataExtractor
 import com.example.linksphere.global.common.AdvisoryLock
 import com.example.linksphere.global.common.SupabaseStorageService
 import com.example.linksphere.global.exception.DuplicateCommentException

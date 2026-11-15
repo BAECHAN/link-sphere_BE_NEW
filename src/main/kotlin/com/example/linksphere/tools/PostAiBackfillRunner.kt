@@ -3,12 +3,12 @@ package com.example.linksphere.tools
 import com.example.linksphere.domain.feed.FeedParser
 import com.example.linksphere.domain.feed.FeedSourceRepository
 import com.example.linksphere.domain.feed.FeedUrlNormalizer
+import com.example.linksphere.domain.linkpreview.UrlMetadataExtractor
 import com.example.linksphere.domain.member.MemberRepository
 import com.example.linksphere.domain.post.AiStatus
 import com.example.linksphere.domain.post.PostAIService
 import com.example.linksphere.domain.post.PostCreatedEvent
 import com.example.linksphere.domain.post.PostRepository
-import com.example.linksphere.domain.post.UrlMetadataExtractor
 import org.springframework.boot.CommandLineRunner
 import org.springframework.context.annotation.Profile
 import org.springframework.stereotype.Component

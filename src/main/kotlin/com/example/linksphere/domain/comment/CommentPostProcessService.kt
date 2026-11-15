@@ -1,7 +1,7 @@
 package com.example.linksphere.domain.comment
 
+import com.example.linksphere.domain.linkpreview.UrlMetadataExtractor
 import com.example.linksphere.domain.post.PostRepository
-import com.example.linksphere.domain.post.UrlMetadataExtractor
 import com.example.linksphere.infra.aws.CommentJobDispatcher
 import com.example.linksphere.infra.fcm.FcmNotificationService
 import org.slf4j.LoggerFactory
