@@ -1,7 +1,5 @@
-package com.example.linksphere.global.common
+package com.example.linksphere.global.ratelimit
 
-import com.example.linksphere.domain.auth.AuthRateLimitRepository
-import com.example.linksphere.domain.auth.TableAuthRateLimit
 import com.example.linksphere.support.PostgresIntegrationTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
@@ -17,15 +15,15 @@ class RateLimitServicePurgeIntegrationTest {
 
     @Autowired private lateinit var rateLimitService: RateLimitService
 
-    @Autowired private lateinit var repository: AuthRateLimitRepository
+    @Autowired private lateinit var repository: RateLimitRepository
 
     @Test
     fun `purgeExpired는 하루가 지난 창만 지우고 경계와 최근 창은 남긴다`() {
         val now = Instant.parse("2026-11-05T00:00:00Z")
         val cutoff = now.minus(Duration.ofDays(1))
-        repository.saveAndFlush(TableAuthRateLimit(bucketKey = "old", windowStart = cutoff.minusSeconds(1), hitCount = 1))
-        repository.saveAndFlush(TableAuthRateLimit(bucketKey = "boundary", windowStart = cutoff, hitCount = 1))
-        repository.saveAndFlush(TableAuthRateLimit(bucketKey = "recent", windowStart = now, hitCount = 1))
+        repository.saveAndFlush(TableRateLimit(bucketKey = "old", windowStart = cutoff.minusSeconds(1), hitCount = 1))
+        repository.saveAndFlush(TableRateLimit(bucketKey = "boundary", windowStart = cutoff, hitCount = 1))
+        repository.saveAndFlush(TableRateLimit(bucketKey = "recent", windowStart = now, hitCount = 1))
 
         assertEquals(1, rateLimitService.purgeExpired(now))
 

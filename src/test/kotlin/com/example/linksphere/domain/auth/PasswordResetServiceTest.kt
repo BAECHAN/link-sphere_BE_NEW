@@ -3,10 +3,10 @@ package com.example.linksphere.domain.auth
 import com.example.linksphere.domain.member.MemberRepository
 import com.example.linksphere.domain.member.MemberRole
 import com.example.linksphere.domain.member.TableMember
-import com.example.linksphere.global.common.RateLimitService
 import com.example.linksphere.global.common.SecureToken
 import com.example.linksphere.global.exception.InvalidActionTokenException
 import com.example.linksphere.global.exception.RateLimitExceededException
+import com.example.linksphere.global.ratelimit.RateLimitService
 import com.example.linksphere.infra.mail.MailService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
@@ -28,7 +28,7 @@ import java.util.Optional
 import java.util.UUID
 
 // bucketKey·limit·window는 리터럴로 검증한다(any()/eq() 없이) - AuthServiceTest·
-// AuthRateLimitRepository.kt와 같은 이유.
+// RateLimitRepository.kt와 같은 이유.
 class PasswordResetServiceTest {
 
     private lateinit var memberRepository: MemberRepository

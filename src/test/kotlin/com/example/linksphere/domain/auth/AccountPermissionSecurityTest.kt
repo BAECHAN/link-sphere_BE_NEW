@@ -2,10 +2,10 @@ package com.example.linksphere.domain.auth
 
 import com.example.linksphere.domain.member.MemberRole
 import com.example.linksphere.domain.member.UpdateAccountRequest
-import com.example.linksphere.global.common.RateLimitService
 import com.example.linksphere.global.config.SecurityConfig
 import com.example.linksphere.global.config.security.CustomAccessDeniedHandler
 import com.example.linksphere.global.config.security.CustomAuthenticationEntryPoint
+import com.example.linksphere.global.ratelimit.RateLimitService
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.verifyNoInteractions

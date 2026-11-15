@@ -8,15 +8,13 @@ import org.junit.jupiter.api.Test
 import java.io.File
 
 /**
- * 순환을 만들어도 되는 패키지 간선 — 이 8개를 빼면 패키지 그래프에 순환이 없다(docs/BE-ARCHITECTURE.md §9).
+ * 순환을 만들어도 되는 패키지 간선 — 이 7개를 빼면 패키지 그래프에 순환이 없다(docs/BE-ARCHITECTURE.md §9).
  * LayerSkeletonRulesTest의 순환 규칙이 이 목록만 무시하고, 아래 그래프 문서 검사가 이 간선을 점선으로 그린다.
  * 간선을 더하려면 §9에 이유를 적고 여기에 추가한다.
  */
 internal val DOCUMENTED_CYCLE_EDGES: List<Pair<String, String>> =
     listOf(
-        // 범용 레이트리밋이 auth 도메인의 카운터 테이블을 쓴다(§3 global → domain 허용 쌍)
-        "global.common" to "domain.auth",
-        // 핸들러가 응답 봉투 ErrorResponse를 쓰고, RateLimitService는 RateLimitExceededException을 던진다
+        // 핸들러가 응답 봉투 ErrorResponse를 쓰고, CursorCodec은 InvalidInputException을 던진다
         "global.exception" to "global.common",
         // 커밋 뒤 디스패처가 도메인의 이벤트 DTO를 받는다(§1 패키지 역할)
         "infra.aws" to "domain.post",

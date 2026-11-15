@@ -3,13 +3,13 @@ package com.example.linksphere.domain.auth
 import com.example.linksphere.domain.member.MemberService
 import com.example.linksphere.domain.member.SignupRequest
 import com.example.linksphere.domain.member.UpdateAccountRequest
-import com.example.linksphere.global.common.RateLimitService
 import com.example.linksphere.global.exception.DuplicateMemberException
 import com.example.linksphere.global.exception.DuplicateNicknameException
 import com.example.linksphere.global.exception.InvalidActionTokenException
 import com.example.linksphere.global.exception.InvalidCredentialsException
 import com.example.linksphere.global.exception.RateLimitExceededException
 import com.example.linksphere.global.exception.SessionMismatchException
+import com.example.linksphere.global.ratelimit.RateLimitService
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test

@@ -51,8 +51,6 @@ src/main/kotlin/com/example/linksphere/
 │   │   ├── AccountDeletionService.kt    # 회원탈퇴 신청(14일 유예)·유예 만료 시 익명화
 │   │   ├── AccountPurgeService.kt       # 유예 만료 계정을 4일마다 익명화하는 예약 작업(feed-crawl EventBridge 룰과 공유)
 │   │   ├── PasswordResetService.kt      # 비밀번호 찾기 요청/확인
-│   │   ├── TableAuthRateLimit.kt        # 고정 윈도 카운터 행(인증·요청 한도와 조회수 집계가 함께 씀)
-│   │   ├── AuthRateLimitRepository.kt
 │   │   ├── TableMemberActionToken.kt    # 비밀번호재설정·이메일인증용 단발성 토큰(해시 저장)
 │   │   ├── MemberActionTokenRepository.kt
 │   │   ├── TableMemberSession.kt        # 로그인 세션(access/refresh 해시) 1행 = 1세션
@@ -135,7 +133,6 @@ src/main/kotlin/com/example/linksphere/
 │   │   ├── SecurityUtils.kt             # Authentication?.getUserId() 확장 함수
 │   │   ├── SecureToken.kt               # 세션·비밀번호재설정 등 불투명 토큰 발급·해시
 │   │   ├── ClientIpResolver.kt          # CloudFront-Viewer-Address 헤더에서 요청자 IP 추출
-│   │   ├── RateLimitService.kt          # bucketKey·limit·window 기반 범용 고정윈도 카운터
 │   │   ├── Paging.kt                    # 목록 size 상한(1~50)
 │   │   ├── CursorCodec.kt               # 목록 cursor 인코딩·검증
 │   │   ├── SeekPredicate.kt             # "이 키 다음부터" 조건식(방향 혼합)
@@ -143,6 +140,10 @@ src/main/kotlin/com/example/linksphere/
 │   │   ├── BatchJobLimits.kt            # 예약 배치 3종 공용 마감(90초)
 │   │   ├── TransactionCallbacks.kt      # 커밋 뒤 실행 등록(afterCommit)
 │   │   └── SupabaseStorageService.kt    # Supabase 이미지 업로드
+│   ├── ratelimit/
+│   │   ├── RateLimitService.kt          # bucketKey·limit·window 기반 범용 고정윈도 카운터
+│   │   ├── RateLimitRepository.kt
+│   │   └── TableRateLimit.kt            # 카운터 행(인증·요청 한도와 조회수 집계가 함께 씀, 테이블 auth_rate_limits)
 │   ├── config/
 │   │   ├── AsyncConfig.kt               # 비동기 스레드풀 설정
 │   │   ├── SecurityConfig.kt            # Spring Security & CORS 설정

@@ -1,9 +1,6 @@
 package com.example.linksphere.architecture
 
-import com.example.linksphere.domain.auth.AuthRateLimitRepository
 import com.example.linksphere.domain.auth.SessionAuthenticationFilter
-import com.example.linksphere.domain.auth.TableAuthRateLimit
-import com.example.linksphere.global.common.RateLimitService
 import com.example.linksphere.global.config.SecurityConfig
 import com.tngtech.archunit.base.DescribedPredicate.not
 import com.tngtech.archunit.core.domain.JavaAccess.Predicates.origin
@@ -84,8 +81,8 @@ class AppWideArchitectureRulesTest {
             )
             .`as`("Principal·Authentication의 name은 SecurityUtils(getUserId)에서만 읽는다")
 
-    // global은 도메인을 모르는 공통 계층이다. 아래 세 쌍만 의도적인 예외다(docs/BE-ARCHITECTURE.md §3):
-    // 보안 필터 체인이 auth 도메인의 세션 필터를 끼우고, 범용 레이트리밋이 auth 도메인의 카운터 테이블을 쓴다.
+    // global은 도메인을 모르는 공통 계층이다. 아래 한 쌍만 의도적인 예외다(docs/BE-ARCHITECTURE.md §3):
+    // 보안 필터 체인이 auth 도메인의 세션 필터를 끼운다.
     @ArchTest
     val globalMustNotDependOnDomain: ArchRule =
         layeredArchitecture()
@@ -94,7 +91,5 @@ class AppWideArchitectureRulesTest {
             .layer("Domain").definedBy("com.example.linksphere.domain..")
             .whereLayer("Global").mayNotAccessAnyLayer()
             .ignoreDependency(SecurityConfig::class.java, SessionAuthenticationFilter::class.java)
-            .ignoreDependency(RateLimitService::class.java, AuthRateLimitRepository::class.java)
-            .ignoreDependency(RateLimitService::class.java, TableAuthRateLimit::class.java)
-            .`as`("global은 domain에 의존하지 않는다 - 허용된 세 쌍만 예외")
+            .`as`("global은 domain에 의존하지 않는다 - 허용된 한 쌍만 예외")
 }

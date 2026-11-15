@@ -1,4 +1,4 @@
-package com.example.linksphere.domain.auth
+package com.example.linksphere.global.ratelimit
 
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Modifying
@@ -16,7 +16,7 @@ import java.time.Instant
 // 스택이 오염돼 같은 JVM의 무관한 다른 테스트까지 연쇄로 깨뜨린다(MemberSessionRepository.kt
 // 에서 실측 확인한 것과 동일한 문제, PR #42 참고 - 처음엔 bucketKey만 non-null로 뒀다가
 // eq("literal")조차 실측으로 NPE가 재현돼 둘 다 nullable로 정정했다).
-interface AuthRateLimitRepository : JpaRepository<TableAuthRateLimit, AuthRateLimitId> {
+interface RateLimitRepository : JpaRepository<TableRateLimit, RateLimitId> {
 
     // PostViewRepository.upsertView와 같은 INSERT ON CONFLICT DO UPDATE 선례 - 다만 덮어쓰기가
     // 아니라 누적이라 hit_count + 1. 동시 요청이 몰려도 Postgres가 행 단위로 직렬화해 증가분이
@@ -30,7 +30,7 @@ interface AuthRateLimitRepository : JpaRepository<TableAuthRateLimit, AuthRateLi
     )
     fun incrementHit(@Param("bucketKey") bucketKey: String?, @Param("windowStart") windowStart: Instant?)
 
-    fun findByBucketKeyAndWindowStart(bucketKey: String?, windowStart: Instant?): TableAuthRateLimit?
+    fun findByBucketKeyAndWindowStart(bucketKey: String?, windowStart: Instant?): TableRateLimit?
 
     // RateLimitService.consume 전용 - incrementHit 직후 같은 트랜잭션에서 읽는다. 엔티티가 아니라
     // 숫자만 돌려받는 이유: 같은 트랜잭션에서 이 행의 엔티티를 먼저 읽어 둔 적이 있으면 JPQL 조회는

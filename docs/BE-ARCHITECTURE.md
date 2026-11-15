@@ -62,7 +62,8 @@ flowchart TD
 |---|---|---|
 | 루트 | `LambdaHandler`(진입점·잡 분기), `FunctionUrlOriginGuard`, `FunctionUrlResponse`(응답 직렬화) | 전부 |
 | `domain/<도메인>/` | 도메인별 평면 구조 — Controller·Service·Repository·`Table*` 엔티티·`*DTO.kt`와 그 도메인 전용 헬퍼 | 다른 도메인(§3), `global`, `infra` |
-| `global/common/` | 응답 래퍼, `SecurityUtils`, `SecureToken`, `ClientIpResolver`, `Paging`, `CursorCodec`, `SeekPredicate`, `KeysetQuery`, `RateLimitService`, `SupabaseStorageService`, `TransactionCallbacks`, `BatchJobLimits` | `domain` 금지(허용 3쌍 예외, §3) |
+| `global/common/` | 응답 래퍼, `SecurityUtils`, `SecureToken`, `ClientIpResolver`, `Paging`, `CursorCodec`, `SeekPredicate`, `KeysetQuery`, `SupabaseStorageService`, `TransactionCallbacks`, `BatchJobLimits` | `domain` 금지(허용 1쌍 예외, §3) |
+| `global/ratelimit/` | 범용 고정 윈도 레이트리밋 `RateLimitService`와 그 저장소 `RateLimitRepository`·`TableRateLimit`(테이블 이름은 옛 이름 `auth_rate_limits` 그대로) | 위와 같음 |
 | `global/config/` | Security·Swagger·Async 설정 | 위와 같음 |
 | `global/exception/` | 커스텀 예외 전부 + `GlobalExceptionHandler` | — |
 | `infra/<기술>/` | 외부 연동(Gemini·YouTube·SES·FCM·Lambda self-invoke) | `domain`은 이벤트 DTO만(디스패처) |
@@ -75,7 +76,7 @@ flowchart TD
 
 아래 그림은 손으로 그린 것이 아니다. `PackageGraphDocTest`가 바이트코드에서 패키지(`domain.post`처럼 두 단계) 사이
 간선을 계산해 이 블록과 비교하고, 다르면 실패하면서 붙여 넣을 새 블록을 출력한다 — 새 의존을 만들면 이 그림이 같은 PR에서
-바뀌어 리뷰에 드러난다. 점선은 순환을 만들지만 허용한 간선이다(§9의 8개 중 7개 — `global.exception → global.common`은
+바뀌어 리뷰에 드러난다. 점선은 순환을 만들지만 허용한 간선이다(§9의 7개 중 6개 — `global.exception → global.common`은
 아래처럼 그림에서 뺀 패키지라 보이지 않는다). 모든 패키지가 예외를 던지느라 의존하는 `global.exception`은 그림에서만
 뺐고 순환 검사에는 들어간다. 루트(`LambdaHandler` 등)와 `tools/`는 두 단계 패키지가 아니라 그림·순환 검사 모두에서 빠진다 —
 다른 패키지가 이들을 참조하는 곳이 없어(2026-10-26 확인) 순환에 낄 수 없다.
@@ -96,6 +97,7 @@ flowchart LR
   subgraph global
     global_common["common"]
     global_config["config"]
+    global_ratelimit["ratelimit"]
   end
   subgraph infra
     infra_ai["ai"]
@@ -108,6 +110,7 @@ flowchart LR
   domain_auth --> domain_member
   domain_auth --> domain_post
   domain_auth --> global_common
+  domain_auth --> global_ratelimit
   domain_auth --> infra_fcm
   domain_auth --> infra_mail
   domain_category --> global_common
@@ -129,13 +132,14 @@ flowchart LR
   domain_post -.-> domain_interaction
   domain_post --> domain_member
   domain_post --> global_common
+  domain_post --> global_ratelimit
   domain_post --> infra_ai
   domain_post --> infra_aws
   domain_post --> infra_youtube
   domain_upload --> domain_comment
   domain_upload --> domain_member
   domain_upload --> global_common
-  global_common -.-> domain_auth
+  domain_upload --> global_ratelimit
   global_config --> domain_auth
   global_config --> global_common
   infra_aws -.-> domain_comment
@@ -156,7 +160,7 @@ flowchart LR
 |---|---|---|
 | `controllersMustNotDependOnRepositories` | `@RestController`가 Repository·`*RepositoryImpl`을 직접 참조(앱 전체) | `architecture/AppWideArchitectureRulesTest.kt` |
 | `repositoriesMustNotConstructExceptions` | Repository·`*RepositoryImpl`이 예외를 생성 | 위와 같음 |
-| `globalMustNotDependOnDomain` | `global` → `domain` 의존(허용 3쌍 제외) | 위와 같음 |
+| `globalMustNotDependOnDomain` | `global` → `domain` 의존(허용 1쌍 제외) | 위와 같음 |
 | `appCodeMustNotConstructIllegalArgumentException` | 앱 코드의 `IllegalArgumentException` 생성(`require()` 같은 inline 함수 포함) | 위와 같음 |
 | `controllerMustNotDependOnRepository` | 위 첫 규칙의 domain 한정판(먼저 있던 것) | `architecture/ArchitectureRulesTest.kt` |
 | `servicesMustNotHaveCrossDomainCycles` | 도메인 Service 사이 순환 의존(빈 생성 실패로만 드러남) | 위와 같음 |
@@ -178,7 +182,7 @@ flowchart LR
 | `persistenceMustNotDependOnUpperLayers` | Repository·엔티티가 Service·`@Component`·Controller·DTO를 참조 | 위와 같음 |
 | `dtosMustNotDependOnBeans` | `*DTO.kt`의 클래스가 Service·`@Component`·Repository·Controller를 참조 | 위와 같음 |
 | `apiDtosLiveInDtoFiles` | domain의 `*Request`·`*Response`를 `*DTO.kt` 밖에 정의 | 위와 같음 |
-| `packagesMustBeFreeOfCyclesExceptDocumented` | 패키지 사이 새 순환 — 허용 간선 8개는 `PackageGraphDocTest.kt`의 `DOCUMENTED_CYCLE_EDGES`, 이유는 §9 | 위와 같음 |
+| `packagesMustBeFreeOfCyclesExceptDocumented` | 패키지 사이 새 순환 — 허용 간선 7개는 `PackageGraphDocTest.kt`의 `DOCUMENTED_CYCLE_EDGES`, 이유는 §9 | 위와 같음 |
 | `문서의 패키지 의존 그래프가 코드와 같다` | §1 "실제 패키지 의존 그래프"가 코드와 어긋남 | `architecture/PackageGraphDocTest.kt` |
 | `순환 허용 간선 목록의 간선은 모두 실제로 있다` | 끊은 간선이 `DOCUMENTED_CYCLE_EDGES`에 남아 다시 생겨도 조용히 통과 | 위와 같음 |
 | `afterCommitGoesThroughTransactionCallbacks` | `TransactionSynchronizationManager.registerSynchronization` 직접 호출(§7-6) | `architecture/LayerSkeletonRulesTest.kt` |
@@ -282,9 +286,9 @@ flowchart TD
 - **다른 도메인 Repository 직접 사용** — 예: `PostService`가 interaction의 `BookmarkRepository`를 쓴다. 금지하는 것은
   **Service끼리의 순환**뿐이다(`servicesMustNotHaveCrossDomainCycles`). 순환이 생기면 `PostResponseAssembler`처럼 어느
   Service도 참조하지 않는 조립기로 뺀다(§7-8).
-- **global → domain 3쌍** — `SecurityConfig` → `SessionAuthenticationFilter`(필터 체인 구성),
-  `RateLimitService` → `AuthRateLimitRepository`·`TableAuthRateLimit`(범용 카운터가 auth 테이블을 공유). 이 밖은
-  `globalMustNotDependOnDomain`이 막는다.
+- **global → domain 1쌍** — `SecurityConfig` → `SessionAuthenticationFilter`(필터 체인 구성). 이 밖은
+  `globalMustNotDependOnDomain`이 막는다. 범용 레이트리밋이 auth의 카운터 테이블을 쓰던 2쌍은 저장소를
+  `global/ratelimit`으로 옮겨 없앴다(2026-11-15, `docs/plans/2026-11-15-be-structure-stage1.md`).
 - **패키지 위치 예외** — 외부 연동인 `SupabaseStorageService`가 `global/common`에, FCM의 Controller·Entity·Repository가
   `infra/fcm`에 있다. 옮기지 않는다(새 외부 연동은 `infra/<기술>/`에 둔다).
 
@@ -538,7 +542,7 @@ if (memberActionTokenRepository.consumeIfActive(token.id, Instant.now()) == 0) {
 
 - **언제**: 같은 키로 여러 번 들어오는 기록(FCM 토큰, 조회 기록, 링크 프리뷰 캐시, 레이트리밋 카운터).
 - **정석**: `FcmTokenRepository.upsertToken`(조회 후 분기 저장이 왜 StaleObjectState를 내는지 주석),
-  `PostViewRepository.upsertView`, `AuthRateLimitRepository.incrementHit`
+  `PostViewRepository.upsertView`, `RateLimitRepository.incrementHit`
 - **원자적 카운터**는 `UPDATE … SET view_count = COALESCE(view_count, 0) + 1`(`PostRepository.incrementViewCount`).
   좋아요·북마크·댓글 수는 저장하지 않고 매번 센다.
 - **조회 기록은 읽기와 나눈다**. `GET /post/{id}`는 쓰지 않고, 상세 화면이 뜰 때 FE가 부르는 `POST /post/{id}/view`
@@ -736,15 +740,14 @@ FE와 BE가 같은 테스트 원칙을 쓰면서 층 구성과 도구를 다르�
 | 외부 클라이언트가 RestClient가 아니라 `RestTemplate` | `SupabaseStorageService` — 타임아웃(연결 3초·읽기 10초)은 설정돼 있다 | 바꾸지 않음 — 전환하면 호출부 3곳과 DELETE+본문 동작까지 바뀌어 회귀 범위가 크다 |
 | 엔티티 안의 표시 규칙 | `TableMember.isWithdrawn`·`publicNickname`·`publicImage`, `TableLinkPreview.toMetadata` | 바꾸지 않음(기록만) |
 | 상속받은 `delete(entity)` 3곳 | `PostService.deletePost`, `CommentService.deleteComment`, `BookmarkFolderService.deleteFolder` | 바꾸지 않음 — 409 `CONCURRENT_UPDATE` 안전망에 기댄다 |
-| 패키지 순환을 만드는 간선 8개 | 아래 표 | 바꾸지 않음(지금은) — 새 순환은 `packagesMustBeFreeOfCyclesExceptDocumented`가 막는다. 해소 후보는 "남은 것" |
+| 패키지 순환을 만드는 간선 7개 | 아래 표 | 바꾸지 않음(지금은) — 새 순환은 `packagesMustBeFreeOfCyclesExceptDocumented`가 막는다. 해소 후보는 "남은 것" |
 
-**순환을 허용한 간선 8개** — `PackageGraphDocTest.kt`의 `DOCUMENTED_CYCLE_EDGES`가 정본이다. 이 간선을 빼면 패키지 그래프에
+**순환을 허용한 간선 7개** — `PackageGraphDocTest.kt`의 `DOCUMENTED_CYCLE_EDGES`가 정본이다. 이 간선을 빼면 패키지 그래프에
 순환이 없다(2026-10-26 계산).
 
 | 간선 | 대표 위치 | 이유 |
 |---|---|---|
-| `global.common → domain.auth` | `RateLimitService` → `AuthRateLimitRepository` | 범용 레이트리밋이 auth의 카운터 테이블을 쓴다(§3 global → domain 허용 쌍) |
-| `global.exception → global.common` | `GlobalExceptionHandler` → `ErrorResponse` | 핸들러가 응답 봉투를 쓰고, 반대로 `RateLimitService`가 `RateLimitExceededException`을 던진다 |
+| `global.exception → global.common` | `GlobalExceptionHandler` → `ErrorResponse` | 핸들러가 응답 봉투를 쓰고, 반대로 `CursorCodec`이 `InvalidInputException`을 던진다 |
 | `infra.aws → domain.post`·`comment`·`feed` | `AiJobDispatcher` → `PostCreatedEvent` 등 | 커밋 뒤 디스패처가 도메인의 이벤트 DTO를 받는다(§1 패키지 역할) |
 | `domain.post → domain.comment` | `PostResponseAssembler` → `CommentRepository`, `PostService` → `CommentService` | 목록 응답의 댓글 수, 글 삭제 때 댓글 이미지 정리 |
 | `domain.post → domain.interaction` | `PostResponseAssembler`·`PostService`·`PostRepositoryImpl` → 반응·북마크 Repository·엔티티 | 목록 응답의 좋아요·북마크 상태와 `filter=isLiked` 같은 조인 |
@@ -803,7 +806,7 @@ FE와 BE가 같은 테스트 원칙을 쓰면서 층 구성과 도구를 다르�
 | 생성 응답 | [RFC 9110 §9.3.3](https://www.rfc-editor.org/rfc/rfc9110#section-9.3.3) | HTTP 201(`@ResponseStatus`, 2026-10-26 전에는 본문만 201) | 따른다. `Location`은 "남은 것" |
 | 405 응답 | [RFC 9110 §10.2.1](https://www.rfc-editor.org/rfc/rfc9110#section-10.2.1) | 405 + `Allow`(`handleSpringMvcException`, 2026-10-26 전에는 500) | 따른다 |
 | 경계 입력 검증 | Bean Validation(`@Valid`) | `@RequestBody` 23곳 중 10곳 | 방식 혼재로 둔다 — `PostCreateRequest`는 봇 경로(`FeedItemProcessor`)도 쓰므로 Service 검증이 어차피 필요하다 |
-| 모듈 순환 | [Spring Modulith 검증](https://docs.spring.io/spring-modulith/reference/verification.html), ArchUnit `slices().beFreeOfCycles()` | 허용 간선 8개(§9) | 새 순환만 막는다 |
+| 모듈 순환 | [Spring Modulith 검증](https://docs.spring.io/spring-modulith/reference/verification.html), ArchUnit `slices().beFreeOfCycles()` | 허용 간선 7개(§9) | 새 순환만 막는다 |
 | 관측성 | 구조화 로그·요청 상관 ID | 앱 로그는 logstash JSON 한 줄 + MDC `awsRequestId`(2026-10-26, `LambdaHandler`·`AsyncConfig`). Lambda LogFormat은 Text 유지 | 따른다 — 찾는 법은 `DEPLOY.md` "운영 로그 읽기" |
 | 멱등 등록 | [IETF 초안](https://datatracker.ietf.org/doc/draft-ietf-httpapi-idempotency-key-header/)(RFC 아님) `Idempotency-Key`. 처리 중인 같은 키는 409를 권한다 | 필수 헤더 + 행에 저장(§7-14). 처리 중이면 기다렸다가 같은 결과 | 이름·필수 시 400은 따른다. 처리 중 409는 따르지 않는다 - 키를 행에 두면 커밋 전까지 "처리 중"을 알 수 없고, 기다리면 사용자가 바로 성공을 받는다 |
 | 지원 버전 | [Spring Boot 지원 일정](https://api.spring.io/projects/spring-boot/generations) — 3.5.x OSS 지원 2026-06-30 종료 | 3.5.16(OSS 마지막 패치, 2026-10-26). Dependabot이 Gradle minor·patch를 월간으로 올린다 | 4.x 이동은 "남은 것" |
@@ -827,7 +830,7 @@ FE와 BE가 같은 테스트 원칙을 쓰면서 층 구성과 도구를 다르�
 |---|---|---|
 | ArchUnit 1.5.1 | ✅ 이미 사용 | 바이트코드를 보므로 Kotlin도 그대로 검사한다. 필요한 API(`slices().ignoreDependency`, `Source.getFileName`)가 설치본에 있다 |
 | JUnit 리플렉션·소스 스캔 | ✅ 이미 사용 | Kotlin nullability(`ControllerSignatureRulesTest`)·상수 인자(`HttpStatusLiteralTest`)·문서 대조(`PackageGraphDocTest`)처럼 ArchUnit 규칙 문법으로 안 되는 것 |
-| Spring Modulith | ❌ | [Fundamentals](https://docs.spring.io/spring-modulith/reference/fundamentals.html)에 따르면 _"기본적으로 메인 패키지의 직계 하위 패키지 하나하나를 애플리케이션 모듈 패키지로 본다"_ (번역) — 이 레포에서는 `domain`·`global`·`infra`·`tools` 4덩어리가 돼 도메인을 구분하지 못한다. 도메인을 모듈로 나누려면 감지 방식을 따로 설정하고, 순환(§9)부터 풀어야 한다 |
+| Spring Modulith | ⏳ 3단계 도입 예정(2026-11-15 사용자 결정, `docs/plans/2026-11-15-be-structure-stage1.md`) — 지금은 안 씀 | [Fundamentals](https://docs.spring.io/spring-modulith/reference/fundamentals.html)에 따르면 _"기본적으로 메인 패키지의 직계 하위 패키지 하나하나를 애플리케이션 모듈 패키지로 본다"_ (번역) — 이 레포에서는 `domain`·`global`·`infra`·`tools` 4덩어리가 돼 도메인을 구분하지 못한다. 도메인을 모듈로 나누려면 감지 방식을 따로 설정하고, 순환(§9)부터 풀어야 한다 |
 | Detekt | ❌ | 아키텍처 규칙(2026-10-26)에 이어 버그·냄새 패턴 검사 용도로도 검토했다(2026-11-15). 안정판 1.23.8은 Kotlin 2.0.21 기준이고, 2.0은 Kotlin 2.4.10 기준 alpha만 있다([호환 표](https://detekt.dev/docs/introduction/compatibility/), [릴리스](https://github.com/detekt/detekt/releases), 이 레포는 2.4.21). 스타일 검사는 ktlint와 겹친다. [Allegro 기술 블로그](https://blog.allegro.tech/2026/03/static-code-analysis-kotlin.html)(2026-03)도 비교 끝에 _"ktlint를 유지하라"_ (번역)고 권하고, detekt는 반복되는 특정 문제를 막을 때 쓰라고 한다. 재검토 조건: detekt 정식판이 이 레포의 Kotlin 버전을 지원하고, 이 레포에 같은 종류의 버그가 반복될 때 |
 | Konsist | ❌ | 이번에 강제한 규칙은 모두 바이트코드·리플렉션으로 된다 |
 
@@ -876,6 +879,9 @@ FE와 BE가 같은 테스트 원칙을 쓰면서 층 구성과 도구를 다르�
     `BookmarkFolderService`가 조립기를 쓰고, `PostRepositoryImpl`은 Repository 인터페이스 패키지 밖으로 못 나간다. post에 포트
     (묶음 통계·필터 서브쿼리·북마크 쓰기)를 두고 interaction·comment가 구현하는 의존 역전이 필요하다.
   - `member → auth`는 2026-10-26에 요청 DTO 2개를 `member/MemberDTO.kt`로 옮겨 끊었다.
+- **이름 불일치**: `global/ratelimit`의 `TableRateLimit`·`RateLimitRepository`가 쓰는 테이블 이름은 auth 전용이던 시절의
+  `auth_rate_limits` 그대로다(2026-11-15). 테이블 이름을 바꾸려면 DB 마이그레이션·SQL·백업 설정을 함께 고쳐야 해서 클래스
+  이름만 바꿨다.
 - **정리 후보**: Lambda 환경변수 `JWT_SECRET` — 코드·tracked 설정 어디서도 읽지 않는다(2026-10-26, 변수 이름만 조회).
   환경변수를 API로 고치려면 다른 비밀값까지 다시 넘겨야 해서, 값이 노출되지 않게 콘솔에서 지운다. (쓰지 않던
   `spring-boot-starter-oauth2-client` 의존성, 호출 0건인 Repository 메서드 5개, HTTP로 도달할 수 없던 `createComment`의

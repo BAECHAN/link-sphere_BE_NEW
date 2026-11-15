@@ -5,11 +5,11 @@ import com.example.linksphere.domain.member.MemberService
 import com.example.linksphere.domain.member.SignupRequest
 import com.example.linksphere.domain.member.TableMember
 import com.example.linksphere.domain.member.UpdateAccountRequest
-import com.example.linksphere.global.common.RateLimitService
 import com.example.linksphere.global.common.SecureToken
 import com.example.linksphere.global.common.TransactionCallbacks
 import com.example.linksphere.global.exception.InvalidActionTokenException
 import com.example.linksphere.global.exception.InvalidCredentialsException
+import com.example.linksphere.global.ratelimit.RateLimitService
 import com.example.linksphere.infra.mail.MailService
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value

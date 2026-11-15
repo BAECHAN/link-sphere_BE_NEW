@@ -2,7 +2,7 @@ package com.example.linksphere.domain.auth
 
 import com.example.linksphere.domain.member.MemberService
 import com.example.linksphere.global.common.IdempotentCreate
-import com.example.linksphere.global.common.RateLimitService
+import com.example.linksphere.global.ratelimit.RateLimitService
 import com.example.linksphere.infra.mail.MailService
 import com.example.linksphere.support.PostgresIntegrationTest
 import org.junit.jupiter.api.AfterEach

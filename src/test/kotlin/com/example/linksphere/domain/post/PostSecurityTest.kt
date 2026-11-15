@@ -10,12 +10,12 @@ import com.example.linksphere.domain.auth.PasswordResetService
 import com.example.linksphere.domain.comment.CommentController
 import com.example.linksphere.domain.comment.CommentService
 import com.example.linksphere.domain.member.MemberRole
-import com.example.linksphere.global.common.RateLimitService
 import com.example.linksphere.global.config.SecurityConfig
 import com.example.linksphere.global.config.security.CustomAccessDeniedHandler
 import com.example.linksphere.global.config.security.CustomAuthenticationEntryPoint
 import com.example.linksphere.global.exception.DuplicatePostException
 import com.example.linksphere.global.exception.InvalidInputException
+import com.example.linksphere.global.ratelimit.RateLimitService
 import jakarta.servlet.http.Cookie
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test

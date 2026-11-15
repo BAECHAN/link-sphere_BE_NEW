@@ -1,6 +1,5 @@
-package com.example.linksphere.global.common
+package com.example.linksphere.global.ratelimit
 
-import com.example.linksphere.domain.auth.AuthRateLimitRepository
 import com.example.linksphere.global.exception.RateLimitExceededException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Propagation
@@ -10,9 +9,9 @@ import java.time.Instant
 
 /**
  * 고정 윈도(fixed window) 카운터 기반 레이트리밋. bucketKey·limit·window 외엔 아무 도메인
- * 지식이 없는 범용 유틸이다 - 지금은 auth_rate_limits 테이블(Phase 2, domain/auth 소유)이
- * 유일한 저장소라 Repository는 그쪽에서 가져오지만, 이 서비스 자체는 로그인·가입이 뭔지
- * 모른다(global에 둔 이유).
+ * 지식이 없는 범용 유틸이다 - 로그인·가입·글 등록이 뭔지 모르고, 저장소(RateLimitRepository·
+ * TableRateLimit)도 같은 패키지에 둔다. 테이블 이름 auth_rate_limits는 auth 전용이던 시절(Phase 2)의
+ * 이름을 그대로 쓴다 - 이름을 바꾸려면 DB 마이그레이션이 필요해 클래스 이름만 바꿨다.
  *
  * 끝난 윈도 행은 account-purge 잡이 purgeExpired로 지운다 - bucketKey에 이메일 해시와 IP 원문이
  * 들어가 쌓아 둘 이유가 없다(docs/DATA-PROTECTION.md).
@@ -32,7 +31,7 @@ import java.time.Instant
  * 메서드가 끝날 때 풀린다.
  */
 @Service
-class RateLimitService(private val repository: AuthRateLimitRepository) {
+class RateLimitService(private val repository: RateLimitRepository) {
 
     companion object {
         private const val EXCEEDED_MESSAGE = "Too many requests, please try again later"

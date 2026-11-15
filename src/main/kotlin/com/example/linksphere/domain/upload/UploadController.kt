@@ -1,8 +1,8 @@
 package com.example.linksphere.domain.upload
 
 import com.example.linksphere.global.common.ApiResponse
-import com.example.linksphere.global.common.RateLimitService
 import com.example.linksphere.global.common.getUserId
+import com.example.linksphere.global.ratelimit.RateLimitService
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.tags.Tag
 import org.springframework.http.HttpStatus
