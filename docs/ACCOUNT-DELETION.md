@@ -11,7 +11,7 @@
 > 수정하거나, 유예 만료 정리 배치의 실행 주기를 바꾸거나, 버그를 재현·수정할 수
 > 있다(§8 참고).
 >
-> **마지막 검토**: 2026-11-16 (§5-3·§7·§8의 탈퇴 서비스 위치와 줄 번호만 고침 — 탈퇴 로직을 member로 옮기고 다른 패키지의 데이터는 이벤트를 듣는 쪽이 지우게 함). 2026-11-11 (레이트리밋 행 삭제 조건 표현만 고침). 2026-11-10 (`LambdaHandler.kt` 줄 번호만 고침). 2026-11-05 (퍼지 뒤 남는 사본·레이트리밋 행 삭제 반영. §5-3 재가입 정책 2026-11-02, 최초 작성 2026-09-29)
+> **마지막 검토**: 2026-11-16 (§5-3·§8의 `AuthService`·`MemberService`·`MemberRepository`·`PasswordResetService` 줄 번호만 고침 — auth가 회원을 전용 객체로만 읽게 함). 같은 날 앞서 (§5-3·§7·§8의 탈퇴 서비스 위치와 줄 번호만 고침 — 탈퇴 로직을 member로 옮기고 다른 패키지의 데이터는 이벤트를 듣는 쪽이 지우게 함). 2026-11-11 (레이트리밋 행 삭제 조건 표현만 고침). 2026-11-10 (`LambdaHandler.kt` 줄 번호만 고침). 2026-11-05 (퍼지 뒤 남는 사본·레이트리밋 행 삭제 반영. §5-3 재가입 정책 2026-11-02, 최초 작성 2026-09-29)
 
 ## 1. 쉬운 설명
 
@@ -132,19 +132,19 @@ Context 절 참고). 한국 개인정보보호법의 "지체 없이 파기" 원�
 
 **새 계정이 옛 계정과 연결되지 않는 이유**
 
-- 가입은 옛 행을 찾지 않고 늘 새 행을 만든다(`domain/member/MemberService.kt:38`,
+- 가입은 옛 행을 찾지 않고 늘 새 행을 만든다(`domain/member/MemberService.kt:39`,
   id는 `domain/member/TableMember.kt:14`의 `@GeneratedValue` UUID).
-- 이메일로 회원을 찾는 곳은 가입 중복 확인(`MemberService.kt:21,126`)·로그인
-  (`domain/auth/AuthService.kt:152`)·인증 메일 재발송(`AuthService.kt:90`)·비밀번호
-  재설정(`domain/auth/PasswordResetService.kt:55`)뿐이다. 퍼지가 옛 행의 이메일을
+- 이메일로 회원을 찾는 곳은 가입 중복 확인(`MemberService.kt:22,140`)·로그인
+  (`domain/auth/AuthService.kt:151`)·인증 메일 재발송(`AuthService.kt:89`)·비밀번호
+  재설정(`domain/auth/PasswordResetService.kt:53`)뿐이다. 퍼지가 옛 행의 이메일을
   `deleted-<id>@deleted.invalid`로 바꾸므로(`domain/member/AccountDeletionService.kt:78`) 어느
   경로에도 옛 행이 걸리지 않는다.
 - 글·댓글은 옛 회원 id를 계속 가리키며 "탈퇴한 사용자"로 보인다(§5-1). 북마크·폴더·
   좋아요·조회 기록은 퍼지 때 지워져(`AccountDeletionService.kt:87`의 `MemberPurgedEvent`를 듣는 리스너들, §8) 새 계정은 빈
   상태로 시작한다.
 - 같은 이메일로 이어지는 것은 이메일 해시를 키로 쓰는 레이트리밋 카운터뿐이다 —
-  로그인 실패 15분 창(`AuthService.kt:39,149`)·인증 메일 발송 1시간 창
-  (`AuthService.kt:53,87`). 계정 데이터와는 무관하고, 창이 시작한 지 하루가 넘은 행은 퍼지 잡이 함께 지운다(최대 약 5일,
+  로그인 실패 15분 창(`AuthService.kt:38,148`)·인증 메일 발송 1시간 창
+  (`AuthService.kt:52,86`). 계정 데이터와는 무관하고, 창이 시작한 지 하루가 넘은 행은 퍼지 잡이 함께 지운다(최대 약 5일,
   [`DATA-PROTECTION.md`](./DATA-PROTECTION.md) §7).
 - 퍼지 뒤에도 옛 이메일이 잠시 남는 사본은 DB 덤프(최대 약 60일)와 앱 로그다. 로그는 2026-11-05부터 이메일을 가리고 90일 뒤
   지운다(가리기 전 로그는 늦어도 2027-01-31에 사라진다).
@@ -214,7 +214,7 @@ Context 절 참고). 한국 개인정보보호법의 "지체 없이 파기" 원�
 - 포인트·쿠폰이 없어 혜택 악용 동기가 없다.
 - 정지·차단 같은 제재 기능이 없다(역할은 `USER`·`DEMO`뿐,
   `domain/member/MemberRole.kt`).
-- 반복 가입 스팸은 IP당 시간당 5회 가입 제한(`AuthService.kt:50,62`)과 이메일 인증
+- 반복 가입 스팸은 IP당 시간당 5회 가입 제한(`AuthService.kt:49,61`)과 이메일 인증
   전에는 글·댓글을 못 쓰게 하는 게이트(`domain/member/EmailVerificationGate.kt`)가
   이미 막는다.
 
@@ -248,9 +248,9 @@ AND deleted_at IS NULL` 조건)도 같은 파일에 있다.
 | 탈퇴 신청(1단계) | `domain/member/AccountDeletionService.kt`의 `requestDeletion` — 비밀번호 대조·유예 시작 뒤 `MemberDeletionRequestedEvent`를 낸다 | 예 |
 | 신청 때 세션 폐기·알림 토큰 삭제 | `domain/auth/SessionMemberEventListener.kt`, `infra/fcm/FcmTokenMemberEventListener.kt`(같은 트랜잭션) | 예 |
 | 탈퇴 신청 API | `domain/auth/AuthController.kt`의 `deleteAccount` — `ACCOUNT_DELETE` 권한이 없는 역할(데모 계정)은 서비스에 닿기 전에 403 `ACCESS_DENIED`(`docs/BE-ARCHITECTURE.md` §5 "역할·권한") | 예 |
-| 로그인 시 자동 복구 | `domain/auth/AuthService.kt:146-185`의 `login`(비밀번호 일치 후 `memberService.cancelPendingDeletion` 호출) | 예 |
+| 로그인 시 자동 복구 | `domain/auth/AuthService.kt:145-184`의 `login`(비밀번호 일치 후 `memberService.cancelPendingDeletion` 호출) | 예 |
 | 복구 여부를 FE에 전달 | `domain/auth/AuthDTO.kt`의 `TokenResponse.deletionCancelled` | 예 |
-| 경합 처리용 조건부 UPDATE 3개 | `domain/member/MemberRepository.kt:25-45`(`findIdsPendingPurge`·`cancelDeletionRequest`·`claimForPurge`) | 예 |
+| 경합 처리용 조건부 UPDATE 3개 | `domain/member/MemberRepository.kt:35-55`(`findIdsPendingPurge`·`cancelDeletionRequest`·`claimForPurge`) | 예 |
 | 유예 만료 확정 + 실제 익명화(2단계) | `domain/member/AccountDeletionService.kt`의 `purge` — 회원 행을 익명화한 뒤 `MemberPurgedEvent`를 낸다 | 예 |
 | 영구 삭제 때 개인 전용 데이터 삭제 | 위 두 리스너 + `domain/interaction/InteractionMemberEventListener.kt`(폴더 아이템 → 폴더 → 북마크, 글 좋아요), `domain/comment/CommentMemberEventListener.kt`(댓글 좋아요), `domain/post/PostMemberEventListener.kt`(조회 기록). 하나가 실패하면 그 회원의 삭제 전체가 되돌려진다 | 예 |
 | 배치 진입점(회원별 트랜잭션 분리) | `domain/member/AccountPurgeService.kt`(잡 처리기 `AccountPurgeJobHandler`는 auth에 있다) | 예 |

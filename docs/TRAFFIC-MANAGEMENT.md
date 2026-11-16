@@ -6,7 +6,7 @@
 >
 > **읽고 나면**: 요청 한도 값을 바꾸거나 새 엔드포인트에 한도를 걸 수 있고, WAF·알람 콘솔 작업을 이 문서만 보고 할 수 있다
 >
-> **마지막 검토**: 2026-11-15 (7-1 조회수 집계의 `PostService.kt` 줄 번호만 고침). 2026-11-12 (7-1의 글 등록·검색 임베딩 줄 번호, 10장의 검색 카운터 서술만 고침). 2026-11-11 (조회수 집계의 버킷 키·한도 행과 5-5, 6절의 행 삭제 조건, 7-1의 글 등록·업로드 줄 번호만 고침). 2026-11-10 (5-6의 서빙 경로 서술과 `LambdaHandler.kt` 줄 번호만 고침). 2026-11-07에는 코드화 범위 서술과 8-2 앱 500 지표 필터만 다시 봄
+> **마지막 검토**: 2026-11-16 (7-1 표의 `AuthService`·`PasswordResetService` 줄 번호와 10장의 메서드 이름만 고침). 2026-11-15 (7-1 조회수 집계의 `PostService.kt` 줄 번호만 고침). 2026-11-12 (7-1의 글 등록·검색 임베딩 줄 번호, 10장의 검색 카운터 서술만 고침). 2026-11-11 (조회수 집계의 버킷 키·한도 행과 5-5, 6절의 행 삭제 조건, 7-1의 글 등록·업로드 줄 번호만 고침). 2026-11-10 (5-6의 서빙 경로 서술과 `LambdaHandler.kt` 줄 번호만 고침). 2026-11-07에는 코드화 범위 서술과 8-2 앱 500 지표 필터만 다시 봄
 
 ## 1. 쉬운 설명
 
@@ -205,10 +205,10 @@ Google SRE 책은 과부하 대응으로 기능을 낮춰 응답하는 방법(gr
 | 업로드 URL 발급 | 회원당 1시간 30회 | `domain/upload/UploadController.kt:26-27` |
 | 링크 미리보기 | 회원당 1시간 60회 (URL 입력마다 1회 크롤링, 결과는 10분 캐시) | `domain/post/LinkPreviewController.kt:27-28` |
 | 목록 `size` | 최대 50 (글 목록·북마크 폴더 글·내 댓글) | `global/common/Paging.kt:12` |
-| 로그인 실패 | 이메일당 15분 5회, IP당 15분 20회 | `domain/auth/AuthService.kt:39-45` |
-| 가입 | IP당 1시간 5회 | `domain/auth/AuthService.kt:49-50` |
-| 인증메일 재발송 | 이메일당 1시간 3회, IP당 1시간 10회 | `domain/auth/AuthService.kt:53-56` |
-| 비밀번호 재설정 요청 | 이메일당 1시간 3회, IP당 1시간 10회 | `domain/auth/PasswordResetService.kt:39-42` |
+| 로그인 실패 | 이메일당 15분 5회, IP당 15분 20회 | `domain/auth/AuthService.kt:38-44` |
+| 가입 | IP당 1시간 5회 | `domain/auth/AuthService.kt:48-49` |
+| 인증메일 재발송 | 이메일당 1시간 3회, IP당 1시간 10회 | `domain/auth/AuthService.kt:52-55` |
+| 비밀번호 재설정 요청 | 이메일당 1시간 3회, IP당 1시간 10회 | `domain/auth/PasswordResetService.kt:37-40` |
 | 이메일 중복 검사 | IP당 1시간 60회 (초과하면 FE는 확인 전 상태로 돌아가고 실제 중복은 가입 때 409) | `domain/auth/AuthController.kt:56-57` |
 | 조회수 집계 | 같은 글을 회원(비로그인은 IP)당 24시간 창에 1회 (넘으면 429가 아니라 조회수를 올리지 않음. 창은 UTC 0시에 바뀜) | `domain/post/PostService.kt:64-65` |
 
@@ -581,7 +581,7 @@ CloudFront 보안 대시보드에서 10-02부터 차단이 늘고 국가가 다�
    응답"이라는 의도와 달리, 응답 코드(200 vs 500)로 가입 여부가 드러났다.
 
 해법: 기록 메서드를 `REQUIRES_NEW`로 분리했고(레포 선례 `MemberSessionRepository.revokeFamily`와
-같은 이유·해법), 회원 조회는 예외 대신 null을 돌려주는 `MemberService.findByEmailOrNull`로 바꿨다.
+같은 이유·해법), 회원 조회는 예외 대신 null을 돌려주는 `MemberService.findByEmailOrNull`(지금 이름은 `findCredentialsByEmailOrNull`)로 바꿨다.
 
 ## 11. 남은 것
 

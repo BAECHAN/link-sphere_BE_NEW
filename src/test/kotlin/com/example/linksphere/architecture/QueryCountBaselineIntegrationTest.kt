@@ -8,6 +8,7 @@ import com.example.linksphere.domain.interaction.BookmarkFolderService
 import com.example.linksphere.domain.linkpreview.LinkPreviewService
 import com.example.linksphere.domain.linkpreview.SafeUrlValidator
 import com.example.linksphere.domain.linkpreview.UrlMetadataExtractor
+import com.example.linksphere.domain.member.MemberService
 import com.example.linksphere.domain.post.PostResponseAssembler
 import com.example.linksphere.domain.post.PostService
 import com.example.linksphere.global.common.AdvisoryLock
@@ -47,6 +48,7 @@ import java.util.UUID
     BookmarkFolderService::class,
     CategoryService::class,
     MemberSessionService::class,
+    MemberService::class,
 )
 @TestPropertySource(properties = ["spring.jpa.properties.hibernate.generate_statistics=true"])
 class QueryCountBaselineIntegrationTest {
@@ -292,6 +294,8 @@ class QueryCountBaselineIntegrationTest {
         private const val BOOKMARK_LIST_IN_FOLDER = 12L
         private const val BOOKMARK_SEARCH = 12L
         private const val BOOKMARK_SEARCH_IN_FOLDER = 13L
-        private const val SESSION_CHECK = 1L
+
+        // 세션 1 + 회원 역할 1. 조인으로 한 번에 읽던 것을 나눠 읽는다(2단계 PR-7a, auth가 회원 테이블을 직접 보지 않는다)
+        private const val SESSION_CHECK = 2L
     }
 }

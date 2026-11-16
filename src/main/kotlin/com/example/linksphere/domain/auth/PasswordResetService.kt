@@ -1,7 +1,7 @@
 package com.example.linksphere.domain.auth
 
 import com.example.linksphere.domain.member.EmailNormalizer
-import com.example.linksphere.domain.member.MemberRepository
+import com.example.linksphere.domain.member.MemberService
 import com.example.linksphere.global.common.SecureToken
 import com.example.linksphere.global.common.TransactionCallbacks
 import com.example.linksphere.global.exception.InvalidActionTokenException
@@ -16,12 +16,11 @@ import java.time.Instant
 import java.util.UUID
 
 /**
- * 비밀번호 찾기 - 요청/확인 두 단계. MemberService를 거치지 않고 MemberRepository를 직접
- * 쓴다(비밀번호 찾기는 계정 자체를 다루는 게 본업이라 도메인 규칙보다 낮은 레벨에서 동작한다).
+ * 비밀번호 찾기 - 요청/확인 두 단계. 회원은 MemberService로만 읽고 바꾼다(TableMember·MemberRepository를 직접 쓰지 않는다).
  */
 @Service
 class PasswordResetService(
-    private val memberRepository: MemberRepository,
+    private val memberService: MemberService,
     private val memberActionTokenRepository: MemberActionTokenRepository,
     private val memberSessionService: MemberSessionService,
     private val passwordEncoder: PasswordEncoder,
@@ -51,7 +50,7 @@ class PasswordResetService(
         rateLimitService.consume(emailBucket, REQUEST_EMAIL_LIMIT, REQUEST_EMAIL_WINDOW)
         rateLimitService.consume(ipBucket, REQUEST_IP_LIMIT, REQUEST_IP_WINDOW)
 
-        val member = memberRepository.findByEmail(normalizedEmail) ?: return
+        val member = memberService.findCredentialsByEmailOrNull(normalizedEmail) ?: return
 
         // 비밀번호를 공개한 공유 계정(데모)은 재설정 메일을 보내지 않는다 - 수신함이 없는 주소로 반복해 보내면 반송이 쌓여 SES
         // 발신 평판이 깎인다. 응답은 없는 이메일과 같다(MemberRole.sharedCredentials).
@@ -61,7 +60,7 @@ class PasswordResetService(
 
         // 같은 키의 토큰이 아직 쓸 수 있으면 받은 메일의 링크가 유효하니 다시 보내지 않는다. 만료·사용된 뒤에는 응답이 끊긴 탭에서
         // 나중에 다시 요청한 경우라 메일이 가야 한다 - 키는 이미 옛 토큰이 쓰고 있어 새 토큰에는 싣지 않는다.
-        val existing = memberActionTokenRepository.findByMemberIdAndIdempotencyKey(member.id!!, idempotencyKey)
+        val existing = memberActionTokenRepository.findByMemberIdAndIdempotencyKey(member.id, idempotencyKey)
 
         if (existing?.isActive(Instant.now()) == true) {
             return
@@ -70,7 +69,7 @@ class PasswordResetService(
         val raw = SecureToken.generate()
         memberActionTokenRepository.save(
             TableMemberActionToken(
-                memberId = member.id!!,
+                memberId = member.id,
                 purpose = MemberActionTokenPurpose.PASSWORD_RESET,
                 tokenHash = SecureToken.hash(raw),
                 expiresAt = Instant.now().plus(TOKEN_VALIDITY),
@@ -104,9 +103,7 @@ class PasswordResetService(
             throw InvalidActionTokenException("Invalid or expired token")
         }
 
-        val member =
-            memberRepository.findById(token.memberId)
-                .orElseThrow { IllegalStateException("Member not found for action token: ${token.memberId}") }
+        val member = memberService.getCredentials(token.memberId)
 
         // 익명화(퍼지)가 끝난 뒤에는 막는다 - 막지 않으면 퍼지 전에 발급된 토큰으로
         // deleted-<id>@deleted.invalid 행에 알려진 비밀번호를 설정할 수 있게 된다. 탈퇴
@@ -116,8 +113,7 @@ class PasswordResetService(
             throw InvalidActionTokenException("Invalid or expired token")
         }
 
-        member.password = passwordEncoder.encode(newPassword)
-        memberRepository.save(member)
+        memberService.changePassword(token.memberId, passwordEncoder.encode(newPassword))
 
         memberSessionService.revokeAllForMember(token.memberId)
     }

@@ -12,8 +12,9 @@ import java.util.UUID
 @Transactional(readOnly = true)
 class MemberService(private val memberRepository: MemberRepository) {
 
+    // 다른 패키지(auth)에 TableMember를 내주지 않는다 - 공개 메서드는 응답 DTO나 전용 객체(MemberCredentials)를 돌려준다.
     @Transactional
-    fun signup(request: SignupRequest): TableMember {
+    fun signup(request: SignupRequest): AccountResponse {
         val normalizedEmail = EmailNormalizer.normalize(request.email)
 
         // 예외 메시지에 제출값을 반사하지 않는다 - FE는 이 메시지를 표시하지 않고 code로만
@@ -54,7 +55,7 @@ class MemberService(private val memberRepository: MemberRepository) {
         // 커밋 때로 미뤄, 제약 위반이 이 try 밖(커밋)에서 나 DUPLICATE_RESOURCE로 나갔다(MemberServiceIntegrationTest,
         // PostAIService.processAiJob의 saveAndFlush와 같은 이유).
         try {
-            return memberRepository.saveAndFlush(newMember)
+            return AccountResponse.from(memberRepository.saveAndFlush(newMember))
         } catch (e: DataIntegrityViolationException) {
             val cause = e.mostSpecificCause.message ?: ""
             when {
@@ -69,12 +70,16 @@ class MemberService(private val memberRepository: MemberRepository) {
     // 다룬다. 예외로 알리면 이 클래스의 @Transactional 경계를 지나며 호출부 트랜잭션이
     // rollback-only로 표시돼, 호출부가 잡고 정상 종료해도 커밋 시점에
     // UnexpectedRollbackException(500)이 난다(docs/TRAFFIC-MANAGEMENT.md 시행착오 참고).
-    fun findByEmailOrNull(email: String): TableMember? = memberRepository.findByEmail(EmailNormalizer.normalize(email))
+    fun findCredentialsByEmailOrNull(email: String): MemberCredentials? = memberRepository.findByEmail(EmailNormalizer.normalize(email))?.let { MemberCredentials.from(it) }
 
-    fun findById(id: UUID): TableMember = memberRepository.findById(id).orElseThrow { IllegalStateException("Member not found with id: $id") }
+    fun getCredentials(id: UUID): MemberCredentials = MemberCredentials.from(findById(id))
 
-    @Transactional
-    fun updateAccount(id: UUID, request: UpdateAccountRequest): TableMember {
+    // SessionAuthenticationFilter가 로그인한 요청마다 부른다(MemberSessionService.checkAccessToken). 회원이 없으면 null.
+    fun findRole(id: UUID): MemberRole? = memberRepository.findRoleById(id)
+
+    private fun findById(id: UUID): TableMember = memberRepository.findById(id).orElseThrow { IllegalStateException("Member not found with id: $id") }
+
+    private fun updateAccount(id: UUID, request: UpdateAccountRequest): TableMember {
         val member = findById(id)
         request.nickname?.let {
             if (!it.equals(member.nickname, ignoreCase = true) && memberRepository.existsByNicknameIgnoreCase(it)) {
@@ -88,11 +93,8 @@ class MemberService(private val memberRepository: MemberRepository) {
     }
 
     // 아래 셋은 MemberController 전용이다 - 컨트롤러는 엔티티를 모르므로(LayerSkeletonRulesTest) 응답 DTO로 바꿔 돌려준다.
-    // 엔티티가 필요한 호출부(AuthService)는 위의 findById·updateAccount를 그대로 쓴다.
     fun getAccount(id: UUID): AccountResponse = AccountResponse.from(findById(id))
 
-    // 같은 클래스 안의 호출은 프록시를 거치지 않아 updateAccount의 @Transactional이 적용되지 않는다 - 여기에 직접 단다
-    // (없으면 클래스의 readOnly 트랜잭션으로 돈다).
     @Transactional
     fun updateAccountAndGet(id: UUID, request: UpdateAccountRequest): AccountResponse = AccountResponse.from(updateAccount(id, request))
 
@@ -101,28 +103,28 @@ class MemberService(private val memberRepository: MemberRepository) {
 
     // 새 비밀번호는 AuthService가 이미 인코딩해서 넘긴다 - updateAccount와 같은 위치에 두는
     // 이유는 "회원 데이터 변경은 MemberService를 거친다"는 규칙을 password에도 그대로
-    // 적용하기 위함(AuthService는 TableMember 필드를 직접 건드리지 않는다).
+    // 적용하기 위함(AuthService는 TableMember 필드를 직접 건드리지 않는다). 비밀번호 찾기(PasswordResetService)도 이것을 쓴다.
     @Transactional
-    fun changePassword(id: UUID, encodedPassword: String): TableMember {
+    fun changePassword(id: UUID, encodedPassword: String) {
         val member = findById(id)
         member.password = encodedPassword
         member.updatedAt = LocalDateTime.now()
-        return memberRepository.save(member)
+        memberRepository.save(member)
     }
 
     // 이메일 인증 확인(AuthService.confirmEmailVerification)이 토큰을 소비한 뒤 호출한다.
     @Transactional
-    fun markEmailVerified(id: UUID): TableMember {
+    fun markEmailVerified(id: UUID) {
         val member = findById(id)
         member.emailVerified = true
         member.updatedAt = LocalDateTime.now()
-        return memberRepository.save(member)
+        memberRepository.save(member)
     }
 
     // 로그인 성공 시(AuthService.login) 탈퇴 유예 중인 회원의 신청을 취소한다. AuthService가
     // TableMember 필드를 직접 건드리지 않는다는 규칙(changePassword와 같은 이유)을 지킨다.
     // false면 애초에 유예 중이 아니었거나, 퍼지가 먼저 그 회원을 가져간 것이다 - 어느
-    // 쪽인지는 호출부가 member.deletionRequestedAt으로 구분한다.
+    // 쪽인지는 호출부가 로그인 때 읽은 MemberCredentials.deletionRequestedAt으로 구분한다.
     @Transactional
     fun cancelPendingDeletion(id: UUID): Boolean = memberRepository.cancelDeletionRequest(id) == 1
 

@@ -41,8 +41,8 @@ class TableMember(
     // sql/add_member_deletion_requested_at.sql이 컬럼을 추가한다.
     @Column(name = "deletion_requested_at") var deletionRequestedAt: Instant? = null,
     // 역할(MemberRole). 가입하면 DB 기본값 'USER'가 들어가고 앱은 읽기만 한다 - 데모 계정은 운영자가 SQL로 바꾼다
-    // (docs/BE-ARCHITECTURE.md "역할·권한"). 요청마다 하는 권한 판정은 이 엔티티가 아니라 세션 조회(MemberSessionRepository.
-    // findWithRoleByAccessTokenHash)에서 함께 읽는다.
+    // (docs/BE-ARCHITECTURE.md "역할·권한"). 요청마다 하는 권한 판정은 이 엔티티를 통째로 읽지 않고 역할 컬럼만 읽는다
+    // (MemberRepository.findRoleById).
     @Enumerated(EnumType.STRING)
     @Column(name = "role", nullable = false, insertable = false, updatable = false)
     val role: MemberRole = MemberRole.USER,

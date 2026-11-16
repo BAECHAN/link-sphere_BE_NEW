@@ -78,7 +78,7 @@ class AccountResignupIntegrationTest {
 
         val renewed = memberService.signup(SignupRequest(EMAIL, "enc", "returner"))
 
-        assertNotEquals(oldId, renewed.id)
+        assertNotEquals(oldId.toString(), renewed.id)
         // JdbcTemplate 조회는 Hibernate 자동 flush를 타지 않는다 - 퍼지의 익명화를 먼저 DB로 내보낸다
         memberRepository.flush()
         assertEquals("deleted-$oldId@deleted.invalid", jdbc.queryForObject("SELECT email FROM members WHERE id = ?", String::class.java, oldId))

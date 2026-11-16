@@ -1,6 +1,7 @@
 package com.example.linksphere.domain.auth
 
 import com.example.linksphere.domain.member.MemberRole
+import com.example.linksphere.domain.member.MemberService
 import com.example.linksphere.global.common.SecureToken
 import com.example.linksphere.global.exception.InvalidTokenException
 import com.example.linksphere.global.exception.SessionMismatchException
@@ -37,7 +38,10 @@ sealed interface AccessTokenCheck {
  */
 @Service
 @Transactional(readOnly = true)
-class MemberSessionService(private val memberSessionRepository: MemberSessionRepository) {
+class MemberSessionService(
+    private val memberSessionRepository: MemberSessionRepository,
+    private val memberService: MemberService,
+) {
     private val logger = LoggerFactory.getLogger(MemberSessionService::class.java)
 
     companion object {
@@ -211,8 +215,8 @@ class MemberSessionService(private val memberSessionRepository: MemberSessionRep
 
     /** SessionAuthenticationFilter가 매 요청마다 access 토큰을 판정할 때 쓴다. */
     fun checkAccessToken(rawAccessToken: String): AccessTokenCheck {
-        val (session, role) =
-            memberSessionRepository.findWithRoleByAccessTokenHash(SecureToken.hash(rawAccessToken))
+        val session =
+            memberSessionRepository.findByAccessTokenHash(SecureToken.hash(rawAccessToken))
                 ?: return AccessTokenCheck.Invalid
         if (session.accessExpiresAt.isBefore(Instant.now())) return AccessTokenCheck.Expired
         // revoke는 로그아웃·재사용탐지처럼 "확실히 죽었다"뿐 아니라, 다른 탭이 refresh를
@@ -224,6 +228,9 @@ class MemberSessionService(private val memberSessionRepository: MemberSessionRep
         // 실패해 결국 로그인 화면으로 수렴한다 - 보안 결과는 같고 UX만 나아진다(PR #42
         // 리뷰에서 발견: 회전 시 다른 탭의 아직 유효한 access가 즉시 로그아웃당하던 문제).
         if (session.revokedAt != null) return AccessTokenCheck.Expired
+        // 역할은 살아 있는 세션일 때만 member에 묻는다(로그인한 요청마다 조회 1번). 회원 행이 없으면 세션도 FK cascade로 함께
+        // 지워지므로 null은 오지 않지만, 온다면 모르는 토큰과 같게 다룬다.
+        val role = memberService.findRole(session.memberId) ?: return AccessTokenCheck.Invalid
         return AccessTokenCheck.Valid(session.memberId, session.familyId, role)
     }
 }

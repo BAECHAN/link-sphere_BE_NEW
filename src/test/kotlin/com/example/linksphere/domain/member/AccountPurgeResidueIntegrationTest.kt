@@ -34,6 +34,7 @@ import java.util.UUID
 @Import(
     AccountDeletionService::class,
     MemberSessionService::class,
+    MemberService::class,
     SessionMemberEventListener::class,
     FcmTokenMemberEventListener::class,
     InteractionMemberEventListener::class,
