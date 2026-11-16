@@ -1,9 +1,9 @@
 package com.example.linksphere.domain.auth
 
+import com.example.linksphere.domain.comment.CommentReactionRepository
 import com.example.linksphere.domain.interaction.BookmarkFolderItemRepository
 import com.example.linksphere.domain.interaction.BookmarkFolderRepository
 import com.example.linksphere.domain.interaction.BookmarkRepository
-import com.example.linksphere.domain.interaction.CommentReactionRepository
 import com.example.linksphere.domain.interaction.PostReactionRepository
 import com.example.linksphere.domain.member.MemberRepository
 import com.example.linksphere.domain.post.PostViewRepository

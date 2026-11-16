@@ -97,7 +97,10 @@ src/main/kotlin/com/example/linksphere/
 │   │   ├── CommentLimits.kt             # 댓글 이미지 5장·본문 6,000바이트(서비스 검사, 스펙에도 실림)
 │   │   ├── CommentPostProcessService.kt # 커밋 뒤 뒷일(잡): FCM 알림·링크 프리뷰
 │   │   ├── CommentPostProcessJobHandler.kt # comment-postprocess 잡 처리기
-│   │   └── TableComment.kt
+│   │   ├── TableComment.kt
+│   │   ├── CommentLikeController.kt     # 댓글 좋아요·취소(API 문서에서는 "좋아요·북마크" 묶음)
+│   │   ├── CommentReactionRepository.kt
+│   │   └── TableCommentReaction.kt
 │   ├── interaction/                     # 좋아요·북마크(폴더 다중 소속 포함) 도메인
 │   │   ├── InteractionController.kt     # 좋아요·북마크 저장/해제 + 폴더 소속 추가/제거
 │   │   ├── InteractionService.kt
@@ -111,12 +114,10 @@ src/main/kotlin/com/example/linksphere/
 │   │   ├── BookmarkFolderRepository.kt
 │   │   ├── BookmarkFolderItemRepository.kt  # bookmark_folder_items (N:M 소속)
 │   │   ├── PostReactionRepository.kt
-│   │   ├── CommentReactionRepository.kt
 │   │   ├── TableBookmark.kt
 │   │   ├── TableBookmarkFolder.kt
 │   │   ├── TableBookmarkFolderItem.kt
-│   │   ├── TablePostReaction.kt
-│   │   └── TableCommentReaction.kt
+│   │   └── TablePostReaction.kt
 │   ├── category/                        # 카테고리 도메인
 │   │   ├── CategoryController.kt
 │   │   ├── CategoryDTO.kt

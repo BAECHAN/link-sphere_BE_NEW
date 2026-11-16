@@ -1,4 +1,4 @@
-package com.example.linksphere.domain.interaction
+package com.example.linksphere.domain.comment
 
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Modifying
@@ -12,7 +12,7 @@ interface CommentLikeCount {
 }
 
 interface CommentReactionRepository : JpaRepository<TableCommentReaction, CommentReactionId> {
-    // 일괄 DELETE — PostReactionRepository.deleteByUserIdAndPostId 와 같은 이유(동시 요청에도 예외 없음)
+    // 일괄 DELETE — interaction의 PostReactionRepository.deleteByUserIdAndPostId 와 같은 이유(동시 요청에도 예외 없음)
     @Modifying
     @Query("DELETE FROM TableCommentReaction r WHERE r.userId = :userId AND r.commentId = :commentId")
     fun deleteByUserIdAndCommentId(@Param("userId") userId: UUID, @Param("commentId") commentId: UUID): Int

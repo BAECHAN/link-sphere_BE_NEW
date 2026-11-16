@@ -1,6 +1,5 @@
 package com.example.linksphere.domain.comment
 
-import com.example.linksphere.domain.interaction.CommentReactionRepository
 import com.example.linksphere.domain.member.EmailVerificationGate
 import com.example.linksphere.domain.member.MemberRepository
 import com.example.linksphere.domain.member.TableMember
@@ -269,6 +268,35 @@ class CommentService(
         )
 
         return toCommentResponse(saved, member)
+    }
+
+    /**
+     * 댓글 좋아요 상태를 지정한다(liked=true면 추가, false면 취소) - 같은 요청을 여러 번 보내거나 동시에 보내도 결과가 같다(멱등).
+     * 삭제된 댓글·볼 수 없는 글의 댓글은 거절한다(assertCommentLikeable).
+     */
+    @Transactional
+    fun setCommentLike(commentId: UUID, userId: UUID, liked: Boolean): Boolean {
+        assertCommentLikeable(commentId, userId)
+
+        if (liked) {
+            commentReactionRepository.insertIgnoreConflict(userId, commentId)
+        } else {
+            commentReactionRepository.deleteByUserIdAndCommentId(userId, commentId)
+        }
+
+        return liked
+    }
+
+    private fun assertCommentLikeable(commentId: UUID, userId: UUID) {
+        val comment =
+            commentRepository.findByIdOrNull(commentId)
+                ?: throw CommentNotFoundException(commentId)
+        // 비공개 글에 달린 댓글도 글 소유자 외에는 좋아요를 달 수 없어야 한다.
+        val post = postRepository.findByIdOrNull(comment.postId) ?: throw PostNotFoundException(comment.postId)
+        PostVisibility.assertVisible(post, userId, comment.postId)
+        // 비공개 글 검증 뒤에 확인해야 한다 - 순서를 바꾸면 남의 비공개 글의 삭제된 댓글에
+        // 404 대신 400이 나가면서 "그 댓글이 존재한다"는 사실이 새어나간다.
+        if (comment.isDeleted) throw InvalidInputException("삭제된 댓글에는 좋아요를 누를 수 없습니다.")
     }
 
     @Transactional

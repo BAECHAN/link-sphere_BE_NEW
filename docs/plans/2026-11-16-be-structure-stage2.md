@@ -4,7 +4,7 @@
 
 ## 구현 결과
 
-> PR-1 #204 · PR-2 #206 · PR-3 #207 · PR-4 #210 · 2026-11-16 대조 · PR-1 이탈 0 · 미구현 0 · PR-2 이탈 3 · 미구현 0 · PR-3 이탈 0 · 미구현 0 · PR-4 이탈 0 · 미구현 0 — 판정 근거(파일:줄)는 각 PR 본문 "계획 대비 구현"
+> PR-1 #204 · PR-2 #206 · PR-3 #207 · PR-4 #210 · PR-5 #211 · 2026-11-16 대조 · PR-1 이탈 0 · 미구현 0 · PR-2 이탈 3 · 미구현 0 · PR-3 이탈 0 · 미구현 0 · PR-4 이탈 0 · 미구현 0 · PR-5 이탈 0 · 미구현 0 — 판정 근거(파일:줄)는 각 PR 본문 "계획 대비 구현"
 
 **PR-1(#204)**
 
@@ -51,6 +51,16 @@
 - 계획에 없던 변경: `PostResponseAssembler`가 `CategoryService`를 쓴다. 그래서 조립기 설명을 "어느 Service도 참조하지 않는다"에서 "자기를 부르는 Service를 참조하지 않는다"로 고쳤다(category는 post를 모르므로 순환이 아니다)
 - 계획에 없던 변경: SQL 문이 늘어 운영 응답 시간을 배포 전후로 쟀다(값은 PR 본문)
 - 문서: BE-ARCHITECTURE(§2 검사 표와 §3의 위반 수, 조립기 서술), `application.yml`과 조립기 주석. 동작이 같아 CHANGELOG에는 넣지 않았다
+
+**PR-5(#211)**
+
+- 계획대로: `TableCommentReaction`·`CommentReactionRepository`와 댓글 좋아요 엔드포인트 2개를 comment로 옮겼다. 태그 이름("좋아요·북마크")과 메서드 이름이 그대로라 스펙이 바뀌지 않는다. `interaction → comment`와 반대 방향 `comment → interaction`이 함께 없어져 허용 순환 간선이 3개에서 2개가, 허용 위반이 54곳에서 50곳이 됐다
+- 구현 때 정한 것: 엔드포인트는 기존 `CommentController`가 아니라 새 `CommentLikeController`에 뒀다 — 기존 컨트롤러에 넣으면 그 클래스의 태그가 붙어 API 문서의 묶음이 바뀐다. 새 컨트롤러의 태그에는 이름만 두고 설명은 `InteractionController`의 것을 쓴다
+- 구현 때 정한 것: 좋아요 상태 지정(`setCommentLike`)은 `CommentService`로 옮기고, 글 공개 확인은 interaction의 내부 함수 대신 같은 두 줄을 직접 쓴다. 검사 순서(댓글 없음 → 글 없음·비공개 → 삭제된 댓글)와 예외, 트랜잭션 표시는 그대로다
+- 계획에 없던 변경: 탈퇴 서비스(`AccountDeletionService`)가 옮겨 간 저장소를 쓰느라 `auth → comment` 간선이 새로 생겼다(순환 아님, PR-6에서 없어진다)
+- 계획에 없던 변경: 좋아요 저장소 통합 테스트의 댓글 좋아요 단언을 comment의 `CommentReactionRepositoryIntegrationTest`로 나눴다
+- 확인한 것: `openApiSpec` 결과는 로컬 생성 때 붙는 `servers` 항목 말고 운영 스펙과 같다
+- 문서: BE-ARCHITECTURE(그래프, §2 검사 표와 §3의 위반 수, §9 순환 표, 업계 비교 표의 간선 수, "순환 해소 후보"), README 트리, `.claude/CLAUDE.md` 요약표, 테스트 주석의 간선 수. 동작이 같아 CHANGELOG에는 넣지 않았다
 
 <!-- plan-result:end -->
 
