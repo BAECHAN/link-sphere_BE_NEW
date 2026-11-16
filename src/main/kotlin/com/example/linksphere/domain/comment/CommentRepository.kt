@@ -1,7 +1,6 @@
 package com.example.linksphere.domain.comment
 
 import org.springframework.data.domain.Limit
-import org.springframework.data.jpa.repository.EntityGraph
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
@@ -15,7 +14,7 @@ interface PostCommentCount {
 
 interface CommentRepository : JpaRepository<TableComment, UUID> {
 
-    @EntityGraph(attributePaths = ["member"])
+    // 작성자는 여기서 함께 읽지 않는다 - CommentService가 작성자 id를 모아 member에 한 번에 묻는다.
     fun findAllByPostIdOrderByCreatedAtAsc(postId: UUID): List<TableComment>
 
     fun countByPostId(postId: UUID): Long

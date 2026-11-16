@@ -1,6 +1,5 @@
 package com.example.linksphere.domain.comment
 
-import com.example.linksphere.domain.member.TableMember
 import com.example.linksphere.domain.post.TablePost
 import jakarta.persistence.*
 import java.time.LocalDateTime
@@ -24,9 +23,6 @@ class TableComment(
     // 수정·톰스톤 삭제 때 CommentService가 갱신한다 - val이던 동안은 생성 시각에 고정돼 있었다
     @Column(name = "updated_at", nullable = false)
     var updatedAt: LocalDateTime = LocalDateTime.now(),
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", insertable = false, updatable = false)
-    val member: TableMember? = null,
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "post_id", insertable = false, updatable = false)
     val post: TablePost? = null,

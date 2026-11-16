@@ -5,6 +5,7 @@ import com.example.linksphere.domain.comment.CommentService
 import com.example.linksphere.domain.linkpreview.LinkPreviewService
 import com.example.linksphere.domain.linkpreview.SafeUrlValidator
 import com.example.linksphere.domain.linkpreview.UrlMetadataExtractor
+import com.example.linksphere.domain.member.MemberService
 import com.example.linksphere.global.common.AdvisoryLock
 import com.example.linksphere.global.ratelimit.RateLimitService
 import com.example.linksphere.infra.ai.GeminiService
@@ -25,7 +26,7 @@ import java.util.UUID
 // 별도 트랜잭션(REQUIRES_NEW)으로 커밋하는 upsert라 mock으로는 "두 번째는 안 센다"가 재현되지 않는다. 그 행은 테스트
 // 롤백에 걸리지 않으므로 운영처럼 요청마다 커밋되게 테스트 트랜잭션 밖에서 돌고 끝나면 지운다.
 @PostgresIntegrationTest
-@Import(PostService::class, RateLimitService::class)
+@Import(PostService::class, RateLimitService::class, MemberService::class)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class PostViewRecordIntegrationTest {
 

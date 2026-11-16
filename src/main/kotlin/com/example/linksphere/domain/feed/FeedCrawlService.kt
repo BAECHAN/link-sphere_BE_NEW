@@ -1,6 +1,6 @@
 package com.example.linksphere.domain.feed
 
-import com.example.linksphere.domain.member.MemberRepository
+import com.example.linksphere.domain.member.MemberService
 import com.example.linksphere.global.common.BatchJobLimits
 import com.example.linksphere.global.job.JobPublisher
 import org.slf4j.LoggerFactory
@@ -19,7 +19,7 @@ class FeedCrawlService(
     private val feedSourceRepository: FeedSourceRepository,
     private val feedItemRepository: FeedItemRepository,
     private val feedParser: FeedParser,
-    private val memberRepository: MemberRepository,
+    private val memberService: MemberService,
     private val jobPublisher: JobPublisher,
     private val feedItemProcessor: FeedItemProcessor,
 ) {
@@ -36,7 +36,7 @@ class FeedCrawlService(
     // DB 쓰기는 feed_sources.last_fetched_at/last_error 갱신뿐이라 항목별 @Transactional이 필요 없다
     // (source 단위 실패 격리는 runCatching으로 충분 - 각 save() 호출 자체가 이미 독립 트랜잭션이다).
     fun collectAndDispatch() {
-        val botId = memberRepository.findFirstByIsBotTrue()?.id
+        val botId = memberService.findFirstBotId()
         if (botId == null) {
             logger.error("[FeedCrawl] 봇 계정이 없음 - 수집 중단 (sql/create_feed_sources.sql 실행 여부 확인)")
             return

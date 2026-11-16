@@ -85,8 +85,9 @@ class PostRepositoryIntegrationTest {
     private fun findPosts(filter: String, currentUserId: UUID?) = postRepository.findPostsAfter(
         categoryIds = null,
         search = null,
-        filter = filter,
-        nickname = null,
+        filters = setOf(filter),
+        authorIds = null,
+        excludedAuthorIds = emptySet(),
         currentUserId = currentUserId,
         sort = PostListSort.LATEST,
         after = null,

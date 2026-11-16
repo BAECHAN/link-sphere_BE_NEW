@@ -19,15 +19,10 @@ internal val KNOWN_BOUNDARY_VIOLATIONS: Set<String> =
     setOf(
         "domain.comment.CommentPostProcessService -> domain.post.PostRepository",
         "domain.comment.CommentPostProcessService -> domain.post.TablePost",
-        "domain.comment.CommentService -> domain.member.MemberRepository",
-        "domain.comment.CommentService -> domain.member.TableMember",
         "domain.comment.CommentService -> domain.post.PostRepository",
         "domain.comment.CommentService -> domain.post.TablePost",
         "domain.comment.MyCommentResponse -> domain.post.TablePost",
-        "domain.comment.TableComment -> domain.member.TableMember",
         "domain.comment.TableComment -> domain.post.TablePost",
-        "domain.feed.FeedCrawlService -> domain.member.MemberRepository",
-        "domain.feed.FeedCrawlService -> domain.member.TableMember",
         "domain.interaction.BookmarkFolderService -> domain.post.PostRepository",
         "domain.interaction.BookmarkFolderService -> domain.post.TablePost",
         "domain.interaction.BookmarkRepositoryCustom -> domain.post.TablePost",
@@ -37,7 +32,6 @@ internal val KNOWN_BOUNDARY_VIOLATIONS: Set<String> =
         "domain.interaction.TableBookmark -> domain.post.TablePost",
         "domain.post.PostRepositoryImpl -> domain.interaction.TableBookmark",
         "domain.post.PostRepositoryImpl -> domain.interaction.TablePostReaction",
-        "domain.post.PostRepositoryImpl -> domain.member.TableMember",
         "domain.post.PostResponseAssembler -> domain.comment.CommentRepository",
         "domain.post.PostResponseAssembler -> domain.interaction.BookmarkFolderItemRepository",
         "domain.post.PostResponseAssembler -> domain.interaction.BookmarkRepository",
@@ -45,15 +39,11 @@ internal val KNOWN_BOUNDARY_VIOLATIONS: Set<String> =
         "domain.post.PostResponseAssembler -> domain.interaction.TableBookmark",
         "domain.post.PostResponseAssembler -> domain.interaction.TableBookmarkFolderItem",
         "domain.post.PostResponseAssembler -> domain.interaction.TablePostReaction",
-        "domain.post.PostResponseAssembler -> domain.member.MemberRepository",
-        "domain.post.PostResponseAssembler -> domain.member.TableMember",
         "domain.post.PostService -> domain.interaction.BookmarkFolderItemRepository",
         "domain.post.PostService -> domain.interaction.BookmarkFolderRepository",
         "domain.post.PostService -> domain.interaction.BookmarkRepository",
         "domain.post.PostService -> domain.interaction.TableBookmarkFolder",
-        "domain.post.PostService -> domain.member.MemberRepository",
         "domain.upload.OrphanImageGcService -> domain.comment.CommentRepository",
-        "domain.upload.OrphanImageGcService -> domain.member.MemberRepository",
     )
 
 /**
@@ -62,9 +52,8 @@ internal val KNOWN_BOUNDARY_VIOLATIONS: Set<String> =
  * 다 찾을 수 없다.
  *
  * 바이트코드의 타입 참조(필드·인자·반환 타입·호출 대상)만 본다. 두 가지는 보지 못한다. 저장소가 돌려준 엔티티를 지역 변수로만
- * 받아 다른 곳에 넘기는 코드(예: PostService가 MemberRepository.findById 결과를 EmailVerificationGate에 넘긴다 - 저장소
- * 쪽 항목이 사라지면 함께 사라진다), 그리고 `@Query` 문자열에 글자로 적힌 다른 패키지의 엔티티·테이블 이름
- * (MemberSessionRepository·FcmTokenRepository, 계획 PR-10에서 따로 검사한다). 루트(LambdaHandler)와 `tools/`는
+ * 받아 다른 곳에 넘기는 코드(저장소 쪽 항목이 사라지면 함께 사라진다), 그리고 `@Query` 문자열에 글자로 적힌 다른 패키지의
+ * 엔티티·테이블 이름(예전의 MemberSessionRepository·FcmTokenRepository - 지금은 없고, 계획 PR-10에서 따로 검사한다). 루트(LambdaHandler)와 `tools/`는
  * PackageGraphDocTest와 같은 이유로 빠진다 - `tools/`는 로컬에서 한 번 돌리는 도구다.
  */
 class ModuleBoundaryRulesTest {

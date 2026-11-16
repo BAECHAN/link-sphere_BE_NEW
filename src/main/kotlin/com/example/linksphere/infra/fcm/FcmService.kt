@@ -1,5 +1,6 @@
 package com.example.linksphere.infra.fcm
 
+import com.example.linksphere.domain.auth.MemberSessionService
 import com.google.firebase.FirebaseApp
 import com.google.firebase.messaging.FirebaseMessaging
 import com.google.firebase.messaging.FirebaseMessagingException
@@ -14,8 +15,8 @@ import java.util.UUID
 
 @Service
 class FcmService(
-    private val fcmTokenService: FcmTokenService,
     private val fcmTokenRepository: FcmTokenRepository,
+    private val memberSessionService: MemberSessionService,
 ) {
 
     private val logger = LoggerFactory.getLogger(FcmService::class.java)
@@ -35,13 +36,7 @@ class FcmService(
         }
 
         try {
-            // 세션이 죽은(로그아웃·재사용탐지·비밀번호변경·자연만료) 기기의 토큰은 발송
-            // 전에 먼저 지운다 - 필터만 하고 지우지 않으면 그 토큰은 발송 대상에서 계속
-            // 빠지기만 할 뿐 FCM의 UNREGISTERED 응답(아래 실패 정리 로직)을 받을 기회가
-            // 없어 영원히 안 지워진다.
-            fcmTokenRepository.deleteStaleTokensForUser(userId)
-
-            val tokens = fcmTokenService.getTokensByUserId(userId)
+            val tokens = removeStaleTokens(userId)
             if (tokens.isEmpty()) {
                 logger.debug("[FCM] No tokens for userId: $userId — skipping")
                 return
@@ -81,6 +76,37 @@ class FcmService(
             // 후처리 job의 나머지 작업(링크 프리뷰 갱신)이 알림 실패로 함께 죽지 않는다.
             logger.error("[FCM] Failed to send notification to userId: $userId", e)
         }
+    }
+
+    /**
+     * 세션이 죽은(로그아웃·재사용탐지·비밀번호변경·자연만료) 기기의 토큰을 지우고, 보낼 토큰만 돌려준다. 필터만 하고 지우지
+     * 않으면 그 토큰은 발송 대상에서 계속 빠지기만 할 뿐 FCM의 UNREGISTERED 응답(실패 정리 로직)을 받을 기회가 없어
+     * 영원히 안 지워진다.
+     *
+     * 어느 계열이 살아 있는지는 auth에 묻는다. 토큰을 먼저 읽고 계열을 나중에 읽는다 - 그 사이 새로 로그인한 기기의 토큰은
+     * 읽은 목록에 없어 지우지 않고, 이번 발송에서만 빠진다. 계열을 모르는 토큰(컬럼 도입 전 행)은 예전처럼 죽은 것으로 본다.
+     */
+    private fun removeStaleTokens(userId: UUID): List<String> {
+        val registered = fcmTokenRepository.findAllByUserId(userId)
+
+        if (registered.isEmpty()) {
+            return emptyList()
+        }
+
+        val liveFamilyIds = memberSessionService.findLiveFamilyIds(userId)
+        val (live, stale) = registered.partition { it.sessionFamilyId in liveFamilyIds }
+
+        if (stale.any { it.sessionFamilyId == null }) {
+            fcmTokenRepository.deleteByUserIdAndSessionFamilyIdIsNull(userId)
+        }
+
+        val deadFamilyIds = stale.mapNotNull { it.sessionFamilyId }.toSet()
+
+        if (deadFamilyIds.isNotEmpty()) {
+            fcmTokenRepository.deleteByUserIdAndSessionFamilyIdIn(userId, deadFamilyIds)
+        }
+
+        return live.map { it.token }
     }
 
     private fun isInvalidTokenError(exception: FirebaseMessagingException?): Boolean {

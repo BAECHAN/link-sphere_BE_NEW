@@ -7,7 +7,7 @@ import com.example.linksphere.domain.comment.CommentRepository
 import com.example.linksphere.domain.interaction.BookmarkFolderItemRepository
 import com.example.linksphere.domain.interaction.BookmarkRepository
 import com.example.linksphere.domain.interaction.PostReactionRepository
-import com.example.linksphere.domain.member.MemberRepository
+import com.example.linksphere.domain.member.MemberService
 import org.springframework.stereotype.Service
 import java.util.UUID
 
@@ -20,7 +20,7 @@ import java.util.UUID
  * PostService를 참조하는 상태에서 PostService가 반대로 BookmarkFolderService(또는 그 소관
  * Repository들)를 서비스 경유로 쓰게 바꾸면 순환 참조가 생긴다. 이 클래스는 post·interaction의
  * Service를 참조하지 않는 조립기라, 두 서비스가 각자 이 클래스를 주입받아도 순환이 생기지 않는다
- * (CategoryService는 다른 도메인을 참조하지 않아 써도 된다 - 카테고리 이름은 category에 묻는다).
+ * (CategoryService·MemberService는 post·interaction을 참조하지 않아 써도 된다 - 카테고리 이름은 category에, 작성자는 member에 묻는다).
  *
  * 트랜잭션은 스스로 열지 않는다 - 항상 이미 트랜잭션이 열려 있는 PostService/BookmarkFolderService의
  * 메서드 안에서 호출되는 것을 전제로 한다(Spring은 같은 스레드의 트랜잭션 컨텍스트를 공유하므로
@@ -28,7 +28,7 @@ import java.util.UUID
  */
 @Service
 class PostResponseAssembler(
-    private val memberRepository: MemberRepository,
+    private val memberService: MemberService,
     private val bookmarkRepository: BookmarkRepository,
     private val bookmarkFolderItemRepository: BookmarkFolderItemRepository,
     private val postReactionRepository: PostReactionRepository,
@@ -46,12 +46,8 @@ class PostResponseAssembler(
 
         val postIds = posts.mapNotNull { it.id }
 
-        val authorMap =
-            memberRepository.findAllById(posts.map { it.userId }.distinct())
-                .associate { m ->
-                    val id = m.id!!
-                    id to UserSummary(id, m.publicNickname, m.publicImage)
-                }
+        // 공개 닉네임·이미지 규칙(탈퇴한 회원은 null)은 member가 적용해 돌려준다
+        val authorMap = memberService.findProfiles(posts.map { it.userId }.distinct()).mapValues { (_, profile) -> UserSummary(profile.id, profile.nickname, profile.image) }
 
         // 개수는 DB에서 GROUP BY로 센다(§7-8) - 예전에는 북마크·좋아요 행을 전부 읽어 메모리에서 셌다
         val bookmarkCountMap = bookmarkRepository.countByPostIdIn(postIds).associate { it.postId to it.count.toInt() }
@@ -113,16 +109,7 @@ class PostResponseAssembler(
     fun convertToResponse(post: TablePost, currentUserId: UUID?): PostResponse {
         val postId = post.id ?: throw IllegalStateException("Post ID cannot be null")
 
-        val dbAuthor =
-            memberRepository.findById(post.userId).orElseThrow {
-                IllegalStateException("Member not found with id: ${post.userId}")
-            }
-        val author =
-            UserSummary(
-                id = dbAuthor.id ?: throw IllegalStateException("User ID cannot be null"),
-                nickname = dbAuthor.publicNickname,
-                image = dbAuthor.publicImage,
-            )
+        val author = memberService.getProfile(post.userId).let { UserSummary(id = it.id, nickname = it.nickname, image = it.image) }
 
         val isBookmarked = currentUserId?.let { bookmarkRepository.existsByUserIdAndPostId(it, postId) } ?: false
         // isBookmarked 가 true 인 경우는 currentUserId != null 인 경로(위 let)를 통해서만 나올 수 있으므로

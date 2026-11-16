@@ -1,7 +1,6 @@
 package com.example.linksphere.domain.feed
 
-import com.example.linksphere.domain.member.MemberRepository
-import com.example.linksphere.domain.member.TableMember
+import com.example.linksphere.domain.member.MemberService
 import com.example.linksphere.global.job.JobPublisher
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
@@ -27,7 +26,7 @@ class FeedCrawlServiceTest {
 
     @Mock private lateinit var feedParser: FeedParser
 
-    @Mock private lateinit var memberRepository: MemberRepository
+    @Mock private lateinit var memberService: MemberService
 
     @Mock private lateinit var jobPublisher: JobPublisher
 
@@ -37,11 +36,9 @@ class FeedCrawlServiceTest {
 
     private val botId = UUID.randomUUID()
 
-    private fun bot() = TableMember(id = botId, email = "bot@link-sphere.local", password = "!", isBot = true)
-
     @Test
     fun `봇 계정이 없으면 소스 조회 없이 즉시 중단한다`() {
-        `when`(memberRepository.findFirstByIsBotTrue()).thenReturn(null)
+        `when`(memberService.findFirstBotId()).thenReturn(null)
 
         feedCrawlService.collectAndDispatch()
 
@@ -51,7 +48,7 @@ class FeedCrawlServiceTest {
 
     @Test
     fun `새 후보가 없으면 dispatch하지 않는다`() {
-        `when`(memberRepository.findFirstByIsBotTrue()).thenReturn(bot())
+        `when`(memberService.findFirstBotId()).thenReturn(botId)
         `when`(feedSourceRepository.findAllByEnabledTrue()).thenReturn(emptyList())
 
         feedCrawlService.collectAndDispatch()
@@ -63,7 +60,7 @@ class FeedCrawlServiceTest {
     fun `이미 원장에 있는 URL은 dispatch 후보에서 제외한다`() {
         val source =
             TableFeedSource(id = UUID.randomUUID(), name = "GeekNews", url = "https://news.hada.io/rss/news")
-        `when`(memberRepository.findFirstByIsBotTrue()).thenReturn(bot())
+        `when`(memberService.findFirstBotId()).thenReturn(botId)
         `when`(feedSourceRepository.findAllByEnabledTrue()).thenReturn(listOf(source))
         `when`(feedParser.fetch(source.url))
             .thenReturn(listOf(FeedEntry("이미 처리된 글", "https://example.com/seen")))
@@ -79,7 +76,7 @@ class FeedCrawlServiceTest {
     fun `신규 후보는 소스당 1건만 취해 dispatch한다`() {
         val source =
             TableFeedSource(id = UUID.randomUUID(), name = "GeekNews", url = "https://news.hada.io/rss/news")
-        `when`(memberRepository.findFirstByIsBotTrue()).thenReturn(bot())
+        `when`(memberService.findFirstBotId()).thenReturn(botId)
         `when`(feedSourceRepository.findAllByEnabledTrue()).thenReturn(listOf(source))
         // 소스당 최대 1건만 취한다 - 6개를 내려도 최종 후보는 1건이어야 한다.
         `when`(feedParser.fetch(source.url)).thenReturn(
@@ -105,7 +102,7 @@ class FeedCrawlServiceTest {
             (1..6).map {
                 TableFeedSource(id = UUID.randomUUID(), name = "source$it", url = "https://example.com/feed/$it")
             }
-        `when`(memberRepository.findFirstByIsBotTrue()).thenReturn(bot())
+        `when`(memberService.findFirstBotId()).thenReturn(botId)
         `when`(feedSourceRepository.findAllByEnabledTrue()).thenReturn(sources)
         sources.forEach { source ->
             `when`(feedParser.fetch(source.url))
@@ -127,7 +124,7 @@ class FeedCrawlServiceTest {
     fun `피드 본문을 FeedCrawlItem에 그대로 실어 dispatch한다`() {
         val source =
             TableFeedSource(id = UUID.randomUUID(), name = "당근 기술블로그", url = "https://medium.com/feed/daangn")
-        `when`(memberRepository.findFirstByIsBotTrue()).thenReturn(bot())
+        `when`(memberService.findFirstBotId()).thenReturn(botId)
         `when`(feedSourceRepository.findAllByEnabledTrue()).thenReturn(listOf(source))
         `when`(feedParser.fetch(source.url))
             .thenReturn(listOf(FeedEntry("본문 있는 글", "https://example.com/1", "본문 내용")))

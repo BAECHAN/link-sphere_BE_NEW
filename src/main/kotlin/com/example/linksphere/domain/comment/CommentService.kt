@@ -1,8 +1,7 @@
 package com.example.linksphere.domain.comment
 
-import com.example.linksphere.domain.member.EmailVerificationGate
-import com.example.linksphere.domain.member.MemberRepository
-import com.example.linksphere.domain.member.TableMember
+import com.example.linksphere.domain.member.MemberProfile
+import com.example.linksphere.domain.member.MemberService
 import com.example.linksphere.domain.post.PostRepository
 import com.example.linksphere.domain.post.PostVisibility
 import com.example.linksphere.global.common.AdvisoryLock
@@ -32,9 +31,9 @@ private const val DELETED_COMMENT_CONTENT = "삭제된 댓글입니다."
 private const val MY_COMMENTS_SORT = "LATEST"
 private val MY_COMMENTS_KEYS = listOf(CursorKeyType.TIME, CursorKeyType.ID)
 
-// 회원탈퇴 신청(유예 중) 또는 익명화 완료로 publicNickname이 null인 경우의 표시명
-// (TableMember.isWithdrawn 참고) - 유예 중에도 퍼지가 끝난 것과 동일하게 보인다. member
-// 연관관계 자체가 null인 경우(정합성 깨진 데이터, "Should not happen with consistent DB")에도
+// 회원탈퇴 신청(유예 중) 또는 익명화 완료로 MemberProfile.nickname이 null인 경우의 표시명
+// - 유예 중에도 퍼지가 끝난 것과 동일하게 보인다. 작성자 회원을 찾지 못한
+// 경우(정합성 깨진 데이터, "Should not happen with consistent DB")에도
 // 같은 문구를 쓴다 - 둘 다 "이 댓글의 작성자 정보를 보여줄 수 없다"는 같은 상황이라 사용자에게
 // 굳이 구분해 보일 이유가 없다.
 private const val DELETED_MEMBER_NICKNAME = "탈퇴한 사용자"
@@ -51,7 +50,7 @@ private val DUPLICATE_COMMENT_WINDOW = Duration.ofMinutes(1)
 class CommentService(
     private val commentRepository: CommentRepository,
     private val postRepository: PostRepository,
-    private val memberRepository: MemberRepository,
+    private val memberService: MemberService,
     private val commentReactionRepository: CommentReactionRepository,
     private val supabaseStorageService: SupabaseStorageService,
     private val eventPublisher: ApplicationEventPublisher,
@@ -84,11 +83,14 @@ class CommentService(
             }
                 ?: emptySet()
 
+        // 작성자는 댓글과 조인하지 않고 id를 모아 member에 한 번에 묻는다(공개 닉네임·이미지 규칙은 member가 적용한다)
+        val profiles = memberService.findProfiles(comments.map { it.userId })
+
         // Map to DTOs first, keep flat list
         val commentDTOs =
             comments.map { comment ->
                 val author =
-                    comment.member?.let { authorOf(it) }
+                    profiles[comment.userId]?.let { authorOf(it) }
                         ?: CommentAuthor(UUID.randomUUID(), DELETED_MEMBER_NICKNAME, null) // Should not happen with consistent DB
 
                 toResponse(comment, author, isLiked = userLikes.contains(comment.id), likeCount = likeCounts[comment.id] ?: 0)
@@ -138,11 +140,8 @@ class CommentService(
     @Transactional(readOnly = true)
     fun findByIdempotencyKey(userId: UUID, idempotencyKey: UUID): CommentResponse? {
         val comment = commentRepository.findByUserIdAndIdempotencyKey(userId, idempotencyKey) ?: return null
-        val member =
-            memberRepository.findByIdOrNull(userId)
-                ?: throw IllegalStateException("User not found")
 
-        return toCommentResponse(comment, member)
+        return toCommentResponse(comment, memberService.getProfile(userId))
     }
 
     @Transactional
@@ -160,12 +159,10 @@ class CommentService(
                 ?: throw PostNotFoundException(postId)
         // 조회·댓글 목록과 동일한 기준: 읽을 수 없는 비공개 글에는 댓글도 달 수 없다.
         PostVisibility.assertVisible(post, userId, postId)
-        val member =
-            memberRepository.findByIdOrNull(userId)
-                ?: throw IllegalStateException("User not found")
         // 읽기·좋아요·북마크는 막지 않고 글쓰기·댓글쓰기만 막는다(docs/plans/2026-09-28-auth-hardening.md
-        // "확정된 결정들" 참고). 위에서 이미 조회한 member를 그대로 써 추가 쿼리가 없다.
-        EmailVerificationGate.require(member, "create a comment")
+        // "확정된 결정들" 참고). 바로 아래 getProfile은 여기서 읽은 회원을 같은 트랜잭션에서 다시 받아 추가 쿼리가 없다.
+        memberService.requireEmailVerified(userId, "create a comment")
+        val member = memberService.getProfile(userId)
 
         val finalContent = buildFinalContent(content, images)
 
@@ -230,10 +227,8 @@ class CommentService(
         // 조회·댓글 목록과 동일한 기준: 읽을 수 없는 비공개 글에는 답글도 달 수 없다.
         PostVisibility.assertVisible(post, userId, parent.postId)
 
-        val member =
-            memberRepository.findByIdOrNull(userId)
-                ?: throw IllegalStateException("User not found")
-        EmailVerificationGate.require(member, "create a reply")
+        memberService.requireEmailVerified(userId, "create a reply")
+        val member = memberService.getProfile(userId)
 
         val finalContent = buildFinalContent(content, images)
 
@@ -360,9 +355,9 @@ class CommentService(
     // 이미지 URL을 내 댓글에 붙여넣고 그 댓글을 지우거나 고치면 원래 주인의 파일까지 지워졌다. 다른
     // 댓글 본문이나 회원 아바타가 아직 쓰는 URL은 지우지 않는다(남은 파일은 OrphanImageCleanupRunner
     // 같은 참조 스캔이 아무도 안 쓰게 됐을 때 회수한다).
-    private fun isReferencedOutsideComment(url: String, commentId: UUID): Boolean = commentRepository.existsOtherCommentContaining(containsPattern(url), commentId) || memberRepository.existsByImage(url)
+    private fun isReferencedOutsideComment(url: String, commentId: UUID): Boolean = commentRepository.existsOtherCommentContaining(containsPattern(url), commentId) || memberService.isImageInUse(url)
 
-    private fun isReferencedOutsidePost(url: String, postId: UUID): Boolean = commentRepository.existsCommentOutsidePostContaining(containsPattern(url), postId) || memberRepository.existsByImage(url)
+    private fun isReferencedOutsidePost(url: String, postId: UUID): Boolean = commentRepository.existsCommentOutsidePostContaining(containsPattern(url), postId) || memberService.isImageInUse(url)
 
     // LIKE 와일드카드(%, _)와 이스케이프 문자(!)를 리터럴로 바꾼다 - 저장소 쿼리의 ESCAPE '!'와 짝이다.
     private fun containsPattern(url: String): String = "%" + url.replace(LIKE_SPECIAL_CHARS) { "!${it.value}" } + "%"
@@ -401,7 +396,7 @@ class CommentService(
         comment.updatedAt = LocalDateTime.now()
         val updated = commentRepository.save(comment)
 
-        // 이미지 삭제는 반드시 커밋 이후에 실행한다 - 아래 memberRepository 조회가 실패하면
+        // 이미지 삭제는 반드시 커밋 이후에 실행한다 - 아래 회원 조회가 실패하면
         // 트랜잭션이 롤백되는데, 여기서 바로 지우면 DB엔 옛 URL이 남고 파일은 이미 사라진
         // 상태가 되어 깨진 이미지가 된다. 본문 텍스트에 직접 써둔 URL은 새 content에도
         // 남으므로 차집합에서 빠져 보존된다.
@@ -414,11 +409,7 @@ class CommentService(
         // 알림은 보내지 않는다(수정은 알림 대상 아님) - 링크 프리뷰만 커밋 후 별도 Lambda에서 갱신.
         eventPublisher.publishEvent(CommentPostProcessEvent(commentId = updated.id, notify = false))
 
-        val member =
-            memberRepository.findByIdOrNull(userId)
-                ?: throw IllegalStateException("User not found")
-
-        return toCommentResponse(updated, member)
+        return toCommentResponse(updated, memberService.getProfile(userId))
     }
 
     private fun buildFinalContent(content: String?, images: List<String>?): String {
@@ -457,9 +448,9 @@ class CommentService(
     }
 
     // 등록·답글·수정의 응답 - 방금 쓴 댓글이라 좋아요는 아직 0이고(수정도 지금처럼 0/false로 낸다) 삭제 상태가 아니다
-    private fun toCommentResponse(comment: TableComment, member: TableMember) = toResponse(comment, authorOf(member), isLiked = false, likeCount = 0)
+    private fun toCommentResponse(comment: TableComment, member: MemberProfile) = toResponse(comment, authorOf(member), isLiked = false, likeCount = 0)
 
-    private fun authorOf(member: TableMember) = CommentAuthor(member.id!!, member.publicNickname ?: DELETED_MEMBER_NICKNAME, member.publicImage)
+    private fun authorOf(member: MemberProfile) = CommentAuthor(member.id, member.nickname ?: DELETED_MEMBER_NICKNAME, member.image)
 
     // 목록·단건이 함께 쓰는 변환. 삭제된(톰스톤) 댓글은 본문을 안내 문구로 바꾸고 좋아요·링크 미리보기를 싣지 않는다 - 삭제와
     // 좋아요가 동시에 일어난 경쟁 상황의 잔여값이 표현 계층까지 새지 않도록 여기서도 명시적으로 0/false로 고정한다.

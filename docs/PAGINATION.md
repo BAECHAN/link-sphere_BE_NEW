@@ -97,9 +97,9 @@ flowchart TD
 
 | 목록 | cursor 경로 | Phase 4에서 지운 옛 경로 |
 | --- | --- | --- |
-| 피드·검색 | [`PostRepositoryImpl.kt:21`](../src/main/kotlin/com/example/linksphere/domain/post/PostRepositoryImpl.kt#L21) `findPostsAfter`, [`PostService.kt:181`](../src/main/kotlin/com/example/linksphere/domain/post/PostService.kt#L181) | `findPosts`, `getAllPosts` |
+| 피드·검색 | [`PostRepositoryImpl.kt:19`](../src/main/kotlin/com/example/linksphere/domain/post/PostRepositoryImpl.kt#L19) `findPostsAfter`, [`PostService.kt:182`](../src/main/kotlin/com/example/linksphere/domain/post/PostService.kt#L182) | `findPosts`, `getAllPosts` |
 | 북마크 | [`BookmarkRepositoryImpl.kt:21`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkRepositoryImpl.kt#L21) `findBookmarkedPostsAfter`, [`BookmarkFolderService.kt:227`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkFolderService.kt#L227) | `findBookmarkedPosts`, `getBookmarkedPosts` |
-| 내 댓글 | [`CommentRepository.kt:34`](../src/main/kotlin/com/example/linksphere/domain/comment/CommentRepository.kt#L34) `findMyCommentsFirst`·`findMyCommentsAfter`, [`CommentService.kt:124`](../src/main/kotlin/com/example/linksphere/domain/comment/CommentService.kt#L124) | `findMyComments`, `getMyComments` |
+| 내 댓글 | [`CommentRepository.kt:33`](../src/main/kotlin/com/example/linksphere/domain/comment/CommentRepository.kt#L33) `findMyCommentsFirst`·`findMyCommentsAfter`, [`CommentService.kt:125`](../src/main/kotlin/com/example/linksphere/domain/comment/CommentService.kt#L125) | `findMyComments`, `getMyComments` |
 
 `page`는 받지 않는다. 다른 모르는 쿼리 파라미터처럼 무시되고 cursor 첫 쪽이 나간다. Phase 4(#196)에서는 숨긴 파라미터로 받아 400으로 끝냈는데, 같은 날 그 코드도 지웠다(#198, 사용자 결정). 지운 이유와 대가는 이렇다.
 
@@ -199,8 +199,8 @@ flowchart TD
 | cursor 인코딩·검증 | [`CursorCodec.kt`](../src/main/kotlin/com/example/linksphere/global/common/CursorCodec.kt) |
 | "이 키 다음부터" 조건식 | [`SeekPredicate.kt`](../src/main/kotlin/com/example/linksphere/global/common/SeekPredicate.kt) |
 | WHERE 형태·파생 테이블 형태 조회 | [`KeysetQuery.kt`](../src/main/kotlin/com/example/linksphere/global/common/KeysetQuery.kt) |
-| 정렬별 키 구성 | [`PostRepositoryCustom.kt:29`](../src/main/kotlin/com/example/linksphere/domain/post/PostRepositoryCustom.kt#L29) `PostListSort`, [`BookmarkRepositoryCustom.kt:36`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkRepositoryCustom.kt#L36) `BookmarkListSort` |
-| 검색 상태 이어 가기 | [`PostService.kt:181`](../src/main/kotlin/com/example/linksphere/domain/post/PostService.kt#L181), [`BookmarkFolderService.kt:227`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkFolderService.kt#L227) |
+| 정렬별 키 구성 | [`PostRepositoryCustom.kt:33`](../src/main/kotlin/com/example/linksphere/domain/post/PostRepositoryCustom.kt#L33) `PostListSort`, [`BookmarkRepositoryCustom.kt:36`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkRepositoryCustom.kt#L36) `BookmarkListSort` |
+| 검색 상태 이어 가기 | [`PostService.kt:182`](../src/main/kotlin/com/example/linksphere/domain/post/PostService.kt#L182), [`BookmarkFolderService.kt:227`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkFolderService.kt#L227) |
 | 끝까지 읽기·SQL 형태 테스트 | [`CursorPaginationIntegrationTest.kt`](../src/test/kotlin/com/example/linksphere/domain/post/CursorPaginationIntegrationTest.kt) |
 
 | 하고 싶은 일 | 방법 | 재배포 |

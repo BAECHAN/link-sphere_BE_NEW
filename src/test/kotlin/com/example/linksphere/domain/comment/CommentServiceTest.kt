@@ -1,6 +1,7 @@
 package com.example.linksphere.domain.comment
 
-import com.example.linksphere.domain.member.MemberRepository
+import com.example.linksphere.domain.member.MemberProfile
+import com.example.linksphere.domain.member.MemberService
 import com.example.linksphere.domain.member.TableMember
 import com.example.linksphere.domain.post.PostRepository
 import com.example.linksphere.domain.post.TablePost
@@ -25,6 +26,7 @@ import org.mockito.ArgumentCaptor
 import org.mockito.ArgumentMatchers.any
 import org.mockito.InjectMocks
 import org.mockito.Mock
+import org.mockito.Mockito.doThrow
 import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.verifyNoInteractions
@@ -45,7 +47,7 @@ class CommentServiceTest {
 
     @Mock private lateinit var postRepository: PostRepository
 
-    @Mock private lateinit var memberRepository: MemberRepository
+    @Mock private lateinit var memberService: MemberService
 
     @Mock private lateinit var commentReactionRepository: CommentReactionRepository
 
@@ -116,7 +118,7 @@ class CommentServiceTest {
         val deletedMember = TableMember(id = userId, email = "deleted-$userId@deleted.invalid", password = "pw", nickname = null, emailVerified = true)
 
         `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
-        `when`(memberRepository.findById(userId)).thenReturn(Optional.of(deletedMember))
+        `when`(memberService.getProfile(userId)).thenReturn(MemberProfile.from(deletedMember))
         val captor = ArgumentCaptor.forClass(TableComment::class.java)
         `when`(commentRepository.save(captor.capture())).thenAnswer { captor.value }
 
@@ -142,7 +144,7 @@ class CommentServiceTest {
             )
 
         `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
-        `when`(memberRepository.findById(userId)).thenReturn(Optional.of(pendingMember))
+        `when`(memberService.getProfile(userId)).thenReturn(MemberProfile.from(pendingMember))
         val captor = ArgumentCaptor.forClass(TableComment::class.java)
         `when`(commentRepository.save(captor.capture())).thenAnswer { captor.value }
 
@@ -157,10 +159,9 @@ class CommentServiceTest {
         val userId = UUID.randomUUID()
         val postId = UUID.randomUUID()
         val post = TablePost(id = postId, userId = userId, url = "https://example.com", title = "제목", isPrivate = false)
-        val unverifiedMember = TableMember(id = userId, email = "a@a.com", password = "pw", nickname = "tester", emailVerified = false)
 
         `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
-        `when`(memberRepository.findById(userId)).thenReturn(Optional.of(unverifiedMember))
+        doThrow(EmailNotVerifiedException("Email verification required")).`when`(memberService).requireEmailVerified(userId, "create a comment")
 
         assertThrows(EmailNotVerifiedException::class.java) {
             commentService.createComment(postId, userId, "댓글 내용", null)
@@ -178,7 +179,7 @@ class CommentServiceTest {
         val imageUrl = "https://xyz.supabase.co/storage/v1/object/public/comments/abc.png"
 
         `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
-        `when`(memberRepository.findById(userId)).thenReturn(Optional.of(member))
+        `when`(memberService.getProfile(userId)).thenReturn(MemberProfile.from(member))
         `when`(supabaseStorageService.isManagedUrl(imageUrl)).thenReturn(true)
 
         val captor = ArgumentCaptor.forClass(TableComment::class.java)
@@ -199,7 +200,7 @@ class CommentServiceTest {
         val articleUrl = "https://example.com/article"
 
         `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
-        `when`(memberRepository.findById(userId)).thenReturn(Optional.of(member))
+        `when`(memberService.getProfile(userId)).thenReturn(MemberProfile.from(member))
         `when`(supabaseStorageService.isManagedUrl(imageUrl)).thenReturn(true)
         `when`(supabaseStorageService.isManagedUrl(articleUrl)).thenReturn(false)
 
@@ -236,11 +237,10 @@ class CommentServiceTest {
         val parentId = UUID.randomUUID()
         val post = TablePost(id = postId, userId = userId, url = "https://example.com", title = "제목", isPrivate = false)
         val parentComment = TableComment(id = parentId, postId = postId, userId = userId, content = "부모 댓글")
-        val unverifiedMember = TableMember(id = userId, email = "a@a.com", password = "pw", nickname = "tester", emailVerified = false)
 
         `when`(commentRepository.findById(parentId)).thenReturn(Optional.of(parentComment))
         `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
-        `when`(memberRepository.findById(userId)).thenReturn(Optional.of(unverifiedMember))
+        doThrow(EmailNotVerifiedException("Email verification required")).`when`(memberService).requireEmailVerified(userId, "create a reply")
 
         assertThrows(EmailNotVerifiedException::class.java) {
             commentService.createReply(parentId, userId, "답글 내용", null)
@@ -392,7 +392,7 @@ class CommentServiceTest {
         `when`(commentRepository.findById(commentId)).thenReturn(Optional.of(comment))
         `when`(commentRepository.existsByParentId(commentId)).thenReturn(false)
         `when`(supabaseStorageService.isManagedUrl(avatarUrl)).thenReturn(true)
-        `when`(memberRepository.existsByImage(avatarUrl)).thenReturn(true)
+        `when`(memberService.isImageInUse(avatarUrl)).thenReturn(true)
 
         TransactionSynchronizationManager.initSynchronization()
         try {
@@ -665,7 +665,7 @@ class CommentServiceTest {
         val member = TableMember(id = userId, email = "a@a.com", password = "pw", nickname = "tester", emailVerified = true)
 
         `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
-        `when`(memberRepository.findById(userId)).thenReturn(Optional.of(member))
+        `when`(memberService.getProfile(userId)).thenReturn(MemberProfile.from(member))
         `when`(commentRepository.save(any(TableComment::class.java)))
             .thenAnswer { it.arguments[0] }
 
@@ -681,7 +681,7 @@ class CommentServiceTest {
         val member = TableMember(id = userId, email = "a@a.com", password = "pw", nickname = "tester", emailVerified = true)
 
         `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
-        `when`(memberRepository.findById(userId)).thenReturn(Optional.of(member))
+        `when`(memberService.getProfile(userId)).thenReturn(MemberProfile.from(member))
         `when`(commentRepository.save(any(TableComment::class.java)))
             .thenAnswer { it.arguments[0] }
 
@@ -705,7 +705,7 @@ class CommentServiceTest {
 
         `when`(commentRepository.findById(commentId)).thenReturn(Optional.of(comment))
         `when`(commentRepository.save(comment)).thenReturn(comment)
-        `when`(memberRepository.findById(userId)).thenReturn(Optional.of(member))
+        `when`(memberService.getProfile(userId)).thenReturn(MemberProfile.from(member))
         listOf(keptUrl, removedUrl1, removedUrl2).forEach {
             `when`(supabaseStorageService.isManagedUrl(it)).thenReturn(true)
         }
@@ -734,7 +734,7 @@ class CommentServiceTest {
 
         `when`(commentRepository.findById(commentId)).thenReturn(Optional.of(comment))
         `when`(commentRepository.save(comment)).thenReturn(comment)
-        `when`(memberRepository.findById(userId)).thenReturn(Optional.of(member))
+        `when`(memberService.getProfile(userId)).thenReturn(MemberProfile.from(member))
         `when`(supabaseStorageService.isManagedUrl(pastedUrl)).thenReturn(true)
         `when`(commentRepository.existsOtherCommentContaining("%$pastedUrl%", commentId)).thenReturn(true)
 
@@ -759,7 +759,7 @@ class CommentServiceTest {
 
         `when`(commentRepository.findById(commentId)).thenReturn(Optional.of(comment))
         `when`(commentRepository.save(comment)).thenReturn(comment)
-        `when`(memberRepository.findById(userId)).thenReturn(Optional.of(member))
+        `when`(memberService.getProfile(userId)).thenReturn(MemberProfile.from(member))
         `when`(supabaseStorageService.isManagedUrl(typedUrl)).thenReturn(true)
 
         TransactionSynchronizationManager.initSynchronization()
@@ -784,7 +784,7 @@ class CommentServiceTest {
 
         `when`(commentRepository.findById(commentId)).thenReturn(Optional.of(comment))
         `when`(commentRepository.save(comment)).thenReturn(comment)
-        `when`(memberRepository.findById(userId)).thenReturn(Optional.of(member))
+        `when`(memberService.getProfile(userId)).thenReturn(MemberProfile.from(member))
 
         commentService.updateComment(commentId, userId, "고친 내용", null)
 
@@ -801,7 +801,7 @@ class CommentServiceTest {
 
         `when`(commentRepository.findById(commentId)).thenReturn(Optional.of(comment))
         `when`(commentRepository.save(comment)).thenReturn(comment)
-        `when`(memberRepository.findById(userId)).thenReturn(Optional.of(member))
+        `when`(memberService.getProfile(userId)).thenReturn(MemberProfile.from(member))
         `when`(supabaseStorageService.isManagedUrl(url)).thenReturn(true)
 
         TransactionSynchronizationManager.initSynchronization()
@@ -959,5 +959,39 @@ class CommentServiceTest {
         assertThrows(PostNotFoundException::class.java) {
             commentService.setCommentLike(commentId, otherUserId, liked = true)
         }
+    }
+
+    // 작성자는 댓글과 조인하지 않고 id를 모아 member에 한 번에 묻는다. 탈퇴한 회원(닉네임 null)과 회원을 찾지 못한 댓글은
+    // 같은 문구로 보인다
+    @Test
+    fun `getComments 는 작성자를 한 번에 묻고 탈퇴했거나 없는 작성자를 '탈퇴한 사용자'로 싣는다`() {
+        val postId = UUID.randomUUID()
+        val activeId = UUID.randomUUID()
+        val withdrawnId = UUID.randomUUID()
+        val missingId = UUID.randomUUID()
+        val post = TablePost(id = postId, userId = activeId, url = "https://example.com", title = "제목", isPrivate = false)
+        val comments =
+            listOf(
+                TableComment(postId = postId, userId = activeId, content = "첫 댓글"),
+                TableComment(postId = postId, userId = withdrawnId, content = "둘째 댓글"),
+                TableComment(postId = postId, userId = activeId, content = "셋째 댓글"),
+                TableComment(postId = postId, userId = missingId, content = "넷째 댓글"),
+            )
+
+        `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
+        `when`(commentRepository.findAllByPostIdOrderByCreatedAtAsc(postId)).thenReturn(comments)
+        `when`(memberService.findProfiles(listOf(activeId, withdrawnId, activeId, missingId)))
+            .thenReturn(
+                mapOf(
+                    activeId to MemberProfile(activeId, "tester", "https://example.com/a.png"),
+                    withdrawnId to MemberProfile(withdrawnId, null, null),
+                ),
+            )
+
+        val result = commentService.getComments(postId, null)
+
+        assertEquals(listOf("tester", "탈퇴한 사용자", "tester", "탈퇴한 사용자"), result.map { it.author.nickname })
+        assertEquals(listOf("https://example.com/a.png", null, "https://example.com/a.png", null), result.map { it.author.image })
+        assertEquals(listOf(activeId, withdrawnId, activeId), result.take(3).map { it.author.id })
     }
 }

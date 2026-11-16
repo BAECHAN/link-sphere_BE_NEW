@@ -4,7 +4,7 @@
 
 ## 구현 결과
 
-> PR-1 #204 · PR-2 #206 · PR-3 #207 · PR-4 #210 · PR-5 #211 · PR-6 #213 · PR-7a #214 · 2026-11-16 대조 · PR-1 이탈 0 · 미구현 0 · PR-2 이탈 3 · 미구현 0 · PR-3 이탈 0 · 미구현 0 · PR-4 이탈 0 · 미구현 0 · PR-5 이탈 0 · 미구현 0 · PR-6 이탈 0 · 미구현 0 · PR-7a 이탈 0 · 미구현 0 — 판정 근거(파일:줄)는 각 PR 본문 "계획 대비 구현"
+> PR-1 #204 · PR-2 #206 · PR-3 #207 · PR-4 #210 · PR-5 #211 · PR-6 #213 · PR-7a #214 · PR-7b #215 · 2026-11-16 대조 · PR-1 이탈 0 · 미구현 0 · PR-2 이탈 3 · 미구현 0 · PR-3 이탈 0 · 미구현 0 · PR-4 이탈 0 · 미구현 0 · PR-5 이탈 0 · 미구현 0 · PR-6 이탈 0 · 미구현 0 · PR-7a 이탈 0 · 미구현 0 · PR-7b 이탈 0 · 미구현 0 — 판정 근거(파일:줄)는 각 PR 본문 "계획 대비 구현"
 
 **PR-1(#204)**
 
@@ -85,6 +85,24 @@
 - 대조에서 발견해 보완함: `AccountResignupIntegrationTest`의 "새 회원 id가 옛 id와 다르다" 단언이 `signup` 반환 타입 변경으로 UUID와 문자열을 비교해 항상 통과하게 됐었다. 문자열끼리 비교하게 고쳤다
 - 확인한 것: 바꾸기 전 운영 응답 시간(20쌍 40요청, 1.5초 간격) — 로그인 요청 중앙값 179.5ms, 토큰 없는 대조 요청 148.5ms, 쌍별 차이 중앙값 30ms. 바꾼 뒤 값은 배포 뒤 같은 방법으로 재서 PR 본문에 남긴다
 - 문서: BE-ARCHITECTURE(§2·§3의 위반 수, 역할·권한 흐름, rollback-only 절의 메서드 이름), ACCOUNT-DELETION·TRAFFIC-MANAGEMENT(줄 번호와 메서드 이름 — PR-6에서 밀린 2곳 포함), README 트리, CHANGELOG `Changed`, 저장소·엔티티 주석
+
+**PR-7b(#215)**
+
+- 계획대로: `TableComment.member`와 `@EntityGraph`를 지우고 댓글 목록은 작성자 id를 모아 `MemberService.findProfiles`에 한 번에 묻는다. post·comment는 `TableMember` 대신 전용 객체 `MemberProfile`(id·닉네임·이미지)을 받고, 탈퇴 신청 중이거나 익명화된 회원의 닉네임·이미지를 감추는 규칙은 member 안에서 적용한다. 이메일 인증 확인, 닉네임 부분 일치 id, 봇 id, 프로필 이미지 사용 여부도 `MemberService`에 묻는다. 허용 위반이 37곳에서 27곳이 됐다
+- 계획대로: 글 목록의 닉네임·봇 필터는 `PostService`가 member에서 id를 받아 저장소에 id 집합으로 넘긴다. 닉네임은 소문자 부분 일치이고 `%`·`_`를 이스케이프하지 않으며 탈퇴 신청 중인 회원은 빠진다. 맞는 회원이 없으면 빈 결과, 봇이 없으면 조건 없음이다
+- 계획대로: 알림 발송이 `member_sessions`를 직접 읽지 않고 auth의 `MemberSessionService.findLiveFamilyIds`에 묻는다. `infra.fcm → domain.auth` 간선이 생겼다
+- 실측한 기준값(전 → 뒤): 피드 닉네임 필터 11 → 12, 피드 봇 제외 11 → 12, 댓글 목록 4 → 5 — 계획의 추정과 같다
+- 구현 때 정한 것: `filter` 문자열을 쉼표로 나누는 일은 `PostService`로 올렸다. 나머지 값(isBookmarked·isLiked·isMyPosts·isPrivate)은 저장소가 문자열 그대로 받는다 — 북마크·좋아요는 PR-9b에서 id 집합으로 바꾸고, 내 글·비공개는 글 테이블의 조건이라 바꿀 것이 없다
+- 구현 때 정한 것: 알림 토큰 정리는 "살아 있지 않은 계열 삭제" 한 문장이 아니라 토큰을 먼저 읽고 살아 있는 계열을 물은 뒤 죽은 것으로 확인한 계열과 계열 없는 토큰만 지운다. 지워지는 토큰은 전과 같고, 두 조회 사이에 새로 로그인한 기기의 토큰은 지우지 않는다. 정리 로직이 저장소의 SQL에서 `FcmService`로 올라왔다
+- 계획의 추정과 다른 점: 알림 발송의 SQL 문 수는 +1이 아니라 경우에 따라 다르다(토큰 없음 −1, 죽은 토큰 없음 같음, 한 종류 +1, 계열 없는 토큰과 죽은 계열이 함께 있으면 +2). 기준값 테스트는 없다
+- 계획에 없던 변경: `MemberService`에 `getProfile`(단건 작성자), `findFirstBotId`(피드 수집), `findAllImageUrls`(고아 이미지 정리)를 더해 feed·upload도 회원 저장소를 직접 쓰지 않는다
+- 계획에 없던 변경: 회원이 없을 때의 예외 메시지 문구가 달라졌다(타입과 500 응답은 같다). 살아 있는 세션의 기준 시각이 DB 시각에서 앱 시각으로 바뀌었다. `FcmTokenService.getTokensByUserId`는 운영 코드에서 쓰는 곳이 없어졌다(딸린 테스트를 지우지 않으려고 남겼다)
+- 계획에 없던 변경: 통합 테스트 `PostAuthorFilterIntegrationTest`(닉네임·봇 필터와 쪽 넘김)와 `FcmStaleTokenIntegrationTest`(토큰 정리)를 더했다. 계획은 필터 케이스를 기존 두 테스트에 더한다고 했는데 새 파일에 뒀다. 필터 × 관련도순 검색, 필터 × 전체 건수 조합은 없다
+- 계획에 없던 변경: 기존 테스트의 단언이 바뀌었다 — 쿼리 수 기준값 3개. 미인증 차단 테스트 4건(댓글·답글·글 등록·미리보기)은 실제 판정 대신 `requireEmailVerified` mock이 던지게 하고 판정은 `MemberServiceTest`가 본다. 알림 트랜잭션 테스트는 오류를 내는 지점이 정리 DELETE에서 토큰 조회로 옮겨졌다. 통합 테스트 5개의 `@Import`·mock에 `MemberService`·`MemberSessionService`를 더했다
+- 대조에서 발견해 보완함: `ACCOUNT-DELETION.md`의 `MemberService.kt` 줄 번호 1곳이 옛 값으로 남아 있었다
+- 확인한 것: FE는 사용자가 "봇 글 숨기기"를 켰을 때만 `excludeBots`를 보낸다(기본값 꺼짐). 운영 회원은 14명·봇 1명이라(2026-11-16) `IN` 목록이 길어지지 않는다
+- 확인하지 못한 것: 닉네임 필터의 `IN` 목록에 상한을 두지 않았다(계획은 상한을 9b에만 적었다). 댓글·글 등록의 조회 수가 그대로라는 것은 1차 캐시에 기댄 추정이고 재지 않았다
+- 문서: BE-ARCHITECTURE(§1 그래프, §2·§3의 위반 수, §7-8 "다른 패키지의 정보는 조인하지 않는다"), README 트리, `.claude/CLAUDE.md` 패턴 표, ACCOUNT-DELETION·AI-ASYNC-PROCESSING·PAGINATION·TRAFFIC-MANAGEMENT의 줄 번호, 저장소·테스트 주석. 동작이 같아 CHANGELOG에는 넣지 않았다
 
 <!-- plan-result:end -->
 

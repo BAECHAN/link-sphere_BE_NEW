@@ -50,6 +50,10 @@ interface MemberSessionRepository : JpaRepository<TableMemberSession, UUID> {
     @Query("SELECT COUNT(s) FROM TableMemberSession s WHERE s.familyId = :familyId AND s.revokedAt IS NULL AND s.refreshExpiresAt > :now")
     fun countActiveInFamily(@Param("familyId") familyId: UUID?, @Param("now") now: Instant?): Long
 
+    // 이 회원의 살아 있는 세션 계열 id(MemberSessionService.findLiveFamilyIds). 알림 발송이 죽은 계열의 기기 토큰을 가려내는 데 쓴다.
+    @Query("SELECT DISTINCT s.familyId FROM TableMemberSession s WHERE s.memberId = :memberId AND s.revokedAt IS NULL AND s.refreshExpiresAt > :now")
+    fun findLiveFamilyIds(@Param("memberId") memberId: UUID?, @Param("now") now: Instant?): List<UUID>
+
     // 재사용 탐지(MemberSessionService.rotate) 시 같은 회전 계열 전체를 폐기한다. 회전 유예로
     // 한 계열에 활성 행이 둘 이상 생길 수 있어(여러 탭이 같은 refresh를 거의 동시에 제시),
     // "아직 안 지워진" 것 전부를 막는다.

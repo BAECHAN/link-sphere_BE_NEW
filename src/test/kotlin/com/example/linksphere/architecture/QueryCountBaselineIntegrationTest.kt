@@ -156,14 +156,14 @@ class QueryCountBaselineIntegrationTest {
 
     @Test
     fun `피드 목록 - 닉네임으로 거르기`() {
-        val page = countingQueries(FEED_LOGGED_IN) { feed(nickname = "writ") }
+        val page = countingQueries(FEED_AUTHOR_FILTER) { feed(nickname = "writ") }
 
         assertEquals(3, page.content.size)
     }
 
     @Test
     fun `피드 목록 - 봇 글 빼기`() {
-        val page = countingQueries(FEED_LOGGED_IN) { feed(filter = "excludeBots") }
+        val page = countingQueries(FEED_AUTHOR_FILTER) { feed(filter = "excludeBots") }
 
         assertEquals(3, page.content.size)
     }
@@ -288,7 +288,11 @@ class QueryCountBaselineIntegrationTest {
         private const val FEED_CATEGORY_FILTER = 12L
         private const val FEED_SEARCH = 12L
         private const val POST_DETAIL = 10L
-        private const val COMMENT_LIST = 4L
+
+        // PR-7b(글·댓글이 회원 테이블을 직접 읽지 않는다): 닉네임·봇 필터는 member에 회원 id를 묻는 문장이 하나 더 든다
+        // (글 쿼리 안의 서브쿼리였다). 댓글 목록은 작성자를 댓글과 조인해 읽던 것을 member에 한 번에 묻는다
+        private const val FEED_AUTHOR_FILTER = 12L
+        private const val COMMENT_LIST = 5L
         private const val MY_COMMENTS = 1L
         private const val BOOKMARK_LIST = 11L
         private const val BOOKMARK_LIST_IN_FOLDER = 12L
