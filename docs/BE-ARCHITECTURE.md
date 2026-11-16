@@ -153,6 +153,7 @@ flowchart LR
   domain_upload --> global_job
   domain_upload --> global_ratelimit
   infra_aws --> global_job
+  infra_fcm --> domain_auth
   infra_fcm --> domain_member
   infra_fcm --> global_common
 ```
@@ -194,7 +195,7 @@ flowchart LR
 | `packagesMustBeFreeOfCyclesExceptDocumented` | 패키지 사이 새 순환 — 허용 간선 2개는 `PackageGraphDocTest.kt`의 `DOCUMENTED_CYCLE_EDGES`, 이유는 §9 | 위와 같음 |
 | `문서의 패키지 의존 그래프가 코드와 같다` | §1 "실제 패키지 의존 그래프"가 코드와 어긋남 | `architecture/PackageGraphDocTest.kt` |
 | `순환 허용 간선 목록의 간선은 모두 실제로 있다` | 끊은 간선이 `DOCUMENTED_CYCLE_EDGES`에 남아 다시 생겨도 조용히 통과 | 위와 같음 |
-| `다른 패키지의 저장소·엔티티를 새로 쓰지 않는다` | 다른 패키지의 Repository·`@Entity`를 직접 쓰는 곳이 새로 생김 — 지금 있는 37곳은 `KNOWN_BOUNDARY_VIOLATIONS`에 적혀 있고 2단계에서 0으로 줄인다 | `architecture/ModuleBoundaryRulesTest.kt` |
+| `다른 패키지의 저장소·엔티티를 새로 쓰지 않는다` | 다른 패키지의 Repository·`@Entity`를 직접 쓰는 곳이 새로 생김 — 지금 있는 27곳은 `KNOWN_BOUNDARY_VIOLATIONS`에 적혀 있고 2단계에서 0으로 줄인다 | `architecture/ModuleBoundaryRulesTest.kt` |
 | `알려진 위반 목록의 항목은 모두 실제로 있다` | 없앤 위반이 `KNOWN_BOUNDARY_VIOLATIONS`에 남아 다시 생겨도 조용히 통과 | 위와 같음 |
 | `afterCommitGoesThroughTransactionCallbacks` | `TransactionSynchronizationManager.registerSynchronization` 직접 호출(§7-6) | `architecture/LayerSkeletonRulesTest.kt` |
 | `emailVerificationGoesThroughGate` | `EmailVerificationGate` 밖에서 `EmailNotVerifiedException` 생성 | 위와 같음 |
@@ -295,10 +296,10 @@ flowchart TD
   안에서 판정이 갈리는 한도는 지금처럼 Service에서 건다. 조회 기록의 조회자 판단(`PostService.recordView`)도 Service에 둔다 —
   요청을 막는 한도가 아니라 조회수를 올릴지 정하는 규칙이고, 봇은 이 메서드를 부르지 않는다(§7-3).
 - **다른 도메인 Repository·엔티티 직접 사용(줄이는 중)** — 예: `PostService`가 interaction의 `BookmarkRepository`를 쓴다.
-  지금 있는 37곳만 남기고 새로 쓰는 것은 `ModuleBoundaryRulesTest`가 막는다(2026-11-16, 처음 57곳). 남은 곳은 2단계
+  지금 있는 27곳만 남기고 새로 쓰는 것은 `ModuleBoundaryRulesTest`가 막는다(2026-11-16, 처음 57곳). 남은 곳은 2단계
   (`docs/plans/2026-11-16-be-structure-stage2.md`)에서 그 패키지의 Service에 묻는 방식으로 바꿔 0으로 줄인다. Service끼리의
   순환은 지금처럼 `servicesMustNotHaveCrossDomainCycles`가 막고, 순환이 생기면 `PostResponseAssembler`처럼 자기를 부르는
-  Service를 참조하지 않는 조립기로 뺀다(§7-8). 조립기가 `CategoryService`처럼 post를 모르는 Service에 묻는 것은 순환이 아니다.
+  Service를 참조하지 않는 조립기로 뺀다(§7-8). 조립기가 `CategoryService`·`MemberService`처럼 post를 모르는 Service에 묻는 것은 순환이 아니다.
 - **global → domain 0쌍** — 예외가 없고 `globalMustNotDependOnDomain`이 막는다. 마지막 1쌍이던 `SecurityConfig` →
   `SessionAuthenticationFilter`(필터 체인 구성)는 `SecurityConfig`가 global의 `RequestAuthenticationFilter` 타입으로 받고 auth의
   필터가 그것을 구현하게 바꿔 없앴다(2026-11-16, `docs/plans/2026-11-16-be-structure-stage2.md` PR-3). 범용 레이트리밋이 auth의 카운터 테이블을 쓰던 2쌍은 저장소를
@@ -636,7 +637,11 @@ for (id in ids) {
 - **정석**: `PostResponseAssembler.buildResponsesFromPosts`
 - **모양**: id를 모은다 → `findAllBy…In(ids)` 한 번씩 → `associate`/`groupingBy`로 Map → 한 번에 조립. 개수는 GROUP BY
   projection(`CommentRepository`의 `PostCommentCount`)이 가장 싸다.
-- 그 밖: `@EntityGraph`·`JOIN FETCH`(`CommentRepository`), `default_batch_fetch_size: 100`.
+- 그 밖: `JOIN FETCH`(`CommentRepository`의 내 댓글), `default_batch_fetch_size: 100`.
+- 다른 패키지의 정보는 조인하지 않는다 — id를 모아 그 패키지의 Service에 한 번에 묻는다(작성자는 `MemberService.findProfiles`,
+  카테고리 이름은 `CategoryService.getCategoryInfosByIds`). 다른 패키지의 값으로 거를 때도 같다 — 그 패키지에서 id 집합을 받아
+  `IN`으로 건다(글 목록의 닉네임·봇 필터, `PostService.getPostsByCursor`). 집합이 비면 `IN ()`을 만들지 않고 "결과 없음"이나
+  "조건 없음"으로 따로 처리한다.
 - 조립기를 Service 밖 클래스로 두면 Service 순환도 피한다(KDoc 참고).
 - **안티패턴**: 목록을 돌며 항목마다 `findById`·`countBy…` 호출. 단건 상세(`convertToResponse`)는 여러 번 조회해도 된다.
 

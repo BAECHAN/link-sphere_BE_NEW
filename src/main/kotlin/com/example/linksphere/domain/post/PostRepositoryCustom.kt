@@ -13,8 +13,12 @@ interface PostRepositoryCustom {
         // 카테고리 필터 - null이면 거르지 않고, 빈 집합이면 결과가 없다(이름·slug를 id로 푸는 일은 PostService가 한다)
         categoryIds: Set<Long>?,
         search: String?,
-        filter: String?,
-        nickname: String?,
+        // filter 파라미터를 쉼표로 나눈 값(isBookmarked·isLiked·isMyPosts·isPrivate). 모르는 값은 무시한다
+        filters: Set<String>,
+        // 작성자 필터(닉네임 검색) - null이면 거르지 않고, 빈 집합이면 결과가 없다(닉네임을 id로 푸는 일은 PostService가 member에 묻는다)
+        authorIds: Set<UUID>?,
+        // 뺄 작성자(봇 제외) - 빈 집합이면 조건을 걸지 않는다
+        excludedAuthorIds: Set<UUID>,
         currentUserId: UUID?,
         sort: PostListSort,
         after: List<Comparable<*>>?,

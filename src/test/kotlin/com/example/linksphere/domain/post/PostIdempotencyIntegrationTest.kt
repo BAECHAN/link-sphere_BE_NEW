@@ -6,6 +6,7 @@ import com.example.linksphere.domain.linkpreview.LinkPreviewService
 import com.example.linksphere.domain.linkpreview.SafeUrlValidator
 import com.example.linksphere.domain.linkpreview.UrlMetadata
 import com.example.linksphere.domain.linkpreview.UrlMetadataExtractor
+import com.example.linksphere.domain.member.MemberService
 import com.example.linksphere.global.common.AdvisoryLock
 import com.example.linksphere.global.exception.DuplicatePostException
 import com.example.linksphere.global.job.JobPublisher
@@ -46,7 +47,7 @@ import java.util.concurrent.TimeUnit
 // lock, 커밋 뒤에만 나가는 AI 이벤트는 mock으로 재현되지 않는다. 커밋이 겹쳐야 하므로 테스트 트랜잭션 밖에서 돌고 끝나면 지운다.
 // 컨트롤러를 그대로 불러 사전 조회 → 등록 → 위반 뒤 재조회의 트랜잭션 경계가 운영과 같게 한다.
 @PostgresIntegrationTest
-@Import(PostService::class, PostAIService::class, PostResponseAssembler::class, AdvisoryLock::class)
+@Import(PostService::class, PostAIService::class, PostResponseAssembler::class, AdvisoryLock::class, MemberService::class)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class PostIdempotencyIntegrationTest {
 

@@ -1,5 +1,6 @@
 package com.example.linksphere.infra.fcm
 
+import com.example.linksphere.domain.auth.MemberSessionService
 import com.example.linksphere.support.PostgresIntegrationTest
 import com.google.auth.oauth2.AccessToken
 import com.google.auth.oauth2.GoogleCredentials
@@ -43,7 +44,7 @@ class FcmServiceIntegrationTest {
 
     @MockitoBean private lateinit var fcmTokenRepository: FcmTokenRepository
 
-    @MockitoBean private lateinit var fcmTokenService: FcmTokenService
+    @MockitoBean private lateinit var memberSessionService: MemberSessionService
 
     private val memberId = UUID.randomUUID()
 
@@ -62,8 +63,8 @@ class FcmServiceIntegrationTest {
             )
         doAnswer {
             entityManager.createNativeQuery("SELECT 1/0").singleResult
-            0
-        }.`when`(fcmTokenRepository).deleteStaleTokensForUser(memberId)
+            emptyList<TableFcmToken>()
+        }.`when`(fcmTokenRepository).findAllByUserId(memberId)
     }
 
     @AfterEach

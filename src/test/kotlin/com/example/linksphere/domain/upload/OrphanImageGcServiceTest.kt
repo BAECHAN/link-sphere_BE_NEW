@@ -1,7 +1,7 @@
 package com.example.linksphere.domain.upload
 
 import com.example.linksphere.domain.comment.CommentRepository
-import com.example.linksphere.domain.member.MemberRepository
+import com.example.linksphere.domain.member.MemberService
 import com.example.linksphere.global.common.SupabaseStorageService
 import com.example.linksphere.global.common.SupabaseStorageService.StoredObject
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -38,7 +38,7 @@ class OrphanImageGcServiceTest {
 
     @Mock private lateinit var commentRepository: CommentRepository
 
-    @Mock private lateinit var memberRepository: MemberRepository
+    @Mock private lateinit var memberService: MemberService
 
     @Mock private lateinit var supabaseStorageService: SupabaseStorageService
 
@@ -55,7 +55,7 @@ class OrphanImageGcServiceTest {
 
     private fun stubReferences() {
         `when`(commentRepository.findAllContent()).thenReturn(listOf("댓글 내용\n\n$referencedUrl"))
-        `when`(memberRepository.findAllImageUrls()).thenReturn(listOf(avatarUrl))
+        `when`(memberService.findAllImageUrls()).thenReturn(listOf(avatarUrl))
         listOf(referencedUrl, avatarUrl).forEach {
             `when`(supabaseStorageService.isManagedUrl(it)).thenReturn(true)
         }
@@ -103,7 +103,7 @@ class OrphanImageGcServiceTest {
     @Test
     fun `참조가 0건인데 후보가 있으면 지우지 않고 중단한다`() {
         `when`(commentRepository.findAllContent()).thenReturn(emptyList())
-        `when`(memberRepository.findAllImageUrls()).thenReturn(emptyList())
+        `when`(memberService.findAllImageUrls()).thenReturn(emptyList())
         `when`(supabaseStorageService.listAllObjects()).thenReturn(listOf(StoredObject(url("orphan"), old)))
 
         val summary = service.collect(dryRun = false, now = now)

@@ -12,7 +12,7 @@ import java.util.UUID
 @Transactional(readOnly = true)
 class MemberService(private val memberRepository: MemberRepository) {
 
-    // 다른 패키지(auth)에 TableMember를 내주지 않는다 - 공개 메서드는 응답 DTO나 전용 객체(MemberCredentials)를 돌려준다.
+    // 다른 패키지에 TableMember를 내주지 않는다 - 공개 메서드는 id, 응답 DTO, 전용 객체(MemberCredentials·MemberProfile)를 돌려준다.
     @Transactional
     fun signup(request: SignupRequest): AccountResponse {
         val normalizedEmail = EmailNormalizer.normalize(request.email)
@@ -76,6 +76,39 @@ class MemberService(private val memberRepository: MemberRepository) {
 
     // SessionAuthenticationFilter가 로그인한 요청마다 부른다(MemberSessionService.checkAccessToken). 회원이 없으면 null.
     fun findRole(id: UUID): MemberRole? = memberRepository.findRoleById(id)
+
+    // 아래 여덟은 post·comment·feed·upload가 회원을 읽는 길이다 - TableMember 대신 id와 전용 객체(MemberProfile)만 내준다.
+
+    // 글·댓글 목록의 작성자를 한 번에 읽는다. 없는 id는 결과에 빠진다. 빈 목록이면 DB를 보지 않는다.
+    fun findProfiles(ids: Collection<UUID>): Map<UUID, MemberProfile> {
+        val distinctIds = ids.toSet()
+
+        if (distinctIds.isEmpty()) {
+            return emptyMap()
+        }
+
+        return memberRepository.findAllById(distinctIds).associate { it.id!! to MemberProfile.from(it) }
+    }
+
+    // 단건은 findById로 읽는다 - 같은 트랜잭션에서 requireEmailVerified가 이미 읽은 회원이면 쿼리가 다시 나가지 않는다.
+    fun getProfile(id: UUID): MemberProfile = MemberProfile.from(findById(id))
+
+    // 글쓰기·댓글쓰기·링크 미리보기 전에 부른다. action은 메시지에만 쓴다(EmailVerificationGate).
+    fun requireEmailVerified(id: UUID, action: String) = EmailVerificationGate.require(findById(id), action)
+
+    // 닉네임에 이 글자가 든 회원의 id. 대소문자를 가리지 않고, `%`·`_`는 예전 그대로 이스케이프하지 않는다(와일드카드로 동작).
+    fun findIdsByNicknameContaining(nickname: String): Set<UUID> = memberRepository.findIdsByNicknamePattern("%${nickname.lowercase()}%").toSet()
+
+    fun findBotIds(): Set<UUID> = memberRepository.findBotIds().toSet()
+
+    // RSS 피드 수집이 글을 올릴 봇 계정. 봇이 여럿이면 가장 먼저 만든 하나다(MemberRepository.findFirstByIsBotTrue).
+    fun findFirstBotId(): UUID? = memberRepository.findFirstByIsBotTrue()?.id
+
+    // 댓글 이미지를 지우기 직전에 이 URL을 누군가 아바타로 쓰는지 확인한다(CommentService 삭제 경로).
+    fun isImageInUse(url: String): Boolean = memberRepository.existsByImage(url)
+
+    // 고아 이미지 정리(OrphanImageGcService)가 참조 집합을 만들 때 쓴다.
+    fun findAllImageUrls(): List<String> = memberRepository.findAllImageUrls()
 
     private fun findById(id: UUID): TableMember = memberRepository.findById(id).orElseThrow { IllegalStateException("Member not found with id: $id") }
 

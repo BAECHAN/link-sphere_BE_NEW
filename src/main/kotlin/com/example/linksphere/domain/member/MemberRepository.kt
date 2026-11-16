@@ -18,6 +18,16 @@ interface MemberRepository : JpaRepository<TableMember, UUID> {
     @Query("SELECT m.role FROM TableMember m WHERE m.id = :id")
     fun findRoleById(@Param("id") id: UUID?): MemberRole?
 
+    // 글 목록의 닉네임 필터(MemberService.findIdsByNicknameContaining). pattern은 호출부가 소문자로 만든 `%글자%`다.
+    // 탈퇴 신청 중인 회원은 실제 닉네임이 아직 남아 있어 이 조건이 없으면 검색에 걸린다. 익명화가 끝난 회원은
+    // nickname이 null이라 LIKE에 걸리지 않는다(TableMember.isWithdrawn과 같은 기준).
+    @Query("SELECT m.id FROM TableMember m WHERE LOWER(m.nickname) LIKE :pattern AND m.deletionRequestedAt IS NULL")
+    fun findIdsByNicknamePattern(@Param("pattern") pattern: String): List<UUID>
+
+    // 글 목록의 봇 제외 필터(MemberService.findBotIds)
+    @Query("SELECT m.id FROM TableMember m WHERE m.isBot = true")
+    fun findBotIds(): List<UUID>
+
     // 고아 이미지 정리 도구(OrphanImageCleanupRunner)용
     @Query("SELECT m.image FROM TableMember m WHERE m.image IS NOT NULL")
     fun findAllImageUrls(): List<String>

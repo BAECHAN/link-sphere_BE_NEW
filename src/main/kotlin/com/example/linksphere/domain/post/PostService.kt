@@ -10,8 +10,7 @@ import com.example.linksphere.domain.linkpreview.SafeUrlValidator
 import com.example.linksphere.domain.linkpreview.UrlMetadata
 import com.example.linksphere.domain.linkpreview.UrlMetadataExtractor
 import com.example.linksphere.domain.linkpreview.WeakTitleDetector
-import com.example.linksphere.domain.member.EmailVerificationGate
-import com.example.linksphere.domain.member.MemberRepository
+import com.example.linksphere.domain.member.MemberService
 import com.example.linksphere.global.common.AdvisoryLock
 import com.example.linksphere.global.common.CursorCodec
 import com.example.linksphere.global.common.KeysetSlice
@@ -45,7 +44,7 @@ class PostService(
     private val urlMetadataExtractor: UrlMetadataExtractor,
     private val safeUrlValidator: SafeUrlValidator,
     private val geminiService: GeminiService,
-    private val memberRepository: MemberRepository,
+    private val memberService: MemberService,
     private val linkPreviewService: LinkPreviewService,
     private val advisoryLock: AdvisoryLock,
     private val rateLimitService: RateLimitService,
@@ -63,6 +62,9 @@ class PostService(
         // (2026-11-11 사용자 결정, docs/plans/2026-11-11-post-view-dedupe.md "판단이 필요했던 항목").
         private val VIEW_COUNT_WINDOW = Duration.ofHours(24)
         private const val VIEW_COUNT_LIMIT = 1
+
+        // 목록의 filter 파라미터 값 - 봇 계정이 쓴 글을 뺀다. 나머지 값(isBookmarked 등)은 PostRepositoryImpl이 푼다
+        private const val EXCLUDE_BOTS_FILTER = "excludeBots"
     }
 
     fun findByIdempotencyKey(userId: UUID, idempotencyKey: UUID): PostResponse? = postRepository.findByUserIdAndIdempotencyKey(userId, idempotencyKey)
@@ -77,8 +79,7 @@ class PostService(
     ): PostResponse {
         // 크롤링 등 비싼 작업을 하기 전에 먼저 확인한다 - 읽기·좋아요·북마크는 막지 않고
         // 글쓰기만 막는다(docs/plans/2026-09-28-auth-hardening.md "확정된 결정들" 참고).
-        val member = memberRepository.findById(userId).orElseThrow { IllegalStateException("User not found") }
-        EmailVerificationGate.require(member, "create a post")
+        memberService.requireEmailVerified(userId, "create a post")
 
         val url = request.url.trim()
         validateUrl(url)
@@ -198,6 +199,10 @@ class PostService(
         val semantic = queryEmbedding != null
         val isFirstSearchPage = state == null && searchTokens.isNotEmpty()
         val categoryIds = resolveCategoryFilter(category)
+        val filters = filter?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }?.toSet().orEmpty()
+        // 닉네임·봇 필터는 member에 id를 물어 저장소에는 id 집합만 넘긴다 - 글 쿼리가 회원 테이블을 직접 읽지 않는다
+        val authorIds = nickname?.takeIf { it.isNotBlank() }?.let { memberService.findIdsByNicknameContaining(it) }
+        val excludedAuthorIds = if (EXCLUDE_BOTS_FILTER in filters) memberService.findBotIds() else emptySet()
 
         if (state?.semantic == true && !semantic) {
             logger.warn("[Search] scope=feed semantic degraded to keyword")
@@ -207,8 +212,9 @@ class PostService(
             postRepository.findPostsAfter(
                 categoryIds,
                 correctedSearch ?: search,
-                filter,
-                nickname,
+                filters,
+                authorIds,
+                excludedAuthorIds,
                 currentUserId,
                 sort,
                 state?.keys,
@@ -220,7 +226,7 @@ class PostService(
         // 쪽마다 건수를 세지 않으므로 첫 쪽이 비었을 때만 보정을 판정한다. 뒤쪽이 비었다고 0건 검색은 아니다.
         val candidate = search?.takeIf { isFirstSearchPage && slice.content.isEmpty() }?.let { HangulKeyboardConverter.convertIfMislayout(it) }
         if (candidate != null) {
-            val correctedSlice = postRepository.findPostsAfter(categoryIds, candidate, filter, nickname, currentUserId, sort, null, limit, withTotal = true)
+            val correctedSlice = postRepository.findPostsAfter(categoryIds, candidate, filters, authorIds, excludedAuthorIds, currentUserId, sort, null, limit, withTotal = true)
             if (correctedSlice.content.isNotEmpty()) {
                 logSearch(search = search, total = correctedSlice.total ?: PostSearchQuery.TOTAL_NOT_COUNTED, corrected = true, semantic = false)
                 return cursorResponse(correctedSlice, sort, currentUserId, PostSearchQuery.tokenize(candidate), candidate, semantic = false)
@@ -433,8 +439,7 @@ class PostService(
      */
     @Transactional
     fun previewLink(userId: UUID, rawUrl: String): LinkPreviewResponse {
-        val member = memberRepository.findById(userId).orElseThrow { IllegalStateException("User not found") }
-        EmailVerificationGate.require(member, "preview a link")
+        memberService.requireEmailVerified(userId, "preview a link")
 
         val url = rawUrl.trim()
         validateUrl(url)

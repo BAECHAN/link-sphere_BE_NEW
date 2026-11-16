@@ -12,7 +12,7 @@ class FcmTokenService(private val fcmTokenRepository: FcmTokenRepository) {
 
     // sessionFamilyId: 이 토큰을 등록한 access 토큰이 속한 세션의 회전 계열
     // (SecurityUtils.getSessionFamilyId()). 같은 토큰이 이미 있으면(기기 재사용·계정
-    // 전환 포함) 소유자·계열을 upsert로 덮어쓴다 - 발송 쪽 deleteStaleTokensForUser와
+    // 전환 포함) 소유자·계열을 upsert로 덮어쓴다 - 발송 쪽의 죽은 토큰 정리(FcmService.removeStaleTokens)와
     // 겹쳐도 단일 SQL 문이라 안전하다.
     @Transactional
     fun registerToken(userId: UUID, token: String, platform: String, sessionFamilyId: UUID?) {

@@ -8,7 +8,8 @@ import com.example.linksphere.domain.interaction.BookmarkFolderItemRepository
 import com.example.linksphere.domain.interaction.BookmarkRepository
 import com.example.linksphere.domain.interaction.PostReactionRepository
 import com.example.linksphere.domain.interaction.TableBookmarkFolderItem
-import com.example.linksphere.domain.member.MemberRepository
+import com.example.linksphere.domain.member.MemberProfile
+import com.example.linksphere.domain.member.MemberService
 import com.example.linksphere.domain.member.TableMember
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
@@ -21,7 +22,6 @@ import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 import org.mockito.junit.jupiter.MockitoExtension
 import java.time.Instant
-import java.util.Optional
 import java.util.UUID
 
 /**
@@ -31,7 +31,7 @@ import java.util.UUID
 @ExtendWith(MockitoExtension::class)
 class PostResponseAssemblerTest {
 
-    @Mock private lateinit var memberRepository: MemberRepository
+    @Mock private lateinit var memberService: MemberService
 
     @Mock private lateinit var bookmarkRepository: BookmarkRepository
 
@@ -54,7 +54,7 @@ class PostResponseAssemblerTest {
             TablePost(id = postId, userId = ownerId, url = "https://example.com", title = "제목", categoryIds = mutableSetOf(2L, 1L, 999L))
         val owner = TableMember(id = ownerId, email = "owner@example.com", password = "enc", nickname = "owner")
 
-        `when`(memberRepository.findById(ownerId)).thenReturn(Optional.of(owner))
+        `when`(memberService.getProfile(ownerId)).thenReturn(MemberProfile.from(owner))
         `when`(categoryService.getCategoryInfosByIds(setOf(2L, 1L, 999L)))
             .thenReturn(listOf(CategoryInfo(2L, "AI", "ai"), CategoryInfo(1L, "프론트엔드", "frontend")))
 
@@ -70,7 +70,7 @@ class PostResponseAssemblerTest {
         val post = TablePost(id = postId, userId = ownerId, url = "https://example.com", title = "제목", isPrivate = false)
         val owner = TableMember(id = ownerId, email = "owner@example.com", password = "enc", nickname = "owner")
 
-        `when`(memberRepository.findById(ownerId)).thenReturn(Optional.of(owner))
+        `when`(memberService.getProfile(ownerId)).thenReturn(MemberProfile.from(owner))
         // countByPostId(=2) 와 실제 소속 폴더 개수(=3)를 의도적으로 다르게 둔다 —
         // stats.bookmarkCount 가 소속 수가 아니라 북마크 row 수를 세는지 확인하기 위함.
         `when`(bookmarkRepository.countByPostId(postId)).thenReturn(2L)
@@ -102,7 +102,7 @@ class PostResponseAssemblerTest {
                 deletionRequestedAt = Instant.now(),
             )
 
-        `when`(memberRepository.findById(ownerId)).thenReturn(Optional.of(pendingOwner))
+        `when`(memberService.getProfile(ownerId)).thenReturn(MemberProfile.from(pendingOwner))
         lenient().`when`(bookmarkRepository.countByPostId(postId)).thenReturn(0L)
         lenient().`when`(bookmarkRepository.existsByUserIdAndPostId(ownerId, postId)).thenReturn(false)
         lenient().`when`(postReactionRepository.countByPostId(postId)).thenReturn(0L)
@@ -122,7 +122,7 @@ class PostResponseAssemblerTest {
         val post = TablePost(id = postId, userId = ownerId, url = "https://example.com", title = "제목", isPrivate = false)
         val owner = TableMember(id = ownerId, email = "owner@example.com", password = "enc", nickname = "owner")
 
-        `when`(memberRepository.findById(ownerId)).thenReturn(Optional.of(owner))
+        `when`(memberService.getProfile(ownerId)).thenReturn(MemberProfile.from(owner))
         `when`(bookmarkRepository.countByPostId(postId)).thenReturn(0L)
         `when`(postReactionRepository.countByPostId(postId)).thenReturn(0L)
         `when`(commentRepository.countByPostId(postId)).thenReturn(0L)
@@ -154,7 +154,7 @@ class PostResponseAssemblerTest {
             TablePost(id = postId2, userId = userId, url = "https://example.com/2", title = "글2", isPrivate = false)
         val member = TableMember(id = userId, email = "user@example.com", password = "enc", nickname = "user")
 
-        `when`(memberRepository.findAllById(listOf(userId))).thenReturn(listOf(member))
+        `when`(memberService.findProfiles(listOf(userId))).thenReturn(mapOf(userId to MemberProfile.from(member)))
         `when`(bookmarkRepository.countByPostIdIn(listOf(postId1, postId2))).thenReturn(emptyList())
         `when`(bookmarkRepository.findAllByUserIdAndPostIdIn(userId, listOf(postId1, postId2)))
             .thenReturn(emptyList())
@@ -187,7 +187,7 @@ class PostResponseAssemblerTest {
         val post = TablePost(id = postId, userId = ownerId, url = "https://example.com", title = "제목", isPrivate = false)
         val member = TableMember(id = ownerId, email = "owner@example.com", password = "enc", nickname = "owner")
 
-        `when`(memberRepository.findAllById(listOf(ownerId))).thenReturn(listOf(member))
+        `when`(memberService.findProfiles(listOf(ownerId))).thenReturn(mapOf(ownerId to MemberProfile.from(member)))
         `when`(bookmarkRepository.countByPostIdIn(listOf(postId))).thenReturn(emptyList())
         `when`(postReactionRepository.countByPostIdIn(listOf(postId))).thenReturn(emptyList())
         `when`(commentRepository.countByPostIdIn(listOf(postId))).thenReturn(emptyList())

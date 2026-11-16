@@ -9,7 +9,6 @@ import com.example.linksphere.global.common.SeekKey
 import jakarta.persistence.EntityManager
 import jakarta.persistence.PersistenceContext
 import jakarta.persistence.criteria.*
-import java.time.Instant
 import java.time.LocalDateTime
 import java.util.UUID
 
@@ -20,8 +19,9 @@ class PostRepositoryImpl : PostRepositoryCustom {
     override fun findPostsAfter(
         categoryIds: Set<Long>?,
         search: String?,
-        filter: String?,
-        nickname: String?,
+        filters: Set<String>,
+        authorIds: Set<UUID>?,
+        excludedAuthorIds: Set<UUID>,
         currentUserId: UUID?,
         sort: PostListSort,
         after: List<Comparable<*>>?,
@@ -33,7 +33,7 @@ class PostRepositoryImpl : PostRepositoryCustom {
         // 건수와 본 쿼리가 같은 후보 집합을 보도록 한 번만 계산한다
         val semanticMatches = PostSearchQuery.resolveSemanticMatches(entityManager, queryEmbedding)
         val predicatesOf = { root: Root<TablePost>, query: AbstractQuery<*> ->
-            buildPredicates(cb, root, query, categoryIds, search, filter, nickname, currentUserId, semanticMatches)
+            buildPredicates(cb, root, query, categoryIds, search, filters, authorIds, excludedAuthorIds, currentUserId, semanticMatches)
         }
 
         val total =
@@ -64,8 +64,9 @@ class PostRepositoryImpl : PostRepositoryCustom {
         query: AbstractQuery<*>,
         categoryIds: Set<Long>?,
         search: String?,
-        filter: String?,
-        nickname: String?,
+        filters: Set<String>,
+        authorIds: Set<UUID>?,
+        excludedAuthorIds: Set<UUID>,
         currentUserId: UUID?,
         semanticMatches: Map<UUID, Double>,
     ): List<Predicate> {
@@ -100,120 +101,88 @@ class PostRepositoryImpl : PostRepositoryCustom {
             predicates.add(PostSearchQuery.searchPredicate(cb, root, searchTokens, semanticMatches))
         }
 
-        // Nickname Filter (Partial Match)
-        if (!nickname.isNullOrBlank()) {
-            val subquery = query.subquery(UUID::class.java)
-            val memberRoot =
-                subquery.from(
-                    com.example.linksphere.domain.member.TableMember::class.java,
-                )
-            subquery.select(memberRoot.get("id"))
-            subquery.where(
-                cb.and(
-                    cb.like(
-                        cb.lower(memberRoot.get("nickname")),
-                        "%${nickname.lowercase()}%",
-                    ),
-                    // 탈퇴 유예 중(1단계) · 익명화 완료(2단계) 둘 다 제외한다 - 퍼지 완료된
-                    // 회원은 nickname 자체가 null이라 애초에 like에 안 걸리지만, 유예 중인
-                    // 회원은 실제 닉네임이 여전히 남아있어 이 조건이 없으면 검색에 걸린다
-                    // (TableMember.isWithdrawn과 같은 기준).
-                    cb.isNull(memberRoot.get<Instant>("deletionRequestedAt")),
-                ),
-            )
-            predicates.add(root.get<UUID>("userId").`in`(subquery))
+        // 작성자 필터(닉네임 검색) - 맞는 회원이 없으면(빈 집합) 결과가 없어야 한다. 조건을 빼면 전체 글이 나온다.
+        if (authorIds != null) {
+            predicates.add(if (authorIds.isEmpty()) cb.disjunction() else root.get<UUID>("userId").`in`(authorIds))
         }
 
-        // Filters (Multiple supported, comma separated)
-        if (!filter.isNullOrBlank()) {
-            val activeFilters =
-                filter.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+        // 뺄 작성자(봇 제외) - 봇이 없으면 조건을 걸지 않는다
+        if (excludedAuthorIds.isNotEmpty()) {
+            predicates.add(cb.not(root.get<UUID>("userId").`in`(excludedAuthorIds)))
+        }
 
-            for (f in activeFilters) {
-                when (f) {
-                    "isBookmarked" -> {
-                        if (currentUserId != null) {
-                            val subquery =
-                                query.subquery(UUID::class.java)
-                            val bookmarkRoot =
-                                subquery.from(
-                                    TableBookmark::class.java,
-                                )
-                            subquery.select(bookmarkRoot.get("postId"))
-                            subquery.where(
-                                cb.equal(
-                                    bookmarkRoot.get<UUID>(
-                                        "userId",
-                                    ),
-                                    currentUserId,
-                                ),
-                            )
-                            // Post ID must be in the list of bookmarked
-                            // Post IDs
-                            predicates.add(
-                                root.get<UUID>("id").`in`(subquery),
-                            )
-                        }
-                    }
-                    "isLiked" -> {
-                        // isBookmarked와 같은 형태 — 내가 좋아요한(post_reactions) 글만 남긴다
-                        if (currentUserId != null) {
-                            val subquery =
-                                query.subquery(UUID::class.java)
-                            val reactionRoot =
-                                subquery.from(
-                                    TablePostReaction::class.java,
-                                )
-                            subquery.select(reactionRoot.get("postId"))
-                            subquery.where(
-                                cb.equal(
-                                    reactionRoot.get<UUID>(
-                                        "userId",
-                                    ),
-                                    currentUserId,
-                                ),
-                            )
-                            predicates.add(
-                                root.get<UUID>("id").`in`(subquery),
-                            )
-                        }
-                    }
-                    "isMyPosts" -> {
-                        if (currentUserId != null) {
-                            predicates.add(
-                                cb.equal(
-                                    root.get<UUID>("userId"),
-                                    currentUserId,
-                                ),
-                            )
-                        }
-                    }
-                    "isPrivate" -> {
-                        if (currentUserId != null) {
-                            predicates.add(
-                                cb.equal(
-                                    root.get<Boolean>(
-                                        "isPrivate",
-                                    ),
-                                    true,
-                                ),
-                            )
-                        } else {
-                            predicates.add(cb.disjunction())
-                        }
-                    }
-                    "excludeBots" -> {
-                        // nickname 필터와 동일한 형태의 서브쿼리 — 봇 계정(members.is_bot)이 쓴 글을 제외한다.
-                        val subquery = query.subquery(UUID::class.java)
-                        val memberRoot =
+        // Filters (Multiple supported) - 쉼표로 나누는 일은 PostService가 한다
+        for (f in filters) {
+            when (f) {
+                "isBookmarked" -> {
+                    if (currentUserId != null) {
+                        val subquery =
+                            query.subquery(UUID::class.java)
+                        val bookmarkRoot =
                             subquery.from(
-                                com.example.linksphere.domain.member.TableMember::class.java,
+                                TableBookmark::class.java,
                             )
-                        subquery.select(memberRoot.get("id"))
+                        subquery.select(bookmarkRoot.get("postId"))
                         subquery.where(
-                            cb.equal(memberRoot.get<Boolean>("isBot"), true),
+                            cb.equal(
+                                bookmarkRoot.get<UUID>(
+                                    "userId",
+                                ),
+                                currentUserId,
+                            ),
                         )
-                        predicates.add(cb.not(root.get<UUID>("userId").`in`(subquery)))
+                        // Post ID must be in the list of bookmarked
+                        // Post IDs
+                        predicates.add(
+                            root.get<UUID>("id").`in`(subquery),
+                        )
+                    }
+                }
+                "isLiked" -> {
+                    // isBookmarked와 같은 형태 — 내가 좋아요한(post_reactions) 글만 남긴다
+                    if (currentUserId != null) {
+                        val subquery =
+                            query.subquery(UUID::class.java)
+                        val reactionRoot =
+                            subquery.from(
+                                TablePostReaction::class.java,
+                            )
+                        subquery.select(reactionRoot.get("postId"))
+                        subquery.where(
+                            cb.equal(
+                                reactionRoot.get<UUID>(
+                                    "userId",
+                                ),
+                                currentUserId,
+                            ),
+                        )
+                        predicates.add(
+                            root.get<UUID>("id").`in`(subquery),
+                        )
+                    }
+                }
+                "isMyPosts" -> {
+                    if (currentUserId != null) {
+                        predicates.add(
+                            cb.equal(
+                                root.get<UUID>("userId"),
+                                currentUserId,
+                            ),
+                        )
+                    }
+                }
+                "isPrivate" -> {
+                    if (currentUserId != null) {
+                        predicates.add(
+                            cb.equal(
+                                root.get<Boolean>(
+                                    "isPrivate",
+                                ),
+                                true,
+                            ),
+                        )
+                    } else {
+                        predicates.add(cb.disjunction())
                     }
                 }
             }

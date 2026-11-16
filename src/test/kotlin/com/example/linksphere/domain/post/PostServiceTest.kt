@@ -10,8 +10,7 @@ import com.example.linksphere.domain.linkpreview.LinkPreviewService
 import com.example.linksphere.domain.linkpreview.SafeUrlValidator
 import com.example.linksphere.domain.linkpreview.UrlMetadata
 import com.example.linksphere.domain.linkpreview.UrlMetadataExtractor
-import com.example.linksphere.domain.member.MemberRepository
-import com.example.linksphere.domain.member.TableMember
+import com.example.linksphere.domain.member.MemberService
 import com.example.linksphere.global.common.AdvisoryLock
 import com.example.linksphere.global.common.CursorCodec
 import com.example.linksphere.global.common.KeysetSlice
@@ -76,7 +75,7 @@ class PostServiceTest {
 
     @Mock private lateinit var geminiService: GeminiService
 
-    @Mock private lateinit var memberRepository: MemberRepository
+    @Mock private lateinit var memberService: MemberService
 
     @Mock private lateinit var linkPreviewService: LinkPreviewService
 
@@ -93,13 +92,6 @@ class PostServiceTest {
         title = "제목",
         isPrivate = true,
     )
-
-    // createPost 최상단의 이메일 인증 게이트가 조회하는 회원 - 인증된 상태로 기본값을 준다.
-    private fun stubVerifiedMember(userId: UUID) {
-        `when`(memberRepository.findById(userId)).thenReturn(
-            Optional.of(TableMember(id = userId, email = "$userId@example.com", password = "pw", nickname = "tester", emailVerified = true)),
-        )
-    }
 
     // convertToResponse는 이제 PostResponseAssembler 소관이라, PostService 테스트에서는
     // "무엇을 받아 그대로 반환하는지"만 확인하면 된다 - 값 자체를 만드는 로직(작성자·북마크
@@ -318,7 +310,6 @@ class PostServiceTest {
     fun `키 없는 봇 경로는 잠금과 시간 창을 건너뛴다`() {
         val userId = UUID.randomUUID()
         val url = "https://example.com/post"
-        stubVerifiedMember(userId)
         stubMetadataExtraction(url)
         stubAssemblerResponse(UUID.randomUUID())
         `when`(postRepository.save(anyUuid<TablePost>())).thenAnswer { it.arguments[0] }
@@ -333,7 +324,6 @@ class PostServiceTest {
     fun `createPost는 다른 키로 1시간 안에 같은 URL을 등록하면 크롤링 전에 DuplicatePostException을 던진다`() {
         val userId = UUID.randomUUID()
         val url = "https://example.com/post"
-        stubVerifiedMember(userId)
         `when`(postRepository.existsByUserIdAndUrlAndCreatedAtAfter(anyUuid(), anyUuid(), anyUuid())).thenReturn(true)
 
         assertThrows(DuplicatePostException::class.java) {
@@ -350,7 +340,6 @@ class PostServiceTest {
         val key = UUID.randomUUID()
         val postId = UUID.randomUUID()
         val url = "https://example.com/post"
-        stubVerifiedMember(userId)
         val response = stubAssemblerResponse(postId)
         `when`(postRepository.findByUserIdAndIdempotencyKey(userId, key))
             .thenReturn(TablePost(id = postId, userId = userId, url = url, title = "제목", idempotencyKey = key))
@@ -367,9 +356,7 @@ class PostServiceTest {
     fun `createPost는 이메일 미인증 회원이면 크롤링 전에 EmailNotVerifiedException을 던진다`() {
         val userId = UUID.randomUUID()
         val url = "https://example.com/unverified"
-        `when`(memberRepository.findById(userId)).thenReturn(
-            Optional.of(TableMember(id = userId, email = "a@a.com", password = "pw", nickname = "tester", emailVerified = false)),
-        )
+        doThrow(EmailNotVerifiedException("Email verification required")).`when`(memberService).requireEmailVerified(userId, "create a post")
 
         assertThrows(EmailNotVerifiedException::class.java) {
             postService.createPost(userId, PostCreateRequest(url = url))
@@ -385,7 +372,6 @@ class PostServiceTest {
         val url = "https://example.com/fallback"
         val savedPost = TablePost(id = postId, userId = userId, url = url, title = "제목", isPrivate = false)
 
-        stubVerifiedMember(userId)
         // stubMetadataExtraction이 이미 pageContent = null(크롤링 실패 상황)을 반환한다 - 이 테스트의
         // 관심사가 바로 그 상황에서 fallbackContent가 대신 쓰이는지이므로 그대로 재사용한다.
         stubMetadataExtraction(url)
@@ -409,7 +395,6 @@ class PostServiceTest {
         val url = "https://example.com/human-crawl-fail"
         val savedPost = TablePost(id = postId, userId = userId, url = url, title = "제목", isPrivate = false)
 
-        stubVerifiedMember(userId)
         stubMetadataExtraction(url)
         val savedPostCaptor = ArgumentCaptor.forClass(TablePost::class.java)
         `when`(postRepository.save(savedPostCaptor.capture())).thenReturn(savedPost)
@@ -428,7 +413,6 @@ class PostServiceTest {
         val url = "https://example.com/no-bookmark"
         val savedPost = TablePost(id = postId, userId = userId, url = url, title = "제목", isPrivate = false)
 
-        stubVerifiedMember(userId)
         stubMetadataExtraction(url)
         `when`(postRepository.save(any())).thenReturn(savedPost)
         stubAssemblerResponse(postId)
@@ -451,7 +435,6 @@ class PostServiceTest {
         val folder1 = TableBookmarkFolder(id = folderId1, userId = userId, name = "폴더1")
         val folder2 = TableBookmarkFolder(id = folderId2, userId = userId, name = "폴더2")
 
-        stubVerifiedMember(userId)
         stubMetadataExtraction(url)
         `when`(postRepository.save(any())).thenReturn(savedPost)
         `when`(bookmarkFolderRepository.findAllById(listOf(folderId1, folderId2)))
@@ -476,7 +459,6 @@ class PostServiceTest {
         val url = "https://example.com/uncategorized"
         val savedPost = TablePost(id = postId, userId = userId, url = url, title = "제목", isPrivate = false)
 
-        stubVerifiedMember(userId)
         stubMetadataExtraction(url)
         `when`(postRepository.save(any())).thenReturn(savedPost)
         stubAssemblerResponse(postId, isBookmarked = true)
@@ -498,7 +480,6 @@ class PostServiceTest {
         val savedPost = TablePost(id = postId, userId = userId, url = url, title = "제목", isPrivate = false)
         val foreignFolder = TableBookmarkFolder(id = folderId, userId = otherUserId, name = "남의 폴더")
 
-        stubVerifiedMember(userId)
         stubMetadataExtraction(url)
         `when`(postRepository.save(any())).thenReturn(savedPost)
         `when`(bookmarkFolderRepository.findAllById(listOf(folderId))).thenReturn(listOf(foreignFolder))
@@ -518,7 +499,6 @@ class PostServiceTest {
         val url = "https://example.com/missing-folder"
         val savedPost = TablePost(id = postId, userId = userId, url = url, title = "제목", isPrivate = false)
 
-        stubVerifiedMember(userId)
         stubMetadataExtraction(url)
         `when`(postRepository.save(any())).thenReturn(savedPost)
         `when`(bookmarkFolderRepository.findAllById(listOf(folderId))).thenReturn(emptyList())
@@ -539,7 +519,6 @@ class PostServiceTest {
         val savedPost = TablePost(id = postId, userId = userId, url = url, title = "제목", isPrivate = false)
         val folder = TableBookmarkFolder(id = folderId, userId = userId, name = "폴더")
 
-        stubVerifiedMember(userId)
         stubMetadataExtraction(url)
         `when`(postRepository.save(any())).thenReturn(savedPost)
         `when`(bookmarkFolderRepository.findAllById(listOf(folderId))).thenReturn(listOf(folder))
@@ -755,7 +734,7 @@ class PostServiceTest {
     fun `getPostsByCursor는 검색 첫 쪽에서 의미 검색 여부를 cursor에 담고 건수를 센다`() {
         val embedding = floatArrayOf(1f)
         `when`(geminiService.embedQuery(PostEmbeddingText.query("spring"))).thenReturn(embedding)
-        `when`(postRepository.findPostsAfter(null, "spring", null, null, null, PostListSort.RELEVANCE, null, 10, embedding, true))
+        `when`(postRepository.findPostsAfter(null, "spring", emptySet(), null, emptySet(), null, PostListSort.RELEVANCE, null, 10, embedding, true))
             .thenReturn(KeysetSlice(listOf(searchPost()), relevanceKeys, 5L))
 
         val result = postService.getPostsByCursor(null, "spring", null, null, null, 10, null)
@@ -769,7 +748,7 @@ class PostServiceTest {
         val embedding = floatArrayOf(1f)
         var consumed = 0
         `when`(geminiService.embedQuery(PostEmbeddingText.query("spring"))).thenReturn(embedding)
-        `when`(postRepository.findPostsAfter(null, "spring", null, null, null, PostListSort.RELEVANCE, relevanceKeys, 10, embedding, false))
+        `when`(postRepository.findPostsAfter(null, "spring", emptySet(), null, emptySet(), null, PostListSort.RELEVANCE, relevanceKeys, 10, embedding, false))
             .thenReturn(KeysetSlice(listOf(searchPost()), relevanceKeys))
 
         val result =
@@ -785,7 +764,7 @@ class PostServiceTest {
     // 키워드로 시작한 뒤 의미 점수가 켜지면 키워드 점수 기준의 cursor와 맞지 않아 글을 놓친다(docs/PAGINATION.md)
     @Test
     fun `getPostsByCursor는 키워드로 시작한 뒤쪽에서 임베딩과 호출 한도를 쓰지 않는다`() {
-        `when`(postRepository.findPostsAfter(null, "spring", null, null, null, PostListSort.RELEVANCE, relevanceKeys, 10, null, false))
+        `when`(postRepository.findPostsAfter(null, "spring", emptySet(), null, emptySet(), null, PostListSort.RELEVANCE, relevanceKeys, 10, null, false))
             .thenReturn(KeysetSlice(listOf(searchPost()), relevanceKeys))
 
         val result =
@@ -799,7 +778,7 @@ class PostServiceTest {
 
     @Test
     fun `getPostsByCursor는 호출 한도를 넘으면 키워드로 내려가 뒤쪽도 그대로 유지한다`() {
-        `when`(postRepository.findPostsAfter(null, "spring", null, null, null, PostListSort.RELEVANCE, relevanceKeys, 10, null, false))
+        `when`(postRepository.findPostsAfter(null, "spring", emptySet(), null, emptySet(), null, PostListSort.RELEVANCE, relevanceKeys, 10, null, false))
             .thenReturn(KeysetSlice(listOf(searchPost()), relevanceKeys))
 
         val result = postService.getPostsByCursor(null, "spring", null, null, relevanceCursor(semantic = true), 10, null) { false }
@@ -811,7 +790,7 @@ class PostServiceTest {
     @Test
     fun `getPostsByCursor는 뒤쪽에서 임베딩이 실패하면 키워드로 내려가 뒤쪽도 그대로 유지한다`() {
         `when`(geminiService.embedQuery(PostEmbeddingText.query("spring"))).thenReturn(null)
-        `when`(postRepository.findPostsAfter(null, "spring", null, null, null, PostListSort.RELEVANCE, relevanceKeys, 10, null, false))
+        `when`(postRepository.findPostsAfter(null, "spring", emptySet(), null, emptySet(), null, PostListSort.RELEVANCE, relevanceKeys, 10, null, false))
             .thenReturn(KeysetSlice(listOf(searchPost()), relevanceKeys))
 
         val result = postService.getPostsByCursor(null, "spring", null, null, relevanceCursor(semantic = true), 10, null)
@@ -822,9 +801,9 @@ class PostServiceTest {
     @Test
     fun `getPostsByCursor는 첫 쪽이 비면 자판 보정으로 재검색하고 cursor에 표시한다`() {
         `when`(geminiService.embedQuery(PostEmbeddingText.query("spdlqj"))).thenReturn(null)
-        `when`(postRepository.findPostsAfter(null, "spdlqj", null, null, null, PostListSort.RELEVANCE, null, 10, null, true))
+        `when`(postRepository.findPostsAfter(null, "spdlqj", emptySet(), null, emptySet(), null, PostListSort.RELEVANCE, null, 10, null, true))
             .thenReturn(KeysetSlice(emptyList(), null, 0L))
-        `when`(postRepository.findPostsAfter(null, "네이버", null, null, null, PostListSort.RELEVANCE, null, 10, null, true))
+        `when`(postRepository.findPostsAfter(null, "네이버", emptySet(), null, emptySet(), null, PostListSort.RELEVANCE, null, 10, null, true))
             .thenReturn(KeysetSlice(listOf(searchPost()), relevanceKeys, 1L))
 
         val result = postService.getPostsByCursor(null, "spdlqj", null, null, null, 10, null)
@@ -836,7 +815,7 @@ class PostServiceTest {
 
     @Test
     fun `getPostsByCursor는 보정으로 시작한 뒤쪽을 보정어로 읽고 응답에 보정어를 유지한다`() {
-        `when`(postRepository.findPostsAfter(null, "네이버", null, null, null, PostListSort.RELEVANCE, relevanceKeys, 10, null, false))
+        `when`(postRepository.findPostsAfter(null, "네이버", emptySet(), null, emptySet(), null, PostListSort.RELEVANCE, relevanceKeys, 10, null, false))
             .thenReturn(KeysetSlice(listOf(searchPost()), relevanceKeys))
 
         val result = postService.getPostsByCursor(null, "spdlqj", null, null, relevanceCursor(semantic = false, corrected = true), 10, null)
@@ -849,7 +828,7 @@ class PostServiceTest {
     // 예전에는 쪽마다 totalElements == 0으로 판정했다. 건수를 세지 않으니 빈 마지막 쪽을 0건 검색으로 오인하면 안 된다.
     @Test
     fun `getPostsByCursor는 뒤쪽이 비어도 자판 보정을 시도하지 않는다`() {
-        `when`(postRepository.findPostsAfter(null, "spdlqj", null, null, null, PostListSort.RELEVANCE, relevanceKeys, 10, null, false))
+        `when`(postRepository.findPostsAfter(null, "spdlqj", emptySet(), null, emptySet(), null, PostListSort.RELEVANCE, relevanceKeys, 10, null, false))
             .thenReturn(KeysetSlice(emptyList()))
 
         val result = postService.getPostsByCursor(null, "spdlqj", null, null, relevanceCursor(semantic = false), 10, null)
@@ -860,7 +839,7 @@ class PostServiceTest {
 
     @Test
     fun `getPostsByCursor는 검색이 아니면 임베딩과 호출 한도를 쓰지 않고 마지막 쪽이면 cursor가 없다`() {
-        `when`(postRepository.findPostsAfter(null, null, null, null, null, PostListSort.LATEST, null, 10, null, false))
+        `when`(postRepository.findPostsAfter(null, null, emptySet(), null, emptySet(), null, PostListSort.LATEST, null, 10, null, false))
             .thenReturn(KeysetSlice(listOf(searchPost())))
 
         val result =
@@ -887,12 +866,12 @@ class PostServiceTest {
 
     @Test
     fun `getPostsByCursor는 size를 최대 페이지 크기로 자른다`() {
-        `when`(postRepository.findPostsAfter(null, null, null, null, null, PostListSort.LATEST, null, Paging.MAX_PAGE_SIZE, null, false))
+        `when`(postRepository.findPostsAfter(null, null, emptySet(), null, emptySet(), null, PostListSort.LATEST, null, Paging.MAX_PAGE_SIZE, null, false))
             .thenReturn(KeysetSlice(emptyList()))
 
         postService.getPostsByCursor(null, null, null, null, null, 100_000, null)
 
-        verify(postRepository).findPostsAfter(null, null, null, null, null, PostListSort.LATEST, null, Paging.MAX_PAGE_SIZE, null, false)
+        verify(postRepository).findPostsAfter(null, null, emptySet(), null, emptySet(), null, PostListSort.LATEST, null, Paging.MAX_PAGE_SIZE, null, false)
     }
 
     @Test
@@ -902,7 +881,6 @@ class PostServiceTest {
         val url = "https://example.com/previewed"
         val savedPost = TablePost(id = postId, userId = userId, url = url, title = "미리 본 제목", isPrivate = false)
 
-        stubVerifiedMember(userId)
         `when`(linkPreviewService.findFresh(url)).thenReturn(
             UrlMetadata(title = "미리 본 제목", description = "설명", ogImage = "https://example.com/og.png", tags = listOf("example.com"), pageContent = null),
         )
@@ -920,9 +898,7 @@ class PostServiceTest {
     @Test
     fun `previewLink는 이메일 미인증 회원이면 URL 검증·크롤링 전에 EmailNotVerifiedException을 던진다`() {
         val userId = UUID.randomUUID()
-        `when`(memberRepository.findById(userId)).thenReturn(
-            Optional.of(TableMember(id = userId, email = "a@a.com", password = "pw", nickname = "tester", emailVerified = false)),
-        )
+        doThrow(EmailNotVerifiedException("Email verification required")).`when`(memberService).requireEmailVerified(userId, "preview a link")
 
         assertThrows(EmailNotVerifiedException::class.java) {
             postService.previewLink(userId, "https://example.com/unverified")
@@ -935,7 +911,6 @@ class PostServiceTest {
     fun `previewLink는 앞뒤 공백을 뗀 URL을 검증한 뒤 캐시에서 가져와 응답으로 옮긴다`() {
         val userId = UUID.randomUUID()
         val url = "https://example.com/preview"
-        stubVerifiedMember(userId)
         `when`(linkPreviewService.get(url)).thenReturn(
             UrlMetadata(title = "제목", description = "설명", ogImage = "https://example.com/og.png", tags = listOf("example.com"), pageContent = "본문"),
         )
@@ -952,11 +927,48 @@ class PostServiceTest {
     fun `previewLink는 URL 검증에 실패하면 캐시·크롤링을 건드리지 않는다`() {
         val userId = UUID.randomUUID()
         val url = "http://169.254.169.254/latest"
-        stubVerifiedMember(userId)
         doThrow(InvalidUrlException(InvalidUrlException.URL_NOT_ALLOWED, "blocked")).`when`(safeUrlValidator).validate(url)
 
         assertThrows(InvalidUrlException::class.java) { postService.previewLink(userId, url) }
 
         verifyNoInteractions(linkPreviewService)
+    }
+
+    // 닉네임·봇 필터는 member에 id를 물어 저장소에 id 집합으로 넘긴다 - 나머지 filter 값은 쉼표로 나눠 그대로 넘긴다
+    @Test
+    fun `getPostsByCursor는 닉네임과 봇 제외 필터를 회원 id 집합으로 바꿔 저장소에 넘긴다`() {
+        val authorId = UUID.randomUUID()
+        val botId = UUID.randomUUID()
+        val filters = setOf("isLiked", "excludeBots")
+        `when`(memberService.findIdsByNicknameContaining("Kim")).thenReturn(setOf(authorId))
+        `when`(memberService.findBotIds()).thenReturn(setOf(botId))
+        `when`(postRepository.findPostsAfter(null, null, filters, setOf(authorId), setOf(botId), null, PostListSort.LATEST, null, 10, null, false))
+            .thenReturn(KeysetSlice(emptyList()))
+
+        postService.getPostsByCursor(null, null, " isLiked, excludeBots ,", "Kim", null, 10, null)
+
+        verify(postRepository).findPostsAfter(null, null, filters, setOf(authorId), setOf(botId), null, PostListSort.LATEST, null, 10, null, false)
+    }
+
+    // 맞는 회원이 없으면 빈 집합을 넘긴다(결과 없음). null(거르지 않음)로 바꾸면 전체 글이 나온다
+    @Test
+    fun `getPostsByCursor는 닉네임에 맞는 회원이 없으면 빈 작성자 집합을 넘긴다`() {
+        `when`(memberService.findIdsByNicknameContaining("nobody")).thenReturn(emptySet())
+        `when`(postRepository.findPostsAfter(null, null, emptySet(), emptySet(), emptySet(), null, PostListSort.LATEST, null, 10, null, false))
+            .thenReturn(KeysetSlice(emptyList()))
+
+        postService.getPostsByCursor(null, null, null, "nobody", null, 10, null)
+
+        verify(postRepository).findPostsAfter(null, null, emptySet(), emptySet(), emptySet(), null, PostListSort.LATEST, null, 10, null, false)
+    }
+
+    @Test
+    fun `getPostsByCursor는 닉네임이 비었고 봇 제외가 없으면 member에 묻지 않는다`() {
+        `when`(postRepository.findPostsAfter(null, null, setOf("isMyPosts"), null, emptySet(), null, PostListSort.LATEST, null, 10, null, false))
+            .thenReturn(KeysetSlice(emptyList()))
+
+        postService.getPostsByCursor(null, null, "isMyPosts", "  ", null, 10, null)
+
+        verifyNoInteractions(memberService)
     }
 }

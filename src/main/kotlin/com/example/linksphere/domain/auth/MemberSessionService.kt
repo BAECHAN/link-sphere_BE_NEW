@@ -62,6 +62,12 @@ class MemberSessionService(
         private const val INVALID_REFRESH_MESSAGE = "Invalid refresh token"
     }
 
+    /**
+     * 이 회원의 살아 있는(폐기되지 않았고 refresh가 만료되지 않은) 세션 계열 id. 알림 발송(FcmService)이 로그아웃·만료된
+     * 기기의 토큰을 가려내는 데 쓴다 - fcm이 member_sessions 테이블을 직접 읽지 않게 하는 공개 조회다.
+     */
+    fun findLiveFamilyIds(memberId: UUID): Set<UUID> = memberSessionRepository.findLiveFamilyIds(memberId, Instant.now()).toSet()
+
     /** 로그인 성공 시 새 세션(새 회전 계열)을 만든다. */
     @Transactional
     fun createSession(memberId: UUID): IssuedSession {

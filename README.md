@@ -64,6 +64,7 @@ src/main/kotlin/com/example/linksphere/
 │   │   ├── MemberService.kt
 │   │   ├── MemberDTO.kt                 # 가입·계정 수정 요청과 계정 응답(SignupRequest·UpdateAccountRequest·AccountResponse)
 │   │   ├── MemberCredentials.kt         # auth에 내주는 전용 객체(로그인·비밀번호 확인에 필요한 값만, TableMember 대신)
+│   │   ├── MemberProfile.kt             # post·comment에 내주는 전용 객체(작성자로 보이는 닉네임·이미지, 탈퇴한 회원은 null)
 │   │   ├── PasswordPattern.kt           # 가입·비밀번호 변경·재설정이 공유하는 비밀번호 정규식
 │   │   ├── EmailNormalizer.kt           # 이메일 비교·저장 전 정규화(trim·소문자)
 │   │   ├── EmailVerificationGate.kt     # 이메일 인증 전 회원의 글·댓글·답글 작성과 링크 미리보기 차단

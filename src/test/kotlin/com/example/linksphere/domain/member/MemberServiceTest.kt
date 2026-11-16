@@ -2,6 +2,7 @@ package com.example.linksphere.domain.member
 
 import com.example.linksphere.global.exception.DuplicateMemberException
 import com.example.linksphere.global.exception.DuplicateNicknameException
+import com.example.linksphere.global.exception.EmailNotVerifiedException
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -15,6 +16,7 @@ import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 import org.mockito.junit.jupiter.MockitoExtension
 import org.springframework.dao.DataIntegrityViolationException
+import java.time.Instant
 import java.util.Optional
 import java.util.UUID
 
@@ -324,5 +326,82 @@ class MemberServiceTest {
             .thenThrow(DataIntegrityViolationException("some other constraint violated"))
 
         assertThrows(DataIntegrityViolationException::class.java) { memberService.signup(request) }
+    }
+
+    // 다른 패키지(post·comment)가 받는 작성자 정보 - 탈퇴한 것처럼 보여야 하는 회원은 닉네임·이미지를 감춘 채 내보낸다
+    @Test
+    fun `findProfiles는 탈퇴 신청 중이거나 익명화된 회원의 닉네임과 이미지를 null로 내보낸다`() {
+        val activeId = UUID.randomUUID()
+        val pendingId = UUID.randomUUID()
+        val purgedId = UUID.randomUUID()
+        val ids = setOf(activeId, pendingId, purgedId)
+        `when`(memberRepository.findAllById(ids)).thenReturn(
+            listOf(
+                TableMember(id = activeId, email = "a@example.com", password = "pw", nickname = "active", image = "https://example.com/a.png"),
+                TableMember(id = pendingId, email = "p@example.com", password = "pw", nickname = "pending", image = "https://example.com/p.png", deletionRequestedAt = Instant.now()),
+                TableMember(id = purgedId, email = "d@example.com", password = "pw", nickname = "purged", image = "https://example.com/d.png", deletedAt = Instant.now()),
+            ),
+        )
+
+        val profiles = memberService.findProfiles(listOf(activeId, pendingId, purgedId, activeId))
+
+        assertEquals(MemberProfile(activeId, "active", "https://example.com/a.png"), profiles[activeId])
+        assertEquals(MemberProfile(pendingId, null, null), profiles[pendingId])
+        assertEquals(MemberProfile(purgedId, null, null), profiles[purgedId])
+    }
+
+    @Test
+    fun `findProfiles는 없는 id를 결과에서 빼고 빈 목록이면 DB를 보지 않는다`() {
+        val knownId = UUID.randomUUID()
+        val unknownId = UUID.randomUUID()
+        `when`(memberRepository.findAllById(setOf(knownId, unknownId)))
+            .thenReturn(listOf(TableMember(id = knownId, email = "a@example.com", password = "pw", nickname = "known")))
+
+        assertEquals(setOf(knownId), memberService.findProfiles(listOf(knownId, unknownId)).keys)
+        assertEquals(emptyMap<UUID, MemberProfile>(), memberService.findProfiles(emptyList()))
+        verify(memberRepository, never()).findAllById(emptySet())
+    }
+
+    @Test
+    fun `getProfile은 회원이 없으면 IllegalStateException을 던진다`() {
+        val memberId = UUID.randomUUID()
+        `when`(memberRepository.findById(memberId)).thenReturn(Optional.empty())
+
+        assertThrows(IllegalStateException::class.java) { memberService.getProfile(memberId) }
+    }
+
+    @Test
+    fun `requireEmailVerified는 이메일 미인증 회원이면 EmailNotVerifiedException을 던지고 인증된 회원이면 통과한다`() {
+        val unverifiedId = UUID.randomUUID()
+        val verifiedId = UUID.randomUUID()
+        `when`(memberRepository.findById(unverifiedId))
+            .thenReturn(Optional.of(TableMember(id = unverifiedId, email = "u@example.com", password = "pw", emailVerified = false)))
+        `when`(memberRepository.findById(verifiedId))
+            .thenReturn(Optional.of(TableMember(id = verifiedId, email = "v@example.com", password = "pw", emailVerified = true)))
+
+        val exception = assertThrows(EmailNotVerifiedException::class.java) { memberService.requireEmailVerified(unverifiedId, "create a post") }
+
+        assertEquals("Email verification required to create a post", exception.message)
+        memberService.requireEmailVerified(verifiedId, "create a post")
+    }
+
+    // 예전 글 목록 쿼리와 같은 패턴이다 - 소문자로 바꿔 앞뒤에 %를 붙이고, 입력의 %·_는 이스케이프하지 않는다
+    @Test
+    fun `findIdsByNicknameContaining은 닉네임을 소문자로 바꾼 부분 일치 패턴으로 찾는다`() {
+        val memberId = UUID.randomUUID()
+        `when`(memberRepository.findIdsByNicknamePattern("%te_st%")).thenReturn(listOf(memberId))
+
+        assertEquals(setOf(memberId), memberService.findIdsByNicknameContaining("Te_ST"))
+    }
+
+    @Test
+    fun `findFirstBotId는 봇이 없으면 null을 돌려준다`() {
+        val botId = UUID.randomUUID()
+        `when`(memberRepository.findFirstByIsBotTrue())
+            .thenReturn(TableMember(id = botId, email = "bot@link-sphere.local", password = "!", isBot = true))
+            .thenReturn(null)
+
+        assertEquals(botId, memberService.findFirstBotId())
+        assertEquals(null, memberService.findFirstBotId())
     }
 }

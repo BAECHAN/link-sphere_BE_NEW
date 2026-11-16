@@ -134,7 +134,7 @@ Context 절 참고). 한국 개인정보보호법의 "지체 없이 파기" 원�
 
 - 가입은 옛 행을 찾지 않고 늘 새 행을 만든다(`domain/member/MemberService.kt:39`,
   id는 `domain/member/TableMember.kt:14`의 `@GeneratedValue` UUID).
-- 이메일로 회원을 찾는 곳은 가입 중복 확인(`MemberService.kt:22,140`)·로그인
+- 이메일로 회원을 찾는 곳은 가입 중복 확인(`MemberService.kt:22,173`)·로그인
   (`domain/auth/AuthService.kt:151`)·인증 메일 재발송(`AuthService.kt:89`)·비밀번호
   재설정(`domain/auth/PasswordResetService.kt:53`)뿐이다. 퍼지가 옛 행의 이메일을
   `deleted-<id>@deleted.invalid`로 바꾸므로(`domain/member/AccountDeletionService.kt:78`) 어느
@@ -250,7 +250,7 @@ AND deleted_at IS NULL` 조건)도 같은 파일에 있다.
 | 탈퇴 신청 API | `domain/auth/AuthController.kt`의 `deleteAccount` — `ACCOUNT_DELETE` 권한이 없는 역할(데모 계정)은 서비스에 닿기 전에 403 `ACCESS_DENIED`(`docs/BE-ARCHITECTURE.md` §5 "역할·권한") | 예 |
 | 로그인 시 자동 복구 | `domain/auth/AuthService.kt:145-184`의 `login`(비밀번호 일치 후 `memberService.cancelPendingDeletion` 호출) | 예 |
 | 복구 여부를 FE에 전달 | `domain/auth/AuthDTO.kt`의 `TokenResponse.deletionCancelled` | 예 |
-| 경합 처리용 조건부 UPDATE 3개 | `domain/member/MemberRepository.kt:35-55`(`findIdsPendingPurge`·`cancelDeletionRequest`·`claimForPurge`) | 예 |
+| 경합 처리용 조건부 UPDATE 3개 | `domain/member/MemberRepository.kt:45-65`(`findIdsPendingPurge`·`cancelDeletionRequest`·`claimForPurge`) | 예 |
 | 유예 만료 확정 + 실제 익명화(2단계) | `domain/member/AccountDeletionService.kt`의 `purge` — 회원 행을 익명화한 뒤 `MemberPurgedEvent`를 낸다 | 예 |
 | 영구 삭제 때 개인 전용 데이터 삭제 | 위 두 리스너 + `domain/interaction/InteractionMemberEventListener.kt`(폴더 아이템 → 폴더 → 북마크, 글 좋아요), `domain/comment/CommentMemberEventListener.kt`(댓글 좋아요), `domain/post/PostMemberEventListener.kt`(조회 기록). 하나가 실패하면 그 회원의 삭제 전체가 되돌려진다 | 예 |
 | 배치 진입점(회원별 트랜잭션 분리) | `domain/member/AccountPurgeService.kt`(잡 처리기 `AccountPurgeJobHandler`는 auth에 있다) | 예 |

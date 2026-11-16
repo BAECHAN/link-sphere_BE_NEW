@@ -7,6 +7,7 @@ import com.example.linksphere.domain.linkpreview.LinkPreviewService
 import com.example.linksphere.domain.linkpreview.SafeUrlValidator
 import com.example.linksphere.domain.linkpreview.UrlMetadata
 import com.example.linksphere.domain.linkpreview.UrlMetadataExtractor
+import com.example.linksphere.domain.member.MemberService
 import com.example.linksphere.global.common.AdvisoryLock
 import com.example.linksphere.global.common.SupabaseStorageService
 import com.example.linksphere.global.ratelimit.RateLimitService
@@ -31,7 +32,7 @@ import java.util.UUID
  * "응답에 이름 붙이기", "없는 id 버리기", "연결 행 쓰고 지우기"가 SQL과 FK까지 가야 확인된다 - mock으로는 보이지 않는다.
  */
 @PostgresIntegrationTest
-@Import(PostService::class, PostResponseAssembler::class, CommentService::class, CategoryService::class)
+@Import(PostService::class, PostResponseAssembler::class, CommentService::class, CategoryService::class, MemberService::class)
 class PostCategoryIntegrationTest {
 
     @Autowired private lateinit var postService: PostService
