@@ -1,6 +1,5 @@
 package com.example.linksphere.global.exception
 
-import com.example.linksphere.global.common.ErrorResponse
 import org.slf4j.LoggerFactory
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus

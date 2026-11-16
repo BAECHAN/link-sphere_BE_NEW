@@ -1,7 +1,5 @@
 package com.example.linksphere.architecture
 
-import com.example.linksphere.domain.auth.SessionAuthenticationFilter
-import com.example.linksphere.global.config.SecurityConfig
 import com.tngtech.archunit.base.DescribedPredicate.not
 import com.tngtech.archunit.core.domain.JavaAccess.Predicates.origin
 import com.tngtech.archunit.core.domain.JavaAccess.Predicates.target
@@ -81,8 +79,8 @@ class AppWideArchitectureRulesTest {
             )
             .`as`("Principal·Authentication의 name은 SecurityUtils(getUserId)에서만 읽는다")
 
-    // global은 도메인을 모르는 공통 계층이다. 아래 한 쌍만 의도적인 예외다(docs/BE-ARCHITECTURE.md §3):
-    // 보안 필터 체인이 auth 도메인의 세션 필터를 끼운다.
+    // global은 도메인을 모르는 공통 계층이다. 예외는 없다(docs/BE-ARCHITECTURE.md §3) - 보안 필터 체인도 global의
+    // RequestAuthenticationFilter 타입으로 받고 auth의 세션 필터가 그것을 구현한다.
     @ArchTest
     val globalMustNotDependOnDomain: ArchRule =
         layeredArchitecture()
@@ -90,6 +88,5 @@ class AppWideArchitectureRulesTest {
             .layer("Global").definedBy("com.example.linksphere.global..")
             .layer("Domain").definedBy("com.example.linksphere.domain..")
             .whereLayer("Global").mayNotAccessAnyLayer()
-            .ignoreDependency(SecurityConfig::class.java, SessionAuthenticationFilter::class.java)
-            .`as`("global은 domain에 의존하지 않는다 - 허용된 한 쌍만 예외")
+            .`as`("global은 domain에 의존하지 않는다")
 }
