@@ -284,9 +284,12 @@ Plan mode로 계획을 세우고 구현한 작업은, PR을 열기 전에:
 - **Never** 워크트리 진입 후 부트스트랩 생략 → `EnterWorktree`로 만든 워크트리는 gitignore된
   설정 파일이 없다. 진입 직후 반드시 실행:
   ```bash
-  cp ../../../src/main/resources/application-secret.yml src/main/resources/
-  cp ../../../src/main/resources/firebase-service-account.json src/main/resources/
+  ./scripts/worktree-bootstrap.sh
   ```
+  메인 체크아웃의 비밀 설정 파일 2개를 복사한다. `cp`를 직접 쓰지 않는다 — 2026-11-16부터 Claude 세션은 이 파일들의
+  이름이 든 명령(`cp`·`ls` 포함)을 실행하지 못한다(사용자 설정 deny와 claude-base bash-guard G6. 값을 가리려던 `sed`가
+  키 3개를 대화에 출력한 일로 넣었다). 이 파일들의 키 이름이 필요하면 값을 읽지 않고 `application.yml`·코드의
+  `${...}` 참조에서 찾거나 사용자에게 묻는다
 - **Never** 여러 워크트리에서 동시에 `bootRun` → 포트(8080)와 DB(원격 Postgres, `ddl-auto: none`)
   는 워크트리로 격리되지 않는다. dev 서버는 한 번에 한 워크트리에서만 띄운다
 - **Never** `EnterWorktree` 기본값(`fresh` = `origin/main` 기준)을 확인 없이 사용 → 다른 세션이
