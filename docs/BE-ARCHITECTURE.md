@@ -7,7 +7,7 @@
 > **읽고 나면**: 요청이 어느 코드를 거치는지, 레이어끼리 무엇을 참조하고 어떤 타입을 주고받는지(§3) 따라갈 수 있고, 자동 검사(§2)와 선례 패턴(§7)에 맞춰 새 코드를 쓸 수 있다.
 > 지금 코드가 규칙과 어긋나는 곳은 §9에 모아 두었다 — 그쪽을 본떠 쓰지 않는다.
 >
-> **마지막 검토**: 2026-11-16 (§1 잡 표·패키지 역할·그래프, §3 접미사 표, §7-5, §9 순환 간선만 고침 — 뒷일 전달을 `global/job`으로 옮김). 이전 2026-11-15 (§1 패키지 그래프, §8 순수 함수 테스트 예시 경로, "남은 것"의 linkpreview 항목만 고침. 같은 날 §11 도구 선택 표의 Detekt 행도 고침). 이전 2026-11-12 (§4 실패 표의 `page=-1` 예, §7-8 N+1의 `countQuery` 예, §7-9 페이징의 `page` 서술만 고침, 같은 날 `page` 400 코드 제거를 반영). 이전 2026-11-11 (§3 컨트롤러·Service에 두는 한도와 §7-3 조회 기록만 고침). 이전 2026-11-10 (§1 요청 파이프라인의 서빙 경로만 고침), 2026-11-07
+> **마지막 검토**: 2026-11-16 (§1 패키지 역할·그래프, §2 검사 표, §3 global → domain 예외, §9 순환 간선만 고침 — `ErrorResponse`를 `global/exception`으로 옮기고 `SecurityConfig`가 auth 필터의 구체 타입을 모르게 함). 같은 날 앞서 (§1 잡 표·패키지 역할·그래프, §3 접미사 표, §7-5, §9 순환 간선만 고침 — 뒷일 전달을 `global/job`으로 옮김). 이전 2026-11-15 (§1 패키지 그래프, §8 순수 함수 테스트 예시 경로, "남은 것"의 linkpreview 항목만 고침. 같은 날 §11 도구 선택 표의 Detekt 행도 고침). 이전 2026-11-12 (§4 실패 표의 `page=-1` 예, §7-8 N+1의 `countQuery` 예, §7-9 페이징의 `page` 서술만 고침, 같은 날 `page` 400 코드 제거를 반영). 이전 2026-11-11 (§3 컨트롤러·Service에 두는 한도와 §7-3 조회 기록만 고침). 이전 2026-11-10 (§1 요청 파이프라인의 서빙 경로만 고침), 2026-11-07
 
 시스템 전체(CloudFront·S3·Lambda·배포 파이프라인)는 FE 레포
 [`docs/SYSTEM-ARCHITECTURE.md`](https://github.com/BAECHAN/link-sphere_FE_NEW/blob/main/docs/SYSTEM-ARCHITECTURE.md)가,
@@ -68,11 +68,11 @@ flowchart TD
 |---|---|---|
 | 루트 | `LambdaHandler`(진입점, 잡이면 `JobRunner`로 넘김), `FunctionUrlOriginGuard`, `FunctionUrlResponse`(응답 직렬화) | 전부 |
 | `domain/<도메인>/` | 도메인별 평면 구조 — Controller·Service·Repository·`Table*` 엔티티·`*DTO.kt`와 그 도메인 전용 헬퍼 | 다른 도메인(§3), `global`, `infra` |
-| `global/common/` | 응답 래퍼, `SecurityUtils`, `SecureToken`, `ClientIpResolver`, `Paging`, `CursorCodec`, `SeekPredicate`, `KeysetQuery`, `SupabaseStorageService`, `TransactionCallbacks`, `BatchJobLimits` | `domain` 금지(허용 1쌍 예외, §3) |
+| `global/common/` | 응답 래퍼, `SecurityUtils`, `SecureToken`, `ClientIpResolver`, `Paging`, `CursorCodec`, `SeekPredicate`, `KeysetQuery`, `SupabaseStorageService`, `TransactionCallbacks`, `BatchJobLimits` | `domain` 금지(§3) |
 | `global/ratelimit/` | 범용 고정 윈도 레이트리밋 `RateLimitService`와 그 저장소 `RateLimitRepository`·`TableRateLimit`(테이블 이름은 옛 이름 `auth_rate_limits` 그대로) | 위와 같음 |
-| `global/config/` | Security·Swagger·Async 설정 | 위와 같음 |
+| `global/config/` | Security·Swagger·Async 설정. `security/RequestAuthenticationFilter`는 `SecurityConfig`가 받는 요청 인증 필터 타입이고 구현은 auth에 있다(§3) | 위와 같음 |
 | `global/job/` | 뒷일 전달의 인터페이스 `JobPublisher`(맡긴다)·`JobHandler`(처리한다), 이름으로 처리기를 찾는 `JobRunner`, 개발 환경용 `InProcessJobPublisher`, 도구용 `SkippingJobPublisher` | 위와 같음 |
-| `global/exception/` | 커스텀 예외 전부 + `GlobalExceptionHandler` | — |
+| `global/exception/` | 커스텀 예외 전부 + `GlobalExceptionHandler` + 오류 응답 봉투 `ErrorResponse` | — |
 | `infra/<기술>/` | 외부 연동(Gemini·YouTube·SES·FCM·Lambda self-invoke) | `global`만 — `domain`을 참조하지 않는다 |
 | `tools/` | 로컬 1회성 CLI | 전부 |
 
@@ -83,8 +83,7 @@ flowchart TD
 
 아래 그림은 손으로 그린 것이 아니다. `PackageGraphDocTest`가 바이트코드에서 패키지(`domain.post`처럼 두 단계) 사이
 간선을 계산해 이 블록과 비교하고, 다르면 실패하면서 붙여 넣을 새 블록을 출력한다 — 새 의존을 만들면 이 그림이 같은 PR에서
-바뀌어 리뷰에 드러난다. 점선은 순환을 만들지만 허용한 간선이다(§9의 4개 중 3개 — `global.exception → global.common`은
-아래처럼 그림에서 뺀 패키지라 보이지 않는다). 모든 패키지가 예외를 던지느라 의존하는 `global.exception`은 그림에서만
+바뀌어 리뷰에 드러난다. 점선은 순환을 만들지만 허용한 간선이다(§9의 3개). 모든 패키지가 예외를 던지느라 의존하는 `global.exception`은 그림에서만
 뺐고 순환 검사에는 들어간다. 루트(`LambdaHandler` 등)와 `tools/`는 두 단계 패키지가 아니라 그림·순환 검사 모두에서 빠진다 —
 다른 패키지가 이들을 참조하는 곳이 없어(2026-10-26 확인) 순환에 낄 수 없다.
 
@@ -119,6 +118,7 @@ flowchart LR
   domain_auth --> domain_member
   domain_auth --> domain_post
   domain_auth --> global_common
+  domain_auth --> global_config
   domain_auth --> global_job
   domain_auth --> global_ratelimit
   domain_auth --> infra_fcm
@@ -156,8 +156,6 @@ flowchart LR
   domain_upload --> global_common
   domain_upload --> global_job
   domain_upload --> global_ratelimit
-  global_config --> domain_auth
-  global_config --> global_common
   infra_aws --> global_job
   infra_fcm --> global_common
 ```
@@ -174,7 +172,7 @@ flowchart LR
 |---|---|---|
 | `controllersMustNotDependOnRepositories` | `@RestController`가 Repository·`*RepositoryImpl`을 직접 참조(앱 전체) | `architecture/AppWideArchitectureRulesTest.kt` |
 | `repositoriesMustNotConstructExceptions` | Repository·`*RepositoryImpl`이 예외를 생성 | 위와 같음 |
-| `globalMustNotDependOnDomain` | `global` → `domain` 의존(허용 1쌍 제외) | 위와 같음 |
+| `globalMustNotDependOnDomain` | `global` → `domain` 의존(예외 없음) | 위와 같음 |
 | `appCodeMustNotConstructIllegalArgumentException` | 앱 코드의 `IllegalArgumentException` 생성(`require()` 같은 inline 함수 포함) | 위와 같음 |
 | `controllerMustNotDependOnRepository` | 위 첫 규칙의 domain 한정판(먼저 있던 것) | `architecture/ArchitectureRulesTest.kt` |
 | `servicesMustNotHaveCrossDomainCycles` | 도메인 Service 사이 순환 의존(빈 생성 실패로만 드러남) | 위와 같음 |
@@ -196,7 +194,7 @@ flowchart LR
 | `persistenceMustNotDependOnUpperLayers` | Repository·엔티티가 Service·`@Component`·Controller·DTO를 참조 | 위와 같음 |
 | `dtosMustNotDependOnBeans` | `*DTO.kt`의 클래스가 Service·`@Component`·Repository·Controller를 참조 | 위와 같음 |
 | `apiDtosLiveInDtoFiles` | domain의 `*Request`·`*Response`를 `*DTO.kt` 밖에 정의 | 위와 같음 |
-| `packagesMustBeFreeOfCyclesExceptDocumented` | 패키지 사이 새 순환 — 허용 간선 4개는 `PackageGraphDocTest.kt`의 `DOCUMENTED_CYCLE_EDGES`, 이유는 §9 | 위와 같음 |
+| `packagesMustBeFreeOfCyclesExceptDocumented` | 패키지 사이 새 순환 — 허용 간선 3개는 `PackageGraphDocTest.kt`의 `DOCUMENTED_CYCLE_EDGES`, 이유는 §9 | 위와 같음 |
 | `문서의 패키지 의존 그래프가 코드와 같다` | §1 "실제 패키지 의존 그래프"가 코드와 어긋남 | `architecture/PackageGraphDocTest.kt` |
 | `순환 허용 간선 목록의 간선은 모두 실제로 있다` | 끊은 간선이 `DOCUMENTED_CYCLE_EDGES`에 남아 다시 생겨도 조용히 통과 | 위와 같음 |
 | `다른 패키지의 저장소·엔티티를 새로 쓰지 않는다` | 다른 패키지의 Repository·`@Entity`를 직접 쓰는 곳이 새로 생김 — 지금 있는 57곳은 `KNOWN_BOUNDARY_VIOLATIONS`에 적혀 있고 2단계에서 0으로 줄인다 | `architecture/ModuleBoundaryRulesTest.kt` |
@@ -304,8 +302,9 @@ flowchart TD
   (`docs/plans/2026-11-16-be-structure-stage2.md`)에서 그 패키지의 Service에 묻는 방식으로 바꿔 0으로 줄인다. Service끼리의
   순환은 지금처럼 `servicesMustNotHaveCrossDomainCycles`가 막고, 순환이 생기면 `PostResponseAssembler`처럼 어느 Service도
   참조하지 않는 조립기로 뺀다(§7-8).
-- **global → domain 1쌍** — `SecurityConfig` → `SessionAuthenticationFilter`(필터 체인 구성). 이 밖은
-  `globalMustNotDependOnDomain`이 막는다. 범용 레이트리밋이 auth의 카운터 테이블을 쓰던 2쌍은 저장소를
+- **global → domain 0쌍** — 예외가 없고 `globalMustNotDependOnDomain`이 막는다. 마지막 1쌍이던 `SecurityConfig` →
+  `SessionAuthenticationFilter`(필터 체인 구성)는 `SecurityConfig`가 global의 `RequestAuthenticationFilter` 타입으로 받고 auth의
+  필터가 그것을 구현하게 바꿔 없앴다(2026-11-16, `docs/plans/2026-11-16-be-structure-stage2.md` PR-3). 범용 레이트리밋이 auth의 카운터 테이블을 쓰던 2쌍은 저장소를
   `global/ratelimit`으로 옮겨 없앴다(2026-11-15, `docs/plans/2026-11-15-be-structure-stage1.md`).
 - **패키지 위치 예외** — 외부 연동인 `SupabaseStorageService`가 `global/common`에, FCM의 Controller·Entity·Repository가
   `infra/fcm`에 있다. 옮기지 않는다(새 외부 연동은 `infra/<기술>/`에 둔다).
@@ -765,15 +764,15 @@ FE와 BE가 같은 테스트 원칙을 쓰면서 층 구성과 도구를 다르�
 | 외부 클라이언트가 RestClient가 아니라 `RestTemplate` | `SupabaseStorageService` — 타임아웃(연결 3초·읽기 10초)은 설정돼 있다 | 바꾸지 않음 — 전환하면 호출부 3곳과 DELETE+본문 동작까지 바뀌어 회귀 범위가 크다 |
 | 엔티티 안의 표시 규칙 | `TableMember.isWithdrawn`·`publicNickname`·`publicImage`, `TableLinkPreview.toMetadata` | 바꾸지 않음(기록만) |
 | 상속받은 `delete(entity)` 3곳 | `PostService.deletePost`, `CommentService.deleteComment`, `BookmarkFolderService.deleteFolder` | 바꾸지 않음 — 409 `CONCURRENT_UPDATE` 안전망에 기댄다 |
-| 패키지 순환을 만드는 간선 4개 | 아래 표 | 바꾸지 않음(지금은) — 새 순환은 `packagesMustBeFreeOfCyclesExceptDocumented`가 막는다. 해소 후보는 "남은 것" |
+| 패키지 순환을 만드는 간선 3개 | 아래 표 | 바꾸지 않음(지금은) — 새 순환은 `packagesMustBeFreeOfCyclesExceptDocumented`가 막는다. 해소 후보는 "남은 것" |
 
-**순환을 허용한 간선 4개** — `PackageGraphDocTest.kt`의 `DOCUMENTED_CYCLE_EDGES`가 정본이다. 이 간선을 빼면 패키지 그래프에
+**순환을 허용한 간선 3개** — `PackageGraphDocTest.kt`의 `DOCUMENTED_CYCLE_EDGES`가 정본이다. 이 간선을 빼면 패키지 그래프에
 순환이 없다(2026-10-26 계산). `infra.aws → domain.post`·`comment`·`feed` 3개는 뒷일 전달을 `global/job`의 인터페이스로 바꿔
-없앴다(2026-11-16, `docs/plans/2026-11-16-be-structure-stage2.md` PR-2).
+없앴고(2026-11-16, `docs/plans/2026-11-16-be-structure-stage2.md` PR-2), `global.exception → global.common`은 `ErrorResponse`를
+`global/exception`으로 옮겨 없앴다(같은 계획 PR-3 — `CursorCodec`이 `InvalidInputException`을 던지는 반대 방향만 남는다).
 
 | 간선 | 대표 위치 | 이유 |
 |---|---|---|
-| `global.exception → global.common` | `GlobalExceptionHandler` → `ErrorResponse` | 핸들러가 응답 봉투를 쓰고, 반대로 `CursorCodec`이 `InvalidInputException`을 던진다 |
 | `domain.post → domain.comment` | `PostResponseAssembler` → `CommentRepository`, `PostService` → `CommentService` | 목록 응답의 댓글 수, 글 삭제 때 댓글 이미지 정리 |
 | `domain.post → domain.interaction` | `PostResponseAssembler`·`PostService`·`PostRepositoryImpl` → 반응·북마크 Repository·엔티티 | 목록 응답의 좋아요·북마크 상태와 `filter=isLiked` 같은 조인 |
 | `domain.interaction → domain.comment` | `InteractionService` → `CommentRepository` | 댓글 좋아요 때 댓글 존재·삭제 여부 확인 |
@@ -831,7 +830,7 @@ FE와 BE가 같은 테스트 원칙을 쓰면서 층 구성과 도구를 다르�
 | 생성 응답 | [RFC 9110 §9.3.3](https://www.rfc-editor.org/rfc/rfc9110#section-9.3.3) | HTTP 201(`@ResponseStatus`, 2026-10-26 전에는 본문만 201) | 따른다. `Location`은 "남은 것" |
 | 405 응답 | [RFC 9110 §10.2.1](https://www.rfc-editor.org/rfc/rfc9110#section-10.2.1) | 405 + `Allow`(`handleSpringMvcException`, 2026-10-26 전에는 500) | 따른다 |
 | 경계 입력 검증 | Bean Validation(`@Valid`) | `@RequestBody` 23곳 중 10곳 | 방식 혼재로 둔다 — `PostCreateRequest`는 봇 경로(`FeedItemProcessor`)도 쓰므로 Service 검증이 어차피 필요하다 |
-| 모듈 순환 | [Spring Modulith 검증](https://docs.spring.io/spring-modulith/reference/verification.html), ArchUnit `slices().beFreeOfCycles()` | 허용 간선 4개(§9) | 새 순환만 막는다 |
+| 모듈 순환 | [Spring Modulith 검증](https://docs.spring.io/spring-modulith/reference/verification.html), ArchUnit `slices().beFreeOfCycles()` | 허용 간선 3개(§9) | 새 순환만 막는다 |
 | 관측성 | 구조화 로그·요청 상관 ID | 앱 로그는 logstash JSON 한 줄 + MDC `awsRequestId`(2026-10-26, `LambdaHandler`·`AsyncConfig`). Lambda LogFormat은 Text 유지 | 따른다 — 찾는 법은 `DEPLOY.md` "운영 로그 읽기" |
 | 멱등 등록 | [IETF 초안](https://datatracker.ietf.org/doc/draft-ietf-httpapi-idempotency-key-header/)(RFC 아님) `Idempotency-Key`. 처리 중인 같은 키는 409를 권한다 | 필수 헤더 + 행에 저장(§7-14). 처리 중이면 기다렸다가 같은 결과 | 이름·필수 시 400은 따른다. 처리 중 409는 따르지 않는다 - 키를 행에 두면 커밋 전까지 "처리 중"을 알 수 없고, 기다리면 사용자가 바로 성공을 받는다 |
 | 지원 버전 | [Spring Boot 지원 일정](https://api.spring.io/projects/spring-boot/generations) — 3.5.x OSS 지원 2026-06-30 종료 | 3.5.16(OSS 마지막 패치, 2026-10-26). Dependabot이 Gradle minor·patch를 월간으로 올린다 | 4.x 이동은 "남은 것" |

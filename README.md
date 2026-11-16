@@ -140,7 +140,6 @@ src/main/kotlin/com/example/linksphere/
 ├── global/
 │   ├── common/
 │   │   ├── ApiResponse.kt               # 공통 응답 래퍼
-│   │   ├── ErrorResponse.kt
 │   │   ├── SecurityUtils.kt             # Authentication?.getUserId() 확장 함수
 │   │   ├── SecureToken.kt               # 세션·비밀번호재설정 등 불투명 토큰 발급·해시
 │   │   ├── ClientIpResolver.kt          # CloudFront-Viewer-Address 헤더에서 요청자 IP 추출
@@ -168,9 +167,11 @@ src/main/kotlin/com/example/linksphere/
 │   │   ├── NullableAwareModelConverter.kt  # Kotlin nullability를 OpenAPI 스키마에 반영
 │   │   └── security/
 │   │       ├── CustomAccessDeniedHandler.kt
-│   │       └── CustomAuthenticationEntryPoint.kt
+│   │       ├── CustomAuthenticationEntryPoint.kt
+│   │       └── RequestAuthenticationFilter.kt  # 요청 인증 필터 타입 — 구현은 auth의 SessionAuthenticationFilter
 │   └── exception/
 │       ├── GlobalExceptionHandler.kt    # 예외 → ErrorResponse(status, code, message)
+│       ├── ErrorResponse.kt             # 오류 응답 봉투
 │       └── *Exception.kt                # 커스텀 예외 17개 — status·code 표는 docs/BE-ARCHITECTURE.md §4
 ├── tools/                               # 로컬 1회성 CLI 7개(@Profile CommandLineRunner) — AI·임베딩·OG 이미지·언어 백필, 일본어 글 점검, 고아 이미지 정리, 피드 수동 수집
 └── infra/

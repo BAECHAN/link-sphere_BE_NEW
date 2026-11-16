@@ -1,8 +1,8 @@
 package com.example.linksphere.global.config
 
-import com.example.linksphere.domain.auth.SessionAuthenticationFilter
 import com.example.linksphere.global.config.security.CustomAccessDeniedHandler
 import com.example.linksphere.global.config.security.CustomAuthenticationEntryPoint
+import com.example.linksphere.global.config.security.RequestAuthenticationFilter
 import org.springframework.boot.context.properties.bind.Bindable
 import org.springframework.boot.context.properties.bind.Binder
 import org.springframework.context.annotation.Bean
@@ -26,7 +26,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource
 // 컨트롤러의 @PreAuthorize(역할 권한 검사, MemberRole)를 켠다. 거절은 GlobalExceptionHandler가 403 ACCESS_DENIED로 바꾼다.
 @EnableMethodSecurity
 class SecurityConfig(
-    private val sessionAuthenticationFilter: SessionAuthenticationFilter,
+    private val requestAuthenticationFilter: RequestAuthenticationFilter,
     private val customAuthenticationEntryPoint: CustomAuthenticationEntryPoint,
     private val customAccessDeniedHandler: CustomAccessDeniedHandler,
     private val environment: Environment,
@@ -61,7 +61,7 @@ class SecurityConfig(
                 )
                     .permitAll()
                 // 누가 보느냐에 따라 응답이 달라지는 공개 조회 - 토큰 없이 오면 비로그인으로 허용하되, 토큰을 냈는데
-                // 만료·무효면(SessionAuthenticationFilter가 exception 속성을 남김) 거부해 진입점이 401을 쓰게 한다.
+                // 만료·무효면(RequestAuthenticationFilter 구현이 exception 속성을 남김) 거부해 진입점이 401을 쓰게 한다.
                 // permitAll이면 만료 토큰이 조용히 비로그인으로 처리돼 FE가 갱신하지 못하고, 본인 비공개 글이 빠진
                 // 200을 그대로 그린다(docs/plans/2026-10-20-public-get-expired-token-401.md). 만료 토큰을 일부러
                 // 받는 /auth/refresh(위 목록)에는 걸지 않는다.
@@ -94,7 +94,7 @@ class SecurityConfig(
                 }
             }
             .addFilterBefore(
-                sessionAuthenticationFilter,
+                requestAuthenticationFilter,
                 UsernamePasswordAuthenticationFilter::class.java,
             )
 

@@ -4,7 +4,7 @@
 
 ## 구현 결과
 
-> PR-1 #204 · PR-2 #206 · 2026-11-16 대조 · PR-1 이탈 0 · 미구현 0 · PR-2 이탈 3 · 미구현 0 — 판정 근거(파일:줄)는 각 PR 본문 "계획 대비 구현"
+> PR-1 #204 · PR-2 #206 · PR-3 #207 · 2026-11-16 대조 · PR-1 이탈 0 · 미구현 0 · PR-2 이탈 3 · 미구현 0 · PR-3 이탈 0 · 미구현 0 — 판정 근거(파일:줄)는 각 PR 본문 "계획 대비 구현"
 
 **PR-1(#204)**
 
@@ -30,6 +30,14 @@
 - 계획에 없던 변경: 처리기가 잡 내용을 되돌릴 때 `LambdaHandler`의 자체 매퍼 대신 Spring의 `ObjectMapper`를 쓴다(맡기는 쪽이 이미 쓰던 매퍼다). Lambda 런타임 비교에서 잡 6종이 모두 서비스까지 닿는 것을 확인했다
 - 확인한 것: 개발 환경에서 글을 등록하니(임시 Postgres에 붙인 로컬 서버) `PENDING`이던 글이 약 7초 뒤 요약·태그·임베딩·카테고리가 채워진 `COMPLETED`가 됐다. 운영 DB에는 쓰지 않았다. `openApiSpec` 결과는 운영 스펙과 차이 0
 - 문서: BE-ARCHITECTURE(§1 잡 표·패키지 표·그래프, 접미사 표, §7-5, §9 순환 표, 체크리스트), README 트리, AI-ASYNC-PROCESSING §2·§2.2·§4.3, RSS-FEED-BOT 코드 지도, `.claude/CLAUDE.md` 패턴 표, CHANGELOG `Changed`, 주석의 옛 클래스 이름
+
+**PR-3(#207)**
+
+- 계획대로: `ErrorResponse`를 `global/exception`으로 옮겼다. 클래스 이름과 필드는 그대로라 스펙이 바뀌지 않는다. `global.exception → global.common` 순환 간선이 없어져 허용 간선이 4개에서 3개가 됐다(`CursorCodec`이 `InvalidInputException`을 던지는 반대 방향만 남는다)
+- 계획대로: `SecurityConfig`가 global의 `RequestAuthenticationFilter` 타입으로 필터를 받고 auth의 `SessionAuthenticationFilter`가 그것을 구현한다. `globalMustNotDependOnDomain`의 예외 1쌍을 지워 global → domain 의존은 예외 없이 금지다
+- 구현 때 정한 것: 새 타입은 `global/config/security`에 둔 서블릿 `Filter` 하위 인터페이스다. 구현이 지킬 계약(만료·무효 토큰은 예외 대신 요청 속성으로 남긴다, 구현 빈은 하나)을 그 타입의 주석에 적었다
+- 확인한 것: 필터 자동 등록은 새 테스트 없이 실제 `SecurityConfig`를 쓰는 기존 보안 테스트 4개로 봤다. `SecurityConfig`에 auth 타입 의존을 일부러 넣으면 규칙이 실패하는 것을 확인하고 되돌렸다. `openApiSpec` 결과는 로컬 생성 때 붙는 `servers` 말고 운영 스펙과 같다
+- 문서: BE-ARCHITECTURE(§1 패키지 표·그래프, §2 검사 표, §3 global → domain 예외, §9 순환 표, 업계 비교 표의 간선 수), README 트리, `.claude/CLAUDE.md` 요약표, 테스트 주석의 간선 수. 동작이 같아 CHANGELOG에는 넣지 않았다
 
 <!-- plan-result:end -->
 

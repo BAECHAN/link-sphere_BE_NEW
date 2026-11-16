@@ -1,4 +1,4 @@
-package com.example.linksphere.global.common
+package com.example.linksphere.global.exception
 
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter

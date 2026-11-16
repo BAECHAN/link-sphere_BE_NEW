@@ -1,6 +1,6 @@
 package com.example.linksphere.global.config.security
 
-import com.example.linksphere.global.common.ErrorResponse
+import com.example.linksphere.global.exception.ErrorResponse
 import com.fasterxml.jackson.databind.ObjectMapper
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse

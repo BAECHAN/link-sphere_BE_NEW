@@ -1,5 +1,6 @@
 package com.example.linksphere.domain.auth
 
+import com.example.linksphere.global.config.security.RequestAuthenticationFilter
 import jakarta.servlet.FilterChain
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
@@ -18,7 +19,9 @@ import org.springframework.web.filter.OncePerRequestFilter
  * 이 값을 읽어 TOKEN_EXPIRED(재시도로 회복 가능)와 INVALID_TOKEN(즉시 로그아웃)을 구분한다.
  */
 @Component
-class SessionAuthenticationFilter(private val memberSessionService: MemberSessionService) : OncePerRequestFilter() {
+class SessionAuthenticationFilter(private val memberSessionService: MemberSessionService) :
+    OncePerRequestFilter(),
+    RequestAuthenticationFilter {
 
     override fun doFilterInternal(
         request: HttpServletRequest,
