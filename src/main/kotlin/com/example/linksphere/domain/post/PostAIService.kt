@@ -57,7 +57,7 @@ class PostAIService(
             // 태그 매칭 1차 필터는 기존 태그만으로도 대체로 충분하다.
             val summaryFuture = geminiService.analyzeContentAsync(promptTitle, description, content)
             val categoryFuture =
-                if (post.categories.isEmpty()) {
+                if (post.categoryIds.isEmpty()) {
                     postCategoryClassifier.classifyAsync(promptTitle, description, existingTags)
                 } else {
                     null
@@ -105,7 +105,7 @@ class PostAIService(
             }
 
             if (categoryFuture != null) {
-                post.categories.addAll(categoryFuture.join())
+                post.categoryIds.addAll(categoryFuture.join())
             }
 
             post.aiStatus = AiStatus.COMPLETED

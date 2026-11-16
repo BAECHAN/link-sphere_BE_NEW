@@ -1,6 +1,5 @@
 package com.example.linksphere.domain.post
 
-import com.example.linksphere.domain.category.TableCategory
 import jakarta.persistence.*
 import org.hibernate.annotations.JdbcTypeCode
 import org.hibernate.type.SqlTypes
@@ -26,13 +25,11 @@ class TablePost(
     @Column(name = "title", nullable = false, columnDefinition = "text") var title: String,
     @Column(name = "description", columnDefinition = "text") var description: String? = null,
     @Column(name = "tags") @JdbcTypeCode(SqlTypes.ARRAY) var tags: List<String>? = null,
-    @ManyToMany(fetch = FetchType.LAZY)
-    @JoinTable(
-        name = "post_categories",
-        joinColumns = [JoinColumn(name = "post_id")],
-        inverseJoinColumns = [JoinColumn(name = "category_id")],
-    )
-    val categories: MutableSet<TableCategory> = mutableSetOf(),
+    // 카테고리는 id로만 든다 - 이름·slug는 category 도메인에 묻는다(CategoryService). 테이블은 연결 테이블 그대로다.
+    @ElementCollection(fetch = FetchType.LAZY)
+    @CollectionTable(name = "post_categories", joinColumns = [JoinColumn(name = "post_id")])
+    @Column(name = "category_id", nullable = false)
+    val categoryIds: MutableSet<Long> = mutableSetOf(),
     @Column(name = "og_image", columnDefinition = "text") var ogImage: String? = null,
     @Column(name = "ai_summary", columnDefinition = "text") var aiSummary: String? = null,
     @Column(name = "view_count") val viewCount: Int? = 0,

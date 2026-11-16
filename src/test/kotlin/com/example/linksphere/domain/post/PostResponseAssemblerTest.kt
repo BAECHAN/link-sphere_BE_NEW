@@ -1,5 +1,8 @@
 package com.example.linksphere.domain.post
 
+import com.example.linksphere.domain.category.CategoryInfo
+import com.example.linksphere.domain.category.CategoryResponse
+import com.example.linksphere.domain.category.CategoryService
 import com.example.linksphere.domain.comment.CommentRepository
 import com.example.linksphere.domain.interaction.BookmarkFolderItemRepository
 import com.example.linksphere.domain.interaction.BookmarkRepository
@@ -38,7 +41,27 @@ class PostResponseAssemblerTest {
 
     @Mock private lateinit var commentRepository: CommentRepository
 
+    @Mock private lateinit var categoryService: CategoryService
+
     @InjectMocks private lateinit var assembler: PostResponseAssembler
+
+    // 글은 카테고리를 id로만 든다 - 이름은 CategoryService에서 받아 id 순으로 붙이고, 없는 id는 응답에서 뺀다
+    @Test
+    fun `convertToResponse 는 카테고리 id를 이름으로 바꿔 id 순으로 싣는다`() {
+        val ownerId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val post =
+            TablePost(id = postId, userId = ownerId, url = "https://example.com", title = "제목", categoryIds = mutableSetOf(2L, 1L, 999L))
+        val owner = TableMember(id = ownerId, email = "owner@example.com", password = "enc", nickname = "owner")
+
+        `when`(memberRepository.findById(ownerId)).thenReturn(Optional.of(owner))
+        `when`(categoryService.getCategoryInfosByIds(setOf(2L, 1L, 999L)))
+            .thenReturn(listOf(CategoryInfo(2L, "AI", "ai"), CategoryInfo(1L, "프론트엔드", "frontend")))
+
+        val result = assembler.convertToResponse(post, null)
+
+        assertEquals(listOf(CategoryResponse(1L, "프론트엔드"), CategoryResponse(2L, "AI")), result.categories)
+    }
 
     @Test
     fun `convertToResponse 의 stats bookmarkCount 는 소속 폴더 수가 아니라 북마크 row 수다`() {

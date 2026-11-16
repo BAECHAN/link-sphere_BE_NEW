@@ -1,6 +1,5 @@
 package com.example.linksphere.domain.post
 
-import com.example.linksphere.domain.category.TableCategory
 import com.example.linksphere.global.job.JobPublisher
 import com.example.linksphere.infra.ai.GeminiService
 import com.example.linksphere.infra.ai.dto.AiAnalysisResult
@@ -36,14 +35,12 @@ class PostAIServiceTest {
 
     // 카테고리를 미리 채워 postCategoryClassifier 경로(분류 폴백)를 건너뛰고
     // 이 테스트가 검증하려는 제목·설명 폴백만 격리해서 본다.
-    private val category = TableCategory(id = 1L, name = "개발", slug = "dev")
-
     private fun post(title: String, description: String? = null) = TablePost(
         userId = userId,
         url = "https://example.com/article",
         title = title,
         description = description,
-        categories = mutableSetOf(category),
+        categoryIds = mutableSetOf(1L),
     )
 
     // Mockito ArgumentMatchers.eq()는 자바에서 null을 반환해 Kotlin non-null 파라미터

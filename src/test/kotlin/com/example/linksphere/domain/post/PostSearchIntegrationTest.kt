@@ -64,7 +64,7 @@ class PostSearchIntegrationTest {
     }
 
     private fun search(keyword: String) = postRepository.findPostsAfter(
-        category = null,
+        categoryIds = null,
         search = keyword,
         filter = null,
         nickname = null,

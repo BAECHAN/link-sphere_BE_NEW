@@ -7,5 +7,7 @@ interface CategoryRepository : JpaRepository<TableCategory, Long> {
 
     fun findBySlug(slug: String): TableCategory?
 
-    fun findAllByIdIn(ids: List<Long>): List<TableCategory>
+    fun findAllByIdIn(ids: Collection<Long>): List<TableCategory>
+
+    fun findAllByNameInOrSlugIn(names: Collection<String>, slugs: Collection<String>): List<TableCategory>
 }

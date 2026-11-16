@@ -168,7 +168,7 @@ class QueryCountBaselineIntegrationTest {
 
     @Test
     fun `피드 목록 - 카테고리로 거르기`() {
-        val page = countingQueries(FEED_LOGGED_IN) { feed(category = "backend") }
+        val page = countingQueries(FEED_CATEGORY_FILTER) { feed(category = "backend") }
 
         assertEquals(2, page.content.size)
     }
@@ -279,16 +279,19 @@ class QueryCountBaselineIntegrationTest {
     companion object {
         private const val ACCESS_TOKEN = "access-token-for-query-count"
 
-        private const val FEED_ANONYMOUS = 7L
-        private const val FEED_LOGGED_IN = 10L
-        private const val FEED_SEARCH = 11L
-        private const val POST_DETAIL = 9L
+        // PR-4(글의 카테고리를 ID 집합으로): 글을 그리는 조회마다 +1 - 글과 카테고리 이름을 한 문장으로 묶어 읽던 것이
+        // "연결 테이블에서 id 읽기"와 "category에 이름 묻기"로 나뉘었다. 카테고리로 거를 때는 이름·slug를 id로 푸는 문장이 하나 더 든다
+        private const val FEED_ANONYMOUS = 8L
+        private const val FEED_LOGGED_IN = 11L
+        private const val FEED_CATEGORY_FILTER = 12L
+        private const val FEED_SEARCH = 12L
+        private const val POST_DETAIL = 10L
         private const val COMMENT_LIST = 4L
         private const val MY_COMMENTS = 1L
-        private const val BOOKMARK_LIST = 10L
-        private const val BOOKMARK_LIST_IN_FOLDER = 11L
-        private const val BOOKMARK_SEARCH = 11L
-        private const val BOOKMARK_SEARCH_IN_FOLDER = 12L
+        private const val BOOKMARK_LIST = 11L
+        private const val BOOKMARK_LIST_IN_FOLDER = 12L
+        private const val BOOKMARK_SEARCH = 12L
+        private const val BOOKMARK_SEARCH_IN_FOLDER = 13L
         private const val SESSION_CHECK = 1L
     }
 }
