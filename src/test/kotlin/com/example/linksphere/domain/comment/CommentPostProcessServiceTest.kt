@@ -2,15 +2,16 @@ package com.example.linksphere.domain.comment
 
 import com.example.linksphere.domain.linkpreview.UrlMetadata
 import com.example.linksphere.domain.linkpreview.UrlMetadataExtractor
+import com.example.linksphere.domain.post.PostLookupService
 import com.example.linksphere.domain.post.PostRepository
 import com.example.linksphere.domain.post.TablePost
 import com.example.linksphere.global.job.JobPublisher
 import com.example.linksphere.infra.fcm.FcmNotificationService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
-import org.mockito.InjectMocks
 import org.mockito.Mock
 import org.mockito.Mockito.doThrow
 import org.mockito.Mockito.verifyNoInteractions
@@ -32,7 +33,20 @@ class CommentPostProcessServiceTest {
 
     @Mock private lateinit var jobPublisher: JobPublisher
 
-    @InjectMocks private lateinit var commentPostProcessService: CommentPostProcessService
+    private lateinit var commentPostProcessService: CommentPostProcessService
+
+    // 글 작성자는 실제 PostLookupService(post의 공개 조회)를 거쳐 읽는다 - 저장소만 mock이다.
+    @BeforeEach
+    fun setUp() {
+        commentPostProcessService =
+            CommentPostProcessService(
+                commentRepository,
+                PostLookupService(postRepository),
+                fcmNotificationService,
+                urlMetadataExtractor,
+                jobPublisher,
+            )
+    }
 
     @Test
     fun `processCommentJob은 알림 발송이 실패해도 링크 프리뷰 갱신은 계속한다`() {

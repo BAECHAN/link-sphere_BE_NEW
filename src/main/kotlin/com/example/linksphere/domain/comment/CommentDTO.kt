@@ -59,14 +59,12 @@ data class MyCommentResponse(
     val postTitle: String,
 ) {
     companion object {
-        fun from(comment: TableComment): MyCommentResponse = MyCommentResponse(
+        fun from(comment: TableComment, postTitle: String): MyCommentResponse = MyCommentResponse(
             id = comment.id,
             content = comment.content,
             createdAt = comment.createdAt,
             postId = comment.postId,
-            // join fetch로 가져온 post - 가시성 게이트 자체가 post 존재를 전제하므로
-            // null이면 안 되지만, 연관관계 타입 자체는 nullable이라 방어적으로 폴백한다.
-            postTitle = comment.post?.title ?: "",
+            postTitle = postTitle,
         )
     }
 }

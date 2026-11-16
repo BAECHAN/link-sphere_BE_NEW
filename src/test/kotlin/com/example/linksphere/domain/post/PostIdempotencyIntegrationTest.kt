@@ -1,7 +1,6 @@
 package com.example.linksphere.domain.post
 
 import com.example.linksphere.domain.category.CategoryService
-import com.example.linksphere.domain.comment.CommentService
 import com.example.linksphere.domain.linkpreview.LinkPreviewService
 import com.example.linksphere.domain.linkpreview.SafeUrlValidator
 import com.example.linksphere.domain.linkpreview.UrlMetadata
@@ -63,7 +62,7 @@ class PostIdempotencyIntegrationTest {
 
     @MockitoBean private lateinit var categoryService: CategoryService
 
-    @MockitoBean private lateinit var commentService: CommentService
+    @MockitoBean private lateinit var postCommentPort: PostCommentPort
 
     @MockitoBean private lateinit var geminiService: GeminiService
 

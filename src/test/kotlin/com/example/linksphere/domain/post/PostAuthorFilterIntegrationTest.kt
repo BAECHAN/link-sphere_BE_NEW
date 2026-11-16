@@ -1,6 +1,8 @@
 package com.example.linksphere.domain.post
 
 import com.example.linksphere.domain.category.CategoryService
+import com.example.linksphere.domain.comment.CommentCountAdapter
+import com.example.linksphere.domain.comment.CommentPostEventListener
 import com.example.linksphere.domain.comment.CommentService
 import com.example.linksphere.domain.linkpreview.LinkPreviewService
 import com.example.linksphere.domain.linkpreview.SafeUrlValidator
@@ -29,7 +31,7 @@ import java.util.UUID
  * id 집합만 넘긴다 - 두 문장으로 나뉘어도 결과(대소문자 무시 부분 일치, 탈퇴 신청 중인 회원 제외, 쪽 경계)가 같은지 확인한다.
  */
 @PostgresIntegrationTest
-@Import(PostService::class, PostResponseAssembler::class, CommentService::class, CategoryService::class, MemberService::class)
+@Import(PostService::class, PostResponseAssembler::class, CommentService::class, CommentCountAdapter::class, CommentPostEventListener::class, PostLookupService::class, CategoryService::class, MemberService::class)
 class PostAuthorFilterIntegrationTest {
 
     @Autowired private lateinit var postService: PostService

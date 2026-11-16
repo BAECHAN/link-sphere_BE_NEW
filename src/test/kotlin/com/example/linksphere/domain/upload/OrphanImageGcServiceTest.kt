@@ -1,6 +1,6 @@
 package com.example.linksphere.domain.upload
 
-import com.example.linksphere.domain.comment.CommentRepository
+import com.example.linksphere.domain.comment.CommentService
 import com.example.linksphere.domain.member.MemberService
 import com.example.linksphere.global.common.SupabaseStorageService
 import com.example.linksphere.global.common.SupabaseStorageService.StoredObject
@@ -36,7 +36,7 @@ private fun <T> captureValue(captor: ArgumentCaptor<T>): T {
 @ExtendWith(MockitoExtension::class)
 class OrphanImageGcServiceTest {
 
-    @Mock private lateinit var commentRepository: CommentRepository
+    @Mock private lateinit var commentService: CommentService
 
     @Mock private lateinit var memberService: MemberService
 
@@ -54,7 +54,7 @@ class OrphanImageGcServiceTest {
     private val avatarUrl = url("avatar")
 
     private fun stubReferences() {
-        `when`(commentRepository.findAllContent()).thenReturn(listOf("댓글 내용\n\n$referencedUrl"))
+        `when`(commentService.findAllContent()).thenReturn(listOf("댓글 내용\n\n$referencedUrl"))
         `when`(memberService.findAllImageUrls()).thenReturn(listOf(avatarUrl))
         listOf(referencedUrl, avatarUrl).forEach {
             `when`(supabaseStorageService.isManagedUrl(it)).thenReturn(true)
@@ -102,7 +102,7 @@ class OrphanImageGcServiceTest {
 
     @Test
     fun `참조가 0건인데 후보가 있으면 지우지 않고 중단한다`() {
-        `when`(commentRepository.findAllContent()).thenReturn(emptyList())
+        `when`(commentService.findAllContent()).thenReturn(emptyList())
         `when`(memberService.findAllImageUrls()).thenReturn(emptyList())
         `when`(supabaseStorageService.listAllObjects()).thenReturn(listOf(StoredObject(url("orphan"), old)))
 

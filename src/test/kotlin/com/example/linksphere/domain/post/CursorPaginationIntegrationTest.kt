@@ -356,6 +356,8 @@ class CursorPaginationIntegrationTest {
 
     // ── 내 댓글 ───────────────────────────────────────────
 
+    // 저장소 쿼리는 원글의 공개 여부를 보지 않는다 - 남의 비공개 글에 단 댓글도 여기서는 읽히고, CommentService가 post에 제목을
+    // 물어 뺀다(빼고 다시 채우는 쪽 넘김은 MyCommentIntegrationTest가 Service로 본다).
     @Test
     fun `내 댓글은 timestamp 마이크로초와 같은 시각 동점을 왕복해 끝까지 읽는다`() {
         val post = insertPost("글")
@@ -370,13 +372,11 @@ class CursorPaginationIntegrationTest {
 
         val expected =
             ids(
-                "SELECT c.id FROM comments c JOIN posts p ON p.id = c.post_id WHERE c.user_id = ? AND c.is_deleted = false " +
-                    "AND (p.is_private = false OR p.user_id = ?) ORDER BY c.created_at DESC, c.id DESC",
-                me,
+                "SELECT c.id FROM comments c WHERE c.user_id = ? AND c.is_deleted = false ORDER BY c.created_at DESC, c.id DESC",
                 me,
             )
 
-        assertEquals(7, expected.size)
+        assertEquals(8, expected.size)
         assertEquals(expected, walkComments())
     }
 
@@ -428,7 +428,7 @@ class CursorPaginationIntegrationTest {
         commentRepository.findMyCommentsAfter(me, createdAt, id, Limit.of(11))
 
         val time = Timestamp.valueOf(createdAt)
-        assertUsesIndex(lastSelect(output, "from comments"), "idx_comments_user_created_at_id", me, me, time, time, time, id, 11)
+        assertUsesIndex(lastSelect(output, "from comments"), "idx_comments_user_created_at_id", me, time, time, time, id, 11)
     }
 
     // 점수 식이 바깥 WHERE·ORDER BY에 다시 나오면 행마다 다시 계산한다. offset 0이 빠지면 Postgres가 파생 테이블을 합쳐 같은 일이 생긴다.

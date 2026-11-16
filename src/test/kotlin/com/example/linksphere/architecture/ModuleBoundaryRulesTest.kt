@@ -17,22 +17,13 @@ import org.springframework.data.repository.Repository
  */
 internal val KNOWN_BOUNDARY_VIOLATIONS: Set<String> =
     setOf(
-        "domain.comment.CommentPostProcessService -> domain.post.PostRepository",
-        "domain.comment.CommentPostProcessService -> domain.post.TablePost",
-        "domain.comment.CommentService -> domain.post.PostRepository",
-        "domain.comment.CommentService -> domain.post.TablePost",
-        "domain.comment.MyCommentResponse -> domain.post.TablePost",
-        "domain.comment.TableComment -> domain.post.TablePost",
-        "domain.interaction.BookmarkFolderService -> domain.post.PostRepository",
         "domain.interaction.BookmarkFolderService -> domain.post.TablePost",
         "domain.interaction.BookmarkRepositoryCustom -> domain.post.TablePost",
         "domain.interaction.BookmarkRepositoryImpl -> domain.post.TablePost",
         "domain.interaction.BookmarkRepositoryImpl -> domain.post.TablePostView",
-        "domain.interaction.InteractionService -> domain.post.PostRepository",
         "domain.interaction.TableBookmark -> domain.post.TablePost",
         "domain.post.PostRepositoryImpl -> domain.interaction.TableBookmark",
         "domain.post.PostRepositoryImpl -> domain.interaction.TablePostReaction",
-        "domain.post.PostResponseAssembler -> domain.comment.CommentRepository",
         "domain.post.PostResponseAssembler -> domain.interaction.BookmarkFolderItemRepository",
         "domain.post.PostResponseAssembler -> domain.interaction.BookmarkRepository",
         "domain.post.PostResponseAssembler -> domain.interaction.PostReactionRepository",
@@ -43,7 +34,6 @@ internal val KNOWN_BOUNDARY_VIOLATIONS: Set<String> =
         "domain.post.PostService -> domain.interaction.BookmarkFolderRepository",
         "domain.post.PostService -> domain.interaction.BookmarkRepository",
         "domain.post.PostService -> domain.interaction.TableBookmarkFolder",
-        "domain.upload.OrphanImageGcService -> domain.comment.CommentRepository",
     )
 
 /**

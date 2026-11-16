@@ -3,12 +3,15 @@ package com.example.linksphere.architecture
 import com.example.linksphere.domain.auth.AccessTokenCheck
 import com.example.linksphere.domain.auth.MemberSessionService
 import com.example.linksphere.domain.category.CategoryService
+import com.example.linksphere.domain.comment.CommentCountAdapter
+import com.example.linksphere.domain.comment.CommentPostEventListener
 import com.example.linksphere.domain.comment.CommentService
 import com.example.linksphere.domain.interaction.BookmarkFolderService
 import com.example.linksphere.domain.linkpreview.LinkPreviewService
 import com.example.linksphere.domain.linkpreview.SafeUrlValidator
 import com.example.linksphere.domain.linkpreview.UrlMetadataExtractor
 import com.example.linksphere.domain.member.MemberService
+import com.example.linksphere.domain.post.PostLookupService
 import com.example.linksphere.domain.post.PostResponseAssembler
 import com.example.linksphere.domain.post.PostService
 import com.example.linksphere.global.common.AdvisoryLock
@@ -45,6 +48,9 @@ import java.util.UUID
     PostService::class,
     PostResponseAssembler::class,
     CommentService::class,
+    CommentCountAdapter::class,
+    CommentPostEventListener::class,
+    PostLookupService::class,
     BookmarkFolderService::class,
     CategoryService::class,
     MemberSessionService::class,
@@ -293,7 +299,10 @@ class QueryCountBaselineIntegrationTest {
         // (글 쿼리 안의 서브쿼리였다). 댓글 목록은 작성자를 댓글과 조인해 읽던 것을 member에 한 번에 묻는다
         private const val FEED_AUTHOR_FILTER = 12L
         private const val COMMENT_LIST = 5L
-        private const val MY_COMMENTS = 1L
+
+        // PR-8(댓글이 글 테이블을 직접 읽지 않는다): 내 댓글은 댓글과 글을 조인해 한 문장으로 읽던 것이 "댓글 읽기"와
+        // "post에 볼 수 있는 글의 제목 묻기"로 나뉘었다. 볼 수 없는 글의 댓글이 빠져 쪽이 덜 차면 다시 읽는 만큼 더 든다
+        private const val MY_COMMENTS = 2L
         private const val BOOKMARK_LIST = 11L
         private const val BOOKMARK_LIST_IN_FOLDER = 12L
         private const val BOOKMARK_SEARCH = 12L

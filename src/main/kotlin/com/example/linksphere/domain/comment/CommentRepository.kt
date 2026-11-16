@@ -19,24 +19,20 @@ interface CommentRepository : JpaRepository<TableComment, UUID> {
 
     fun countByPostId(postId: UUID): Long
 
-    // "내 댓글" 목록 첫 쪽 - 원글 제목을 같이 내려줘야 해서 join fetch로 N+1을 막는다.
-    // 톰스톤(isDeleted)은 내용이 이미 지워져 보여줄 게 없어 제외한다. 가시성 게이트
-    // (p.isPrivate = false OR p.userId = :userId)는 PostRepositoryImpl의 목록 조회
-    // 게이트와 동일한 기준 - 댓글을 단 뒤 원글이 비공개로 전환되면 남의 글 제목이
-    // 새지 않도록 막는다. join fetch가 ManyToOne이라 limit을 DB에서 건다.
+    // "내 댓글" 목록 첫 쪽. 톰스톤(isDeleted)은 내용이 이미 지워져 보여줄 게 없어 제외한다. 원글은 여기서 함께 읽지
+    // 않는다 - 제목과 공개 여부는 CommentService가 post에 묻고(PostLookupService.findVisibleTitles), 볼 수 없게 된 글의
+    // 댓글은 거기서 빠진다. 예전에는 글을 join fetch해 이 쿼리가 공개 조건까지 걸었다.
     @Query(
-        "SELECT c FROM TableComment c JOIN FETCH c.post p " +
+        "SELECT c FROM TableComment c " +
             "WHERE c.userId = :userId AND c.isDeleted = false " +
-            "AND (p.isPrivate = false OR p.userId = :userId) " +
             "ORDER BY c.createdAt DESC, c.id DESC",
     )
     fun findMyCommentsFirst(@Param("userId") userId: UUID, limit: Limit): List<TableComment>
 
     // "내 댓글" 목록 다음 쪽. 조건은 위와 같다. 앞의 상한이 있어야 인덱스로 시작 지점을 찾는다(SeekPredicate 주석 참고).
     @Query(
-        "SELECT c FROM TableComment c JOIN FETCH c.post p " +
+        "SELECT c FROM TableComment c " +
             "WHERE c.userId = :userId AND c.isDeleted = false " +
-            "AND (p.isPrivate = false OR p.userId = :userId) " +
             "AND c.createdAt <= :createdAt AND (c.createdAt < :createdAt OR (c.createdAt = :createdAt AND c.id < :id)) " +
             "ORDER BY c.createdAt DESC, c.id DESC",
     )
@@ -79,9 +75,9 @@ interface CommentRepository : JpaRepository<TableComment, UUID> {
         @Param("after") after: LocalDateTime,
     ): Boolean
 
-    // 게시글 삭제 시 이미지 정리용 — 스칼라 프로젝션이라 TableComment(및 그 post 지연연관관계)가
-    // 영속성 컨텍스트에 올라가지 않는다. 같은 트랜잭션에서 postRepository.delete(post)가 뒤따르므로
-    // 엔티티로 로드하면 flush 시점에 TransientObjectException이 난다(실제 배포 후 재현됨).
+    // 게시글 삭제 시 이미지 정리용 — 스칼라 프로젝션이라 TableComment가 영속성 컨텍스트에 올라가지 않는다.
+    // 댓글이 글을 연관관계로 들던 때에는 엔티티로 로드하면 뒤따르는 글 삭제의 flush에서 TransientObjectException이
+    // 났다(실제 배포 후 재현됨). 지금은 그 연관관계가 없지만 본문만 필요해 프로젝션을 그대로 쓴다.
     @Query("SELECT c.content FROM TableComment c WHERE c.postId = :postId")
     fun findAllContentByPostId(@Param("postId") postId: UUID): List<String>
 

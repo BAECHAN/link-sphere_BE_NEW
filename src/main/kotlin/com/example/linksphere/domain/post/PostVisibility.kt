@@ -6,7 +6,8 @@ import java.util.UUID
 /**
  * 비공개 글은 작성자에게만 보인다. 남에게는 403이 아니라 "없음"(404 POST_NOT_FOUND)으로 답해 존재 자체를 숨긴다
  * (docs/BE-ARCHITECTURE.md §7-10). 상세 조회·댓글 목록과 작성·좋아요·북마크가 모두 이 규칙을 쓴다 — 목록 쿼리는 같은 조건을
- * SQL로 건다(PostRepositoryImpl·BookmarkRepositoryImpl·CommentRepository).
+ * SQL로 건다(PostRepositoryImpl·BookmarkRepositoryImpl·PostRepository.findVisibleTitles). post 밖에서는 이 함수를 직접 부르지 않고
+ * PostLookupService에 글 id로 묻는다.
  */
 object PostVisibility {
 

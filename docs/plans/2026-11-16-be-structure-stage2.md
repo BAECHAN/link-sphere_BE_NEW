@@ -4,7 +4,7 @@
 
 ## 구현 결과
 
-> PR-1 #204 · PR-2 #206 · PR-3 #207 · PR-4 #210 · PR-5 #211 · PR-6 #213 · PR-7a #214 · PR-7b #215 · 2026-11-16 대조 · PR-1 이탈 0 · 미구현 0 · PR-2 이탈 3 · 미구현 0 · PR-3 이탈 0 · 미구현 0 · PR-4 이탈 0 · 미구현 0 · PR-5 이탈 0 · 미구현 0 · PR-6 이탈 0 · 미구현 0 · PR-7a 이탈 0 · 미구현 0 · PR-7b 이탈 0 · 미구현 0 — 판정 근거(파일:줄)는 각 PR 본문 "계획 대비 구현"
+> PR-1 #204 · PR-2 #206 · PR-3 #207 · PR-4 #210 · PR-5 #211 · PR-6 #213 · PR-7a #214 · PR-7b #215 · PR-8 #216 · 2026-11-16 대조 · PR-1 이탈 0 · 미구현 0 · PR-2 이탈 3 · 미구현 0 · PR-3 이탈 0 · 미구현 0 · PR-4 이탈 0 · 미구현 0 · PR-5 이탈 0 · 미구현 0 · PR-6 이탈 0 · 미구현 0 · PR-7a 이탈 0 · 미구현 0 · PR-7b 이탈 0 · 미구현 0 · PR-8 이탈 0 · 미구현 0 — 판정 근거(파일:줄)는 각 PR 본문 "계획 대비 구현"
 
 **PR-1(#204)**
 
@@ -103,6 +103,25 @@
 - 확인한 것: FE는 사용자가 "봇 글 숨기기"를 켰을 때만 `excludeBots`를 보낸다(기본값 꺼짐). 운영 회원은 14명·봇 1명이라(2026-11-16) `IN` 목록이 길어지지 않는다
 - 확인하지 못한 것: 닉네임 필터의 `IN` 목록에 상한을 두지 않았다(계획은 상한을 9b에만 적었다). 댓글·글 등록의 조회 수가 그대로라는 것은 1차 캐시에 기댄 추정이고 재지 않았다
 - 문서: BE-ARCHITECTURE(§1 그래프, §2·§3의 위반 수, §7-8 "다른 패키지의 정보는 조인하지 않는다"), README 트리, `.claude/CLAUDE.md` 패턴 표, ACCOUNT-DELETION·AI-ASYNC-PROCESSING·PAGINATION·TRAFFIC-MANAGEMENT의 줄 번호, 저장소·테스트 주석. 동작이 같아 CHANGELOG에는 넣지 않았다
+
+**PR-8(#216)**
+
+- 계획대로: post가 글을 id로 묻는 창구 `PostLookupService`를 둔다(볼 수 있는 글인지, 작성자 id, 볼 수 있는 글의 제목). 댓글·좋아요·북마크가 `PostRepository`·`TablePost`로 공개 여부를 직접 판정하던 곳이 모두 이것을 쓴다. 없는 글과 볼 수 없는 글은 전처럼 둘 다 404 `POST_NOT_FOUND`다
+- 계획대로: 글 응답의 댓글 수는 post가 정한 `PostCommentPort`를 comment의 `CommentCountAdapter`가 구현한다. 글 삭제는 글 행을 지우기 전에 `PostDeletingEvent`를 내고 comment의 `CommentPostEventListener`가 같은 트랜잭션에서 듣고 댓글 이미지를 정리한다. 댓글 행·좋아요·북마크는 DB cascade가 지워 리스너가 없다
+- 계획대로: `TableComment.post`를 지웠다. "내 댓글"은 댓글을 읽은 뒤 post에 볼 수 있는 글의 제목을 묻고, 답이 오지 않은 글의 댓글을 뺀 만큼 이어서 다시 읽는다. cursor는 마지막으로 읽고 넘긴 댓글 행의 키다
+- 계획대로: 패키지 순환 간선이 2개에서 1개(`domain.post → domain.interaction`)가 됐고 허용 위반이 27곳에서 17곳이 됐다(남은 것은 모두 post ↔ interaction)
+- 실측한 기준값(전 → 뒤): 내 댓글 1 → 2 — 계획의 추정 "2 이상"과 같다. 가려진 댓글이 섞여 쪽이 덜 차면 다시 읽는 만큼 더 든다
+- 구현 때 정한 것: 묻는 창구를 `PostService`에 두지 않고 저장소만 참조하는 `PostLookupService`로 뗐고, 포트 구현도 `CommentService`가 아니라 저장소만 참조하는 `CommentCountAdapter`에 뒀다 — 빈이 서로 물리지 않게 하려는 것이다
+- 구현 때 정한 것: 다시 읽는 횟수에 상한을 두지 않았다. 상한에서 멈추면 "빈 쪽 + 다음 cursor"가 나갈 수 있는데 조인으로 읽던 때에는 없던 응답이고 FE는 댓글이 0개면 다음 쪽을 부르지 않는다. 대신 다시 읽을 때는 한 번에 51행 이상을 읽는다(첫 읽기는 쪽 크기 + 1 그대로)
+- 구현 때 정한 것: cursor 값이 가려진 댓글의 키일 수 있다. 응답의 댓글은 같고 cursor 문자열만 조인 때와 다를 수 있다
+- 계획과 다른 수: 계획은 `PostVisibility.assertVisible`을 밖에서 쓰던 곳을 5곳이라 했는데 6곳이었다(댓글 4, 좋아요·북마크 1, 폴더 1)
+- 계획에 없던 변경: `OrphanImageGcService`가 `CommentRepository` 대신 `CommentService.findAllContent`를 쓴다. `PostLookupService.requireAllVisible`(폴더에 여러 글을 넣을 때 한 번에 읽기 유지)을 더했다. 접미사 `*Adapter`를 새로 들였다
+- 계획에 없던 변경: 통합 테스트 `MyCommentIntegrationTest`(비공개 제외·쪽 채우기·동점·경계)와 `PostDeleteCommentImageIntegrationTest`(실제 커밋으로 이벤트 전달 확인), 단위 테스트 `CommentPostEventListenerTest`를 더했다
+- 계획에 없던 변경: 기존 테스트의 단언이 바뀌었다 — 쿼리 수 기준값 1개. `CommentRepositoryIntegrationTest`·`CursorPaginationIntegrationTest`의 "남의 비공개 글 댓글 제외"는 저장소 쿼리가 아니라 Service가 맡게 돼 기대값을 바꾸고 그 단언을 `MyCommentIntegrationTest`로 옮겼다. 글을 읽는 단위 테스트 4개는 `@InjectMocks` 대신 직접 조립해 실제 `PostLookupService`에 mock 저장소를 물렸다(공개 여부 단언은 그대로). `PostServiceTest`의 글 삭제는 "이벤트 발행 → 삭제" 순서를 본다
+- 대조에서 발견해 보완함: 쪽 크기가 작으면 다시 읽기 왕복이 가려진 댓글 수만큼 늘던 것(다시 읽기 단위 51행), 단언이 없던 경계 2건("쪽이 꽉 찬 뒤 남은 댓글이 모두 가려짐", "cursor 바로 다음 댓글이 가려짐"), `PostVisibility.kt`·`PostLookupService.kt`의 낡은 주석
+- 확인한 것: 운영에서 남의 비공개 글에 달린 삭제 안 된 댓글은 전체 1개이고 회원당 댓글은 최대 53개다(2026-11-16, 읽기 전용 계정). JPA가 삭제 SQL을 커밋 직전까지 미뤄, 글 삭제에서 알리는 순서를 뒤집어도 실제 DB 테스트는 통과한다 — 순서는 단위 테스트가 지킨다
+- 확인하지 못한 것: "쪽 사이에 댓글이 새로 달리거나 지워지는 경우"와 마이크로초 단위 동점의 왕복은 저장소 수준 테스트만 보고 새 Service 루프를 지나지 않는다
+- 문서: BE-ARCHITECTURE(§1 그래프, 순환 간선·위반 수, 접미사 표, §7-5 글 삭제 이벤트, §7-8 id로 묻기·포트, §7-10, §9), PAGINATION(내 댓글 읽는 방식·줄 번호), AI-ASYNC-PROCESSING·TRAFFIC-MANAGEMENT의 줄 번호, README 트리, `.claude/CLAUDE.md` 패턴 표. 동작이 같아 CHANGELOG에는 넣지 않았다
 
 <!-- plan-result:end -->
 

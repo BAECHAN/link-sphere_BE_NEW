@@ -3,8 +3,10 @@ package com.example.linksphere.domain.comment
 import com.example.linksphere.domain.member.MemberProfile
 import com.example.linksphere.domain.member.MemberService
 import com.example.linksphere.domain.member.TableMember
+import com.example.linksphere.domain.post.PostLookupService
 import com.example.linksphere.domain.post.PostRepository
 import com.example.linksphere.domain.post.TablePost
+import com.example.linksphere.domain.post.VisiblePostTitle
 import com.example.linksphere.global.common.AdvisoryLock
 import com.example.linksphere.global.common.CursorCodec
 import com.example.linksphere.global.common.CursorKeyType
@@ -20,11 +22,11 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import org.mockito.ArgumentCaptor
 import org.mockito.ArgumentMatchers.any
-import org.mockito.InjectMocks
 import org.mockito.Mock
 import org.mockito.Mockito.doThrow
 import org.mockito.Mockito.never
@@ -57,7 +59,28 @@ class CommentServiceTest {
 
     @Mock private lateinit var advisoryLock: AdvisoryLock
 
-    @InjectMocks private lateinit var commentService: CommentService
+    private lateinit var commentService: CommentService
+
+    // 글은 실제 PostLookupService(post의 공개 조회)를 거쳐 읽는다 - 저장소만 mock이라 "비공개 글은 없는 글로 답한다"는
+    // 판정까지 이 테스트가 그대로 본다.
+    @BeforeEach
+    fun setUp() {
+        commentService =
+            CommentService(
+                commentRepository,
+                PostLookupService(postRepository),
+                memberService,
+                commentReactionRepository,
+                supabaseStorageService,
+                eventPublisher,
+                advisoryLock,
+            )
+    }
+
+    private fun visibleTitle(postId: UUID, postTitle: String) = object : VisiblePostTitle {
+        override val id = postId
+        override val title = postTitle
+    }
 
     @Test
     fun `getComments throws PostNotFoundException when another user views comments of a private post`() {
@@ -813,18 +836,18 @@ class CommentServiceTest {
         }
     }
 
-    // 비공개 글 제외·톰스톤 제외는 CommentRepository.findMyCommentsFirst/After의 JPQL WHERE 절 자체가
-    // 담당해 Mockito로는 검증할 수 없다. 여기서는 Service가 읽은 행을 DTO로 정확히 옮기는지만
-    // 검증한다. 작성 당시엔 실 DB 대상 테스트 인프라가 없어 필터 자체는 계획 문서의 수동 검증
-    // 절차로 확인했다. 필터 자체는 지금 CommentRepositoryIntegrationTest가 실제 Postgres에서 검증한다.
+    // 톰스톤 제외는 CommentRepository.findMyCommentsFirst/After의 JPQL이, 볼 수 없는 글 제외는
+    // PostRepository.findVisibleTitles의 JPQL이 담당해 Mockito로는 검증할 수 없다(실제 Postgres로는
+    // CommentRepositoryIntegrationTest·MyCommentIntegrationTest가 본다). 여기서는 Service가 읽은 행에 제목을 붙이고,
+    // 제목이 오지 않은(볼 수 없는) 글의 댓글을 빼고 다시 채우는지를 검증한다.
     @Test
     fun `getMyCommentsByCursor maps comments into MyCommentPageResponse with post titles`() {
         val userId = UUID.randomUUID()
         val postId = UUID.randomUUID()
-        val post = TablePost(id = postId, userId = userId, url = "https://example.com", title = "타입스크립트 5.9 정리")
-        val comment = TableComment(postId = postId, userId = userId, content = "감사합니다", post = post)
+        val comment = TableComment(postId = postId, userId = userId, content = "감사합니다")
 
         `when`(commentRepository.findMyCommentsFirst(userId, Limit.of(11))).thenReturn(listOf(comment))
+        `when`(postRepository.findVisibleTitles(listOf(postId), userId)).thenReturn(listOf(visibleTitle(postId, "타입스크립트 5.9 정리")))
 
         val result = commentService.getMyCommentsByCursor(userId, null, 10)
 
@@ -839,11 +862,11 @@ class CommentServiceTest {
     fun `getMyCommentsByCursor reads one extra row and returns a cursor only when more remain`() {
         val userId = UUID.randomUUID()
         val postId = UUID.randomUUID()
-        val post = TablePost(id = postId, userId = userId, url = "https://example.com", title = "제목")
         val createdAt = LocalDateTime.of(2026, 11, 5, 12, 0, 0, 123_456_000)
-        val rows = List(3) { TableComment(postId = postId, userId = userId, content = "댓글 $it", post = post, createdAt = createdAt.minusSeconds(it.toLong())) }
+        val rows = List(3) { TableComment(postId = postId, userId = userId, content = "댓글 $it", createdAt = createdAt.minusSeconds(it.toLong())) }
         val keyTypes = listOf(CursorKeyType.TIME, CursorKeyType.ID)
 
+        `when`(postRepository.findVisibleTitles(listOf(postId), userId)).thenReturn(listOf(visibleTitle(postId, "제목")))
         `when`(commentRepository.findMyCommentsFirst(userId, Limit.of(3))).thenReturn(rows)
         val first = commentService.getMyCommentsByCursor(userId, null, 2)
 
@@ -865,16 +888,107 @@ class CommentServiceTest {
         }
     }
 
+    // 예전에는 글 연관관계가 비어 있으면 제목을 ""로 채웠다. 지금은 제목을 post에 묻고, post가 돌려주지 않은 글(볼 수 없게 된
+    // 글)의 댓글은 목록에서 뺀다.
     @Test
-    fun `getMyCommentsByCursor falls back to an empty postTitle when the post relation is not loaded`() {
+    fun `getMyCommentsByCursor leaves out comments whose post is not visible`() {
         val userId = UUID.randomUUID()
-        val comment = TableComment(postId = UUID.randomUUID(), userId = userId, content = "댓글", post = null)
+        val visiblePostId = UUID.randomUUID()
+        val hiddenPostId = UUID.randomUUID()
+        val createdAt = LocalDateTime.of(2026, 11, 5, 12, 0)
+        val rows =
+            listOf(
+                TableComment(postId = hiddenPostId, userId = userId, content = "가려진 글의 댓글", createdAt = createdAt),
+                TableComment(postId = visiblePostId, userId = userId, content = "보이는 글의 댓글", createdAt = createdAt.minusSeconds(1)),
+            )
 
-        `when`(commentRepository.findMyCommentsFirst(userId, Limit.of(11))).thenReturn(listOf(comment))
+        `when`(commentRepository.findMyCommentsFirst(userId, Limit.of(11))).thenReturn(rows)
+        `when`(postRepository.findVisibleTitles(listOf(hiddenPostId, visiblePostId), userId)).thenReturn(listOf(visibleTitle(visiblePostId, "제목")))
 
         val result = commentService.getMyCommentsByCursor(userId, null, 10)
 
-        assertEquals("", result.content[0].postTitle)
+        assertEquals(listOf("보이는 글의 댓글"), result.content.map { it.content })
+        assertNull(result.nextCursor)
+    }
+
+    @Test
+    fun `getMyCommentsByCursor reads again to fill the page when comments were left out`() {
+        val userId = UUID.randomUUID()
+        val visiblePostId = UUID.randomUUID()
+        val hiddenPostId = UUID.randomUUID()
+        val createdAt = LocalDateTime.of(2026, 11, 5, 12, 0)
+        val keyTypes = listOf(CursorKeyType.TIME, CursorKeyType.ID)
+        // 첫 읽기 3개 가운데 가운데 댓글이 가려진 글의 것이다 - 2개짜리 쪽이 차지 않아 그 뒤를 다시 읽는다
+        val firstRead =
+            listOf(
+                TableComment(postId = visiblePostId, userId = userId, content = "댓글 0", createdAt = createdAt),
+                TableComment(postId = hiddenPostId, userId = userId, content = "가려짐", createdAt = createdAt.minusSeconds(1)),
+                TableComment(postId = visiblePostId, userId = userId, content = "댓글 1", createdAt = createdAt.minusSeconds(2)),
+            )
+        val secondRead =
+            listOf(
+                TableComment(postId = visiblePostId, userId = userId, content = "댓글 2", createdAt = createdAt.minusSeconds(3)),
+            )
+
+        `when`(commentRepository.findMyCommentsFirst(userId, Limit.of(3))).thenReturn(firstRead)
+        // 다시 읽을 때는 쪽 크기 + 1이 아니라 한 번에 51행을 달라고 한다
+        `when`(commentRepository.findMyCommentsAfter(userId, firstRead[2].createdAt, firstRead[2].id, Limit.of(51))).thenReturn(secondRead)
+        `when`(postRepository.findVisibleTitles(listOf(visiblePostId, hiddenPostId), userId)).thenReturn(listOf(visibleTitle(visiblePostId, "제목")))
+        `when`(postRepository.findVisibleTitles(listOf(visiblePostId), userId)).thenReturn(listOf(visibleTitle(visiblePostId, "제목")))
+
+        val result = commentService.getMyCommentsByCursor(userId, null, 2)
+
+        // 쪽은 보이는 댓글 2개로 차고, 다시 읽은 "댓글 2"가 다음 쪽이 있음을 알려 준다. cursor는 쪽의 마지막 댓글이다
+        assertEquals(listOf("댓글 0", "댓글 1"), result.content.map { it.content })
+        assertEquals(listOf<Comparable<*>>(firstRead[2].createdAt, firstRead[2].id), CursorCodec.decode(result.nextCursor!!, "LATEST", keyTypes).keys)
+    }
+
+    @Test
+    fun `getMyCommentsByCursor ends the page without a cursor when the comments after the left-out ones run out`() {
+        val userId = UUID.randomUUID()
+        val visiblePostId = UUID.randomUUID()
+        val hiddenPostId = UUID.randomUUID()
+        val createdAt = LocalDateTime.of(2026, 11, 5, 12, 0)
+        val firstRead =
+            listOf(
+                TableComment(postId = visiblePostId, userId = userId, content = "댓글 0", createdAt = createdAt),
+                TableComment(postId = hiddenPostId, userId = userId, content = "가려짐", createdAt = createdAt.minusSeconds(1)),
+                TableComment(postId = hiddenPostId, userId = userId, content = "가려짐", createdAt = createdAt.minusSeconds(2)),
+            )
+
+        `when`(commentRepository.findMyCommentsFirst(userId, Limit.of(3))).thenReturn(firstRead)
+        `when`(commentRepository.findMyCommentsAfter(userId, firstRead[2].createdAt, firstRead[2].id, Limit.of(51))).thenReturn(emptyList())
+        `when`(postRepository.findVisibleTitles(listOf(visiblePostId, hiddenPostId), userId)).thenReturn(listOf(visibleTitle(visiblePostId, "제목")))
+
+        val result = commentService.getMyCommentsByCursor(userId, null, 2)
+
+        assertEquals(listOf("댓글 0"), result.content.map { it.content })
+        assertNull(result.nextCursor)
+    }
+
+    // 다시 읽는 횟수에 상한이 없다 - 상한에서 멈춰 "빈 쪽 + 다음 cursor"를 내면 FE는 댓글이 0개라 다음 쪽을 부르지 않는다.
+    // 가려진 글의 댓글이 여러 번 이어져도 보이는 댓글이 나오거나 댓글이 끝날 때까지 읽는다. 다시 읽을 때는 한 번에 51행씩 읽어
+    // 가려진 댓글 54개를 넘기는 데 DB를 세 번만 오간다(쪽 크기 + 1씩 읽으면 19번이다).
+    @Test
+    fun `getMyCommentsByCursor keeps reading past many left-out comments until it finds a visible one`() {
+        val userId = UUID.randomUUID()
+        val visiblePostId = UUID.randomUUID()
+        val hiddenPostId = UUID.randomUUID()
+        val createdAt = LocalDateTime.of(2026, 11, 5, 12, 0)
+        val firstRead = List(3) { TableComment(postId = hiddenPostId, userId = userId, content = "가려짐", createdAt = createdAt.minusSeconds(it.toLong())) }
+        val refill = List(51) { TableComment(postId = hiddenPostId, userId = userId, content = "가려짐", createdAt = createdAt.minusSeconds((3 + it).toLong())) }
+        val lastRead = listOf(TableComment(postId = visiblePostId, userId = userId, content = "보이는 댓글", createdAt = createdAt.minusSeconds(100)))
+
+        `when`(commentRepository.findMyCommentsFirst(userId, Limit.of(3))).thenReturn(firstRead)
+        `when`(commentRepository.findMyCommentsAfter(userId, firstRead.last().createdAt, firstRead.last().id, Limit.of(51))).thenReturn(refill)
+        `when`(commentRepository.findMyCommentsAfter(userId, refill.last().createdAt, refill.last().id, Limit.of(51))).thenReturn(lastRead)
+        `when`(postRepository.findVisibleTitles(listOf(hiddenPostId), userId)).thenReturn(emptyList())
+        `when`(postRepository.findVisibleTitles(listOf(visiblePostId), userId)).thenReturn(listOf(visibleTitle(visiblePostId, "제목")))
+
+        val result = commentService.getMyCommentsByCursor(userId, null, 2)
+
+        assertEquals(listOf("보이는 댓글"), result.content.map { it.content })
+        assertNull(result.nextCursor)
     }
 
     @Test

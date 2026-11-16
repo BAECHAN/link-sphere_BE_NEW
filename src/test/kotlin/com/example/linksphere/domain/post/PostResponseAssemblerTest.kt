@@ -3,7 +3,6 @@ package com.example.linksphere.domain.post
 import com.example.linksphere.domain.category.CategoryInfo
 import com.example.linksphere.domain.category.CategoryResponse
 import com.example.linksphere.domain.category.CategoryService
-import com.example.linksphere.domain.comment.CommentRepository
 import com.example.linksphere.domain.interaction.BookmarkFolderItemRepository
 import com.example.linksphere.domain.interaction.BookmarkRepository
 import com.example.linksphere.domain.interaction.PostReactionRepository
@@ -39,7 +38,7 @@ class PostResponseAssemblerTest {
 
     @Mock private lateinit var postReactionRepository: PostReactionRepository
 
-    @Mock private lateinit var commentRepository: CommentRepository
+    @Mock private lateinit var postCommentPort: PostCommentPort
 
     @Mock private lateinit var categoryService: CategoryService
 
@@ -79,7 +78,7 @@ class PostResponseAssemblerTest {
             .thenReturn(listOf(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID()))
         lenient().`when`(postReactionRepository.countByPostId(postId)).thenReturn(0L)
         lenient().`when`(postReactionRepository.existsByUserIdAndPostId(ownerId, postId)).thenReturn(false)
-        lenient().`when`(commentRepository.countByPostId(postId)).thenReturn(0L)
+        lenient().`when`(postCommentPort.countByPostId(postId)).thenReturn(0)
 
         val result = assembler.convertToResponse(post, ownerId)
 
@@ -107,7 +106,7 @@ class PostResponseAssemblerTest {
         lenient().`when`(bookmarkRepository.existsByUserIdAndPostId(ownerId, postId)).thenReturn(false)
         lenient().`when`(postReactionRepository.countByPostId(postId)).thenReturn(0L)
         lenient().`when`(postReactionRepository.existsByUserIdAndPostId(ownerId, postId)).thenReturn(false)
-        lenient().`when`(commentRepository.countByPostId(postId)).thenReturn(0L)
+        lenient().`when`(postCommentPort.countByPostId(postId)).thenReturn(0)
 
         val result = assembler.convertToResponse(post, ownerId)
 
@@ -125,7 +124,7 @@ class PostResponseAssemblerTest {
         `when`(memberService.getProfile(ownerId)).thenReturn(MemberProfile.from(owner))
         `when`(bookmarkRepository.countByPostId(postId)).thenReturn(0L)
         `when`(postReactionRepository.countByPostId(postId)).thenReturn(0L)
-        `when`(commentRepository.countByPostId(postId)).thenReturn(0L)
+        `when`(postCommentPort.countByPostId(postId)).thenReturn(0)
 
         val result = assembler.convertToResponse(post, null)
 
@@ -169,7 +168,7 @@ class PostResponseAssemblerTest {
             .thenReturn(emptyList())
         `when`(postReactionRepository.findAllByUserIdAndPostIdIn(userId, listOf(postId1, postId2)))
             .thenReturn(emptyList())
-        `when`(commentRepository.countByPostIdIn(listOf(postId1, postId2))).thenReturn(emptyList())
+        `when`(postCommentPort.countByPostIds(listOf(postId1, postId2))).thenReturn(emptyMap())
 
         val result = assembler.buildResponsesFromPosts(listOf(post1, post2), userId)
 
@@ -190,7 +189,7 @@ class PostResponseAssemblerTest {
         `when`(memberService.findProfiles(listOf(ownerId))).thenReturn(mapOf(ownerId to MemberProfile.from(member)))
         `when`(bookmarkRepository.countByPostIdIn(listOf(postId))).thenReturn(emptyList())
         `when`(postReactionRepository.countByPostIdIn(listOf(postId))).thenReturn(emptyList())
-        `when`(commentRepository.countByPostIdIn(listOf(postId))).thenReturn(emptyList())
+        `when`(postCommentPort.countByPostIds(listOf(postId))).thenReturn(emptyMap())
 
         val result = assembler.buildResponsesFromPosts(listOf(post), null)
 

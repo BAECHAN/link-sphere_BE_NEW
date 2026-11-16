@@ -97,9 +97,9 @@ flowchart TD
 
 | 목록 | cursor 경로 | Phase 4에서 지운 옛 경로 |
 | --- | --- | --- |
-| 피드·검색 | [`PostRepositoryImpl.kt:19`](../src/main/kotlin/com/example/linksphere/domain/post/PostRepositoryImpl.kt#L19) `findPostsAfter`, [`PostService.kt:182`](../src/main/kotlin/com/example/linksphere/domain/post/PostService.kt#L182) | `findPosts`, `getAllPosts` |
-| 북마크 | [`BookmarkRepositoryImpl.kt:21`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkRepositoryImpl.kt#L21) `findBookmarkedPostsAfter`, [`BookmarkFolderService.kt:227`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkFolderService.kt#L227) | `findBookmarkedPosts`, `getBookmarkedPosts` |
-| 내 댓글 | [`CommentRepository.kt:33`](../src/main/kotlin/com/example/linksphere/domain/comment/CommentRepository.kt#L33) `findMyCommentsFirst`·`findMyCommentsAfter`, [`CommentService.kt:125`](../src/main/kotlin/com/example/linksphere/domain/comment/CommentService.kt#L125) | `findMyComments`, `getMyComments` |
+| 피드·검색 | [`PostRepositoryImpl.kt:19`](../src/main/kotlin/com/example/linksphere/domain/post/PostRepositoryImpl.kt#L19) `findPostsAfter`, [`PostService.kt:180`](../src/main/kotlin/com/example/linksphere/domain/post/PostService.kt#L180) | `findPosts`, `getAllPosts` |
+| 북마크 | [`BookmarkRepositoryImpl.kt:21`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkRepositoryImpl.kt#L21) `findBookmarkedPostsAfter`, [`BookmarkFolderService.kt:221`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkFolderService.kt#L221) | `findBookmarkedPosts`, `getBookmarkedPosts` |
+| 내 댓글 | [`CommentRepository.kt:30`](../src/main/kotlin/com/example/linksphere/domain/comment/CommentRepository.kt#L30) `findMyCommentsFirst`·`findMyCommentsAfter`, [`CommentService.kt:132`](../src/main/kotlin/com/example/linksphere/domain/comment/CommentService.kt#L132) | `findMyComments`, `getMyComments` |
 
 `page`는 받지 않는다. 다른 모르는 쿼리 파라미터처럼 무시되고 cursor 첫 쪽이 나간다. Phase 4(#196)에서는 숨긴 파라미터로 받아 400으로 끝냈는데, 같은 날 그 코드도 지웠다(#198, 사용자 결정). 지운 이유와 대가는 이렇다.
 
@@ -120,7 +120,7 @@ flowchart TD
 | 북마크 | 검색(`sort=latest`일 때만) | `점수 DESC, b.created_at DESC, b.post_id DESC` | 파생 테이블 |
 | 내 댓글 | 최신순 | `c.created_at DESC, c.id DESC` | WHERE(인덱스, JPQL) |
 
-**키와 엔티티를 나눠 읽는다.** 파생 테이블은 스칼라만 돌려줘 엔티티를 함께 받을 수 없다. 그래서 키 값을 먼저 읽고 이 쪽 id로 엔티티를 불러온다([`KeysetQuery.kt`](../src/main/kotlin/com/example/linksphere/global/common/KeysetQuery.kt)). WHERE 형태도 같은 길로 맞췄다. 내 댓글만 `JOIN FETCH` + `Limit` 한 번이다. 쪽마다 조회가 2번이지만 offset도 count + 본 쿼리로 2번이었다.
+**키와 엔티티를 나눠 읽는다.** 파생 테이블은 스칼라만 돌려줘 엔티티를 함께 받을 수 없다. 그래서 키 값을 먼저 읽고 이 쪽 id로 엔티티를 불러온다([`KeysetQuery.kt`](../src/main/kotlin/com/example/linksphere/global/common/KeysetQuery.kt)). WHERE 형태도 같은 길로 맞췄다. 쪽마다 조회가 2번이지만 offset도 count + 본 쿼리로 2번이었다. 내 댓글은 댓글을 `Limit`으로 읽고 원글 제목을 post에 묻는다(`PostLookupService.findVisibleTitles`) — 2026-11-16까지는 글을 `JOIN FETCH`해 한 번에 읽었다. post는 볼 수 있는 글만 돌려주므로 댓글을 단 뒤 비공개로 바뀐 남의 글의 댓글은 빠지고, 빠진 만큼은 쪽이 차거나 댓글이 끝날 때까지 이어서 다시 읽는다. 다시 읽는 횟수에 상한은 없다 — 상한에서 멈추면 "빈 쪽 + 다음 cursor"가 나갈 수 있는데 FE는 댓글이 0개면 다음 쪽을 부르지 않는다(운영에서 빠지는 댓글은 전체 1개, 2026-11-16). 대신 다시 읽을 때는 한 번에 51행 이상을 읽어 쪽 크기가 작아도 DB를 오가는 횟수가 빠진 댓글 수만큼 늘지 않게 한다(첫 읽기는 쪽 크기 + 1 그대로다). cursor는 마지막으로 읽고 넘긴 댓글 행의 키다.
 
 ### 5.2 keyset 조건식은 첫 키가 무엇이냐로 갈린다
 
@@ -200,7 +200,7 @@ flowchart TD
 | "이 키 다음부터" 조건식 | [`SeekPredicate.kt`](../src/main/kotlin/com/example/linksphere/global/common/SeekPredicate.kt) |
 | WHERE 형태·파생 테이블 형태 조회 | [`KeysetQuery.kt`](../src/main/kotlin/com/example/linksphere/global/common/KeysetQuery.kt) |
 | 정렬별 키 구성 | [`PostRepositoryCustom.kt:33`](../src/main/kotlin/com/example/linksphere/domain/post/PostRepositoryCustom.kt#L33) `PostListSort`, [`BookmarkRepositoryCustom.kt:36`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkRepositoryCustom.kt#L36) `BookmarkListSort` |
-| 검색 상태 이어 가기 | [`PostService.kt:182`](../src/main/kotlin/com/example/linksphere/domain/post/PostService.kt#L182), [`BookmarkFolderService.kt:227`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkFolderService.kt#L227) |
+| 검색 상태 이어 가기 | [`PostService.kt:180`](../src/main/kotlin/com/example/linksphere/domain/post/PostService.kt#L180), [`BookmarkFolderService.kt:221`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkFolderService.kt#L221) |
 | 끝까지 읽기·SQL 형태 테스트 | [`CursorPaginationIntegrationTest.kt`](../src/test/kotlin/com/example/linksphere/domain/post/CursorPaginationIntegrationTest.kt) |
 
 | 하고 싶은 일 | 방법 | 재배포 |

@@ -2,11 +2,10 @@ package com.example.linksphere.domain.interaction
 
 import com.example.linksphere.domain.post.HangulKeyboardConverter
 import com.example.linksphere.domain.post.PostEmbeddingText
+import com.example.linksphere.domain.post.PostLookupService
 import com.example.linksphere.domain.post.PostPageResponse
-import com.example.linksphere.domain.post.PostRepository
 import com.example.linksphere.domain.post.PostResponseAssembler
 import com.example.linksphere.domain.post.PostSearchQuery
-import com.example.linksphere.domain.post.PostVisibility
 import com.example.linksphere.domain.post.TablePost
 import com.example.linksphere.global.common.CursorCodec
 import com.example.linksphere.global.common.KeysetSlice
@@ -15,7 +14,6 @@ import com.example.linksphere.global.exception.BookmarkFolderNotFoundException
 import com.example.linksphere.global.exception.DuplicateFolderNameException
 import com.example.linksphere.global.exception.ForbiddenException
 import com.example.linksphere.global.exception.InvalidInputException
-import com.example.linksphere.global.exception.PostNotFoundException
 import com.example.linksphere.infra.ai.GeminiService
 import org.slf4j.LoggerFactory
 import org.springframework.dao.DataIntegrityViolationException
@@ -32,7 +30,7 @@ class BookmarkFolderService(
     private val bookmarkFolderItemRepository: BookmarkFolderItemRepository,
     private val postResponseAssembler: PostResponseAssembler,
     private val geminiService: GeminiService,
-    private val postRepository: PostRepository,
+    private val postLookupService: PostLookupService,
 ) {
 
     private val logger = LoggerFactory.getLogger(BookmarkFolderService::class.java)
@@ -177,11 +175,7 @@ class BookmarkFolderService(
 
         // 단건 addBookmarkFolder(InteractionService.assertPostVisible)와 동일한 규칙 - 남의
         // 비공개 글은 북마크할 수 없다. 여기선 개수가 가변이라 한 번에 조회해 순회한다.
-        val postsById = postRepository.findAllById(postIds).associateBy { it.id }
-        postIds.forEach { postId ->
-            val post = postsById[postId] ?: throw PostNotFoundException(postId)
-            PostVisibility.assertVisible(post, userId, postId)
-        }
+        postLookupService.requireAllVisible(postIds, userId)
 
         postIds.forEach { postId ->
             bookmarkRepository.insertIgnoreConflict(userId, postId)

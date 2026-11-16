@@ -1,11 +1,9 @@
 package com.example.linksphere.domain.interaction
 
 import com.example.linksphere.domain.post.PostLikeResponse
-import com.example.linksphere.domain.post.PostRepository
-import com.example.linksphere.domain.post.PostVisibility
+import com.example.linksphere.domain.post.PostLookupService
 import com.example.linksphere.global.exception.BookmarkFolderNotFoundException
 import com.example.linksphere.global.exception.ForbiddenException
-import com.example.linksphere.global.exception.PostNotFoundException
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -15,7 +13,7 @@ import java.util.UUID
 class InteractionService(
     private val postReactionRepository: PostReactionRepository,
     private val bookmarkRepository: BookmarkRepository,
-    private val postRepository: PostRepository,
+    private val postLookupService: PostLookupService,
     private val bookmarkFolderRepository: BookmarkFolderRepository,
     private val bookmarkFolderItemRepository: BookmarkFolderItemRepository,
 ) {
@@ -131,7 +129,6 @@ class InteractionService(
      * PostService.getPostById와 동일한 기준: 존재 여부를 알려주지 않도록 403이 아닌 404로 던진다.
      */
     private fun assertPostVisible(postId: UUID, userId: UUID) {
-        val post = postRepository.findByIdOrNull(postId) ?: throw PostNotFoundException(postId)
-        PostVisibility.assertVisible(post, userId, postId)
+        postLookupService.requireVisible(postId, userId)
     }
 }

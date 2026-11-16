@@ -2,8 +2,7 @@ package com.example.linksphere.domain.comment
 
 import com.example.linksphere.domain.member.MemberProfile
 import com.example.linksphere.domain.member.MemberService
-import com.example.linksphere.domain.post.PostRepository
-import com.example.linksphere.domain.post.PostVisibility
+import com.example.linksphere.domain.post.PostLookupService
 import com.example.linksphere.global.common.AdvisoryLock
 import com.example.linksphere.global.common.CursorCodec
 import com.example.linksphere.global.common.CursorKeyType
@@ -15,7 +14,6 @@ import com.example.linksphere.global.exception.CommentNotFoundException
 import com.example.linksphere.global.exception.DuplicateCommentException
 import com.example.linksphere.global.exception.ForbiddenException
 import com.example.linksphere.global.exception.InvalidInputException
-import com.example.linksphere.global.exception.PostNotFoundException
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.data.domain.Limit
 import org.springframework.data.repository.findByIdOrNull
@@ -30,6 +28,10 @@ private const val DELETED_COMMENT_CONTENT = "삭제된 댓글입니다."
 // 내 댓글 목록은 정렬이 하나뿐이다. cursor에 담는 키는 findMyCommentsAfter의 인자 순서와 맞춘다
 private const val MY_COMMENTS_SORT = "LATEST"
 private val MY_COMMENTS_KEYS = listOf(CursorKeyType.TIME, CursorKeyType.ID)
+
+// 내 댓글에서 가려진 댓글 때문에 쪽이 덜 차 다시 읽을 때 한 번에 읽는 최소 행 수. 쪽 크기 + 1씩만 읽으면 쪽 크기가 1일 때
+// 가려진 댓글 수만큼 DB를 오간다. 첫 읽기는 쪽 크기 + 1 그대로라 가려진 댓글이 없는 평소 조회는 달라지지 않는다.
+private const val MY_COMMENTS_REFILL_ROWS = 51
 
 // 회원탈퇴 신청(유예 중) 또는 익명화 완료로 MemberProfile.nickname이 null인 경우의 표시명
 // - 유예 중에도 퍼지가 끝난 것과 동일하게 보인다. 작성자 회원을 찾지 못한
@@ -49,7 +51,7 @@ private val DUPLICATE_COMMENT_WINDOW = Duration.ofMinutes(1)
 @Service
 class CommentService(
     private val commentRepository: CommentRepository,
-    private val postRepository: PostRepository,
+    private val postLookupService: PostLookupService,
     private val memberService: MemberService,
     private val commentReactionRepository: CommentReactionRepository,
     private val supabaseStorageService: SupabaseStorageService,
@@ -59,9 +61,8 @@ class CommentService(
 
     @Transactional(readOnly = true)
     fun getComments(postId: UUID, currentUserId: UUID?): List<CommentResponse> {
-        val post = postRepository.findById(postId).orElseThrow { PostNotFoundException(postId) }
-        // 비공개 글의 댓글도 상세 조회와 동일한 기준으로 소유자에게만 보여준다.
-        PostVisibility.assertVisible(post, currentUserId, postId)
+        // 비공개 글의 댓글도 상세 조회와 동일한 기준으로 소유자에게만 보여준다. 글은 post에 id로 묻는다.
+        postLookupService.requireVisible(postId, currentUserId)
 
         val comments = commentRepository.findAllByPostIdOrderByCreatedAtAsc(postId)
 
@@ -120,21 +121,60 @@ class CommentService(
         return rootComments
     }
 
-    /** 내 댓글 목록을 cursor로 이어 읽는다(docs/PAGINATION.md). size+1개 읽어 다음 쪽 유무를 정한다. */
+    /**
+     * 내 댓글 목록을 cursor로 이어 읽는다(docs/PAGINATION.md). 댓글을 size+1개 읽고, 원글의 제목을 post에 묻는다 - post는
+     * 내가 볼 수 있는 글만 돌려주므로 댓글을 단 뒤 비공개로 바뀐 남의 글의 댓글은 여기서 빠진다. 빠진 만큼은 쪽이 차거나
+     * 댓글이 끝날 때까지 이어서 다시 읽는다 - 다시 읽는 횟수에 상한을 두지 않는다. 상한에서 멈추면 "빈 쪽 + 다음 cursor"가
+     * 나갈 수 있는데, 조인으로 읽던 때에는 없던 응답이고 FE는 댓글이 0개면 다음 쪽을 부르지 않는다. 빠지는 댓글은 드물다
+     * (운영 전체 1개, 2026-11-16). cursor는 쪽의 마지막 댓글이 아니라 마지막으로 읽고 넘긴 댓글 행의 키다.
+     */
     @Transactional(readOnly = true)
     fun getMyCommentsByCursor(userId: UUID, cursor: String?, size: Int): MyCommentPageResponse {
         val limit = Paging.coerceSize(size)
-        val after = cursor?.let { CursorCodec.decode(it, MY_COMMENTS_SORT, MY_COMMENTS_KEYS).keys }
-        val rows =
-            if (after == null) {
-                commentRepository.findMyCommentsFirst(userId, Limit.of(limit + 1))
-            } else {
-                commentRepository.findMyCommentsAfter(userId, after[0] as LocalDateTime, after[1] as UUID, Limit.of(limit + 1))
-            }
-        val page = rows.take(limit)
-        val nextCursor = page.lastOrNull().takeIf { rows.size > limit }?.let { CursorCodec.encode(MY_COMMENTS_SORT, listOf(it.createdAt, it.id)) }
+        var after = cursor?.let { CursorCodec.decode(it, MY_COMMENTS_SORT, MY_COMMENTS_KEYS).keys }
+        val page = mutableListOf<MyCommentResponse>()
+        var lastRead: TableComment? = null
+        var hasMore = false
+        var readSize = limit + 1
 
-        return MyCommentPageResponse(content = page.map { MyCommentResponse.from(it) }, nextCursor = nextCursor)
+        while (true) {
+            val rows = readMyComments(userId, after, readSize)
+            val titles = postLookupService.findVisibleTitles(rows.map { it.postId }.distinct(), userId)
+
+            for (row in rows) {
+                val title = titles[row.postId]
+
+                // 쪽이 찼는데 보이는 댓글이 하나 더 있다 - 그 댓글은 다음 쪽의 첫 행이라 읽은 것으로 치지 않는다
+                if (title != null && page.size == limit) {
+                    hasMore = true
+                    break
+                }
+
+                if (title != null) {
+                    page.add(MyCommentResponse.from(row, title))
+                }
+
+                lastRead = row
+            }
+
+            // 달라고 한 만큼 못 받았으면 더 읽을 댓글이 없다
+            if (hasMore || rows.size < readSize) {
+                break
+            }
+
+            after = lastRead?.let { listOf(it.createdAt, it.id) }
+            readSize = maxOf(limit + 1, MY_COMMENTS_REFILL_ROWS)
+        }
+
+        val nextCursor = lastRead?.takeIf { hasMore }?.let { CursorCodec.encode(MY_COMMENTS_SORT, listOf(it.createdAt, it.id)) }
+
+        return MyCommentPageResponse(content = page, nextCursor = nextCursor)
+    }
+
+    private fun readMyComments(userId: UUID, after: List<Any>?, count: Int): List<TableComment> = if (after == null) {
+        commentRepository.findMyCommentsFirst(userId, Limit.of(count))
+    } else {
+        commentRepository.findMyCommentsAfter(userId, after[0] as LocalDateTime, after[1] as UUID, Limit.of(count))
     }
 
     @Transactional(readOnly = true)
@@ -154,11 +194,8 @@ class CommentService(
     ): CommentResponse {
         validateContent(content, images)
 
-        val post =
-            postRepository.findByIdOrNull(postId)
-                ?: throw PostNotFoundException(postId)
         // 조회·댓글 목록과 동일한 기준: 읽을 수 없는 비공개 글에는 댓글도 달 수 없다.
-        PostVisibility.assertVisible(post, userId, postId)
+        val postAuthorId = postLookupService.requireVisible(postId, userId)
         // 읽기·좋아요·북마크는 막지 않고 글쓰기·댓글쓰기만 막는다(docs/plans/2026-09-28-auth-hardening.md
         // "확정된 결정들" 참고). 바로 아래 getProfile은 여기서 읽은 회원을 같은 트랜잭션에서 다시 받아 추가 쿼리가 없다.
         memberService.requireEmailVerified(userId, "create a comment")
@@ -194,7 +231,7 @@ class CommentService(
         // 알림 조건(루트 댓글만, 자기 자신 제외)은 지금 판정해 이벤트에 실어 보낸다 - 이 함수는 루트 댓글만 만든다
         // (답글은 createReply). 예전의 parentId 인자는 HTTP로 넘어오는 길이 없어 2026-10-26에 지웠다.
         eventPublisher.publishEvent(
-            CommentPostProcessEvent(commentId = saved.id, notify = post.userId != userId),
+            CommentPostProcessEvent(commentId = saved.id, notify = postAuthorId != userId),
         )
 
         return toCommentResponse(saved, member)
@@ -221,11 +258,8 @@ class CommentService(
             )
         }
 
-        val post =
-            postRepository.findByIdOrNull(parent.postId)
-                ?: throw PostNotFoundException(parent.postId)
         // 조회·댓글 목록과 동일한 기준: 읽을 수 없는 비공개 글에는 답글도 달 수 없다.
-        PostVisibility.assertVisible(post, userId, parent.postId)
+        postLookupService.requireVisible(parent.postId, userId)
 
         memberService.requireEmailVerified(userId, "create a reply")
         val member = memberService.getProfile(userId)
@@ -287,8 +321,7 @@ class CommentService(
             commentRepository.findByIdOrNull(commentId)
                 ?: throw CommentNotFoundException(commentId)
         // 비공개 글에 달린 댓글도 글 소유자 외에는 좋아요를 달 수 없어야 한다.
-        val post = postRepository.findByIdOrNull(comment.postId) ?: throw PostNotFoundException(comment.postId)
-        PostVisibility.assertVisible(post, userId, comment.postId)
+        postLookupService.requireVisible(comment.postId, userId)
         // 비공개 글 검증 뒤에 확인해야 한다 - 순서를 바꾸면 남의 비공개 글의 삭제된 댓글에
         // 404 대신 400이 나가면서 "그 댓글이 존재한다"는 사실이 새어나간다.
         if (comment.isDeleted) throw InvalidInputException("삭제된 댓글에는 좋아요를 누를 수 없습니다.")
@@ -328,11 +361,11 @@ class CommentService(
     }
 
     /**
-     * 게시글 삭제 시 호출된다. comments.post_id FK가 ON DELETE CASCADE라 DB에서는
+     * 게시글이 지워지기 직전에 호출된다(CommentPostEventListener가 PostDeletingEvent를 듣는다). comments.post_id FK가 ON DELETE CASCADE라 DB에서는
      * 게시글과 함께 자동으로 지워지지만, 그 댓글들에 딸린 스토리지 이미지는 별도로
      * 정리해야 하므로 게시글이 실제로 삭제되기 전에 댓글 내용을 읽어 URL을 추출해둔다.
      * 실제 스토리지 삭제는 deleteComment/updateComment와 동일한 이유로 커밋 이후로 미룬다 -
-     * 호출부(PostService.deletePost)의 postRepository.delete가 실패해 롤백되면 게시글·댓글은
+     * 글 삭제(PostService.deletePost)가 실패해 롤백되면 게시글·댓글은
      * DB에 그대로 남았는데 파일만 사라진 상태가 되는 걸 막는다.
      */
     @Transactional(readOnly = true)
@@ -345,6 +378,10 @@ class CommentService(
             TransactionCallbacks.afterCommit { supabaseStorageService.deleteObjectsByPublicUrls(imageUrls) }
         }
     }
+
+    /** 고아 이미지 정리(OrphanImageGcService)가 "아직 쓰이는 URL"을 모으려고 모든 댓글 본문을 읽는다. */
+    @Transactional(readOnly = true)
+    fun findAllContent(): List<String> = commentRepository.findAllContent()
 
     private fun extractManagedImageUrls(content: String): List<String> = URL_REGEX.findAll(content)
         .map { it.value }
