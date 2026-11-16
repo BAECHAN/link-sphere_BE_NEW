@@ -194,7 +194,7 @@ flowchart LR
 | `packagesMustBeFreeOfCyclesExceptDocumented` | 패키지 사이 새 순환 — 허용 간선 1개는 `PackageGraphDocTest.kt`의 `DOCUMENTED_CYCLE_EDGES`, 이유는 §9 | 위와 같음 |
 | `문서의 패키지 의존 그래프가 코드와 같다` | §1 "실제 패키지 의존 그래프"가 코드와 어긋남 | `architecture/PackageGraphDocTest.kt` |
 | `순환 허용 간선 목록의 간선은 모두 실제로 있다` | 끊은 간선이 `DOCUMENTED_CYCLE_EDGES`에 남아 다시 생겨도 조용히 통과 | 위와 같음 |
-| `다른 패키지의 저장소·엔티티를 새로 쓰지 않는다` | 다른 패키지의 Repository·`@Entity`를 직접 쓰는 곳이 새로 생김 — 지금 있는 17곳은 `KNOWN_BOUNDARY_VIOLATIONS`에 적혀 있고 2단계에서 0으로 줄인다 | `architecture/ModuleBoundaryRulesTest.kt` |
+| `다른 패키지의 저장소·엔티티를 새로 쓰지 않는다` | 다른 패키지의 Repository·`@Entity`를 직접 쓰는 곳이 새로 생김 — 지금 있는 7곳은 `KNOWN_BOUNDARY_VIOLATIONS`에 적혀 있고 2단계에서 0으로 줄인다 | `architecture/ModuleBoundaryRulesTest.kt` |
 | `알려진 위반 목록의 항목은 모두 실제로 있다` | 없앤 위반이 `KNOWN_BOUNDARY_VIOLATIONS`에 남아 다시 생겨도 조용히 통과 | 위와 같음 |
 | `afterCommitGoesThroughTransactionCallbacks` | `TransactionSynchronizationManager.registerSynchronization` 직접 호출(§7-6) | `architecture/LayerSkeletonRulesTest.kt` |
 | `emailVerificationGoesThroughGate` | `EmailVerificationGate` 밖에서 `EmailNotVerifiedException` 생성 | 위와 같음 |
@@ -294,8 +294,8 @@ flowchart TD
   만들어 넘기고 임베딩이 필요한 요청에서만 쓴다(넘어도 막지 않고 키워드 검색으로 강등한다). 로그인·가입·비밀번호 재설정처럼 Service
   안에서 판정이 갈리는 한도는 지금처럼 Service에서 건다. 조회 기록의 조회자 판단(`PostService.recordView`)도 Service에 둔다 —
   요청을 막는 한도가 아니라 조회수를 올릴지 정하는 규칙이고, 봇은 이 메서드를 부르지 않는다(§7-3).
-- **다른 도메인 Repository·엔티티 직접 사용(줄이는 중)** — 예: `PostService`가 interaction의 `BookmarkRepository`를 쓴다.
-  지금 있는 17곳만 남기고 새로 쓰는 것은 `ModuleBoundaryRulesTest`가 막는다(2026-11-16, 처음 57곳). 남은 곳은 2단계
+- **다른 도메인 Repository·엔티티 직접 사용(줄이는 중)** — 예: interaction의 `BookmarkRepositoryImpl`이 post의 `TablePost`를 쓴다.
+  지금 있는 7곳만 남기고 새로 쓰는 것은 `ModuleBoundaryRulesTest`가 막는다(2026-11-16, 처음 57곳). 남은 곳은 2단계
   (`docs/plans/2026-11-16-be-structure-stage2.md`)에서 그 패키지의 Service에 묻는 방식으로 바꿔 0으로 줄인다. Service끼리의
   순환은 지금처럼 `servicesMustNotHaveCrossDomainCycles`가 막고, 순환이 생기면 `PostResponseAssembler`처럼 자기를 부르는
   Service를 참조하지 않는 조립기로 뺀다(§7-8). 조립기가 `CategoryService`·`MemberService`처럼 post를 모르는 Service에 묻는 것은 순환이 아니다.
@@ -503,7 +503,9 @@ fun getPosts(authentication: Authentication?, ...): ApiResponse<PostPageResponse
   `SimpleJpaRepository.save`), Hibernate는 id를 미리 만든 엔티티의 INSERT를 `ActionQueue`에 넣어 flush 때 실행한다
   (hibernate-core 6.6.36 `AbstractSaveEventListener.addInsertAction`). `@GeneratedValue` UUID(`MemberServiceIntegrationTest`)든 앱이 만든
   UUID(`BookmarkFolderRepositoryIntegrationTest`)든 같다 — 선례는 `MemberService.signup`, `BookmarkFolderService.createFolder`. 같은 이유로 방금 `save()`한 행을 FK로 가리키는
-  네이티브 쿼리 앞에서는 `flush()`가 필요하다(`PostService.saveBookmarkWithFolders`).
+  네이티브 쿼리 앞에서는 `flush()`를 부른다(`PostService.createPost`가 `PostInteractionPort.bookmarkNewPost`를 부르기 전). 2026-11-16에
+  이 `flush()`를 빼고 실제 Postgres 테스트를 돌렸을 때는 통과했다(`PostInteractionPortIntegrationTest`) — 원인은 추적하지 않았고
+  명시적 `flush()`는 그대로 둔다. 호출 순서는 `PostServiceTest`가 본다.
 - **REQUIRES_NEW** — 호출부가 바로 예외를 던져 롤백돼도 남아야 하는 기록(로그인 실패 카운트, 재사용 탐지 시 계열 폐기)만
   쓴다(`RateLimitService` KDoc). 같은 행에 쓰기 락을 쥔 채 부르면 교착하니 그 경로는 읽기만 한다.
 - **AFTER_COMMIT 리스너의 예외는 삼켜진다** — spring-tx 6.2.14 `TransactionSynchronizationUtils.invokeAfterCompletion`이
@@ -651,7 +653,9 @@ for (id in ids) {
   (`CommentService.getMyCommentsByCursor` — 원글이 비공개로 바뀐 댓글이 빠진다. 덜 찬 쪽을 그대로 내면 응답이 달라진다).
   다시 읽을 때는 쪽 크기와 상관없이 한 번에 넉넉히(51행 이상) 읽어 왕복 수를 줄인다.
 - 반대 방향으로 물어야 하면(post가 댓글 수를 알아야 한다) 묻는 쪽이 인터페이스를 정하고 가진 쪽이 구현한다 — `PostCommentPort`를
-  post가 정하고 comment의 `CommentCountAdapter`가 구현한다. 의존은 comment → post 한 방향으로 남는다.
+  post가 정하고 comment의 `CommentCountAdapter`가 구현한다. 의존은 comment → post 한 방향으로 남는다. 글 응답의 좋아요·북마크
+  (수, 내 상태, 내 폴더)와 글 등록 때의 북마크 저장도 같다 — `PostInteractionPort`를 post가 정하고 interaction의
+  `PostInteractionAdapter`가 구현한다. 구현은 저장소만 참조하는 클래스로 둔다 — 그 패키지의 Service가 구현하면 빈이 서로 물린다.
 - 조립기를 Service 밖 클래스로 두면 Service 순환도 피한다(KDoc 참고).
 - **안티패턴**: 목록을 돌며 항목마다 `findById`·`countBy…` 호출. 단건 상세(`convertToResponse`)는 여러 번 조회해도 된다.
 
@@ -798,7 +802,7 @@ FE와 BE가 같은 테스트 원칙을 쓰면서 층 구성과 도구를 다르�
 
 | 간선 | 대표 위치 | 이유 |
 |---|---|---|
-| `domain.post → domain.interaction` | `PostResponseAssembler`·`PostService`·`PostRepositoryImpl` → 반응·북마크 Repository·엔티티 | 목록 응답의 좋아요·북마크 상태와 `filter=isLiked` 같은 조인 |
+| `domain.post → domain.interaction` | `PostRepositoryImpl` → 반응·북마크 엔티티 | `filter=isLiked`·`isBookmarked`의 서브쿼리. 목록 응답의 좋아요·북마크 상태와 글 등록 때의 북마크 저장은 `PostInteractionPort`로 옮겼다(같은 계획 PR-9a) |
 
 2026-10-25 점검에서 의심만 하던 6건(가입 제약 위반 catch가 `save()` 지연으로 헛돎, 폴더 이름 동시 중복이
 `DUPLICATE_RESOURCE`로 나감, 인증·재설정 메일이 토큰 커밋 전에 나감, `FcmService`가 바깥 트랜잭션을 깨뜨림, 상세 조회
@@ -926,7 +930,8 @@ FE와 BE가 같은 테스트 원칙을 쓰면서 층 구성과 도구를 다르�
     바꿔 끊었다.
   - `post → interaction`: "목록 조립을 별도 조회 패키지로" 빼는 것만으로는 끊기지 않는다 — `PostService`·
     `BookmarkFolderService`가 조립기를 쓰고, `PostRepositoryImpl`은 Repository 인터페이스 패키지 밖으로 못 나간다. post에 포트
-    (묶음 통계·필터 서브쿼리·북마크 쓰기)를 두고 interaction이 구현하는 의존 역전이 필요하다(같은 계획 PR-9).
+    (묶음 통계·필터 서브쿼리·북마크 쓰기)를 두고 interaction이 구현하는 의존 역전이 필요하다(같은 계획 PR-9). 2026-11-16에
+    묶음 통계와 북마크 쓰기를 `PostInteractionPort`로 옮겼고(PR-9a), 필터 서브쿼리(`PostRepositoryImpl`)가 남았다.
   - `member → auth`는 2026-10-26에 요청 DTO 2개를 `member/MemberDTO.kt`로 옮겨 끊었다.
 - **이름 불일치**: `global/ratelimit`의 `TableRateLimit`·`RateLimitRepository`가 쓰는 테이블 이름은 auth 전용이던 시절의
   `auth_rate_limits` 그대로다(2026-11-15). 테이블 이름을 바꾸려면 DB 마이그레이션·SQL·백업 설정을 함께 고쳐야 해서 클래스

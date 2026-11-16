@@ -7,6 +7,7 @@ import com.example.linksphere.domain.comment.CommentCountAdapter
 import com.example.linksphere.domain.comment.CommentPostEventListener
 import com.example.linksphere.domain.comment.CommentService
 import com.example.linksphere.domain.interaction.BookmarkFolderService
+import com.example.linksphere.domain.interaction.PostInteractionAdapter
 import com.example.linksphere.domain.linkpreview.LinkPreviewService
 import com.example.linksphere.domain.linkpreview.SafeUrlValidator
 import com.example.linksphere.domain.linkpreview.UrlMetadataExtractor
@@ -47,6 +48,7 @@ import java.util.UUID
 @Import(
     PostService::class,
     PostResponseAssembler::class,
+    PostInteractionAdapter::class,
     CommentService::class,
     CommentCountAdapter::class,
     CommentPostEventListener::class,

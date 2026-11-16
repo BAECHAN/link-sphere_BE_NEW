@@ -14,7 +14,7 @@ import java.io.File
  */
 internal val DOCUMENTED_CYCLE_EDGES: List<Pair<String, String>> =
     listOf(
-        // 글 목록 조립(PostResponseAssembler·PostRepositoryImpl)과 글 등록이 반응·북마크를 읽고 쓴다
+        // 글 목록의 isLiked·isBookmarked 필터 서브쿼리(PostRepositoryImpl)가 반응·북마크 엔티티를 쓴다
         "domain.post" to "domain.interaction",
     )
 

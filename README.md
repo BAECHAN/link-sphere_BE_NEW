@@ -81,6 +81,7 @@ src/main/kotlin/com/example/linksphere/
 │   │   ├── PostVisibility.kt            # 비공개 글을 작성자 외에는 404로 숨기는 게이트
 │   │   ├── PostLookupService.kt         # 다른 패키지가 글을 id로 묻는 창구(볼 수 있는 글인지·작성자·제목)
 │   │   ├── PostCommentPort.kt           # 글 응답의 댓글 수를 묻는 약속(comment가 구현)
+│   │   ├── PostInteractionPort.kt       # 글 응답의 좋아요·북마크와 글 등록 때의 북마크 저장을 묻는 약속(interaction이 구현)
 │   │   ├── PostLifecycleEvents.kt       # 글 삭제 직전 이벤트(다른 패키지가 듣고 자기 데이터를 정리)
 │   │   ├── PostAIService.kt             # AI 분석 비동기 처리
 │   │   ├── AiAnalysisJobHandler.kt      # ai-analysis 잡 처리기(JobHandler)
@@ -125,6 +126,7 @@ src/main/kotlin/com/example/linksphere/
 │   │   ├── BookmarkFolderRepository.kt
 │   │   ├── BookmarkFolderItemRepository.kt  # bookmark_folder_items (N:M 소속)
 │   │   ├── PostReactionRepository.kt
+│   │   ├── PostInteractionAdapter.kt    # post의 PostInteractionPort 구현(좋아요·북마크 수와 내 상태, 등록 때 북마크)
 │   │   ├── TableBookmark.kt
 │   │   ├── TableBookmarkFolder.kt
 │   │   ├── TableBookmarkFolderItem.kt
