@@ -1,15 +1,8 @@
-package com.example.linksphere.domain.auth
+package com.example.linksphere.domain.member
 
-import com.example.linksphere.domain.comment.CommentReactionRepository
-import com.example.linksphere.domain.interaction.BookmarkFolderItemRepository
-import com.example.linksphere.domain.interaction.BookmarkFolderRepository
-import com.example.linksphere.domain.interaction.BookmarkRepository
-import com.example.linksphere.domain.interaction.PostReactionRepository
-import com.example.linksphere.domain.member.MemberRepository
-import com.example.linksphere.domain.post.PostViewRepository
 import com.example.linksphere.global.common.SecureToken
 import com.example.linksphere.global.exception.InvalidCredentialsException
-import com.example.linksphere.infra.fcm.FcmTokenRepository
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -29,23 +22,18 @@ import java.util.UUID
  * 실제로 회원 행을 익명화한다(글·댓글은 손대지 않는다 - 익명화된 회원 행을 그대로
  * 참조하므로 작성자 표시는 이미 1단계부터 바뀌어 있다). 남에게 안 보이는 개인 전용
  * 데이터(북마크·좋아요·조회기록·FCM 토큰)는 복구 가능성 때문에 1단계에서는 건드리지
- * 않고 2단계에서만 실제로 지운다 - 다른 도메인 Repository를 직접 참조하는 건 이 레포에서
- * 이미 흔한 패턴이다(예: PostService가 interaction 도메인 Repository를 쓰는 것,
- * ArchitectureRulesTest.kt 참고). FCM 토큰만 예외로 1단계에서 바로 지운다 - 유예 중
+ * 않고 2단계에서만 실제로 지운다. FCM 토큰만 예외로 1단계에서 바로 지운다 - 유예 중
  * 푸시가 계속 오면 안 되고, 로그인으로 복구되면 FE가 다시 등록한다.
+ *
+ * 세션·토큰·북마크처럼 다른 패키지의 데이터는 여기서 직접 지우지 않는다. 단계마다 이벤트를 내고
+ * (MemberLifecycleEvents.kt) 그 데이터를 가진 패키지의 `*MemberEventListener`가 같은 트랜잭션 안에서 지운다.
+ * 이벤트 발행에서 예외를 잡지 않는다 - 듣는 쪽 하나가 실패하면 그 회원의 처리 전체가 되돌려져야 한다.
  */
 @Service
 class AccountDeletionService(
     private val memberRepository: MemberRepository,
-    private val memberSessionService: MemberSessionService,
     private val passwordEncoder: PasswordEncoder,
-    private val bookmarkRepository: BookmarkRepository,
-    private val bookmarkFolderRepository: BookmarkFolderRepository,
-    private val bookmarkFolderItemRepository: BookmarkFolderItemRepository,
-    private val postReactionRepository: PostReactionRepository,
-    private val commentReactionRepository: CommentReactionRepository,
-    private val postViewRepository: PostViewRepository,
-    private val fcmTokenRepository: FcmTokenRepository,
+    private val eventPublisher: ApplicationEventPublisher,
 ) {
 
     companion object {
@@ -67,8 +55,8 @@ class AccountDeletionService(
             memberRepository.save(member)
         }
 
-        memberSessionService.revokeAllForMember(id)
-        fcmTokenRepository.deleteByUserId(id)
+        // auth가 세션을 폐기하고 fcm이 알림 토큰을 지운다
+        eventPublisher.publishEvent(MemberDeletionRequestedEvent(id))
     }
 
     /**
@@ -94,19 +82,9 @@ class AccountDeletionService(
         // deletedAt은 claimForPurge가 이미 세팅했다.
         memberRepository.save(member)
 
-        // 유예 중 새 세션이 생겼을 가능성에 대한 방어(경합 R4) - 정상 흐름에선 1단계에서
-        // 이미 전부 폐기돼 있다.
-        memberSessionService.revokeAllForMember(id)
-
-        // 폴더 아이템 → 폴더 순으로 지운다(BookmarkFolderService.deleteFolder와 같은 순서 -
-        // 폴더가 아이템보다 먼저 사라지면 안 됨).
-        bookmarkFolderItemRepository.deleteByUserId(id)
-        bookmarkFolderRepository.deleteByUserId(id)
-        bookmarkRepository.deleteByUserId(id)
-        postReactionRepository.deleteByUserId(id)
-        commentReactionRepository.deleteByUserId(id)
-        postViewRepository.deleteByUserId(id)
-        fcmTokenRepository.deleteByUserId(id)
+        // 세션(유예 중 새 세션이 생겼을 가능성에 대한 방어, 경합 R4 - 정상 흐름에선 1단계에서 이미 전부 폐기돼 있다)과
+        // 북마크·폴더·좋아요·조회 기록·알림 토큰을 가진 패키지가 각자 지운다
+        eventPublisher.publishEvent(MemberPurgedEvent(id))
         return true
     }
 }

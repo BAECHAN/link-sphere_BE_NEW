@@ -26,7 +26,7 @@ interface CommentReactionRepository : JpaRepository<TableCommentReaction, Commen
     )
     fun insertIgnoreConflict(@Param("userId") userId: UUID, @Param("commentId") commentId: UUID): Int
 
-    // 회원탈퇴 시(AccountDeletionService) 그 회원의 댓글 좋아요를 전부 지운다.
+    // 회원 영구 삭제 때(MemberPurgedEvent를 듣는 리스너) 그 회원의 댓글 좋아요를 전부 지운다.
     @Modifying
     @Query("DELETE FROM TableCommentReaction r WHERE r.userId = :userId")
     fun deleteByUserId(@Param("userId") userId: UUID): Int

@@ -1,6 +1,5 @@
-package com.example.linksphere.domain.auth
+package com.example.linksphere.domain.member
 
-import com.example.linksphere.domain.member.MemberRepository
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith

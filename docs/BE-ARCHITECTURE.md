@@ -7,7 +7,7 @@
 > **읽고 나면**: 요청이 어느 코드를 거치는지, 레이어끼리 무엇을 참조하고 어떤 타입을 주고받는지(§3) 따라갈 수 있고, 자동 검사(§2)와 선례 패턴(§7)에 맞춰 새 코드를 쓸 수 있다.
 > 지금 코드가 규칙과 어긋나는 곳은 §9에 모아 두었다 — 그쪽을 본떠 쓰지 않는다.
 >
-> **마지막 검토**: 2026-11-16 (§1 패키지 역할·그래프, §2 검사 표, §3 global → domain 예외, §9 순환 간선만 고침 — `ErrorResponse`를 `global/exception`으로 옮기고 `SecurityConfig`가 auth 필터의 구체 타입을 모르게 함). 같은 날 앞서 (§1 잡 표·패키지 역할·그래프, §3 접미사 표, §7-5, §9 순환 간선만 고침 — 뒷일 전달을 `global/job`으로 옮김). 이전 2026-11-15 (§1 패키지 그래프, §8 순수 함수 테스트 예시 경로, "남은 것"의 linkpreview 항목만 고침. 같은 날 §11 도구 선택 표의 Detekt 행도 고침). 이전 2026-11-12 (§4 실패 표의 `page=-1` 예, §7-8 N+1의 `countQuery` 예, §7-9 페이징의 `page` 서술만 고침, 같은 날 `page` 400 코드 제거를 반영). 이전 2026-11-11 (§3 컨트롤러·Service에 두는 한도와 §7-3 조회 기록만 고침). 이전 2026-11-10 (§1 요청 파이프라인의 서빙 경로만 고침), 2026-11-07
+> **마지막 검토**: 2026-11-16 (§1 그래프, §2·§3의 위반 수, §3 접미사 표, §7-5만 고침 — 탈퇴 로직을 member로 옮기고 다른 패키지의 데이터는 동기 이벤트를 듣는 쪽이 지우게 함). 같은 날 앞서 (§1 패키지 역할·그래프, §2 검사 표, §3 global → domain 예외, §9 순환 간선만 고침 — `ErrorResponse`를 `global/exception`으로 옮기고 `SecurityConfig`가 auth 필터의 구체 타입을 모르게 함). 같은 날 앞서 (§1 잡 표·패키지 역할·그래프, §3 접미사 표, §7-5, §9 순환 간선만 고침 — 뒷일 전달을 `global/job`으로 옮김). 이전 2026-11-15 (§1 패키지 그래프, §8 순수 함수 테스트 예시 경로, "남은 것"의 linkpreview 항목만 고침. 같은 날 §11 도구 선택 표의 Detekt 행도 고침). 이전 2026-11-12 (§4 실패 표의 `page=-1` 예, §7-8 N+1의 `countQuery` 예, §7-9 페이징의 `page` 서술만 고침, 같은 날 `page` 400 코드 제거를 반영). 이전 2026-11-11 (§3 컨트롤러·Service에 두는 한도와 §7-3 조회 기록만 고침). 이전 2026-11-10 (§1 요청 파이프라인의 서빙 경로만 고침), 2026-11-07
 
 시스템 전체(CloudFront·S3·Lambda·배포 파이프라인)는 FE 레포
 [`docs/SYSTEM-ARCHITECTURE.md`](https://github.com/BAECHAN/link-sphere_FE_NEW/blob/main/docs/SYSTEM-ARCHITECTURE.md)가,
@@ -114,15 +114,11 @@ flowchart LR
     infra_mail["mail"]
     infra_youtube["youtube"]
   end
-  domain_auth --> domain_comment
-  domain_auth --> domain_interaction
   domain_auth --> domain_member
-  domain_auth --> domain_post
   domain_auth --> global_common
   domain_auth --> global_config
   domain_auth --> global_job
   domain_auth --> global_ratelimit
-  domain_auth --> infra_fcm
   domain_auth --> infra_mail
   domain_category --> global_common
   domain_comment --> domain_linkpreview
@@ -135,6 +131,7 @@ flowchart LR
   domain_feed --> domain_member
   domain_feed --> domain_post
   domain_feed --> global_job
+  domain_interaction --> domain_member
   domain_interaction --> domain_post
   domain_interaction --> global_common
   domain_interaction --> infra_ai
@@ -156,6 +153,7 @@ flowchart LR
   domain_upload --> global_job
   domain_upload --> global_ratelimit
   infra_aws --> global_job
+  infra_fcm --> domain_member
   infra_fcm --> global_common
 ```
 <!-- package-graph:end -->
@@ -196,7 +194,7 @@ flowchart LR
 | `packagesMustBeFreeOfCyclesExceptDocumented` | 패키지 사이 새 순환 — 허용 간선 2개는 `PackageGraphDocTest.kt`의 `DOCUMENTED_CYCLE_EDGES`, 이유는 §9 | 위와 같음 |
 | `문서의 패키지 의존 그래프가 코드와 같다` | §1 "실제 패키지 의존 그래프"가 코드와 어긋남 | `architecture/PackageGraphDocTest.kt` |
 | `순환 허용 간선 목록의 간선은 모두 실제로 있다` | 끊은 간선이 `DOCUMENTED_CYCLE_EDGES`에 남아 다시 생겨도 조용히 통과 | 위와 같음 |
-| `다른 패키지의 저장소·엔티티를 새로 쓰지 않는다` | 다른 패키지의 Repository·`@Entity`를 직접 쓰는 곳이 새로 생김 — 지금 있는 50곳은 `KNOWN_BOUNDARY_VIOLATIONS`에 적혀 있고 2단계에서 0으로 줄인다 | `architecture/ModuleBoundaryRulesTest.kt` |
+| `다른 패키지의 저장소·엔티티를 새로 쓰지 않는다` | 다른 패키지의 Repository·`@Entity`를 직접 쓰는 곳이 새로 생김 — 지금 있는 40곳은 `KNOWN_BOUNDARY_VIOLATIONS`에 적혀 있고 2단계에서 0으로 줄인다 | `architecture/ModuleBoundaryRulesTest.kt` |
 | `알려진 위반 목록의 항목은 모두 실제로 있다` | 없앤 위반이 `KNOWN_BOUNDARY_VIOLATIONS`에 남아 다시 생겨도 조용히 통과 | 위와 같음 |
 | `afterCommitGoesThroughTransactionCallbacks` | `TransactionSynchronizationManager.registerSynchronization` 직접 호출(§7-6) | `architecture/LayerSkeletonRulesTest.kt` |
 | `emailVerificationGoesThroughGate` | `EmailVerificationGate` 밖에서 `EmailNotVerifiedException` 생성 | 위와 같음 |
@@ -297,7 +295,7 @@ flowchart TD
   안에서 판정이 갈리는 한도는 지금처럼 Service에서 건다. 조회 기록의 조회자 판단(`PostService.recordView`)도 Service에 둔다 —
   요청을 막는 한도가 아니라 조회수를 올릴지 정하는 규칙이고, 봇은 이 메서드를 부르지 않는다(§7-3).
 - **다른 도메인 Repository·엔티티 직접 사용(줄이는 중)** — 예: `PostService`가 interaction의 `BookmarkRepository`를 쓴다.
-  지금 있는 50곳만 남기고 새로 쓰는 것은 `ModuleBoundaryRulesTest`가 막는다(2026-11-16, 처음 57곳). 남은 곳은 2단계
+  지금 있는 40곳만 남기고 새로 쓰는 것은 `ModuleBoundaryRulesTest`가 막는다(2026-11-16, 처음 57곳). 남은 곳은 2단계
   (`docs/plans/2026-11-16-be-structure-stage2.md`)에서 그 패키지의 Service에 묻는 방식으로 바꿔 0으로 줄인다. Service끼리의
   순환은 지금처럼 `servicesMustNotHaveCrossDomainCycles`가 막고, 순환이 생기면 `PostResponseAssembler`처럼 자기를 부르는
   Service를 참조하지 않는 조립기로 뺀다(§7-8). 조립기가 `CategoryService`처럼 post를 모르는 Service에 묻는 것은 순환이 아니다.
@@ -316,6 +314,7 @@ flowchart TD
 | `*Processor` | 잡 항목 하나를 독립 트랜잭션으로 처리(같은 클래스 self-invocation을 피하려는 별도 빈) | `FeedItemProcessor` |
 | `*JobHandler` | 맡겨진 뒷일 한 종류를 받아 Service를 부름(`JobHandler` 구현) | `AiAnalysisJobHandler` |
 | `*JobPublisher` | 뒷일을 넘기는 방식 하나(`JobPublisher` 구현) | `LambdaJobPublisher` |
+| `*EventListener` | 다른 패키지가 낸 이벤트를 듣고 자기 데이터만 정리(같은 트랜잭션, §7-5) | `InteractionMemberEventListener` |
 | `*Client` | 외부 HTTP API 호출 | `YoutubeVideoClient` |
 | `*Validator` · `*Parser` · `*Extractor` · `*Normalizer` · `*Classifier` · `*Detector` | 한 가지 판단·변환 | `SafeUrlValidator`, `FeedParser` |
 
@@ -597,6 +596,12 @@ if (memberActionTokenRepository.consumeIfActive(token.id, Instant.now()) == 0) {
   서로 기다린다(`InProcessJobPublisher` KDoc).
 - **안티패턴**: 리스너에서 직접 무거운 처리, `@Async`로 요청 스레드 밖에 던지기(Lambda가 응답 뒤 얼어붙는다). `@Async`는
   잡 내부의 병렬화(`GeminiService.analyzeContentAsync`)에만 쓴다.
+- **같은 트랜잭션의 동기 이벤트는 다른 장치다** — '일어났으니 각자 자기 데이터를 정리해라'에 쓴다. 정석은 회원 탈퇴:
+  `AccountDeletionService`가 `MemberDeletionRequestedEvent`·`MemberPurgedEvent`(`member/MemberLifecycleEvents.kt`)를 내고,
+  세션·알림 토큰·북마크·좋아요·조회 기록을 가진 패키지의 `*MemberEventListener`가 듣고 지운다. 듣는 쪽은 `@EventListener` +
+  `@Transactional(propagation = MANDATORY)`라 발행한 트랜잭션 안에서 바로 실행되고, 발행하는 쪽은 예외를 잡지 않는다 — 하나가
+  실패하면 전체가 되돌려진다. 지우는 순서가 중요한 것은 리스너 하나 안에 둔다(폴더 아이템 → 폴더 → 북마크). 듣는 쪽을
+  빠뜨려도 예외가 없으므로 `AccountPurgeResidueIntegrationTest`가 남은 행으로 잡는다 — 새 리스너는 그 테스트의 `@Import`에 더한다.
 
 ### 7-6. 커밋 뒤 동기 정리 (`afterCommit`)
 

@@ -339,6 +339,7 @@ FE가 `docs/FE-ARCHITECTURE.md`를 정본으로 두고 CLAUDE.md에 요약표만
 | upsert·원자적 카운터 | §7-3 | `FcmTokenRepository.upsertToken`, `PostRepository.incrementViewCount` |
 | 일괄 DELETE | §7-4 | `deleteBy*`는 `@Modifying @Query`만(`repositoryDeleteMethodsMustBeBulk`) |
 | 커밋 뒤 비동기 잡 | §7-5 | AFTER_COMMIT 리스너 → `JobPublisher.publish` → (운영 self-invoke·개발 환경 같은 프로세스) → `JobRunner` → 도메인의 `*JobHandler` |
+| 같은 트랜잭션의 동기 이벤트 | §7-5 | `AccountDeletionService`가 `MemberPurgedEvent`를 내고 데이터를 가진 패키지의 `*MemberEventListener`(`@EventListener` + `MANDATORY`)가 지운다. 발행 쪽은 예외를 잡지 않는다 |
 | 배치 잡 | §7-7 | `AccountPurgeService` — 90초 마감 + 항목별 `runCatching` + 요약 로그 |
 | N+1 없는 조립 | §7-8 | `PostResponseAssembler` — id를 모아 `…In(ids)` 조회 → Map → 조립 |
 | 외부 클라이언트 | §7-11 | `YoutubeVideoClient` — RestClient + 명시 타임아웃 + 실패 시 null. `RestTemplate()` 기본 생성 금지 |

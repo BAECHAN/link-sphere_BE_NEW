@@ -1,6 +1,5 @@
-package com.example.linksphere.domain.auth
+package com.example.linksphere.domain.member
 
-import com.example.linksphere.domain.member.MemberRepository
 import com.example.linksphere.global.common.BatchJobLimits
 import org.slf4j.LoggerFactory
 import org.springframework.data.domain.PageRequest

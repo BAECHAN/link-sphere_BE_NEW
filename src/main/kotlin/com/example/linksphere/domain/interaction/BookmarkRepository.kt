@@ -38,7 +38,7 @@ interface BookmarkRepository :
     @Query("DELETE FROM TableBookmark b WHERE b.userId = :userId AND b.postId IN :postIds")
     fun deleteByUserIdAndPostIdIn(@Param("userId") userId: UUID, @Param("postIds") postIds: List<UUID>): Int
 
-    // 회원탈퇴 시(AccountDeletionService) 그 회원의 북마크를 전부 지운다.
+    // 회원 영구 삭제 때(MemberPurgedEvent를 듣는 리스너) 그 회원의 북마크를 전부 지운다.
     @Modifying
     @Query("DELETE FROM TableBookmark b WHERE b.userId = :userId")
     fun deleteByUserId(@Param("userId") userId: UUID): Int
