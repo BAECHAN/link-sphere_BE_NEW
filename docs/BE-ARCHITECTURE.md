@@ -83,7 +83,7 @@ flowchart TD
 
 아래 그림은 손으로 그린 것이 아니다. `PackageGraphDocTest`가 바이트코드에서 패키지(`domain.post`처럼 두 단계) 사이
 간선을 계산해 이 블록과 비교하고, 다르면 실패하면서 붙여 넣을 새 블록을 출력한다 — 새 의존을 만들면 이 그림이 같은 PR에서
-바뀌어 리뷰에 드러난다. 점선은 순환을 만들지만 허용한 간선이다(§9의 3개). 모든 패키지가 예외를 던지느라 의존하는 `global.exception`은 그림에서만
+바뀌어 리뷰에 드러난다. 점선은 순환을 만들지만 허용한 간선이다(§9의 2개). 모든 패키지가 예외를 던지느라 의존하는 `global.exception`은 그림에서만
 뺐고 순환 검사에는 들어간다. 루트(`LambdaHandler` 등)와 `tools/`는 두 단계 패키지가 아니라 그림·순환 검사 모두에서 빠진다 —
 다른 패키지가 이들을 참조하는 곳이 없어(2026-10-26 확인) 순환에 낄 수 없다.
 
@@ -114,6 +114,7 @@ flowchart LR
     infra_mail["mail"]
     infra_youtube["youtube"]
   end
+  domain_auth --> domain_comment
   domain_auth --> domain_interaction
   domain_auth --> domain_member
   domain_auth --> domain_post
@@ -124,7 +125,6 @@ flowchart LR
   domain_auth --> infra_fcm
   domain_auth --> infra_mail
   domain_category --> global_common
-  domain_comment --> domain_interaction
   domain_comment --> domain_linkpreview
   domain_comment --> domain_member
   domain_comment --> domain_post
@@ -135,7 +135,6 @@ flowchart LR
   domain_feed --> domain_member
   domain_feed --> domain_post
   domain_feed --> global_job
-  domain_interaction -.-> domain_comment
   domain_interaction --> domain_post
   domain_interaction --> global_common
   domain_interaction --> infra_ai
@@ -194,10 +193,10 @@ flowchart LR
 | `persistenceMustNotDependOnUpperLayers` | Repository·엔티티가 Service·`@Component`·Controller·DTO를 참조 | 위와 같음 |
 | `dtosMustNotDependOnBeans` | `*DTO.kt`의 클래스가 Service·`@Component`·Repository·Controller를 참조 | 위와 같음 |
 | `apiDtosLiveInDtoFiles` | domain의 `*Request`·`*Response`를 `*DTO.kt` 밖에 정의 | 위와 같음 |
-| `packagesMustBeFreeOfCyclesExceptDocumented` | 패키지 사이 새 순환 — 허용 간선 3개는 `PackageGraphDocTest.kt`의 `DOCUMENTED_CYCLE_EDGES`, 이유는 §9 | 위와 같음 |
+| `packagesMustBeFreeOfCyclesExceptDocumented` | 패키지 사이 새 순환 — 허용 간선 2개는 `PackageGraphDocTest.kt`의 `DOCUMENTED_CYCLE_EDGES`, 이유는 §9 | 위와 같음 |
 | `문서의 패키지 의존 그래프가 코드와 같다` | §1 "실제 패키지 의존 그래프"가 코드와 어긋남 | `architecture/PackageGraphDocTest.kt` |
 | `순환 허용 간선 목록의 간선은 모두 실제로 있다` | 끊은 간선이 `DOCUMENTED_CYCLE_EDGES`에 남아 다시 생겨도 조용히 통과 | 위와 같음 |
-| `다른 패키지의 저장소·엔티티를 새로 쓰지 않는다` | 다른 패키지의 Repository·`@Entity`를 직접 쓰는 곳이 새로 생김 — 지금 있는 54곳은 `KNOWN_BOUNDARY_VIOLATIONS`에 적혀 있고 2단계에서 0으로 줄인다 | `architecture/ModuleBoundaryRulesTest.kt` |
+| `다른 패키지의 저장소·엔티티를 새로 쓰지 않는다` | 다른 패키지의 Repository·`@Entity`를 직접 쓰는 곳이 새로 생김 — 지금 있는 50곳은 `KNOWN_BOUNDARY_VIOLATIONS`에 적혀 있고 2단계에서 0으로 줄인다 | `architecture/ModuleBoundaryRulesTest.kt` |
 | `알려진 위반 목록의 항목은 모두 실제로 있다` | 없앤 위반이 `KNOWN_BOUNDARY_VIOLATIONS`에 남아 다시 생겨도 조용히 통과 | 위와 같음 |
 | `afterCommitGoesThroughTransactionCallbacks` | `TransactionSynchronizationManager.registerSynchronization` 직접 호출(§7-6) | `architecture/LayerSkeletonRulesTest.kt` |
 | `emailVerificationGoesThroughGate` | `EmailVerificationGate` 밖에서 `EmailNotVerifiedException` 생성 | 위와 같음 |
@@ -298,7 +297,7 @@ flowchart TD
   안에서 판정이 갈리는 한도는 지금처럼 Service에서 건다. 조회 기록의 조회자 판단(`PostService.recordView`)도 Service에 둔다 —
   요청을 막는 한도가 아니라 조회수를 올릴지 정하는 규칙이고, 봇은 이 메서드를 부르지 않는다(§7-3).
 - **다른 도메인 Repository·엔티티 직접 사용(줄이는 중)** — 예: `PostService`가 interaction의 `BookmarkRepository`를 쓴다.
-  지금 있는 54곳만 남기고 새로 쓰는 것은 `ModuleBoundaryRulesTest`가 막는다(2026-11-16, 처음 57곳). 남은 곳은 2단계
+  지금 있는 50곳만 남기고 새로 쓰는 것은 `ModuleBoundaryRulesTest`가 막는다(2026-11-16, 처음 57곳). 남은 곳은 2단계
   (`docs/plans/2026-11-16-be-structure-stage2.md`)에서 그 패키지의 Service에 묻는 방식으로 바꿔 0으로 줄인다. Service끼리의
   순환은 지금처럼 `servicesMustNotHaveCrossDomainCycles`가 막고, 순환이 생기면 `PostResponseAssembler`처럼 자기를 부르는
   Service를 참조하지 않는 조립기로 뺀다(§7-8). 조립기가 `CategoryService`처럼 post를 모르는 Service에 묻는 것은 순환이 아니다.
@@ -764,18 +763,18 @@ FE와 BE가 같은 테스트 원칙을 쓰면서 층 구성과 도구를 다르�
 | 외부 클라이언트가 RestClient가 아니라 `RestTemplate` | `SupabaseStorageService` — 타임아웃(연결 3초·읽기 10초)은 설정돼 있다 | 바꾸지 않음 — 전환하면 호출부 3곳과 DELETE+본문 동작까지 바뀌어 회귀 범위가 크다 |
 | 엔티티 안의 표시 규칙 | `TableMember.isWithdrawn`·`publicNickname`·`publicImage`, `TableLinkPreview.toMetadata` | 바꾸지 않음(기록만) |
 | 상속받은 `delete(entity)` 3곳 | `PostService.deletePost`, `CommentService.deleteComment`, `BookmarkFolderService.deleteFolder` | 바꾸지 않음 — 409 `CONCURRENT_UPDATE` 안전망에 기댄다 |
-| 패키지 순환을 만드는 간선 3개 | 아래 표 | 바꾸지 않음(지금은) — 새 순환은 `packagesMustBeFreeOfCyclesExceptDocumented`가 막는다. 해소 후보는 "남은 것" |
+| 패키지 순환을 만드는 간선 2개 | 아래 표 | 바꾸지 않음(지금은) — 새 순환은 `packagesMustBeFreeOfCyclesExceptDocumented`가 막는다. 해소 후보는 "남은 것" |
 
-**순환을 허용한 간선 3개** — `PackageGraphDocTest.kt`의 `DOCUMENTED_CYCLE_EDGES`가 정본이다. 이 간선을 빼면 패키지 그래프에
+**순환을 허용한 간선 2개** — `PackageGraphDocTest.kt`의 `DOCUMENTED_CYCLE_EDGES`가 정본이다. 이 간선을 빼면 패키지 그래프에
 순환이 없다(2026-10-26 계산). `infra.aws → domain.post`·`comment`·`feed` 3개는 뒷일 전달을 `global/job`의 인터페이스로 바꿔
 없앴고(2026-11-16, `docs/plans/2026-11-16-be-structure-stage2.md` PR-2), `global.exception → global.common`은 `ErrorResponse`를
 `global/exception`으로 옮겨 없앴다(같은 계획 PR-3 — `CursorCodec`이 `InvalidInputException`을 던지는 반대 방향만 남는다).
+`domain.interaction → domain.comment`는 댓글 좋아요를 comment로 옮겨 없앴다(같은 계획 PR-5 — 반대 방향 `comment → interaction`도 함께 사라졌다).
 
 | 간선 | 대표 위치 | 이유 |
 |---|---|---|
 | `domain.post → domain.comment` | `PostResponseAssembler` → `CommentRepository`, `PostService` → `CommentService` | 목록 응답의 댓글 수, 글 삭제 때 댓글 이미지 정리 |
 | `domain.post → domain.interaction` | `PostResponseAssembler`·`PostService`·`PostRepositoryImpl` → 반응·북마크 Repository·엔티티 | 목록 응답의 좋아요·북마크 상태와 `filter=isLiked` 같은 조인 |
-| `domain.interaction → domain.comment` | `InteractionService` → `CommentRepository` | 댓글 좋아요 때 댓글 존재·삭제 여부 확인 |
 
 2026-10-25 점검에서 의심만 하던 6건(가입 제약 위반 catch가 `save()` 지연으로 헛돎, 폴더 이름 동시 중복이
 `DUPLICATE_RESOURCE`로 나감, 인증·재설정 메일이 토큰 커밋 전에 나감, `FcmService`가 바깥 트랜잭션을 깨뜨림, 상세 조회
@@ -830,7 +829,7 @@ FE와 BE가 같은 테스트 원칙을 쓰면서 층 구성과 도구를 다르�
 | 생성 응답 | [RFC 9110 §9.3.3](https://www.rfc-editor.org/rfc/rfc9110#section-9.3.3) | HTTP 201(`@ResponseStatus`, 2026-10-26 전에는 본문만 201) | 따른다. `Location`은 "남은 것" |
 | 405 응답 | [RFC 9110 §10.2.1](https://www.rfc-editor.org/rfc/rfc9110#section-10.2.1) | 405 + `Allow`(`handleSpringMvcException`, 2026-10-26 전에는 500) | 따른다 |
 | 경계 입력 검증 | Bean Validation(`@Valid`) | `@RequestBody` 23곳 중 10곳 | 방식 혼재로 둔다 — `PostCreateRequest`는 봇 경로(`FeedItemProcessor`)도 쓰므로 Service 검증이 어차피 필요하다 |
-| 모듈 순환 | [Spring Modulith 검증](https://docs.spring.io/spring-modulith/reference/verification.html), ArchUnit `slices().beFreeOfCycles()` | 허용 간선 3개(§9) | 새 순환만 막는다 |
+| 모듈 순환 | [Spring Modulith 검증](https://docs.spring.io/spring-modulith/reference/verification.html), ArchUnit `slices().beFreeOfCycles()` | 허용 간선 2개(§9) | 새 순환만 막는다 |
 | 관측성 | 구조화 로그·요청 상관 ID | 앱 로그는 logstash JSON 한 줄 + MDC `awsRequestId`(2026-10-26, `LambdaHandler`·`AsyncConfig`). Lambda LogFormat은 Text 유지 | 따른다 — 찾는 법은 `DEPLOY.md` "운영 로그 읽기" |
 | 멱등 등록 | [IETF 초안](https://datatracker.ietf.org/doc/draft-ietf-httpapi-idempotency-key-header/)(RFC 아님) `Idempotency-Key`. 처리 중인 같은 키는 409를 권한다 | 필수 헤더 + 행에 저장(§7-14). 처리 중이면 기다렸다가 같은 결과 | 이름·필수 시 400은 따른다. 처리 중 409는 따르지 않는다 - 키를 행에 두면 커밋 전까지 "처리 중"을 알 수 없고, 기다리면 사용자가 바로 성공을 받는다 |
 | 지원 버전 | [Spring Boot 지원 일정](https://api.spring.io/projects/spring-boot/generations) — 3.5.x OSS 지원 2026-06-30 종료 | 3.5.16(OSS 마지막 패치, 2026-10-26). Dependabot이 Gradle minor·patch를 월간으로 올린다 | 4.x 이동은 "남은 것" |
@@ -896,9 +895,9 @@ FE와 BE가 같은 테스트 원칙을 쓰면서 층 구성과 도구를 다르�
 - **Spring Boot 4 이동**: 2026-10-26에 OSS 마지막 3.5.x 패치(3.5.16)로 올렸지만 3.5.x OSS 지원은 2026-06-30에 끝났다 —
   이후 3.5.x 보안 수정은 상용(enterprise) 빌드로만 나온다([api.spring.io](https://api.spring.io/projects/spring-boot/generations)).
   새 권고가 3.5.16에 걸리면 4.x(springdoc 3·Hibernate 7 동반)로 옮겨야 한다 — 따로 계획한다. Dependabot은 메이저를 무시한다.
-- **순환 해소 후보**(§9의 간선 중 도메인 사이 3개, 2026-10-26 사용자 결정으로 미룸):
-  - `interaction → comment`: 댓글 좋아요(`TableCommentReaction`·`CommentReactionRepository`·엔드포인트 2개)를 comment로 옮기면
-    `comment → interaction`과 함께 사라진다(약 13파일, 같은 `@Tag`·메서드명이면 스펙은 그대로).
+- **순환 해소 후보**(§9의 간선 중 도메인 사이 2개, 2026-10-26 사용자 결정으로 미룸):
+  - `interaction → comment`는 2026-11-16에 댓글 좋아요(`TableCommentReaction`·`CommentReactionRepository`·엔드포인트 2개)를
+    comment로 옮겨 끊었다. `comment → interaction`도 함께 사라졌고, 같은 태그 이름·메서드 이름이라 스펙은 그대로다.
   - `post → comment·interaction`: "목록 조립을 별도 조회 패키지로" 빼는 것만으로는 끊기지 않는다 — `PostService`·
     `BookmarkFolderService`가 조립기를 쓰고, `PostRepositoryImpl`은 Repository 인터페이스 패키지 밖으로 못 나간다. post에 포트
     (묶음 통계·필터 서브쿼리·북마크 쓰기)를 두고 interaction·comment가 구현하는 의존 역전이 필요하다.

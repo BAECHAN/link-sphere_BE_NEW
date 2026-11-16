@@ -1,13 +1,9 @@
 package com.example.linksphere.domain.interaction
 
-import com.example.linksphere.domain.comment.CommentRepository
-import com.example.linksphere.domain.comment.TableComment
 import com.example.linksphere.domain.post.PostRepository
 import com.example.linksphere.domain.post.TablePost
 import com.example.linksphere.global.exception.BookmarkFolderNotFoundException
-import com.example.linksphere.global.exception.CommentNotFoundException
 import com.example.linksphere.global.exception.ForbiddenException
-import com.example.linksphere.global.exception.InvalidInputException
 import com.example.linksphere.global.exception.PostNotFoundException
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -30,13 +26,9 @@ class InteractionServiceTest {
 
     @Mock private lateinit var postReactionRepository: PostReactionRepository
 
-    @Mock private lateinit var commentReactionRepository: CommentReactionRepository
-
     @Mock private lateinit var bookmarkRepository: BookmarkRepository
 
     @Mock private lateinit var postRepository: PostRepository
-
-    @Mock private lateinit var commentRepository: CommentRepository
 
     @Mock private lateinit var bookmarkFolderRepository: BookmarkFolderRepository
 
@@ -116,90 +108,6 @@ class InteractionServiceTest {
             interactionService.setPostLike(postId, otherUserId, liked = false)
         }
         verify(postReactionRepository, never()).deleteByUserIdAndPostId(otherUserId, postId)
-    }
-
-    @Test
-    fun `setCommentLike 는 liked 에 따라 추가 또는 일괄 삭제만 한다`() {
-        val ownerId = UUID.randomUUID()
-        val postId = UUID.randomUUID()
-        val commentId = UUID.randomUUID()
-        val post = TablePost(id = postId, userId = ownerId, url = "https://example.com", title = "제목", isPrivate = false)
-        val comment = TableComment(id = commentId, postId = postId, userId = ownerId, content = "내용")
-
-        `when`(commentRepository.findById(commentId)).thenReturn(Optional.of(comment))
-        `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
-
-        assertTrue(interactionService.setCommentLike(commentId, ownerId, liked = true))
-        verify(commentReactionRepository).insertIgnoreConflict(ownerId, commentId)
-
-        assertFalse(interactionService.setCommentLike(commentId, ownerId, liked = false))
-        verify(commentReactionRepository).deleteByUserIdAndCommentId(ownerId, commentId)
-    }
-
-    // 예전에는 IllegalArgumentException의 공통 매핑으로 code가 NOT_FOUND였다 - 다른 댓글 경로와 같은 COMMENT_NOT_FOUND를 낸다
-    @Test
-    fun `setCommentLike 는 댓글이 없으면 CommentNotFoundException`() {
-        val userId = UUID.randomUUID()
-        val commentId = UUID.randomUUID()
-        `when`(commentRepository.findById(commentId)).thenReturn(Optional.empty())
-
-        assertThrows(CommentNotFoundException::class.java) {
-            interactionService.setCommentLike(commentId, userId, liked = true)
-        }
-        verify(commentReactionRepository, never()).insertIgnoreConflict(userId, commentId)
-    }
-
-    @Test
-    fun `setCommentLike 는 삭제된 댓글이면 InvalidInputException`() {
-        val ownerId = UUID.randomUUID()
-        val postId = UUID.randomUUID()
-        val commentId = UUID.randomUUID()
-        val post = TablePost(id = postId, userId = ownerId, url = "https://example.com", title = "제목", isPrivate = false)
-        val comment =
-            TableComment(id = commentId, postId = postId, userId = ownerId, content = "삭제된 댓글입니다.", isDeleted = true)
-
-        `when`(commentRepository.findById(commentId)).thenReturn(Optional.of(comment))
-        `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
-
-        assertThrows(InvalidInputException::class.java) {
-            interactionService.setCommentLike(commentId, ownerId, liked = true)
-        }
-        verify(commentReactionRepository, never()).insertIgnoreConflict(ownerId, commentId)
-    }
-
-    @Test
-    fun `setCommentLike 는 남의 비공개 글의 댓글이면 PostNotFoundException`() {
-        val ownerId = UUID.randomUUID()
-        val otherUserId = UUID.randomUUID()
-        val postId = UUID.randomUUID()
-        val commentId = UUID.randomUUID()
-        val post = TablePost(id = postId, userId = ownerId, url = "https://example.com", title = "제목", isPrivate = true)
-        val comment = TableComment(id = commentId, postId = postId, userId = ownerId, content = "내용")
-
-        `when`(commentRepository.findById(commentId)).thenReturn(Optional.of(comment))
-        `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
-
-        assertThrows(PostNotFoundException::class.java) {
-            interactionService.setCommentLike(commentId, otherUserId, liked = true)
-        }
-    }
-
-    @Test
-    fun `setCommentLike 는 톰스톤 검사보다 비공개 글 검증을 먼저 한다`() {
-        val ownerId = UUID.randomUUID()
-        val otherUserId = UUID.randomUUID()
-        val postId = UUID.randomUUID()
-        val commentId = UUID.randomUUID()
-        val post = TablePost(id = postId, userId = ownerId, url = "https://example.com", title = "제목", isPrivate = true)
-        val comment =
-            TableComment(id = commentId, postId = postId, userId = ownerId, content = "삭제된 댓글입니다.", isDeleted = true)
-
-        `when`(commentRepository.findById(commentId)).thenReturn(Optional.of(comment))
-        `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
-
-        assertThrows(PostNotFoundException::class.java) {
-            interactionService.setCommentLike(commentId, otherUserId, liked = true)
-        }
     }
 
     @Test

@@ -1,4 +1,4 @@
-package com.example.linksphere.domain.interaction
+package com.example.linksphere.domain.comment
 
 import jakarta.persistence.*
 import java.io.Serializable

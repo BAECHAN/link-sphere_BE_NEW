@@ -1,13 +1,10 @@
 package com.example.linksphere.domain.interaction
 
-import com.example.linksphere.domain.comment.CommentRepository
 import com.example.linksphere.domain.post.PostLikeResponse
 import com.example.linksphere.domain.post.PostRepository
 import com.example.linksphere.domain.post.PostVisibility
 import com.example.linksphere.global.exception.BookmarkFolderNotFoundException
-import com.example.linksphere.global.exception.CommentNotFoundException
 import com.example.linksphere.global.exception.ForbiddenException
-import com.example.linksphere.global.exception.InvalidInputException
 import com.example.linksphere.global.exception.PostNotFoundException
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
@@ -17,10 +14,8 @@ import java.util.UUID
 @Service
 class InteractionService(
     private val postReactionRepository: PostReactionRepository,
-    private val commentReactionRepository: CommentReactionRepository,
     private val bookmarkRepository: BookmarkRepository,
     private val postRepository: PostRepository,
-    private val commentRepository: CommentRepository,
     private val bookmarkFolderRepository: BookmarkFolderRepository,
     private val bookmarkFolderItemRepository: BookmarkFolderItemRepository,
 ) {
@@ -42,20 +37,6 @@ class InteractionService(
         // 동일 트랜잭션 내 COUNT — insert/delete가 반영된 정확값
         val likeCount = postReactionRepository.countByPostId(postId).toInt()
         return PostLikeResponse(isLiked = liked, likeCount = likeCount)
-    }
-
-    /** setPostLike 의 댓글판 — 삭제된 댓글·볼 수 없는 글의 댓글은 거절한다(assertCommentLikeable). */
-    @Transactional
-    fun setCommentLike(commentId: UUID, userId: UUID, liked: Boolean): Boolean {
-        assertCommentLikeable(commentId, userId)
-
-        if (liked) {
-            commentReactionRepository.insertIgnoreConflict(userId, commentId)
-        } else {
-            commentReactionRepository.deleteByUserIdAndCommentId(userId, commentId)
-        }
-
-        return liked
     }
 
     /**
@@ -152,16 +133,5 @@ class InteractionService(
     private fun assertPostVisible(postId: UUID, userId: UUID) {
         val post = postRepository.findByIdOrNull(postId) ?: throw PostNotFoundException(postId)
         PostVisibility.assertVisible(post, userId, postId)
-    }
-
-    private fun assertCommentLikeable(commentId: UUID, userId: UUID) {
-        val comment =
-            commentRepository.findByIdOrNull(commentId)
-                ?: throw CommentNotFoundException(commentId)
-        // 비공개 글에 달린 댓글도 글 소유자 외에는 좋아요를 달 수 없어야 한다.
-        assertPostVisible(comment.postId, userId)
-        // 비공개 글 검증 뒤에 확인해야 한다 — 순서를 바꾸면 남의 비공개 글의 삭제된 댓글에
-        // 404 대신 400이 나가면서 "그 댓글이 존재한다"는 사실이 새어나간다.
-        if (comment.isDeleted) throw InvalidInputException("삭제된 댓글에는 좋아요를 누를 수 없습니다.")
     }
 }

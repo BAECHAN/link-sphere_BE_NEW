@@ -83,21 +83,6 @@ class InteractionControllerTest {
 
     @Test
     @WithMockUser(username = USER_ID)
-    fun `PUT·DELETE 댓글 좋아요는 setCommentLike 결과를 isLiked 로 돌려준다`() {
-        val commentId = UUID.randomUUID()
-        `when`(interactionService.setCommentLike(commentId, UUID.fromString(USER_ID), true)).thenReturn(true)
-        `when`(interactionService.setCommentLike(commentId, UUID.fromString(USER_ID), false)).thenReturn(false)
-
-        mockMvc.perform(put("/comment/$commentId/like").with(csrf()))
-            .andExpect(status().isOk)
-            .andExpect(jsonPath("$.data.isLiked").value(true))
-        mockMvc.perform(delete("/comment/$commentId/like").with(csrf()))
-            .andExpect(status().isOk)
-            .andExpect(jsonPath("$.data.isLiked").value(false))
-    }
-
-    @Test
-    @WithMockUser(username = USER_ID)
     fun `PUT·DELETE 게시글 북마크는 setBookmark 결과를 isBookmarked·folderIds 로 돌려준다`() {
         val postId = UUID.randomUUID()
         val folderId = UUID.randomUUID()
