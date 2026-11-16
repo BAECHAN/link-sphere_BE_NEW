@@ -10,7 +10,8 @@ interface PostRepositoryCustom {
      * withTotal이면 후보 건수를 함께 센다 - 쪽마다 세지 않으려고 호출하는 쪽이 정한다.
      */
     fun findPostsAfter(
-        category: String?,
+        // 카테고리 필터 - null이면 거르지 않고, 빈 집합이면 결과가 없다(이름·slug를 id로 푸는 일은 PostService가 한다)
+        categoryIds: Set<Long>?,
         search: String?,
         filter: String?,
         nickname: String?,

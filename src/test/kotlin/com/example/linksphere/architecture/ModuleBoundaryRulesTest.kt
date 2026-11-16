@@ -52,8 +52,6 @@ internal val KNOWN_BOUNDARY_VIOLATIONS: Set<String> =
         "domain.interaction.InteractionService -> domain.comment.TableComment",
         "domain.interaction.InteractionService -> domain.post.PostRepository",
         "domain.interaction.TableBookmark -> domain.post.TablePost",
-        "domain.post.PostCategoryClassifier -> domain.category.CategoryRepository",
-        "domain.post.PostCategoryClassifier -> domain.category.TableCategory",
         "domain.post.PostRepositoryImpl -> domain.interaction.TableBookmark",
         "domain.post.PostRepositoryImpl -> domain.interaction.TablePostReaction",
         "domain.post.PostRepositoryImpl -> domain.member.TableMember",
@@ -71,7 +69,6 @@ internal val KNOWN_BOUNDARY_VIOLATIONS: Set<String> =
         "domain.post.PostService -> domain.interaction.BookmarkRepository",
         "domain.post.PostService -> domain.interaction.TableBookmarkFolder",
         "domain.post.PostService -> domain.member.MemberRepository",
-        "domain.post.TablePost -> domain.category.TableCategory",
         "domain.upload.OrphanImageGcService -> domain.comment.CommentRepository",
         "domain.upload.OrphanImageGcService -> domain.member.MemberRepository",
     )

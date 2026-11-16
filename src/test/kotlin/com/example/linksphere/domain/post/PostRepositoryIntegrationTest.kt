@@ -83,7 +83,7 @@ class PostRepositoryIntegrationTest {
     private fun viewCountInDb(postId: UUID): Int = jdbc.queryForObject("SELECT COALESCE(view_count, 0) FROM posts WHERE id = ?", Int::class.java, postId)!!
 
     private fun findPosts(filter: String, currentUserId: UUID?) = postRepository.findPostsAfter(
-        category = null,
+        categoryIds = null,
         search = null,
         filter = filter,
         nickname = null,

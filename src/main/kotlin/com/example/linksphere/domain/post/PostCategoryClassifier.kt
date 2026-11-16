@@ -1,7 +1,6 @@
 package com.example.linksphere.domain.post
 
-import com.example.linksphere.domain.category.CategoryRepository
-import com.example.linksphere.domain.category.TableCategory
+import com.example.linksphere.domain.category.CategoryService
 import com.example.linksphere.infra.ai.GeminiService
 import org.slf4j.LoggerFactory
 import org.springframework.scheduling.annotation.Async
@@ -13,14 +12,15 @@ import java.util.concurrent.CompletableFuture
 // 2) 매칭 실패 시에만 Gemini 의미 분류로 폴백
 @Component
 class PostCategoryClassifier(
-    private val categoryRepository: CategoryRepository,
+    private val categoryService: CategoryService,
     private val geminiService: GeminiService,
 ) {
 
     private val logger = LoggerFactory.getLogger(PostCategoryClassifier::class.java)
 
-    fun classify(title: String, description: String?, tags: List<String>): List<TableCategory> {
-        val allCategories = categoryRepository.findAllByOrderBySortOrderAsc()
+    /** 붙일 카테고리의 id를 돌려준다. */
+    fun classify(title: String, description: String?, tags: List<String>): List<Long> {
+        val allCategories = categoryService.getAllCategoryInfos()
         if (allCategories.isEmpty()) return emptyList()
 
         val normalizedTags = tags.map { it.trim().lowercase() }.toSet()
@@ -28,7 +28,7 @@ class PostCategoryClassifier(
             allCategories.filter { it.name.lowercase() in normalizedTags || it.slug.lowercase() in normalizedTags }
         if (tagMatched.isNotEmpty()) {
             logger.info("[Category] 태그 매칭 성공 - ${tagMatched.map { it.name }}")
-            return tagMatched
+            return tagMatched.map { it.id }
         }
 
         val suggestedNames =
@@ -38,11 +38,11 @@ class PostCategoryClassifier(
         val suggestedSet = suggestedNames.map { it.trim().lowercase() }.toSet()
         val aiMatched = allCategories.filter { it.name.lowercase() in suggestedSet }
         logger.info("[Category] Gemini 분류 결과 - $suggestedNames → ${aiMatched.map { it.name }}")
-        return aiMatched
+        return aiMatched.map { it.id }
     }
 
     // classify를 GeminiService.analyzeContentAsync와 병렬로 돌리기 위한 래퍼.
     // PostAIService(다른 빈)에서만 호출해야 @Async 프록시가 적용된다.
     @Async
-    fun classifyAsync(title: String, description: String?, tags: List<String>): CompletableFuture<List<TableCategory>> = CompletableFuture.completedFuture(classify(title, description, tags))
+    fun classifyAsync(title: String, description: String?, tags: List<String>): CompletableFuture<List<Long>> = CompletableFuture.completedFuture(classify(title, description, tags))
 }

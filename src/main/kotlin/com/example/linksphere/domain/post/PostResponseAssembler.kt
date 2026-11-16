@@ -1,6 +1,8 @@
 package com.example.linksphere.domain.post
 
+import com.example.linksphere.domain.category.CategoryInfo
 import com.example.linksphere.domain.category.CategoryResponse
+import com.example.linksphere.domain.category.CategoryService
 import com.example.linksphere.domain.comment.CommentRepository
 import com.example.linksphere.domain.interaction.BookmarkFolderItemRepository
 import com.example.linksphere.domain.interaction.BookmarkRepository
@@ -16,9 +18,9 @@ import java.util.UUID
  * PostService와 BookmarkFolderService 둘 다 이 조립 로직이 필요한데, 원래는 PostService가
  * 소유하고 BookmarkFolderService가 PostService를 주입받아 썼다. 그런데 BookmarkFolderService가
  * PostService를 참조하는 상태에서 PostService가 반대로 BookmarkFolderService(또는 그 소관
- * Repository들)를 서비스 경유로 쓰게 바꾸면 순환 참조가 생긴다. 이 클래스는 어느 도메인
- * Service도 참조하지 않는 순수 Repository 조립기라, 두 서비스가 각자 이 클래스를 주입받아도
- * 순환이 생기지 않는다.
+ * Repository들)를 서비스 경유로 쓰게 바꾸면 순환 참조가 생긴다. 이 클래스는 post·interaction의
+ * Service를 참조하지 않는 조립기라, 두 서비스가 각자 이 클래스를 주입받아도 순환이 생기지 않는다
+ * (CategoryService는 다른 도메인을 참조하지 않아 써도 된다 - 카테고리 이름은 category에 묻는다).
  *
  * 트랜잭션은 스스로 열지 않는다 - 항상 이미 트랜잭션이 열려 있는 PostService/BookmarkFolderService의
  * 메서드 안에서 호출되는 것을 전제로 한다(Spring은 같은 스레드의 트랜잭션 컨텍스트를 공유하므로
@@ -31,6 +33,7 @@ class PostResponseAssembler(
     private val bookmarkFolderItemRepository: BookmarkFolderItemRepository,
     private val postReactionRepository: PostReactionRepository,
     private val commentRepository: CommentRepository,
+    private val categoryService: CategoryService,
 ) {
 
     /**
@@ -82,6 +85,9 @@ class PostResponseAssembler(
             commentRepository.countByPostIdIn(postIds)
                 .associate { it.postId to it.count.toInt() }
 
+        // 글은 카테고리를 id로만 든다 - 이 쪽의 글에 붙은 id를 모아 이름을 한 번에 묻는다
+        val categoryMap = categoriesById(posts.flatMap { it.categoryIds })
+
         return posts.map { post ->
             val postId = post.id ?: throw IllegalStateException("Post ID cannot be null")
             val author =
@@ -91,6 +97,7 @@ class PostResponseAssembler(
                 post = post,
                 postId = postId,
                 author = author,
+                categoryMap = categoryMap,
                 likeCount = reactionCountMap[postId] ?: 0,
                 isLiked = postId in reactedPostIds,
                 bookmarkCount = bookmarkCountMap[postId] ?: 0,
@@ -130,6 +137,7 @@ class PostResponseAssembler(
             post = post,
             postId = postId,
             author = author,
+            categoryMap = categoriesById(post.categoryIds),
             likeCount = postReactionRepository.countByPostId(postId).toInt(),
             isLiked =
             currentUserId?.let {
@@ -142,10 +150,13 @@ class PostResponseAssembler(
         )
     }
 
+    private fun categoriesById(ids: Collection<Long>): Map<Long, CategoryInfo> = categoryService.getCategoryInfosByIds(ids.toSet()).associateBy { it.id }
+
     private fun buildPostResponse(
         post: TablePost,
         postId: UUID,
         author: UserSummary,
+        categoryMap: Map<Long, CategoryInfo>,
         likeCount: Int,
         isLiked: Boolean,
         bookmarkCount: Int,
@@ -159,7 +170,7 @@ class PostResponseAssembler(
         title = post.title,
         description = post.description,
         tags = post.tags,
-        categories = post.categories.map { CategoryResponse.from(it) }.sortedBy { it.id },
+        categories = post.categoryIds.sorted().mapNotNull { id -> categoryMap[id]?.let { CategoryResponse(id = it.id, name = it.name) } },
         ogImage = post.ogImage,
         aiSummary = post.aiSummary,
         createdAt = post.createdAt,

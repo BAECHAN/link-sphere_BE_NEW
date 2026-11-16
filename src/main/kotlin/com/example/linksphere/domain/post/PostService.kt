@@ -106,9 +106,9 @@ class PostService(
         val pageContent = metadata.pageContent ?: fallbackContent?.takeIf { it.isNotBlank() }
 
         val title = if (!request.title.isNullOrBlank()) request.title else metadata.title
-        val categories =
+        val categoryIds =
             if (!request.categoryIds.isNullOrEmpty()) {
-                categoryService.getCategoriesByIds(request.categoryIds).toMutableSet()
+                categoryService.filterExistingIds(request.categoryIds).toMutableSet()
             } else {
                 mutableSetOf()
             }
@@ -120,7 +120,7 @@ class PostService(
                 title = title,
                 description = metadata.description,
                 tags = metadata.tags.toMutableList(),
-                categories = categories,
+                categoryIds = categoryIds,
                 ogImage = metadata.ogImage,
                 aiStatus = if (pageContent != null) AiStatus.PENDING else AiStatus.NONE,
                 isPrivate = request.isPrivate,
@@ -197,6 +197,7 @@ class PostService(
         val queryEmbedding = search?.takeIf { wantsEmbedding && tryConsumeEmbedding() }?.let { geminiService.embedQuery(PostEmbeddingText.query(it)) }
         val semantic = queryEmbedding != null
         val isFirstSearchPage = state == null && searchTokens.isNotEmpty()
+        val categoryIds = resolveCategoryFilter(category)
 
         if (state?.semantic == true && !semantic) {
             logger.warn("[Search] scope=feed semantic degraded to keyword")
@@ -204,7 +205,7 @@ class PostService(
 
         val slice =
             postRepository.findPostsAfter(
-                category,
+                categoryIds,
                 correctedSearch ?: search,
                 filter,
                 nickname,
@@ -219,7 +220,7 @@ class PostService(
         // 쪽마다 건수를 세지 않으므로 첫 쪽이 비었을 때만 보정을 판정한다. 뒤쪽이 비었다고 0건 검색은 아니다.
         val candidate = search?.takeIf { isFirstSearchPage && slice.content.isEmpty() }?.let { HangulKeyboardConverter.convertIfMislayout(it) }
         if (candidate != null) {
-            val correctedSlice = postRepository.findPostsAfter(category, candidate, filter, nickname, currentUserId, sort, null, limit, withTotal = true)
+            val correctedSlice = postRepository.findPostsAfter(categoryIds, candidate, filter, nickname, currentUserId, sort, null, limit, withTotal = true)
             if (correctedSlice.content.isNotEmpty()) {
                 logSearch(search = search, total = correctedSlice.total ?: PostSearchQuery.TOTAL_NOT_COUNTED, corrected = true, semantic = false)
                 return cursorResponse(correctedSlice, sort, currentUserId, PostSearchQuery.tokenize(candidate), candidate, semantic = false)
@@ -235,6 +236,16 @@ class PostService(
             correctedSearch,
             semantic.takeIf { searchTokens.isNotEmpty() },
         )
+    }
+
+    /**
+     * category 파라미터(쉼표로 여러 개, 이름이나 slug)를 카테고리 id로 푼다. 파라미터가 없으면 null(거르지 않음)이고,
+     * 맞는 카테고리가 하나도 없으면 빈 집합(결과 없음)이다.
+     */
+    private fun resolveCategoryFilter(category: String?): Set<Long>? {
+        val namesOrSlugs = category?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty()
+
+        return if (namesOrSlugs.isEmpty()) null else categoryService.resolveIds(namesOrSlugs)
     }
 
     private fun cursorResponse(
@@ -309,9 +320,9 @@ class PostService(
         if (post.userId != userId) throw ForbiddenException("You are not the owner of this post")
 
         post.isPrivate = request.isPrivate
-        post.categories.clear()
+        post.categoryIds.clear()
         if (!request.categoryIds.isNullOrEmpty()) {
-            post.categories.addAll(categoryService.getCategoriesByIds(request.categoryIds))
+            post.categoryIds.addAll(categoryService.filterExistingIds(request.categoryIds))
         }
 
         // 재수집 트리거는 둘이다.

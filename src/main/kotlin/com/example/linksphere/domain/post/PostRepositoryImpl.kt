@@ -1,6 +1,5 @@
 package com.example.linksphere.domain.post
 
-import com.example.linksphere.domain.category.TableCategory
 import com.example.linksphere.domain.interaction.TableBookmark
 import com.example.linksphere.domain.interaction.TablePostReaction
 import com.example.linksphere.global.common.KeysetQuery
@@ -19,7 +18,7 @@ class PostRepositoryImpl : PostRepositoryCustom {
     @PersistenceContext private lateinit var entityManager: EntityManager
 
     override fun findPostsAfter(
-        category: String?,
+        categoryIds: Set<Long>?,
         search: String?,
         filter: String?,
         nickname: String?,
@@ -34,7 +33,7 @@ class PostRepositoryImpl : PostRepositoryCustom {
         // 건수와 본 쿼리가 같은 후보 집합을 보도록 한 번만 계산한다
         val semanticMatches = PostSearchQuery.resolveSemanticMatches(entityManager, queryEmbedding)
         val predicatesOf = { root: Root<TablePost>, query: AbstractQuery<*> ->
-            buildPredicates(cb, root, query, category, search, filter, nickname, currentUserId, semanticMatches)
+            buildPredicates(cb, root, query, categoryIds, search, filter, nickname, currentUserId, semanticMatches)
         }
 
         val total =
@@ -63,7 +62,7 @@ class PostRepositoryImpl : PostRepositoryCustom {
         cb: CriteriaBuilder,
         root: Root<TablePost>,
         query: AbstractQuery<*>,
-        category: String?,
+        categoryIds: Set<Long>?,
         search: String?,
         filter: String?,
         nickname: String?,
@@ -72,38 +71,24 @@ class PostRepositoryImpl : PostRepositoryCustom {
     ): List<Predicate> {
         val predicates = mutableListOf<Predicate>()
 
-        // Category Filter (Multiple supported, comma separated)
-        if (!category.isNullOrBlank()) {
-            val categories =
-                category.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-
-            if (categories.isNotEmpty()) {
+        // 카테고리 필터 - 고른 카테고리 중 하나라도 붙은 글. 빈 집합(이름·slug가 하나도 안 맞음)이면 결과가 없어야 한다 -
+        // 조건을 빼면 전체 글이 나온다.
+        if (categoryIds != null) {
+            if (categoryIds.isEmpty()) {
+                predicates.add(cb.disjunction())
+            } else {
                 // EXISTS 서브쿼리 — INNER JOIN fan-out(중복 행) 방지, distinct 불필요
                 val subquery = query.subquery(Int::class.java)
                 val subRoot = subquery.from(TablePost::class.java)
-                val categoriesJoin: Join<TablePost, TableCategory> =
-                    subRoot.join("categories", JoinType.INNER)
+                val categoryId: Join<TablePost, Long> = subRoot.join("categoryIds", JoinType.INNER)
 
-                val categoryPredicates =
-                    categories.map { cat ->
-                        cb.or(
-                            cb.equal(
-                                categoriesJoin.get<String>("name"),
-                                cat,
-                            ),
-                            cb.equal(
-                                categoriesJoin.get<String>("slug"),
-                                cat,
-                            ),
-                        )
-                    }
                 subquery.select(cb.literal(1))
                     .where(
                         cb.equal(
                             subRoot.get<UUID>("id"),
                             root.get<UUID>("id"),
                         ),
-                        cb.or(*categoryPredicates.toTypedArray()),
+                        categoryId.`in`(categoryIds),
                     )
                 predicates.add(cb.exists(subquery))
             }
