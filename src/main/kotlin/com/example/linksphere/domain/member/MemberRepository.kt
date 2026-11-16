@@ -13,6 +13,11 @@ interface MemberRepository : JpaRepository<TableMember, UUID> {
     fun existsByEmail(email: String): Boolean
     fun existsByNicknameIgnoreCase(nickname: String): Boolean
 
+    // 로그인한 요청마다 그 회원의 역할을 읽는다(MemberService.findRole). 엔티티를 통째로 읽지 않고 컬럼 하나만 가져온다.
+    // 매 요청 DB를 보므로 역할을 바꾸면 다음 요청부터 반영된다.
+    @Query("SELECT m.role FROM TableMember m WHERE m.id = :id")
+    fun findRoleById(@Param("id") id: UUID?): MemberRole?
+
     // 고아 이미지 정리 도구(OrphanImageCleanupRunner)용
     @Query("SELECT m.image FROM TableMember m WHERE m.image IS NOT NULL")
     fun findAllImageUrls(): List<String>

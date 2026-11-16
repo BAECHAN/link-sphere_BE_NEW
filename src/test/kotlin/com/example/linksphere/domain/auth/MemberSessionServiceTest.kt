@@ -1,6 +1,7 @@
 package com.example.linksphere.domain.auth
 
 import com.example.linksphere.domain.member.MemberRole
+import com.example.linksphere.domain.member.MemberService
 import com.example.linksphere.global.common.SecureToken
 import com.example.linksphere.global.exception.InvalidTokenException
 import com.example.linksphere.global.exception.SessionMismatchException
@@ -38,6 +39,8 @@ import java.util.UUID
 class MemberSessionServiceTest {
 
     @Mock private lateinit var memberSessionRepository: MemberSessionRepository
+
+    @Mock private lateinit var memberService: MemberService
 
     @InjectMocks private lateinit var memberSessionService: MemberSessionService
 
@@ -462,7 +465,7 @@ class MemberSessionServiceTest {
     @Test
     fun `checkAccessToken은 못 찾으면 Invalid`() {
         val hash = SecureToken.hash("unknown")
-        `when`(memberSessionRepository.findWithRoleByAccessTokenHash(hash)).thenReturn(null)
+        `when`(memberSessionRepository.findByAccessTokenHash(hash)).thenReturn(null)
 
         val result = memberSessionService.checkAccessToken("unknown")
 
@@ -475,12 +478,13 @@ class MemberSessionServiceTest {
         // 유효했어야 한다 - 여기서 Invalid를 주면 다른 탭이 즉시 로그아웃된다(PR #42 리뷰).
         // Expired를 주면 FE가 공유 refresh 쿠키로 조용히 회복을 시도한다.
         val rawToken = "revoked-but-not-expired"
-        `when`(memberSessionRepository.findWithRoleByAccessTokenHash(SecureToken.hash(rawToken)))
-            .thenReturn(SessionWithRole(session(accessTokenHash = SecureToken.hash(rawToken), revokedAt = Instant.now()), MemberRole.USER))
+        `when`(memberSessionRepository.findByAccessTokenHash(SecureToken.hash(rawToken)))
+            .thenReturn(session(accessTokenHash = SecureToken.hash(rawToken), revokedAt = Instant.now()))
 
         val result = memberSessionService.checkAccessToken(rawToken)
 
         assertEquals(AccessTokenCheck.Expired, result)
+        verifyNoInteractions(memberService)
     }
 
     @Test
@@ -494,11 +498,13 @@ class MemberSessionServiceTest {
             refreshExpiresAt = Instant.now().plusSeconds(3600),
             familyId = UUID.randomUUID(),
         )
-        `when`(memberSessionRepository.findWithRoleByAccessTokenHash(SecureToken.hash(rawToken))).thenReturn(SessionWithRole(expired, MemberRole.USER))
+        `when`(memberSessionRepository.findByAccessTokenHash(SecureToken.hash(rawToken))).thenReturn(expired)
 
         val result = memberSessionService.checkAccessToken(rawToken)
 
         assertEquals(AccessTokenCheck.Expired, result)
+        // 역할은 살아 있는 세션일 때만 member에 묻는다
+        verifyNoInteractions(memberService)
     }
 
     @Test
@@ -506,11 +512,24 @@ class MemberSessionServiceTest {
         val rawToken = "valid"
         val memberId = UUID.randomUUID()
         val familyId = UUID.randomUUID()
-        `when`(memberSessionRepository.findWithRoleByAccessTokenHash(SecureToken.hash(rawToken)))
-            .thenReturn(SessionWithRole(session(memberId = memberId, accessTokenHash = SecureToken.hash(rawToken), familyId = familyId), MemberRole.DEMO))
+        `when`(memberSessionRepository.findByAccessTokenHash(SecureToken.hash(rawToken)))
+            .thenReturn(session(memberId = memberId, accessTokenHash = SecureToken.hash(rawToken), familyId = familyId))
+        `when`(memberService.findRole(memberId)).thenReturn(MemberRole.DEMO)
 
         val result = memberSessionService.checkAccessToken(rawToken)
 
         assertEquals(AccessTokenCheck.Valid(memberId, familyId, MemberRole.DEMO), result)
+    }
+
+    // 세션은 FK cascade로 회원과 함께 지워져 실제로는 오지 않는 경우다 - 온다면 모르는 토큰과 같게 다룬다
+    @Test
+    fun `checkAccessToken은 세션은 유효한데 회원 역할을 못 찾으면 Invalid`() {
+        val rawToken = "orphan"
+        val memberId = UUID.randomUUID()
+        `when`(memberSessionRepository.findByAccessTokenHash(SecureToken.hash(rawToken)))
+            .thenReturn(session(memberId = memberId, accessTokenHash = SecureToken.hash(rawToken)))
+        `when`(memberService.findRole(memberId)).thenReturn(null)
+
+        assertEquals(AccessTokenCheck.Invalid, memberSessionService.checkAccessToken(rawToken))
     }
 }

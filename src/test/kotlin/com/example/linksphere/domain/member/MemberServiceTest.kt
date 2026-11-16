@@ -88,7 +88,7 @@ class MemberServiceTest {
         `when`(memberRepository.existsByNicknameIgnoreCase("newNick")).thenReturn(false)
         `when`(memberRepository.save(member)).thenReturn(member)
 
-        val result = memberService.updateAccount(memberId, request)
+        val result = memberService.updateAccountAndGet(memberId, request)
 
         assertEquals("newNick", result.nickname)
         assertEquals("https://example.com/img.png", result.image)
@@ -102,9 +102,9 @@ class MemberServiceTest {
         `when`(memberRepository.findById(memberId)).thenReturn(Optional.of(member))
         `when`(memberRepository.save(member)).thenReturn(member)
 
-        val result = memberService.changePassword(memberId, "newEncoded")
+        memberService.changePassword(memberId, "newEncoded")
 
-        assertEquals("newEncoded", result.password)
+        assertEquals("newEncoded", member.password)
     }
 
     @Test
@@ -115,9 +115,9 @@ class MemberServiceTest {
         `when`(memberRepository.findById(memberId)).thenReturn(Optional.of(member))
         `when`(memberRepository.save(member)).thenReturn(member)
 
-        val result = memberService.markEmailVerified(memberId)
+        memberService.markEmailVerified(memberId)
 
-        assertEquals(true, result.emailVerified)
+        assertEquals(true, member.emailVerified)
     }
 
     @Test
@@ -131,7 +131,7 @@ class MemberServiceTest {
 
         // 가입(signup)과 같은 code(DUPLICATE_NICKNAME)가 나가야 한다 - 예전에는 DUPLICATE_MEMBER였다
         val exception = assertThrows(DuplicateNicknameException::class.java) {
-            memberService.updateAccount(memberId, request)
+            memberService.updateAccountAndGet(memberId, request)
         }
         assertTrue(exception.message!!.contains("Nickname already exists"))
     }
@@ -145,7 +145,7 @@ class MemberServiceTest {
         `when`(memberRepository.findById(memberId)).thenReturn(Optional.of(member))
         `when`(memberRepository.save(member)).thenReturn(member)
 
-        memberService.updateAccount(memberId, request)
+        memberService.updateAccountAndGet(memberId, request)
 
         verify(memberRepository, never()).existsByNicknameIgnoreCase("sameNick")
     }
@@ -159,7 +159,7 @@ class MemberServiceTest {
         `when`(memberRepository.findById(memberId)).thenReturn(Optional.of(member))
         `when`(memberRepository.save(member)).thenReturn(member)
 
-        val result = memberService.updateAccount(memberId, request)
+        val result = memberService.updateAccountAndGet(memberId, request)
 
         assertEquals("SAMENICK", result.nickname)
         verify(memberRepository, never()).existsByNicknameIgnoreCase("SAMENICK")
@@ -191,14 +191,37 @@ class MemberServiceTest {
     }
 
     @Test
-    fun `findByEmailOrNull normalizes lookup email so login is case-insensitive`() {
-        val member = TableMember(email = "test@example.com", password = "enc", nickname = "testuser")
+    fun `findCredentialsByEmailOrNull normalizes lookup email so login is case-insensitive`() {
+        val member = TableMember(id = UUID.randomUUID(), email = "test@example.com", password = "enc", nickname = "testuser")
         `when`(memberRepository.findByEmail("test@example.com")).thenReturn(member)
 
-        val result = memberService.findByEmailOrNull("  Test@Example.com  ")
+        val result = memberService.findCredentialsByEmailOrNull("  Test@Example.com  ")
 
         assertEquals("test@example.com", result?.email)
         verify(memberRepository).findByEmail("test@example.com")
+    }
+
+    // auth는 TableMember를 보지 않고 이 사본만 본다 - 로그인 분기에 쓰는 값이 그대로 실려야 한다
+    @Test
+    fun `getCredentials는 로그인에 필요한 값을 전용 객체에 담는다`() {
+        val memberId = UUID.randomUUID()
+        val requestedAt = java.time.Instant.now()
+        `when`(memberRepository.findById(memberId))
+            .thenReturn(Optional.of(TableMember(id = memberId, email = "demo@example.com", password = "encoded", role = MemberRole.DEMO, emailVerified = true, deletionRequestedAt = requestedAt)))
+
+        assertEquals(
+            MemberCredentials(memberId, "demo@example.com", "encoded", MemberRole.DEMO, emailVerified = true, deletionRequestedAt = requestedAt, deletedAt = null),
+            memberService.getCredentials(memberId),
+        )
+    }
+
+    @Test
+    fun `findRole은 회원의 역할만 읽고 없으면 null`() {
+        val memberId = UUID.randomUUID()
+        `when`(memberRepository.findRoleById(memberId)).thenReturn(MemberRole.DEMO)
+
+        assertEquals(MemberRole.DEMO, memberService.findRole(memberId))
+        assertEquals(null, memberService.findRole(UUID.randomUUID()))
     }
 
     @Test

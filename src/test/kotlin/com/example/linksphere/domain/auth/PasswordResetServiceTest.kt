@@ -1,8 +1,8 @@
 package com.example.linksphere.domain.auth
 
-import com.example.linksphere.domain.member.MemberRepository
+import com.example.linksphere.domain.member.MemberCredentials
 import com.example.linksphere.domain.member.MemberRole
-import com.example.linksphere.domain.member.TableMember
+import com.example.linksphere.domain.member.MemberService
 import com.example.linksphere.global.common.SecureToken
 import com.example.linksphere.global.exception.InvalidActionTokenException
 import com.example.linksphere.global.exception.RateLimitExceededException
@@ -19,19 +19,19 @@ import org.mockito.Mockito.mock
 import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.verifyNoInteractions
+import org.mockito.Mockito.verifyNoMoreInteractions
 import org.mockito.Mockito.`when`
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.time.Duration
 import java.time.Instant
-import java.util.Optional
 import java.util.UUID
 
 // bucketKey·limit·window는 리터럴로 검증한다(any()/eq() 없이) - AuthServiceTest·
 // RateLimitRepository.kt와 같은 이유.
 class PasswordResetServiceTest {
 
-    private lateinit var memberRepository: MemberRepository
+    private lateinit var memberService: MemberService
     private lateinit var memberActionTokenRepository: MemberActionTokenRepository
     private lateinit var memberSessionService: MemberSessionService
     private lateinit var passwordEncoder: PasswordEncoder
@@ -45,7 +45,7 @@ class PasswordResetServiceTest {
 
     @BeforeEach
     fun setUp() {
-        memberRepository = mock(MemberRepository::class.java)
+        memberService = mock(MemberService::class.java)
         memberActionTokenRepository = mock(MemberActionTokenRepository::class.java)
         memberSessionService = mock(MemberSessionService::class.java)
         passwordEncoder = mock(PasswordEncoder::class.java)
@@ -53,7 +53,7 @@ class PasswordResetServiceTest {
         rateLimitService = mock(RateLimitService::class.java)
         service =
             PasswordResetService(
-                memberRepository,
+                memberService,
                 memberActionTokenRepository,
                 memberSessionService,
                 passwordEncoder,
@@ -62,6 +62,15 @@ class PasswordResetServiceTest {
                 "https://test.example",
             )
     }
+
+    private fun credentials(
+        id: UUID = UUID.randomUUID(),
+        email: String = "test@example.com",
+        password: String = "enc",
+        role: MemberRole = MemberRole.USER,
+        deletionRequestedAt: Instant? = null,
+        deletedAt: Instant? = null,
+    ) = MemberCredentials(id, email, password, role, emailVerified = true, deletionRequestedAt = deletionRequestedAt, deletedAt = deletedAt)
 
     @Test
     fun `requestReset은 이메일·IP 두 버킷 모두 한도를 소비(기록+확인)한다`() {
@@ -80,12 +89,12 @@ class PasswordResetServiceTest {
             service.requestReset("test@example.com", "203.0.113.1", idempotencyKey)
         }
 
-        verifyNoInteractions(memberRepository)
+        verifyNoInteractions(memberService)
     }
 
     @Test
     fun `requestReset은 존재하지 않는 이메일이어도 조용히 끝난다(메일 발송 없음)`() {
-        `when`(memberRepository.findByEmail("test@example.com")).thenReturn(null)
+        `when`(memberService.findCredentialsByEmailOrNull("test@example.com")).thenReturn(null)
 
         service.requestReset("test@example.com", "203.0.113.1", idempotencyKey)
 
@@ -94,8 +103,8 @@ class PasswordResetServiceTest {
 
     @Test
     fun `requestReset은 존재하는 이메일이면 토큰을 저장하고 메일은 커밋 뒤에 보낸다`() {
-        val member = TableMember(id = UUID.randomUUID(), email = "test@example.com", password = "enc", nickname = "tester")
-        `when`(memberRepository.findByEmail("test@example.com")).thenReturn(member)
+        val member = credentials()
+        `when`(memberService.findCredentialsByEmailOrNull("test@example.com")).thenReturn(member)
 
         // 메일은 토큰 커밋 뒤에만 나가야 한다 - 커밋 전에는 보내지 않았는지 확인한 뒤 afterCommit을 직접 부른다
         TransactionSynchronizationManager.initSynchronization()
@@ -119,8 +128,8 @@ class PasswordResetServiceTest {
     // 비밀번호를 공개한 데모 계정은 수신함 없는 주소라 반송만 쌓인다 - 응답은 없는 이메일과 같다
     @Test
     fun `requestReset은 공유 계정(데모)이면 토큰도 메일도 없이 조용히 끝난다`() {
-        val member = TableMember(id = UUID.randomUUID(), email = "test@example.com", password = "enc", role = MemberRole.DEMO)
-        `when`(memberRepository.findByEmail("test@example.com")).thenReturn(member)
+        val member = credentials(role = MemberRole.DEMO)
+        `when`(memberService.findCredentialsByEmailOrNull("test@example.com")).thenReturn(member)
 
         service.requestReset("test@example.com", "203.0.113.1", idempotencyKey)
 
@@ -129,8 +138,8 @@ class PasswordResetServiceTest {
 
     @Test
     fun `requestReset은 첫 요청이면 토큰에 키를 저장한다`() {
-        val member = TableMember(id = UUID.randomUUID(), email = "test@example.com", password = "enc", nickname = "tester")
-        `when`(memberRepository.findByEmail("test@example.com")).thenReturn(member)
+        val member = credentials()
+        `when`(memberService.findCredentialsByEmailOrNull("test@example.com")).thenReturn(member)
 
         val saved = requestResetCapturingToken()
 
@@ -139,10 +148,10 @@ class PasswordResetServiceTest {
 
     @Test
     fun `requestReset은 같은 키의 토큰이 아직 유효하면 토큰도 메일도 만들지 않는다`() {
-        val member = TableMember(id = UUID.randomUUID(), email = "test@example.com", password = "enc", nickname = "tester")
-        `when`(memberRepository.findByEmail("test@example.com")).thenReturn(member)
-        `when`(memberActionTokenRepository.findByMemberIdAndIdempotencyKey(member.id!!, idempotencyKey))
-            .thenReturn(tokenOf(member.id!!, expiresAt = Instant.now().plusSeconds(60)))
+        val member = credentials()
+        `when`(memberService.findCredentialsByEmailOrNull("test@example.com")).thenReturn(member)
+        `when`(memberActionTokenRepository.findByMemberIdAndIdempotencyKey(member.id, idempotencyKey))
+            .thenReturn(tokenOf(member.id, expiresAt = Instant.now().plusSeconds(60)))
 
         service.requestReset("test@example.com", "203.0.113.1", idempotencyKey)
 
@@ -153,10 +162,10 @@ class PasswordResetServiceTest {
     // 응답이 끊긴 탭에서 나중에 다시 요청한 경우 - 옛 링크는 쓸 수 없으니 메일이 가야 한다. 키는 옛 토큰이 쓰고 있어 유니크 인덱스에 걸리므로 비운다.
     @Test
     fun `requestReset은 같은 키의 토큰이 만료됐으면 키 없는 새 토큰을 만든다`() {
-        val member = TableMember(id = UUID.randomUUID(), email = "test@example.com", password = "enc", nickname = "tester")
-        `when`(memberRepository.findByEmail("test@example.com")).thenReturn(member)
-        `when`(memberActionTokenRepository.findByMemberIdAndIdempotencyKey(member.id!!, idempotencyKey))
-            .thenReturn(tokenOf(member.id!!, expiresAt = Instant.now().minusSeconds(60)))
+        val member = credentials()
+        `when`(memberService.findCredentialsByEmailOrNull("test@example.com")).thenReturn(member)
+        `when`(memberActionTokenRepository.findByMemberIdAndIdempotencyKey(member.id, idempotencyKey))
+            .thenReturn(tokenOf(member.id, expiresAt = Instant.now().minusSeconds(60)))
 
         val saved = requestResetCapturingToken()
 
@@ -165,10 +174,10 @@ class PasswordResetServiceTest {
 
     @Test
     fun `requestReset은 같은 키의 토큰을 이미 썼으면 키 없는 새 토큰을 만든다`() {
-        val member = TableMember(id = UUID.randomUUID(), email = "test@example.com", password = "enc", nickname = "tester")
-        `when`(memberRepository.findByEmail("test@example.com")).thenReturn(member)
-        `when`(memberActionTokenRepository.findByMemberIdAndIdempotencyKey(member.id!!, idempotencyKey))
-            .thenReturn(tokenOf(member.id!!, expiresAt = Instant.now().plusSeconds(60), consumedAt = Instant.now()))
+        val member = credentials()
+        `when`(memberService.findCredentialsByEmailOrNull("test@example.com")).thenReturn(member)
+        `when`(memberActionTokenRepository.findByMemberIdAndIdempotencyKey(member.id, idempotencyKey))
+            .thenReturn(tokenOf(member.id, expiresAt = Instant.now().plusSeconds(60), consumedAt = Instant.now()))
 
         val saved = requestResetCapturingToken()
 
@@ -247,7 +256,6 @@ class PasswordResetServiceTest {
     @Test
     fun `confirmReset은 성공하면 비밀번호를 바꾸고 그 회원의 모든 세션을 폐기한다`() {
         val memberId = UUID.randomUUID()
-        val member = TableMember(id = memberId, email = "test@example.com", password = "oldEncoded", nickname = "tester")
         val token =
             TableMemberActionToken(
                 memberId = memberId,
@@ -257,27 +265,19 @@ class PasswordResetServiceTest {
             )
         `when`(memberActionTokenRepository.findByTokenHash(SecureToken.hash("raw-token"))).thenReturn(token)
         `when`(memberActionTokenRepository.consumeIfActive(any(), any())).thenReturn(1)
-        `when`(memberRepository.findById(memberId)).thenReturn(Optional.of(member))
+        `when`(memberService.getCredentials(memberId)).thenReturn(credentials(id = memberId, password = "oldEncoded"))
         `when`(passwordEncoder.encode("newPassword1!")).thenReturn("newEncoded")
-        `when`(memberRepository.save(member)).thenReturn(member)
 
         service.confirmReset("raw-token", "newPassword1!")
 
-        org.junit.jupiter.api.Assertions.assertEquals("newEncoded", member.password)
+        verify(memberService).changePassword(memberId, "newEncoded")
         verify(memberSessionService).revokeAllForMember(memberId)
     }
 
     @Test
     fun `confirmReset은 이미 익명화(퍼지)된 회원이면 InvalidActionTokenException을 던지고 비밀번호를 바꾸지 않는다`() {
         val memberId = UUID.randomUUID()
-        val purgedMember =
-            TableMember(
-                id = memberId,
-                email = "deleted-$memberId@deleted.invalid",
-                password = "unmatchable",
-                nickname = null,
-                deletedAt = Instant.now(),
-            )
+        val purgedMember = credentials(id = memberId, email = "deleted-$memberId@deleted.invalid", password = "unmatchable", deletedAt = Instant.now())
         val token =
             TableMemberActionToken(
                 memberId = memberId,
@@ -287,27 +287,21 @@ class PasswordResetServiceTest {
             )
         `when`(memberActionTokenRepository.findByTokenHash(SecureToken.hash("raw-token"))).thenReturn(token)
         `when`(memberActionTokenRepository.consumeIfActive(any(), any())).thenReturn(1)
-        `when`(memberRepository.findById(memberId)).thenReturn(Optional.of(purgedMember))
+        `when`(memberService.getCredentials(memberId)).thenReturn(purgedMember)
 
         assertThrows(InvalidActionTokenException::class.java) {
             service.confirmReset("raw-token", "newPassword1!")
         }
 
-        verify(memberRepository, never()).save(org.mockito.ArgumentMatchers.any())
+        verify(memberService).getCredentials(memberId)
+        verifyNoMoreInteractions(memberService)
         verifyNoInteractions(memberSessionService)
     }
 
     @Test
     fun `confirmReset은 탈퇴 유예 중(퍼지 전)인 회원이면 정상적으로 비밀번호를 바꾼다`() {
         val memberId = UUID.randomUUID()
-        val pendingMember =
-            TableMember(
-                id = memberId,
-                email = "test@example.com",
-                password = "oldEncoded",
-                nickname = "tester",
-                deletionRequestedAt = Instant.now(),
-            )
+        val pendingMember = credentials(id = memberId, password = "oldEncoded", deletionRequestedAt = Instant.now())
         val token =
             TableMemberActionToken(
                 memberId = memberId,
@@ -317,13 +311,12 @@ class PasswordResetServiceTest {
             )
         `when`(memberActionTokenRepository.findByTokenHash(SecureToken.hash("raw-token"))).thenReturn(token)
         `when`(memberActionTokenRepository.consumeIfActive(any(), any())).thenReturn(1)
-        `when`(memberRepository.findById(memberId)).thenReturn(Optional.of(pendingMember))
+        `when`(memberService.getCredentials(memberId)).thenReturn(pendingMember)
         `when`(passwordEncoder.encode("newPassword1!")).thenReturn("newEncoded")
-        `when`(memberRepository.save(pendingMember)).thenReturn(pendingMember)
 
         service.confirmReset("raw-token", "newPassword1!")
 
-        org.junit.jupiter.api.Assertions.assertEquals("newEncoded", pendingMember.password)
+        verify(memberService).changePassword(memberId, "newEncoded")
         verify(memberSessionService).revokeAllForMember(memberId)
     }
 }

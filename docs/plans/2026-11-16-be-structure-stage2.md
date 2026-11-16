@@ -4,7 +4,7 @@
 
 ## 구현 결과
 
-> PR-1 #204 · PR-2 #206 · PR-3 #207 · PR-4 #210 · PR-5 #211 · PR-6 #213 · 2026-11-16 대조 · PR-1 이탈 0 · 미구현 0 · PR-2 이탈 3 · 미구현 0 · PR-3 이탈 0 · 미구현 0 · PR-4 이탈 0 · 미구현 0 · PR-5 이탈 0 · 미구현 0 · PR-6 이탈 0 · 미구현 0 — 판정 근거(파일:줄)는 각 PR 본문 "계획 대비 구현"
+> PR-1 #204 · PR-2 #206 · PR-3 #207 · PR-4 #210 · PR-5 #211 · PR-6 #213 · PR-7a #214 · 2026-11-16 대조 · PR-1 이탈 0 · 미구현 0 · PR-2 이탈 3 · 미구현 0 · PR-3 이탈 0 · 미구현 0 · PR-4 이탈 0 · 미구현 0 · PR-5 이탈 0 · 미구현 0 · PR-6 이탈 0 · 미구현 0 · PR-7a 이탈 0 · 미구현 0 — 판정 근거(파일:줄)는 각 PR 본문 "계획 대비 구현"
 
 **PR-1(#204)**
 
@@ -73,6 +73,18 @@
 - 확인한 것: 잔존 테스트의 `@Import`에서 리스너 하나를 빼면 그 테스트가 실패하는 것을 확인하고 되돌렸다. `openApiSpec` 결과는 로컬 생성 때 붙는 `servers` 항목 말고 운영 스펙과 같다
 - 확인하지 못한 것: 통합 테스트는 테스트가 연 트랜잭션 안에서 돌아, 발행하는 쪽에 트랜잭션이 없을 때 `MANDATORY`가 막는지와 리스너 실패 때의 롤백은 실제 DB로 보지 않았다(예외가 올라오는 것은 단위 테스트로 봤다)
 - 문서: BE-ARCHITECTURE(§1 그래프, §2·§3의 위반 수, 접미사 표에 `*EventListener`, §7-5 동기 이벤트), ACCOUNT-DELETION(§5-3·§7·§8의 위치와 줄 번호), README 트리, `.claude/CLAUDE.md` 패턴 표, 저장소·`PasswordResetService` 주석. 동작이 같아 CHANGELOG에는 넣지 않았다
+
+**PR-7a(#214)**
+
+- 계획대로: 세션 조회에서 `members` 조인을 없앴다. 인증 필터는 세션을 읽은 뒤 살아 있는 세션일 때만 `MemberService.findRole`(역할 컬럼 하나만 조회)로 역할을 묻는다. `AuthService`가 `TableMember` 대신 전용 객체 `MemberCredentials`(id·이메일·인코딩된 비밀번호·역할·이메일 인증 여부·탈퇴 신청 시각·삭제 시각)를 받는다. 로그인 분기 순서(한도 확인 → 회원 조회 → 비밀번호 대조 → 탈퇴 신청 취소 → 세션 발급)와 분기별 실패 기록은 그대로이고, 순서를 고정하는 단언을 `AuthServiceTest`에 더했다. 허용 위반이 40곳에서 37곳이 됐다
+- 실측한 기준값(전 → 뒤): 로그인 확인 1 → 2 — 계획의 추정과 같다. 만료·폐기된 토큰은 지금처럼 1이다
+- 구현 때 정한 것: 세션은 유효한데 회원 행이 없으면 모르는 토큰과 같게 다룬다. 세션은 FK cascade로 회원과 함께 지워져 실제로는 오지 않는 경우다. 조인일 때와 판정이 달라지는 입력은 "회원 행이 없는데 만료·폐기된 세션이 남은 경우"(전: 모르는 토큰, 뒤: 만료)뿐이고 같은 이유로 생기지 않는다
+- 계획에 없던 변경: `PasswordResetService`도 `MemberRepository`·`TableMember` 대신 `MemberService`를 쓴다(허용 목록의 auth 항목 3줄 중 2줄이 이 클래스였다). 그래서 비밀번호 재설정도 `MemberService.changePassword`를 타 `updated_at`이 갱신된다(전에는 비밀번호만 바꿨고, 이 컬럼을 읽는 코드는 없다). 토큰의 회원이 없을 때의 예외 메시지 문구도 달라졌다(타입은 같다)
+- 계획에 없던 변경: `MemberService`의 공개 메서드가 엔티티를 내주지 않는다 — `signup`은 `AccountResponse`를, `changePassword`·`markEmailVerified`는 값 없이 돌려주고 `findById`·`updateAccount`는 private이 됐다. `findByEmailOrNull`은 `findCredentialsByEmailOrNull`로 이름이 바뀌었다
+- 계획에 없던 변경: 기존 테스트의 단언이 바뀌었다 — `MemberServiceTest`의 계정 수정 4건은 `updateAccountAndGet`을 부르고 비밀번호·이메일 인증 2건은 반환값 대신 엔티티 필드를 본다. `PasswordResetServiceTest`는 엔티티 필드 대신 `changePassword` 호출을 본다. 통합 테스트 3개의 `@Import`에 `MemberService`를 더했다
+- 대조에서 발견해 보완함: `AccountResignupIntegrationTest`의 "새 회원 id가 옛 id와 다르다" 단언이 `signup` 반환 타입 변경으로 UUID와 문자열을 비교해 항상 통과하게 됐었다. 문자열끼리 비교하게 고쳤다
+- 확인한 것: 바꾸기 전 운영 응답 시간(20쌍 40요청, 1.5초 간격) — 로그인 요청 중앙값 179.5ms, 토큰 없는 대조 요청 148.5ms, 쌍별 차이 중앙값 30ms. 바꾼 뒤 값은 배포 뒤 같은 방법으로 재서 PR 본문에 남긴다
+- 문서: BE-ARCHITECTURE(§2·§3의 위반 수, 역할·권한 흐름, rollback-only 절의 메서드 이름), ACCOUNT-DELETION·TRAFFIC-MANAGEMENT(줄 번호와 메서드 이름 — PR-6에서 밀린 2곳 포함), README 트리, CHANGELOG `Changed`, 저장소·엔티티 주석
 
 <!-- plan-result:end -->
 

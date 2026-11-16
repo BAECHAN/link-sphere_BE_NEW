@@ -4,7 +4,6 @@ import com.example.linksphere.domain.member.AccountResponse
 import com.example.linksphere.domain.member.EmailNormalizer
 import com.example.linksphere.domain.member.MemberService
 import com.example.linksphere.domain.member.SignupRequest
-import com.example.linksphere.domain.member.TableMember
 import com.example.linksphere.global.common.SecureToken
 import com.example.linksphere.global.common.TransactionCallbacks
 import com.example.linksphere.global.exception.InvalidActionTokenException
@@ -61,7 +60,7 @@ class AuthService(
         val ipBucket = clientIp?.let { "signup:ip:$it" }
         rateLimitService.consume(ipBucket, SIGNUP_IP_LIMIT, SIGNUP_IP_WINDOW)
 
-        val member =
+        val account =
             memberService.signup(
                 request.copy(password = passwordEncoder.encode(request.password)),
             )
@@ -69,12 +68,12 @@ class AuthService(
         // 발송(토큰 생성 포함)이 실패해도 가입 자체는 성공해야 한다 - MailService 자신도
         // 내부에서 예외를 삼키지만, 토큰 저장 등 그 앞단이 실패하는 경우까지 방어한다.
         try {
-            sendVerificationEmail(member)
+            sendVerificationEmail(UUID.fromString(account.id), account.email)
         } catch (e: Exception) {
-            logger.error("[AuthService] 가입 인증메일 준비 실패(memberId=${member.id}): ${e.message}")
+            logger.error("[AuthService] 가입 인증메일 준비 실패(memberId=${account.id}): ${e.message}")
         }
 
-        return AccountResponse.from(member)
+        return account
     }
 
     // 공개 API - 로그인 여부와 무관하게 이메일만으로 재발송 가능하다. 존재하지 않는 이메일·
@@ -87,18 +86,18 @@ class AuthService(
         rateLimitService.consume(emailBucket, EMAIL_VERIFY_EMAIL_LIMIT, EMAIL_VERIFY_EMAIL_WINDOW)
         rateLimitService.consume(ipBucket, EMAIL_VERIFY_IP_LIMIT, EMAIL_VERIFY_IP_WINDOW)
 
-        val member = memberService.findByEmailOrNull(normalizedEmail) ?: return
+        val member = memberService.findCredentialsByEmailOrNull(normalizedEmail) ?: return
         if (member.emailVerified) return
 
         // 같은 키의 토큰이 아직 쓸 수 있으면 받은 메일의 링크가 유효하니 다시 보내지 않는다. 만료·사용된 뒤에는 응답이 끊긴 탭에서
         // 나중에 다시 요청한 경우라 메일이 가야 한다 - 키는 이미 옛 토큰이 쓰고 있어 새 토큰에는 싣지 않는다.
-        val existing = memberActionTokenRepository.findByMemberIdAndIdempotencyKey(member.id!!, idempotencyKey)
+        val existing = memberActionTokenRepository.findByMemberIdAndIdempotencyKey(member.id, idempotencyKey)
 
         if (existing?.isActive(Instant.now()) == true) {
             return
         }
 
-        sendVerificationEmail(member, idempotencyKey.takeIf { existing == null })
+        sendVerificationEmail(member.id, member.email, idempotencyKey.takeIf { existing == null })
     }
 
     @Transactional
@@ -116,11 +115,11 @@ class AuthService(
         memberService.markEmailVerified(token.memberId)
     }
 
-    private fun sendVerificationEmail(member: TableMember, idempotencyKey: UUID? = null) {
+    private fun sendVerificationEmail(memberId: UUID, email: String, idempotencyKey: UUID? = null) {
         val raw = SecureToken.generate()
         memberActionTokenRepository.save(
             TableMemberActionToken(
-                memberId = member.id!!,
+                memberId = memberId,
                 purpose = MemberActionTokenPurpose.EMAIL_VERIFY,
                 tokenHash = SecureToken.hash(raw),
                 expiresAt = Instant.now().plus(EMAIL_VERIFY_TOKEN_VALIDITY),
@@ -135,7 +134,7 @@ class AuthService(
         // 않는다(CommentService의 이미지 삭제와 같은 방식, docs/plans/2026-10-25-be-architecture-audit.md PR5).
         TransactionCallbacks.afterCommit {
             mailService.send(
-                member.email,
+                email,
                 "이메일 인증 안내",
                 "<p>아래 링크를 눌러 이메일 인증을 완료해주세요. 24시간 동안 유효합니다.</p><p><a href=\"$link\">$link</a></p>",
             )
@@ -149,13 +148,13 @@ class AuthService(
         rateLimitService.checkNotExceeded(emailBucket, LOGIN_FAIL_EMAIL_LIMIT, LOGIN_FAIL_EMAIL_WINDOW)
         rateLimitService.checkNotExceeded(ipBucket, LOGIN_FAIL_IP_LIMIT, LOGIN_FAIL_IP_WINDOW)
 
-        val member = memberService.findByEmailOrNull(request.email)
+        val member = memberService.findCredentialsByEmailOrNull(request.email)
         if (member == null) {
             recordLoginFailure(emailBucket, ipBucket)
             throw InvalidCredentialsException("Invalid email or password")
         }
 
-        if (!passwordEncoder.matches(request.password, member.password)) {
+        if (!passwordEncoder.matches(request.password, member.encodedPassword)) {
             // 비밀번호를 공개한 공유 계정(데모)은 이메일 잠금을 걸지 않는다 - 누구나 아는 비밀번호라 잠그면 방문자만 막힌다.
             // IP 버킷은 그대로 기록해 한 IP의 반복 대입은 계속 막는다(MemberRole.sharedCredentials).
             if (member.role.sharedCredentials) {
@@ -175,12 +174,12 @@ class AuthService(
         // 회원의 비밀번호는 어차피 매칭 불가능한 값으로 바뀌어 있어 이 분기가 아니어도
         // 결국 위의 matches()에서 걸린다, 여기 도달하는 건 매칭 UPDATE와 퍼지 UPDATE
         // 사이의 아주 좁은 창일 때뿐이다).
-        val deletionCancelled = memberService.cancelPendingDeletion(member.id!!)
+        val deletionCancelled = memberService.cancelPendingDeletion(member.id)
         if (!deletionCancelled && member.deletionRequestedAt != null) {
             throw InvalidCredentialsException("Invalid email or password")
         }
 
-        val session = memberSessionService.createSession(member.id!!)
+        val session = memberSessionService.createSession(member.id)
         return AuthResult(session.accessToken, session.refreshToken, session.refreshExpiresInSeconds, deletionCancelled)
     }
 
@@ -213,9 +212,9 @@ class AuthService(
     // 기기는 재로그인이 필요해진다(비밀번호가 유출됐을 가능성에 대비한 의도된 동작).
     @Transactional
     fun changePassword(id: UUID, request: ChangePasswordRequest): AuthResult {
-        val member = memberService.findById(id)
+        val member = memberService.getCredentials(id)
 
-        if (!passwordEncoder.matches(request.currentPassword, member.password)) {
+        if (!passwordEncoder.matches(request.currentPassword, member.encodedPassword)) {
             throw InvalidCredentialsException("Current password is incorrect")
         }
 

@@ -17,9 +17,6 @@ import org.springframework.data.repository.Repository
  */
 internal val KNOWN_BOUNDARY_VIOLATIONS: Set<String> =
     setOf(
-        "domain.auth.AuthService -> domain.member.TableMember",
-        "domain.auth.PasswordResetService -> domain.member.MemberRepository",
-        "domain.auth.PasswordResetService -> domain.member.TableMember",
         "domain.comment.CommentPostProcessService -> domain.post.PostRepository",
         "domain.comment.CommentPostProcessService -> domain.post.TablePost",
         "domain.comment.CommentService -> domain.member.MemberRepository",

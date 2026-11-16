@@ -7,7 +7,7 @@
 > **읽고 나면**: 요청이 어느 코드를 거치는지, 레이어끼리 무엇을 참조하고 어떤 타입을 주고받는지(§3) 따라갈 수 있고, 자동 검사(§2)와 선례 패턴(§7)에 맞춰 새 코드를 쓸 수 있다.
 > 지금 코드가 규칙과 어긋나는 곳은 §9에 모아 두었다 — 그쪽을 본떠 쓰지 않는다.
 >
-> **마지막 검토**: 2026-11-16 (§1 그래프, §2·§3의 위반 수, §3 접미사 표, §7-5만 고침 — 탈퇴 로직을 member로 옮기고 다른 패키지의 데이터는 동기 이벤트를 듣는 쪽이 지우게 함). 같은 날 앞서 (§1 패키지 역할·그래프, §2 검사 표, §3 global → domain 예외, §9 순환 간선만 고침 — `ErrorResponse`를 `global/exception`으로 옮기고 `SecurityConfig`가 auth 필터의 구체 타입을 모르게 함). 같은 날 앞서 (§1 잡 표·패키지 역할·그래프, §3 접미사 표, §7-5, §9 순환 간선만 고침 — 뒷일 전달을 `global/job`으로 옮김). 이전 2026-11-15 (§1 패키지 그래프, §8 순수 함수 테스트 예시 경로, "남은 것"의 linkpreview 항목만 고침. 같은 날 §11 도구 선택 표의 Detekt 행도 고침). 이전 2026-11-12 (§4 실패 표의 `page=-1` 예, §7-8 N+1의 `countQuery` 예, §7-9 페이징의 `page` 서술만 고침, 같은 날 `page` 400 코드 제거를 반영). 이전 2026-11-11 (§3 컨트롤러·Service에 두는 한도와 §7-3 조회 기록만 고침). 이전 2026-11-10 (§1 요청 파이프라인의 서빙 경로만 고침), 2026-11-07
+> **마지막 검토**: 2026-11-16 (§2·§3의 위반 수, §5 역할·권한 흐름, §6 메서드 이름만 고침 — auth가 회원 테이블을 조인하지 않고 역할을 member에 묻게 함). 같은 날 앞서 (§1 그래프, §2·§3의 위반 수, §3 접미사 표, §7-5만 고침 — 탈퇴 로직을 member로 옮기고 다른 패키지의 데이터는 동기 이벤트를 듣는 쪽이 지우게 함). 같은 날 앞서 (§1 패키지 역할·그래프, §2 검사 표, §3 global → domain 예외, §9 순환 간선만 고침 — `ErrorResponse`를 `global/exception`으로 옮기고 `SecurityConfig`가 auth 필터의 구체 타입을 모르게 함). 같은 날 앞서 (§1 잡 표·패키지 역할·그래프, §3 접미사 표, §7-5, §9 순환 간선만 고침 — 뒷일 전달을 `global/job`으로 옮김). 이전 2026-11-15 (§1 패키지 그래프, §8 순수 함수 테스트 예시 경로, "남은 것"의 linkpreview 항목만 고침. 같은 날 §11 도구 선택 표의 Detekt 행도 고침). 이전 2026-11-12 (§4 실패 표의 `page=-1` 예, §7-8 N+1의 `countQuery` 예, §7-9 페이징의 `page` 서술만 고침, 같은 날 `page` 400 코드 제거를 반영). 이전 2026-11-11 (§3 컨트롤러·Service에 두는 한도와 §7-3 조회 기록만 고침). 이전 2026-11-10 (§1 요청 파이프라인의 서빙 경로만 고침), 2026-11-07
 
 시스템 전체(CloudFront·S3·Lambda·배포 파이프라인)는 FE 레포
 [`docs/SYSTEM-ARCHITECTURE.md`](https://github.com/BAECHAN/link-sphere_FE_NEW/blob/main/docs/SYSTEM-ARCHITECTURE.md)가,
@@ -194,7 +194,7 @@ flowchart LR
 | `packagesMustBeFreeOfCyclesExceptDocumented` | 패키지 사이 새 순환 — 허용 간선 2개는 `PackageGraphDocTest.kt`의 `DOCUMENTED_CYCLE_EDGES`, 이유는 §9 | 위와 같음 |
 | `문서의 패키지 의존 그래프가 코드와 같다` | §1 "실제 패키지 의존 그래프"가 코드와 어긋남 | `architecture/PackageGraphDocTest.kt` |
 | `순환 허용 간선 목록의 간선은 모두 실제로 있다` | 끊은 간선이 `DOCUMENTED_CYCLE_EDGES`에 남아 다시 생겨도 조용히 통과 | 위와 같음 |
-| `다른 패키지의 저장소·엔티티를 새로 쓰지 않는다` | 다른 패키지의 Repository·`@Entity`를 직접 쓰는 곳이 새로 생김 — 지금 있는 40곳은 `KNOWN_BOUNDARY_VIOLATIONS`에 적혀 있고 2단계에서 0으로 줄인다 | `architecture/ModuleBoundaryRulesTest.kt` |
+| `다른 패키지의 저장소·엔티티를 새로 쓰지 않는다` | 다른 패키지의 Repository·`@Entity`를 직접 쓰는 곳이 새로 생김 — 지금 있는 37곳은 `KNOWN_BOUNDARY_VIOLATIONS`에 적혀 있고 2단계에서 0으로 줄인다 | `architecture/ModuleBoundaryRulesTest.kt` |
 | `알려진 위반 목록의 항목은 모두 실제로 있다` | 없앤 위반이 `KNOWN_BOUNDARY_VIOLATIONS`에 남아 다시 생겨도 조용히 통과 | 위와 같음 |
 | `afterCommitGoesThroughTransactionCallbacks` | `TransactionSynchronizationManager.registerSynchronization` 직접 호출(§7-6) | `architecture/LayerSkeletonRulesTest.kt` |
 | `emailVerificationGoesThroughGate` | `EmailVerificationGate` 밖에서 `EmailNotVerifiedException` 생성 | 위와 같음 |
@@ -295,7 +295,7 @@ flowchart TD
   안에서 판정이 갈리는 한도는 지금처럼 Service에서 건다. 조회 기록의 조회자 판단(`PostService.recordView`)도 Service에 둔다 —
   요청을 막는 한도가 아니라 조회수를 올릴지 정하는 규칙이고, 봇은 이 메서드를 부르지 않는다(§7-3).
 - **다른 도메인 Repository·엔티티 직접 사용(줄이는 중)** — 예: `PostService`가 interaction의 `BookmarkRepository`를 쓴다.
-  지금 있는 40곳만 남기고 새로 쓰는 것은 `ModuleBoundaryRulesTest`가 막는다(2026-11-16, 처음 57곳). 남은 곳은 2단계
+  지금 있는 37곳만 남기고 새로 쓰는 것은 `ModuleBoundaryRulesTest`가 막는다(2026-11-16, 처음 57곳). 남은 곳은 2단계
   (`docs/plans/2026-11-16-be-structure-stage2.md`)에서 그 패키지의 Service에 묻는 방식으로 바꿔 0으로 줄인다. Service끼리의
   순환은 지금처럼 `servicesMustNotHaveCrossDomainCycles`가 막고, 순환이 생기면 `PostResponseAssembler`처럼 자기를 부르는
   Service를 참조하지 않는 조립기로 뺀다(§7-8). 조립기가 `CategoryService`처럼 post를 모르는 Service에 묻는 것은 순환이 아니다.
@@ -444,7 +444,7 @@ fun getPosts(authentication: Authentication?, ...): ApiResponse<PostPageResponse
 
 ```
 요청 + X-Access-Token
-  → SessionAuthenticationFilter: 세션 조회가 members와 조인해 role까지 한 번에 읽는다
+  → SessionAuthenticationFilter: 세션을 읽고(auth), 그 회원의 role을 member에 묻는다(MemberService.findRole, 조회 2번)
   → role.permissions를 authorities로 싣는다
   → 컨트롤러 @PreAuthorize("hasAuthority('<권한>')")
        ├ 있음 → 서비스(기존 그대로)
@@ -491,7 +491,7 @@ fun getPosts(authentication: Authentication?, ...): ApiResponse<PostPageResponse
   필요하면 별도 빈으로 뺀다(`FeedCrawlService` → `FeedItemProcessor`, `AccountPurgeService` → `AccountDeletionService.purge`).
 - **rollback-only 함정** — `@Transactional` 메서드에서 예외가 경계를 넘으면, 호출부가 잡고 정상 종료해도 커밋 때
   `UnexpectedRollbackException`(500)이 난다. "없음"을 정상 흐름으로 다뤄야 하면 예외 대신 null을 돌려준다
-  (`MemberService.findByEmailOrNull` 주석, [`TRAFFIC-MANAGEMENT.md`](TRAFFIC-MANAGEMENT.md) 시행착오).
+  (`MemberService.findCredentialsByEmailOrNull` 주석, [`TRAFFIC-MANAGEMENT.md`](TRAFFIC-MANAGEMENT.md) 시행착오).
   **같은 트랜잭션 안에서 난 DB 오류는 try로 삼켜도 커밋을 막는다** — Hibernate가 `PersistenceException`(NoResult 등 4종
   제외)에서 트랜잭션을 롤백 전용으로 표시하고, Spring은 커밋 때 그 표시를 보고 롤백한 뒤 `UnexpectedRollbackException`을
   던진다(hibernate-core 6.6.36 `ExceptionConverterImpl.rollbackIfNecessary`, spring-tx 6.2.14 `AbstractPlatformTransactionManager.commit`, 2026-10-25 업스트림 태그 소스로 확인). 실패해도 바깥 작업이 살아야 하는 부수 작업(알림 등)은

@@ -1,6 +1,5 @@
 package com.example.linksphere.domain.auth
 
-import com.example.linksphere.domain.member.MemberRole
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
@@ -21,12 +20,9 @@ import java.util.UUID
  * 메서드는 이 문제가 없다(플랫폼 타입이라 Kotlin이 체크를 안 넣음).
  */
 interface MemberSessionRepository : JpaRepository<TableMemberSession, UUID> {
+    // SessionAuthenticationFilter가 매 요청 세션을 읽는다(MemberSessionService.checkAccessToken). 회원 테이블은 여기서 보지 않는다 -
+    // 역할은 member에 따로 묻는다(MemberService.findRole).
     fun findByAccessTokenHash(accessTokenHash: String): TableMemberSession?
-
-    // SessionAuthenticationFilter가 매 요청 세션과 그 회원의 역할을 한 번에 읽는다(MemberSessionService.checkAccessToken).
-    // 회원을 따로 조회하면 로그인한 모든 요청에 쿼리가 하나 더 붙는다. 매 요청 DB를 보므로 역할을 바꾸면 다음 요청부터 반영된다.
-    @Query("SELECT new com.example.linksphere.domain.auth.SessionWithRole(s, m.role) FROM TableMemberSession s JOIN TableMember m ON m.id = s.memberId WHERE s.accessTokenHash = :accessTokenHash")
-    fun findWithRoleByAccessTokenHash(@Param("accessTokenHash") accessTokenHash: String): SessionWithRole?
 
     fun findByRefreshTokenHash(refreshTokenHash: String): TableMemberSession?
 
@@ -83,6 +79,3 @@ interface MemberSessionRepository : JpaRepository<TableMemberSession, UUID> {
     @Query("UPDATE TableMemberSession s SET s.revokedAt = :now WHERE s.memberId = :memberId AND s.revokedAt IS NULL")
     fun revokeAllActiveForMember(@Param("memberId") memberId: UUID?, @Param("now") now: Instant?): Int
 }
-
-/** findWithRoleByAccessTokenHash의 결과 - 세션 행과 그 회원의 역할. */
-data class SessionWithRole(val session: TableMemberSession, val role: MemberRole)

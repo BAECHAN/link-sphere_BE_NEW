@@ -1,6 +1,7 @@
 package com.example.linksphere.domain.auth
 
 import com.example.linksphere.domain.member.MemberRole
+import com.example.linksphere.domain.member.MemberService
 import com.example.linksphere.global.common.SecureToken
 import com.example.linksphere.global.exception.InvalidTokenException
 import com.example.linksphere.global.exception.SessionMismatchException
@@ -29,7 +30,7 @@ import java.util.UUID
 // 끝까지 미뤄지고, 이어지는 revokeFamily(REQUIRES_NEW)는 그 트랜잭션이 쥔 행 잠금을 기다리다 멈춘다. 쓰기가 실제로 커밋되므로
 // 끝나면 회원을 지운다.
 @PostgresIntegrationTest
-@Import(MemberSessionService::class)
+@Import(MemberSessionService::class, MemberService::class)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class MemberSessionServiceIntegrationTest {
 
@@ -84,10 +85,10 @@ class MemberSessionServiceIntegrationTest {
         assertNotNull(revokedAt(cookie.refreshToken))
     }
 
-    // 필터의 권한 판정은 세션 조회가 members와 조인해 함께 읽은 역할을 쓴다(MemberSessionRepository.findWithRoleByAccessTokenHash).
-    // 조인이 틀리면 로그인한 모든 요청이 실패하므로 실제 Postgres에서 확인한다
+    // 필터의 권한 판정은 세션을 읽은 뒤 member에 물어 받은 역할을 쓴다(MemberService.findRole → MemberRepository.findRoleById).
+    // 이 조회가 틀리면 로그인한 모든 요청이 실패하므로 실제 Postgres에서 확인한다
     @Test
-    fun `checkAccessToken은 members와 조인해 그 회원의 역할을 함께 돌려준다`() {
+    fun `checkAccessToken은 세션을 읽은 뒤 그 회원의 역할을 member에 물어 함께 돌려준다`() {
         jdbc.update("UPDATE members SET role = 'DEMO' WHERE id = ?", memberA)
         val demo = memberSessionService.createSession(memberA)
         val user = memberSessionService.createSession(memberB)

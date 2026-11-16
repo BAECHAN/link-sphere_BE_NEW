@@ -78,6 +78,20 @@
 
 ### Changed
 
+- `auth` 로그인한 요청의 인증 확인이 DB를 한 번 더 읽음(세션 1번 + 회원 역할 1번)
+  <details><summary>배경·구현</summary>
+
+  지금까지 인증 필터는 세션 조회 한 문장에서 `members`를 조인해 역할까지 읽었다. auth가 member의 테이블을 직접 읽는 구조라
+  회원 테이블을 바꾸면 auth의 쿼리도 함께 고쳐야 했다. 조인을 없애고 세션은 auth가, 역할은 member가 읽는다
+  (`MemberService.findRole`, 역할 컬럼 하나만 조회). 살아 있는 세션일 때만 묻고, 만료·폐기된 토큰은 지금처럼 조회 1번이다.
+  함께 `AuthService`·`PasswordResetService`가 `TableMember`·`MemberRepository` 대신 전용 객체(`MemberCredentials`)와
+  `MemberService`만 쓰게 했다. 그래서 비밀번호 재설정도 `MemberService.changePassword`를 거쳐 `members.updated_at`이 함께
+  갱신된다(전에는 비밀번호만 바꿨고, 이 컬럼을 읽는 코드는 없다). 로그인 분기 순서와 URL·응답·DB 스키마는 그대로다. 운영에서 전후 응답 시간을 잰 값은 PR 본문에
+  있다. 계획은 `docs/plans/2026-11-16-be-structure-stage2.md` PR-7a.
+  (`MemberSessionService`, `MemberSessionRepository`, `MemberService`, `MemberRepository`, `MemberCredentials`(신규), `AuthService`,
+  `PasswordResetService`)
+
+  </details>
 - `infra` 개발 환경(bootRun)에서도 글·댓글의 뒷일(AI 요약, 댓글 알림·링크 프리뷰)이 실제로 실행됨
   <details><summary>배경·구현</summary>
 
