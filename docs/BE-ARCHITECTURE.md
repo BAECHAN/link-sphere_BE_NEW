@@ -83,7 +83,7 @@ flowchart TD
 
 아래 그림은 손으로 그린 것이 아니다. `PackageGraphDocTest`가 바이트코드에서 패키지(`domain.post`처럼 두 단계) 사이
 간선을 계산해 이 블록과 비교하고, 다르면 실패하면서 붙여 넣을 새 블록을 출력한다 — 새 의존을 만들면 이 그림이 같은 PR에서
-바뀌어 리뷰에 드러난다. 점선은 순환을 만들지만 허용한 간선이다(§9의 2개). 모든 패키지가 예외를 던지느라 의존하는 `global.exception`은 그림에서만
+바뀌어 리뷰에 드러난다. 점선은 순환을 만들지만 허용한 간선이다(§9의 1개). 모든 패키지가 예외를 던지느라 의존하는 `global.exception`은 그림에서만
 뺐고 순환 검사에는 들어간다. 루트(`LambdaHandler` 등)와 `tools/`는 두 단계 패키지가 아니라 그림·순환 검사 모두에서 빠진다 —
 다른 패키지가 이들을 참조하는 곳이 없어(2026-10-26 확인) 순환에 낄 수 없다.
 
@@ -139,7 +139,6 @@ flowchart LR
   domain_linkpreview --> infra_youtube
   domain_member --> global_common
   domain_post --> domain_category
-  domain_post -.-> domain_comment
   domain_post -.-> domain_interaction
   domain_post --> domain_linkpreview
   domain_post --> domain_member
@@ -192,10 +191,10 @@ flowchart LR
 | `persistenceMustNotDependOnUpperLayers` | Repository·엔티티가 Service·`@Component`·Controller·DTO를 참조 | 위와 같음 |
 | `dtosMustNotDependOnBeans` | `*DTO.kt`의 클래스가 Service·`@Component`·Repository·Controller를 참조 | 위와 같음 |
 | `apiDtosLiveInDtoFiles` | domain의 `*Request`·`*Response`를 `*DTO.kt` 밖에 정의 | 위와 같음 |
-| `packagesMustBeFreeOfCyclesExceptDocumented` | 패키지 사이 새 순환 — 허용 간선 2개는 `PackageGraphDocTest.kt`의 `DOCUMENTED_CYCLE_EDGES`, 이유는 §9 | 위와 같음 |
+| `packagesMustBeFreeOfCyclesExceptDocumented` | 패키지 사이 새 순환 — 허용 간선 1개는 `PackageGraphDocTest.kt`의 `DOCUMENTED_CYCLE_EDGES`, 이유는 §9 | 위와 같음 |
 | `문서의 패키지 의존 그래프가 코드와 같다` | §1 "실제 패키지 의존 그래프"가 코드와 어긋남 | `architecture/PackageGraphDocTest.kt` |
 | `순환 허용 간선 목록의 간선은 모두 실제로 있다` | 끊은 간선이 `DOCUMENTED_CYCLE_EDGES`에 남아 다시 생겨도 조용히 통과 | 위와 같음 |
-| `다른 패키지의 저장소·엔티티를 새로 쓰지 않는다` | 다른 패키지의 Repository·`@Entity`를 직접 쓰는 곳이 새로 생김 — 지금 있는 27곳은 `KNOWN_BOUNDARY_VIOLATIONS`에 적혀 있고 2단계에서 0으로 줄인다 | `architecture/ModuleBoundaryRulesTest.kt` |
+| `다른 패키지의 저장소·엔티티를 새로 쓰지 않는다` | 다른 패키지의 Repository·`@Entity`를 직접 쓰는 곳이 새로 생김 — 지금 있는 17곳은 `KNOWN_BOUNDARY_VIOLATIONS`에 적혀 있고 2단계에서 0으로 줄인다 | `architecture/ModuleBoundaryRulesTest.kt` |
 | `알려진 위반 목록의 항목은 모두 실제로 있다` | 없앤 위반이 `KNOWN_BOUNDARY_VIOLATIONS`에 남아 다시 생겨도 조용히 통과 | 위와 같음 |
 | `afterCommitGoesThroughTransactionCallbacks` | `TransactionSynchronizationManager.registerSynchronization` 직접 호출(§7-6) | `architecture/LayerSkeletonRulesTest.kt` |
 | `emailVerificationGoesThroughGate` | `EmailVerificationGate` 밖에서 `EmailNotVerifiedException` 생성 | 위와 같음 |
@@ -296,7 +295,7 @@ flowchart TD
   안에서 판정이 갈리는 한도는 지금처럼 Service에서 건다. 조회 기록의 조회자 판단(`PostService.recordView`)도 Service에 둔다 —
   요청을 막는 한도가 아니라 조회수를 올릴지 정하는 규칙이고, 봇은 이 메서드를 부르지 않는다(§7-3).
 - **다른 도메인 Repository·엔티티 직접 사용(줄이는 중)** — 예: `PostService`가 interaction의 `BookmarkRepository`를 쓴다.
-  지금 있는 27곳만 남기고 새로 쓰는 것은 `ModuleBoundaryRulesTest`가 막는다(2026-11-16, 처음 57곳). 남은 곳은 2단계
+  지금 있는 17곳만 남기고 새로 쓰는 것은 `ModuleBoundaryRulesTest`가 막는다(2026-11-16, 처음 57곳). 남은 곳은 2단계
   (`docs/plans/2026-11-16-be-structure-stage2.md`)에서 그 패키지의 Service에 묻는 방식으로 바꿔 0으로 줄인다. Service끼리의
   순환은 지금처럼 `servicesMustNotHaveCrossDomainCycles`가 막고, 순환이 생기면 `PostResponseAssembler`처럼 자기를 부르는
   Service를 참조하지 않는 조립기로 뺀다(§7-8). 조립기가 `CategoryService`·`MemberService`처럼 post를 모르는 Service에 묻는 것은 순환이 아니다.
@@ -316,6 +315,8 @@ flowchart TD
 | `*JobHandler` | 맡겨진 뒷일 한 종류를 받아 Service를 부름(`JobHandler` 구현) | `AiAnalysisJobHandler` |
 | `*JobPublisher` | 뒷일을 넘기는 방식 하나(`JobPublisher` 구현) | `LambdaJobPublisher` |
 | `*EventListener` | 다른 패키지가 낸 이벤트를 듣고 자기 데이터만 정리(같은 트랜잭션, §7-5) | `InteractionMemberEventListener` |
+| `*Port` | 다른 패키지에 묻고 싶은 것을 묻는 쪽이 정한 인터페이스(§7-8). 구현은 그 데이터를 가진 패키지가 한다 | `PostCommentPort` |
+| `*Adapter` | 다른 패키지의 `*Port`를 자기 저장소로 구현 | `CommentCountAdapter` |
 | `*Client` | 외부 HTTP API 호출 | `YoutubeVideoClient` |
 | `*Validator` · `*Parser` · `*Extractor` · `*Normalizer` · `*Classifier` · `*Detector` | 한 가지 판단·변환 | `SafeUrlValidator`, `FeedParser` |
 
@@ -603,6 +604,9 @@ if (memberActionTokenRepository.consumeIfActive(token.id, Instant.now()) == 0) {
   `@Transactional(propagation = MANDATORY)`라 발행한 트랜잭션 안에서 바로 실행되고, 발행하는 쪽은 예외를 잡지 않는다 — 하나가
   실패하면 전체가 되돌려진다. 지우는 순서가 중요한 것은 리스너 하나 안에 둔다(폴더 아이템 → 폴더 → 북마크). 듣는 쪽을
   빠뜨려도 예외가 없으므로 `AccountPurgeResidueIntegrationTest`가 남은 행으로 잡는다 — 새 리스너는 그 테스트의 `@Import`에 더한다.
+  글 삭제도 같은 장치를 쓴다: `PostService.deletePost`가 글 행을 지우기 **전에** `PostDeletingEvent`(`post/PostLifecycleEvents.kt`)를
+  내고 `CommentPostEventListener`가 댓글 본문의 스토리지 이미지를 정리한다. 댓글 행·좋아요·북마크는 DB의 ON DELETE CASCADE가
+  지우므로 듣는 쪽을 만들지 않는다 — DB가 지워 주지 않는 것만 이벤트로 알린다.
 
 ### 7-6. 커밋 뒤 동기 정리 (`afterCommit`)
 
@@ -637,11 +641,17 @@ for (id in ids) {
 - **정석**: `PostResponseAssembler.buildResponsesFromPosts`
 - **모양**: id를 모은다 → `findAllBy…In(ids)` 한 번씩 → `associate`/`groupingBy`로 Map → 한 번에 조립. 개수는 GROUP BY
   projection(`CommentRepository`의 `PostCommentCount`)이 가장 싸다.
-- 그 밖: `JOIN FETCH`(`CommentRepository`의 내 댓글), `default_batch_fetch_size: 100`.
+- 그 밖: `default_batch_fetch_size: 100`.
 - 다른 패키지의 정보는 조인하지 않는다 — id를 모아 그 패키지의 Service에 한 번에 묻는다(작성자는 `MemberService.findProfiles`,
   카테고리 이름은 `CategoryService.getCategoryInfosByIds`). 다른 패키지의 값으로 거를 때도 같다 — 그 패키지에서 id 집합을 받아
   `IN`으로 건다(글 목록의 닉네임·봇 필터, `PostService.getPostsByCursor`). 집합이 비면 `IN ()`을 만들지 않고 "결과 없음"이나
   "조건 없음"으로 따로 처리한다.
+- 글은 `PostLookupService`에 id로 묻는다(볼 수 있는 글인지, 작성자 id, 볼 수 있는 글의 제목) — 댓글·좋아요·북마크는 `TablePost`와
+  `PostRepository`를 모른다. 다른 패키지의 값으로 걸러 쪽이 덜 차면 쪽이 차거나 끝날 때까지 이어서 다시 읽는다
+  (`CommentService.getMyCommentsByCursor` — 원글이 비공개로 바뀐 댓글이 빠진다. 덜 찬 쪽을 그대로 내면 응답이 달라진다).
+  다시 읽을 때는 쪽 크기와 상관없이 한 번에 넉넉히(51행 이상) 읽어 왕복 수를 줄인다.
+- 반대 방향으로 물어야 하면(post가 댓글 수를 알아야 한다) 묻는 쪽이 인터페이스를 정하고 가진 쪽이 구현한다 — `PostCommentPort`를
+  post가 정하고 comment의 `CommentCountAdapter`가 구현한다. 의존은 comment → post 한 방향으로 남는다.
 - 조립기를 Service 밖 클래스로 두면 Service 순환도 피한다(KDoc 참고).
 - **안티패턴**: 목록을 돌며 항목마다 `findById`·`countBy…` 호출. 단건 상세(`convertToResponse`)는 여러 번 조회해도 된다.
 
@@ -659,6 +669,9 @@ for (id in ids) {
 - **정석**: `PostVisibility.assertVisible(post, viewerId, postId)`(`domain/post`) — 비공개 글을 작성자가 아닌 사람이 보면
   **403이 아니라 `PostNotFoundException`(404)** 을 던져 존재 자체를 숨긴다. 상세 조회·댓글·좋아요·북마크가 모두 이 함수를
   쓴다(2026-10-26 전에는 6곳에 인라인으로 복사돼 있었다). 목록 쿼리는 같은 조건을 SQL로 건다.
+- post 밖(댓글·좋아요·북마크)에서는 `TablePost`를 읽지 않고 `PostLookupService.requireVisible(postId, viewerId)`를 부른다 — 글이
+  없을 때와 볼 수 없을 때 모두 같은 404이고 작성자 id를 돌려준다. 여러 글은 `requireAllVisible`, 볼 수 있는 글의 제목은
+  `findVisibleTitles`다.
 - **안티패턴**: `ForbiddenException`(403)으로 막기 — "그 글이 있다"는 사실이 새어 나간다.
 
 ### 7-11. 외부 클라이언트
@@ -773,17 +786,18 @@ FE와 BE가 같은 테스트 원칙을 쓰면서 층 구성과 도구를 다르�
 | 외부 클라이언트가 RestClient가 아니라 `RestTemplate` | `SupabaseStorageService` — 타임아웃(연결 3초·읽기 10초)은 설정돼 있다 | 바꾸지 않음 — 전환하면 호출부 3곳과 DELETE+본문 동작까지 바뀌어 회귀 범위가 크다 |
 | 엔티티 안의 표시 규칙 | `TableMember.isWithdrawn`·`publicNickname`·`publicImage`, `TableLinkPreview.toMetadata` | 바꾸지 않음(기록만) |
 | 상속받은 `delete(entity)` 3곳 | `PostService.deletePost`, `CommentService.deleteComment`, `BookmarkFolderService.deleteFolder` | 바꾸지 않음 — 409 `CONCURRENT_UPDATE` 안전망에 기댄다 |
-| 패키지 순환을 만드는 간선 2개 | 아래 표 | 바꾸지 않음(지금은) — 새 순환은 `packagesMustBeFreeOfCyclesExceptDocumented`가 막는다. 해소 후보는 "남은 것" |
+| 패키지 순환을 만드는 간선 1개 | 아래 표 | 바꾸지 않음(지금은) — 새 순환은 `packagesMustBeFreeOfCyclesExceptDocumented`가 막는다. 해소 후보는 "남은 것" |
 
-**순환을 허용한 간선 2개** — `PackageGraphDocTest.kt`의 `DOCUMENTED_CYCLE_EDGES`가 정본이다. 이 간선을 빼면 패키지 그래프에
+**순환을 허용한 간선 1개** — `PackageGraphDocTest.kt`의 `DOCUMENTED_CYCLE_EDGES`가 정본이다. 이 간선을 빼면 패키지 그래프에
 순환이 없다(2026-10-26 계산). `infra.aws → domain.post`·`comment`·`feed` 3개는 뒷일 전달을 `global/job`의 인터페이스로 바꿔
 없앴고(2026-11-16, `docs/plans/2026-11-16-be-structure-stage2.md` PR-2), `global.exception → global.common`은 `ErrorResponse`를
 `global/exception`으로 옮겨 없앴다(같은 계획 PR-3 — `CursorCodec`이 `InvalidInputException`을 던지는 반대 방향만 남는다).
 `domain.interaction → domain.comment`는 댓글 좋아요를 comment로 옮겨 없앴다(같은 계획 PR-5 — 반대 방향 `comment → interaction`도 함께 사라졌다).
+`domain.post → domain.comment`는 댓글 수를 `PostCommentPort`로, 글 삭제 때의 댓글 이미지 정리를 `PostDeletingEvent`로 바꿔 없앴다
+(같은 계획 PR-8 — `comment → post`만 남는다).
 
 | 간선 | 대표 위치 | 이유 |
 |---|---|---|
-| `domain.post → domain.comment` | `PostResponseAssembler` → `CommentRepository`, `PostService` → `CommentService` | 목록 응답의 댓글 수, 글 삭제 때 댓글 이미지 정리 |
 | `domain.post → domain.interaction` | `PostResponseAssembler`·`PostService`·`PostRepositoryImpl` → 반응·북마크 Repository·엔티티 | 목록 응답의 좋아요·북마크 상태와 `filter=isLiked` 같은 조인 |
 
 2026-10-25 점검에서 의심만 하던 6건(가입 제약 위반 catch가 `save()` 지연으로 헛돎, 폴더 이름 동시 중복이
@@ -839,7 +853,7 @@ FE와 BE가 같은 테스트 원칙을 쓰면서 층 구성과 도구를 다르�
 | 생성 응답 | [RFC 9110 §9.3.3](https://www.rfc-editor.org/rfc/rfc9110#section-9.3.3) | HTTP 201(`@ResponseStatus`, 2026-10-26 전에는 본문만 201) | 따른다. `Location`은 "남은 것" |
 | 405 응답 | [RFC 9110 §10.2.1](https://www.rfc-editor.org/rfc/rfc9110#section-10.2.1) | 405 + `Allow`(`handleSpringMvcException`, 2026-10-26 전에는 500) | 따른다 |
 | 경계 입력 검증 | Bean Validation(`@Valid`) | `@RequestBody` 23곳 중 10곳 | 방식 혼재로 둔다 — `PostCreateRequest`는 봇 경로(`FeedItemProcessor`)도 쓰므로 Service 검증이 어차피 필요하다 |
-| 모듈 순환 | [Spring Modulith 검증](https://docs.spring.io/spring-modulith/reference/verification.html), ArchUnit `slices().beFreeOfCycles()` | 허용 간선 2개(§9) | 새 순환만 막는다 |
+| 모듈 순환 | [Spring Modulith 검증](https://docs.spring.io/spring-modulith/reference/verification.html), ArchUnit `slices().beFreeOfCycles()` | 허용 간선 1개(§9) | 새 순환만 막는다 |
 | 관측성 | 구조화 로그·요청 상관 ID | 앱 로그는 logstash JSON 한 줄 + MDC `awsRequestId`(2026-10-26, `LambdaHandler`·`AsyncConfig`). Lambda LogFormat은 Text 유지 | 따른다 — 찾는 법은 `DEPLOY.md` "운영 로그 읽기" |
 | 멱등 등록 | [IETF 초안](https://datatracker.ietf.org/doc/draft-ietf-httpapi-idempotency-key-header/)(RFC 아님) `Idempotency-Key`. 처리 중인 같은 키는 409를 권한다 | 필수 헤더 + 행에 저장(§7-14). 처리 중이면 기다렸다가 같은 결과 | 이름·필수 시 400은 따른다. 처리 중 409는 따르지 않는다 - 키를 행에 두면 커밋 전까지 "처리 중"을 알 수 없고, 기다리면 사용자가 바로 성공을 받는다 |
 | 지원 버전 | [Spring Boot 지원 일정](https://api.spring.io/projects/spring-boot/generations) — 3.5.x OSS 지원 2026-06-30 종료 | 3.5.16(OSS 마지막 패치, 2026-10-26). Dependabot이 Gradle minor·patch를 월간으로 올린다 | 4.x 이동은 "남은 것" |
@@ -908,9 +922,11 @@ FE와 BE가 같은 테스트 원칙을 쓰면서 층 구성과 도구를 다르�
 - **순환 해소 후보**(§9의 간선 중 도메인 사이 2개, 2026-10-26 사용자 결정으로 미룸):
   - `interaction → comment`는 2026-11-16에 댓글 좋아요(`TableCommentReaction`·`CommentReactionRepository`·엔드포인트 2개)를
     comment로 옮겨 끊었다. `comment → interaction`도 함께 사라졌고, 같은 태그 이름·메서드 이름이라 스펙은 그대로다.
-  - `post → comment·interaction`: "목록 조립을 별도 조회 패키지로" 빼는 것만으로는 끊기지 않는다 — `PostService`·
+  - `post → comment`는 2026-11-16에 댓글 수를 포트(`PostCommentPort`)로, 글 삭제 때의 이미지 정리를 이벤트(`PostDeletingEvent`)로
+    바꿔 끊었다.
+  - `post → interaction`: "목록 조립을 별도 조회 패키지로" 빼는 것만으로는 끊기지 않는다 — `PostService`·
     `BookmarkFolderService`가 조립기를 쓰고, `PostRepositoryImpl`은 Repository 인터페이스 패키지 밖으로 못 나간다. post에 포트
-    (묶음 통계·필터 서브쿼리·북마크 쓰기)를 두고 interaction·comment가 구현하는 의존 역전이 필요하다.
+    (묶음 통계·필터 서브쿼리·북마크 쓰기)를 두고 interaction이 구현하는 의존 역전이 필요하다(같은 계획 PR-9).
   - `member → auth`는 2026-10-26에 요청 DTO 2개를 `member/MemberDTO.kt`로 옮겨 끊었다.
 - **이름 불일치**: `global/ratelimit`의 `TableRateLimit`·`RateLimitRepository`가 쓰는 테이블 이름은 auth 전용이던 시절의
   `auth_rate_limits` 그대로다(2026-11-15). 테이블 이름을 바꾸려면 DB 마이그레이션·SQL·백업 설정을 함께 고쳐야 해서 클래스

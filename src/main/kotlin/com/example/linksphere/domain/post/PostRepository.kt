@@ -7,11 +7,21 @@ import org.springframework.data.repository.query.Param
 import java.time.LocalDateTime
 import java.util.UUID
 
+interface VisiblePostTitle {
+    val id: UUID
+    val title: String
+}
+
 interface PostRepository :
     JpaRepository<TablePost, UUID>,
     PostRepositoryCustom {
 
     fun findAllByUserIdAndAiSummaryIsNull(userId: UUID): List<TablePost>
+
+    // "내 댓글" 목록이 원글 제목을 묻는다(PostLookupService.findVisibleTitles). 공개 조건은 PostVisibility·목록 쿼리와 같다 -
+    // 댓글을 단 뒤 원글이 비공개로 바뀌면 남의 글 제목이 새지 않게 여기서 뺀다. 빈 목록으로 부르지 않는다.
+    @Query("SELECT p.id AS id, p.title AS title FROM TablePost p WHERE p.id IN :ids AND (p.isPrivate = false OR p.userId = :viewerId)")
+    fun findVisibleTitles(@Param("ids") ids: Collection<UUID>, @Param("viewerId") viewerId: UUID): List<VisiblePostTitle>
 
     fun findByUserIdAndIdempotencyKey(userId: UUID, idempotencyKey: UUID): TablePost?
 

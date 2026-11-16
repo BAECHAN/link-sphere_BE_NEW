@@ -1,6 +1,5 @@
 package com.example.linksphere.domain.comment
 
-import com.example.linksphere.domain.post.TablePost
 import jakarta.persistence.*
 import java.time.LocalDateTime
 import java.util.UUID
@@ -23,9 +22,6 @@ class TableComment(
     // 수정·톰스톤 삭제 때 CommentService가 갱신한다 - val이던 동안은 생성 시각에 고정돼 있었다
     @Column(name = "updated_at", nullable = false)
     var updatedAt: LocalDateTime = LocalDateTime.now(),
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "post_id", insertable = false, updatable = false)
-    val post: TablePost? = null,
     // 브라우저가 만든 Idempotency-Key. 이 컬럼 이전의 댓글은 null이다.
     @Column(name = "idempotency_key", updatable = false) val idempotencyKey: UUID? = null,
 )

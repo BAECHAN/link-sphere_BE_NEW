@@ -1,6 +1,6 @@
 package com.example.linksphere.domain.upload
 
-import com.example.linksphere.domain.comment.CommentRepository
+import com.example.linksphere.domain.comment.CommentService
 import com.example.linksphere.domain.member.MemberService
 import com.example.linksphere.global.common.BatchJobLimits
 import com.example.linksphere.global.common.SupabaseStorageService
@@ -27,7 +27,7 @@ private val URL_REGEX = Regex("""https?://\S+""")
  */
 @Service
 class OrphanImageGcService(
-    private val commentRepository: CommentRepository,
+    private val commentService: CommentService,
     private val memberService: MemberService,
     private val supabaseStorageService: SupabaseStorageService,
 ) {
@@ -64,7 +64,7 @@ class OrphanImageGcService(
         // 버킷을 먼저 읽고 참조를 나중에 읽는다 - 사이에 새로 생긴 참조까지 반영해 덜 지우는 쪽으로 기운다.
         val objects = supabaseStorageService.listAllObjects()
         val referenced =
-            (commentRepository.findAllContent() + memberService.findAllImageUrls())
+            (commentService.findAllContent() + memberService.findAllImageUrls())
                 .flatMap { URL_REGEX.findAll(it).map(MatchResult::value) }
                 .filter { supabaseStorageService.isManagedUrl(it) }
                 .toSet()

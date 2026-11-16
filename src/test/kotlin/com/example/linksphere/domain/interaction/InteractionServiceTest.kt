@@ -1,5 +1,6 @@
 package com.example.linksphere.domain.interaction
 
+import com.example.linksphere.domain.post.PostLookupService
 import com.example.linksphere.domain.post.PostRepository
 import com.example.linksphere.domain.post.TablePost
 import com.example.linksphere.global.exception.BookmarkFolderNotFoundException
@@ -9,9 +10,9 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
-import org.mockito.InjectMocks
 import org.mockito.Mock
 import org.mockito.Mockito.inOrder
 import org.mockito.Mockito.never
@@ -34,7 +35,20 @@ class InteractionServiceTest {
 
     @Mock private lateinit var bookmarkFolderItemRepository: BookmarkFolderItemRepository
 
-    @InjectMocks private lateinit var interactionService: InteractionService
+    private lateinit var interactionService: InteractionService
+
+    // 글은 실제 PostLookupService(post의 공개 조회)를 거쳐 읽는다 - 저장소만 mock이라 공개 여부 판정까지 이 테스트가 그대로 본다.
+    @BeforeEach
+    fun setUp() {
+        interactionService =
+            InteractionService(
+                postReactionRepository,
+                bookmarkRepository,
+                PostLookupService(postRepository),
+                bookmarkFolderRepository,
+                bookmarkFolderItemRepository,
+            )
+    }
 
     @Test
     fun `setPostLike(true) 는 남의 비공개 글이면 PostNotFoundException`() {

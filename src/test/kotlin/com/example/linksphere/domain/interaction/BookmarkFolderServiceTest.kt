@@ -1,6 +1,7 @@
 package com.example.linksphere.domain.interaction
 
 import com.example.linksphere.domain.post.PostEmbeddingText
+import com.example.linksphere.domain.post.PostLookupService
 import com.example.linksphere.domain.post.PostRepository
 import com.example.linksphere.domain.post.PostResponseAssembler
 import com.example.linksphere.domain.post.TablePost
@@ -16,10 +17,10 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import org.mockito.ArgumentCaptor
-import org.mockito.InjectMocks
 import org.mockito.Mock
 import org.mockito.Mockito.doThrow
 import org.mockito.Mockito.times
@@ -52,7 +53,21 @@ class BookmarkFolderServiceTest {
 
     @Mock private lateinit var postRepository: PostRepository
 
-    @InjectMocks private lateinit var bookmarkFolderService: BookmarkFolderService
+    private lateinit var bookmarkFolderService: BookmarkFolderService
+
+    // 글은 실제 PostLookupService(post의 공개 조회)를 거쳐 읽는다 - 저장소만 mock이라 공개 여부 판정까지 이 테스트가 그대로 본다.
+    @BeforeEach
+    fun setUp() {
+        bookmarkFolderService =
+            BookmarkFolderService(
+                bookmarkFolderRepository,
+                bookmarkRepository,
+                bookmarkFolderItemRepository,
+                postResponseAssembler,
+                geminiService,
+                PostLookupService(postRepository),
+            )
+    }
 
     // ── deleteFolder ─────────────────────────────────────────────
 

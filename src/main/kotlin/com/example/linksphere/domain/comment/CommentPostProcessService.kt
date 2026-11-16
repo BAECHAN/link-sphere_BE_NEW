@@ -1,7 +1,7 @@
 package com.example.linksphere.domain.comment
 
 import com.example.linksphere.domain.linkpreview.UrlMetadataExtractor
-import com.example.linksphere.domain.post.PostRepository
+import com.example.linksphere.domain.post.PostLookupService
 import com.example.linksphere.global.job.JobPublisher
 import com.example.linksphere.infra.fcm.FcmNotificationService
 import org.slf4j.LoggerFactory
@@ -19,7 +19,7 @@ import org.springframework.transaction.event.TransactionalEventListener
 @Service
 class CommentPostProcessService(
     private val commentRepository: CommentRepository,
-    private val postRepository: PostRepository,
+    private val postLookupService: PostLookupService,
     private val fcmNotificationService: FcmNotificationService,
     private val urlMetadataExtractor: UrlMetadataExtractor,
     private val jobPublisher: JobPublisher,
@@ -62,9 +62,9 @@ class CommentPostProcessService(
         val parentId = comment.parentId
         if (parentId == null) {
             // 내 포스트에 타인이 댓글을 달면 알림 (루트 댓글)
-            val post = postRepository.findByIdOrNull(comment.postId) ?: return
+            val postAuthorId = postLookupService.findAuthorId(comment.postId) ?: return
             fcmNotificationService.sendCommentNotification(
-                postAuthorId = post.userId,
+                postAuthorId = postAuthorId,
                 postId = comment.postId,
                 commentId = comment.id,
             )

@@ -1,7 +1,6 @@
 package com.example.linksphere.domain.post
 
 import com.example.linksphere.domain.category.CategoryService
-import com.example.linksphere.domain.comment.CommentService
 import com.example.linksphere.domain.interaction.BookmarkFolderItemRepository
 import com.example.linksphere.domain.interaction.BookmarkFolderRepository
 import com.example.linksphere.domain.interaction.BookmarkRepository
@@ -38,7 +37,6 @@ class PostService(
     private val bookmarkFolderItemRepository: BookmarkFolderItemRepository,
     private val bookmarkFolderRepository: BookmarkFolderRepository,
     private val postViewRepository: PostViewRepository,
-    private val commentService: CommentService,
     private val postResponseAssembler: PostResponseAssembler,
     private val eventPublisher: ApplicationEventPublisher,
     private val urlMetadataExtractor: UrlMetadataExtractor,
@@ -426,9 +424,10 @@ class PostService(
     fun deletePost(id: UUID, userId: UUID) {
         val post = postRepository.findById(id).orElseThrow { PostNotFoundException(id) }
         if (post.userId != userId) throw ForbiddenException("You are not the owner of this post")
-        // comments.post_id FK가 ON DELETE CASCADE라 댓글 row는 DB에서 자동 삭제되지만,
-        // 댓글에 딸린 스토리지 이미지는 정리되지 않으므로 게시글이 지워지기 전에 먼저 정리한다.
-        commentService.deleteImagesForPost(id)
+        // comments.post_id FK가 ON DELETE CASCADE라 댓글 row는 DB에서 자동 삭제되지만, 댓글에 딸린 스토리지 이미지는
+        // 정리되지 않는다. 글을 지우기 전에 알려 comment가 이미지 URL을 읽어 두게 한다(PostLifecycleEvents.kt) -
+        // 듣는 쪽은 이 트랜잭션 안에서 바로 실행되고, 실패하면 삭제도 되돌려진다.
+        eventPublisher.publishEvent(PostDeletingEvent(id))
         postRepository.delete(post)
     }
 

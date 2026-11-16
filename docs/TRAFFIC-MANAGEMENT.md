@@ -210,7 +210,7 @@ Google SRE 책은 과부하 대응으로 기능을 낮춰 응답하는 방법(gr
 | 인증메일 재발송 | 이메일당 1시간 3회, IP당 1시간 10회 | `domain/auth/AuthService.kt:52-55` |
 | 비밀번호 재설정 요청 | 이메일당 1시간 3회, IP당 1시간 10회 | `domain/auth/PasswordResetService.kt:37-40` |
 | 이메일 중복 검사 | IP당 1시간 60회 (초과하면 FE는 확인 전 상태로 돌아가고 실제 중복은 가입 때 409) | `domain/auth/AuthController.kt:56-57` |
-| 조회수 집계 | 같은 글을 회원(비로그인은 IP)당 24시간 창에 1회 (넘으면 429가 아니라 조회수를 올리지 않음. 창은 UTC 0시에 바뀜) | `domain/post/PostService.kt:63-64` |
+| 조회수 집계 | 같은 글을 회원(비로그인은 IP)당 24시간 창에 1회 (넘으면 429가 아니라 조회수를 올리지 않음. 창은 UTC 0시에 바뀜) | `domain/post/PostService.kt:61-62` |
 
 (경로는 `src/main/kotlin/com/example/linksphere/` 기준)
 

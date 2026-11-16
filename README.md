@@ -79,6 +79,9 @@ src/main/kotlin/com/example/linksphere/
 │   │   ├── PostRepositoryImpl.kt        # JPA Criteria/JPQL 검색·필터 구현
 │   │   ├── PostService.kt
 │   │   ├── PostVisibility.kt            # 비공개 글을 작성자 외에는 404로 숨기는 게이트
+│   │   ├── PostLookupService.kt         # 다른 패키지가 글을 id로 묻는 창구(볼 수 있는 글인지·작성자·제목)
+│   │   ├── PostCommentPort.kt           # 글 응답의 댓글 수를 묻는 약속(comment가 구현)
+│   │   ├── PostLifecycleEvents.kt       # 글 삭제 직전 이벤트(다른 패키지가 듣고 자기 데이터를 정리)
 │   │   ├── PostAIService.kt             # AI 분석 비동기 처리
 │   │   ├── AiAnalysisJobHandler.kt      # ai-analysis 잡 처리기(JobHandler)
 │   │   ├── PostResponseAssembler.kt     # 목록·상세 응답 조립(작성자·좋아요·북마크·댓글수 batch fetch)
@@ -105,6 +108,8 @@ src/main/kotlin/com/example/linksphere/
 │   │   ├── TableComment.kt
 │   │   ├── CommentLikeController.kt     # 댓글 좋아요·취소(API 문서에서는 "좋아요·북마크" 묶음)
 │   │   ├── CommentMemberEventListener.kt # 회원 영구 삭제 때 그 회원의 댓글 좋아요 삭제
+│   │   ├── CommentPostEventListener.kt  # 글 삭제 직전에 그 글 댓글의 스토리지 이미지 정리
+│   │   ├── CommentCountAdapter.kt       # post의 PostCommentPort 구현(글별 댓글 수)
 │   │   ├── CommentReactionRepository.kt
 │   │   └── TableCommentReaction.kt
 │   ├── interaction/                     # 좋아요·북마크(폴더 다중 소속 포함) 도메인

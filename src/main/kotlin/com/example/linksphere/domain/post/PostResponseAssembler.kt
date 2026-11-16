@@ -3,7 +3,6 @@ package com.example.linksphere.domain.post
 import com.example.linksphere.domain.category.CategoryInfo
 import com.example.linksphere.domain.category.CategoryResponse
 import com.example.linksphere.domain.category.CategoryService
-import com.example.linksphere.domain.comment.CommentRepository
 import com.example.linksphere.domain.interaction.BookmarkFolderItemRepository
 import com.example.linksphere.domain.interaction.BookmarkRepository
 import com.example.linksphere.domain.interaction.PostReactionRepository
@@ -32,7 +31,7 @@ class PostResponseAssembler(
     private val bookmarkRepository: BookmarkRepository,
     private val bookmarkFolderItemRepository: BookmarkFolderItemRepository,
     private val postReactionRepository: PostReactionRepository,
-    private val commentRepository: CommentRepository,
+    private val postCommentPort: PostCommentPort,
     private val categoryService: CategoryService,
 ) {
 
@@ -77,9 +76,8 @@ class PostResponseAssembler(
                 emptySet()
             }
 
-        val commentCountMap =
-            commentRepository.countByPostIdIn(postIds)
-                .associate { it.postId to it.count.toInt() }
+        // 댓글 수는 comment가 구현한 포트에 묻는다(PostCommentPort) - post는 댓글 저장소를 모른다
+        val commentCountMap = postCommentPort.countByPostIds(postIds)
 
         // 글은 카테고리를 id로만 든다 - 이 쪽의 글에 붙은 id를 모아 이름을 한 번에 묻는다
         val categoryMap = categoriesById(posts.flatMap { it.categoryIds })
@@ -133,7 +131,7 @@ class PostResponseAssembler(
             bookmarkCount = bookmarkRepository.countByPostId(postId).toInt(),
             isBookmarked = isBookmarked,
             bookmarkFolderIds = bookmarkFolderIds,
-            commentCount = commentRepository.countByPostId(postId).toInt(),
+            commentCount = postCommentPort.countByPostId(postId),
         )
     }
 

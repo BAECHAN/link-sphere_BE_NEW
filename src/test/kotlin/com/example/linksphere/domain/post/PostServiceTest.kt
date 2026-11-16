@@ -1,7 +1,6 @@
 package com.example.linksphere.domain.post
 
 import com.example.linksphere.domain.category.CategoryService
-import com.example.linksphere.domain.comment.CommentService
 import com.example.linksphere.domain.interaction.BookmarkFolderItemRepository
 import com.example.linksphere.domain.interaction.BookmarkFolderRepository
 import com.example.linksphere.domain.interaction.BookmarkRepository
@@ -62,8 +61,6 @@ class PostServiceTest {
     @Mock private lateinit var bookmarkFolderRepository: BookmarkFolderRepository
 
     @Mock private lateinit var postViewRepository: PostViewRepository
-
-    @Mock private lateinit var commentService: CommentService
 
     @Mock private lateinit var postResponseAssembler: PostResponseAssembler
 
@@ -275,7 +272,7 @@ class PostServiceTest {
     }
 
     @Test
-    fun `deletePost 는 댓글 이미지를 정리한 뒤 게시글을 삭제한다`() {
+    fun `deletePost 는 곧 지운다고 알린 뒤 게시글을 삭제한다`() {
         val ownerId = UUID.randomUUID()
         val postId = UUID.randomUUID()
         val post = TablePost(id = postId, userId = ownerId, url = "https://example.com", title = "제목", isPrivate = false)
@@ -284,8 +281,10 @@ class PostServiceTest {
 
         postService.deletePost(postId, ownerId)
 
-        verify(commentService).deleteImagesForPost(postId)
-        verify(postRepository).delete(post)
+        // 듣는 쪽(comment)이 댓글 이미지 URL을 읽으려면 글이 아직 있어야 한다 - 알림이 삭제보다 먼저다
+        val order = inOrder(eventPublisher, postRepository)
+        order.verify(eventPublisher).publishEvent(PostDeletingEvent(postId))
+        order.verify(postRepository).delete(post)
     }
 
     // Kotlin에서 선언된 insertIgnoreConflict(userId: UUID, ...)는 파라미터가 non-null이라
