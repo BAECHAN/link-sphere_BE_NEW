@@ -4,7 +4,7 @@
 
 ## 구현 결과
 
-> PR-1 #204 · PR-2 #206 · PR-3 #207 · PR-4 #210 · PR-5 #211 · 2026-11-16 대조 · PR-1 이탈 0 · 미구현 0 · PR-2 이탈 3 · 미구현 0 · PR-3 이탈 0 · 미구현 0 · PR-4 이탈 0 · 미구현 0 · PR-5 이탈 0 · 미구현 0 — 판정 근거(파일:줄)는 각 PR 본문 "계획 대비 구현"
+> PR-1 #204 · PR-2 #206 · PR-3 #207 · PR-4 #210 · PR-5 #211 · PR-6 #213 · 2026-11-16 대조 · PR-1 이탈 0 · 미구현 0 · PR-2 이탈 3 · 미구현 0 · PR-3 이탈 0 · 미구현 0 · PR-4 이탈 0 · 미구현 0 · PR-5 이탈 0 · 미구현 0 · PR-6 이탈 0 · 미구현 0 — 판정 근거(파일:줄)는 각 PR 본문 "계획 대비 구현"
 
 **PR-1(#204)**
 
@@ -61,6 +61,18 @@
 - 계획에 없던 변경: 좋아요 저장소 통합 테스트의 댓글 좋아요 단언을 comment의 `CommentReactionRepositoryIntegrationTest`로 나눴다
 - 확인한 것: `openApiSpec` 결과는 로컬 생성 때 붙는 `servers` 항목 말고 운영 스펙과 같다
 - 문서: BE-ARCHITECTURE(그래프, §2 검사 표와 §3의 위반 수, §9 순환 표, 업계 비교 표의 간선 수, "순환 해소 후보"), README 트리, `.claude/CLAUDE.md` 요약표, 테스트 주석의 간선 수. 동작이 같아 CHANGELOG에는 넣지 않았다
+
+**PR-6(#213)**
+
+- 계획대로: `AccountDeletionService`·`AccountPurgeService`를 member로 옮겼다. 비밀번호 대조도 member가 하고, 컨트롤러는 auth에 남아 member를 부른 뒤 쿠키를 만료시킨다. member는 `MemberDeletionRequestedEvent`(auth가 세션 폐기, fcm이 알림 토큰 삭제)와 `MemberPurgedEvent`(auth·fcm·interaction·comment·post가 자기 데이터 삭제)를 내고, 듣는 쪽은 모두 `@EventListener` + `MANDATORY`다. 폴더 아이템 → 폴더 → 북마크 순서는 interaction의 리스너 하나 안에 있고, 발행하는 쪽은 예외를 잡지 않는다. 허용 위반이 50곳에서 40곳이 됐다
+- 계획대로: 원본이 하던 정리(신청 때 세션·알림 토큰, 영구 삭제 때 세션·폴더 아이템·폴더·북마크·글 좋아요·댓글 좋아요·조회 기록·알림 토큰)가 빠짐없이 리스너로 옮겨졌고 더해진 것은 없다
+- 구현 때 정한 것: 리스너 이름은 `*MemberEventListener`이고 패키지마다 하나다. 이벤트 둘은 `MemberLifecycleEvents.kt` 한 파일에 뒀다. 잡 처리기(`AccountPurgeJobHandler`)는 auth에 남겨 member의 서비스를 부른다
+- 구현 때 정한 것: 리스너 사이의 실행 순서는 정하지 않았다(전에는 한 메서드 안의 고정 순서였다). 순서가 필요한 세 테이블은 한 리스너 안에 있다
+- 계획의 그림과 다른 점: `interaction → member`, `infra.fcm → member` 간선이 새로 생겼다. 목표 구조 그림에는 없지만 연결 규칙 표("member의 이벤트를 듣는다")가 요구하는 결과이고, member는 `global.common`만 알아 순환이 아니다. `auth → comment·interaction·post·infra.fcm` 4개는 없어졌다
+- 계획에 없던 변경: 탈퇴 서비스 테스트는 저장소 호출 대신 "어떤 이벤트를 언제 내는지"와 "듣는 쪽의 예외를 잡지 않는다"를 본다. 리스너 테스트는 패키지마다 하나씩 뒀다(대조 때 한 파일에 모아 둔 것을 지적받아 나눴다). 잔존 테스트와 재가입 통합 테스트는 `@Import`에 리스너를 더했다
+- 확인한 것: 잔존 테스트의 `@Import`에서 리스너 하나를 빼면 그 테스트가 실패하는 것을 확인하고 되돌렸다. `openApiSpec` 결과는 로컬 생성 때 붙는 `servers` 항목 말고 운영 스펙과 같다
+- 확인하지 못한 것: 통합 테스트는 테스트가 연 트랜잭션 안에서 돌아, 발행하는 쪽에 트랜잭션이 없을 때 `MANDATORY`가 막는지와 리스너 실패 때의 롤백은 실제 DB로 보지 않았다(예외가 올라오는 것은 단위 테스트로 봤다)
+- 문서: BE-ARCHITECTURE(§1 그래프, §2·§3의 위반 수, 접미사 표에 `*EventListener`, §7-5 동기 이벤트), ACCOUNT-DELETION(§5-3·§7·§8의 위치와 줄 번호), README 트리, `.claude/CLAUDE.md` 패턴 표, 저장소·`PasswordResetService` 주석. 동작이 같아 CHANGELOG에는 넣지 않았다
 
 <!-- plan-result:end -->
 

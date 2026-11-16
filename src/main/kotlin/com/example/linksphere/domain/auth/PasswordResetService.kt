@@ -16,9 +16,8 @@ import java.time.Instant
 import java.util.UUID
 
 /**
- * 비밀번호 찾기 - 요청/확인 두 단계. AccountDeletionService와 같은 이유로 MemberService를
- * 거치지 않고 MemberRepository를 직접 쓴다(이 회원탈퇴·비밀번호찾기 계열 서비스는 계정
- * 자체를 다루는 게 본업이라 도메인 규칙보다 낮은 레벨에서 동작한다).
+ * 비밀번호 찾기 - 요청/확인 두 단계. MemberService를 거치지 않고 MemberRepository를 직접
+ * 쓴다(비밀번호 찾기는 계정 자체를 다루는 게 본업이라 도메인 규칙보다 낮은 레벨에서 동작한다).
  */
 @Service
 class PasswordResetService(

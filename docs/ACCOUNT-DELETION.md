@@ -11,7 +11,7 @@
 > 수정하거나, 유예 만료 정리 배치의 실행 주기를 바꾸거나, 버그를 재현·수정할 수
 > 있다(§8 참고).
 >
-> **마지막 검토**: 2026-11-11 (레이트리밋 행 삭제 조건 표현만 고침). 2026-11-10 (`LambdaHandler.kt` 줄 번호만 고침). 2026-11-05 (퍼지 뒤 남는 사본·레이트리밋 행 삭제 반영. §5-3 재가입 정책 2026-11-02, 최초 작성 2026-09-29)
+> **마지막 검토**: 2026-11-16 (§5-3·§7·§8의 탈퇴 서비스 위치와 줄 번호만 고침 — 탈퇴 로직을 member로 옮기고 다른 패키지의 데이터는 이벤트를 듣는 쪽이 지우게 함). 2026-11-11 (레이트리밋 행 삭제 조건 표현만 고침). 2026-11-10 (`LambdaHandler.kt` 줄 번호만 고침). 2026-11-05 (퍼지 뒤 남는 사본·레이트리밋 행 삭제 반영. §5-3 재가입 정책 2026-11-02, 최초 작성 2026-09-29)
 
 ## 1. 쉬운 설명
 
@@ -137,10 +137,10 @@ Context 절 참고). 한국 개인정보보호법의 "지체 없이 파기" 원�
 - 이메일로 회원을 찾는 곳은 가입 중복 확인(`MemberService.kt:21,126`)·로그인
   (`domain/auth/AuthService.kt:152`)·인증 메일 재발송(`AuthService.kt:90`)·비밀번호
   재설정(`domain/auth/PasswordResetService.kt:55`)뿐이다. 퍼지가 옛 행의 이메일을
-  `deleted-<id>@deleted.invalid`로 바꾸므로(`AccountDeletionService.kt:90`) 어느
+  `deleted-<id>@deleted.invalid`로 바꾸므로(`domain/member/AccountDeletionService.kt:78`) 어느
   경로에도 옛 행이 걸리지 않는다.
 - 글·댓글은 옛 회원 id를 계속 가리키며 "탈퇴한 사용자"로 보인다(§5-1). 북마크·폴더·
-  좋아요·조회 기록은 퍼지 때 지워져(`AccountDeletionService.kt:102-108`) 새 계정은 빈
+  좋아요·조회 기록은 퍼지 때 지워져(`AccountDeletionService.kt:87`의 `MemberPurgedEvent`를 듣는 리스너들, §8) 새 계정은 빈
   상태로 시작한다.
 - 같은 이메일로 이어지는 것은 이메일 해시를 키로 쓰는 레이트리밋 카운터뿐이다 —
   로그인 실패 15분 창(`AuthService.kt:39,149`)·인증 메일 발송 1시간 창
@@ -236,7 +236,7 @@ AND deleted_at IS NULL` 조건)도 같은 파일에 있다.
 
 | 값 | 실제 위치 |
 | --- | --- |
-| 유예기간(14일) | `AccountDeletionService.kt:52` (`GRACE_PERIOD`) — FE `texts.ts`의 안내 문구에도 같은 값이 중복돼 있다(자동 동기화 없음, §11 참고) |
+| 유예기간(14일) | `AccountDeletionService.kt:40` (`GRACE_PERIOD`) — FE `texts.ts`의 안내 문구에도 같은 값이 중복돼 있다(자동 동기화 없음, §11 참고) |
 | 정리 배치 실행 주기 | AWS 콘솔/CLI — 전용 EventBridge 룰이 아니라 기존 `link-sphere-feed-crawl` 룰(4일마다, `docs/DEPLOY.md` 8장)에 타겟만 추가했다(§10-2 시행착오 참고). 최악의 경우 유예 만료 후 최대 4일 더 지나야 실제 퍼지된다(14~18일) |
 | 퍼지 배치 한 번에 처리하는 최대 건수 | `AccountPurgeService.kt`의 `BATCH_SIZE`(200) |
 | 퍼지 배치 데드라인 | `BatchJobLimits.kt:10`의 `DEADLINE_MILLIS`(90초, 피드 크롤링·고아 이미지 회수 배치와 공용) — 넘기면 남은 건은 다음 실행으로 미룸 |
@@ -245,13 +245,15 @@ AND deleted_at IS NULL` 조건)도 같은 파일에 있다.
 
 | 순서도 단계 | 파일 | 재배포 필요 |
 | --- | --- | --- |
-| 탈퇴 신청(1단계) | `domain/auth/AccountDeletionService.kt`의 `requestDeletion` | 예 |
+| 탈퇴 신청(1단계) | `domain/member/AccountDeletionService.kt`의 `requestDeletion` — 비밀번호 대조·유예 시작 뒤 `MemberDeletionRequestedEvent`를 낸다 | 예 |
+| 신청 때 세션 폐기·알림 토큰 삭제 | `domain/auth/SessionMemberEventListener.kt`, `infra/fcm/FcmTokenMemberEventListener.kt`(같은 트랜잭션) | 예 |
 | 탈퇴 신청 API | `domain/auth/AuthController.kt`의 `deleteAccount` — `ACCOUNT_DELETE` 권한이 없는 역할(데모 계정)은 서비스에 닿기 전에 403 `ACCESS_DENIED`(`docs/BE-ARCHITECTURE.md` §5 "역할·권한") | 예 |
 | 로그인 시 자동 복구 | `domain/auth/AuthService.kt:146-185`의 `login`(비밀번호 일치 후 `memberService.cancelPendingDeletion` 호출) | 예 |
 | 복구 여부를 FE에 전달 | `domain/auth/AuthDTO.kt`의 `TokenResponse.deletionCancelled` | 예 |
 | 경합 처리용 조건부 UPDATE 3개 | `domain/member/MemberRepository.kt:25-45`(`findIdsPendingPurge`·`cancelDeletionRequest`·`claimForPurge`) | 예 |
-| 유예 만료 확정 + 실제 익명화(2단계) | `domain/auth/AccountDeletionService.kt`의 `purge` | 예 |
-| 배치 진입점(회원별 트랜잭션 분리) | `domain/auth/AccountPurgeService.kt` | 예 |
+| 유예 만료 확정 + 실제 익명화(2단계) | `domain/member/AccountDeletionService.kt`의 `purge` — 회원 행을 익명화한 뒤 `MemberPurgedEvent`를 낸다 | 예 |
+| 영구 삭제 때 개인 전용 데이터 삭제 | 위 두 리스너 + `domain/interaction/InteractionMemberEventListener.kt`(폴더 아이템 → 폴더 → 북마크, 글 좋아요), `domain/comment/CommentMemberEventListener.kt`(댓글 좋아요), `domain/post/PostMemberEventListener.kt`(조회 기록). 하나가 실패하면 그 회원의 삭제 전체가 되돌려진다 | 예 |
+| 배치 진입점(회원별 트랜잭션 분리) | `domain/member/AccountPurgeService.kt`(잡 처리기 `AccountPurgeJobHandler`는 auth에 있다) | 예 |
 | EventBridge → Lambda 진입점 | `LambdaHandler.kt:238-241, 333`(`"account-purge"` case) | 예 |
 | 남에게 보이는 표시(공개 기준) | `domain/member/TableMember.kt:47-54`(`isWithdrawn`·`publicNickname`·`publicImage`) | 예 |
 | 댓글 작성자 표시 | `domain/comment/CommentService.kt`(`toCommentResponse`, `getComments`) | 예 |

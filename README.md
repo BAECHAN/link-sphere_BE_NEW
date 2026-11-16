@@ -48,9 +48,8 @@ src/main/kotlin/com/example/linksphere/
 │   │   ├── AuthController.kt            # 회원가입, 로그인, 토큰 갱신, 로그아웃, 비밀번호 변경, 회원탈퇴
 │   │   ├── AuthDTO.kt
 │   │   ├── AuthService.kt
-│   │   ├── AccountDeletionService.kt    # 회원탈퇴 신청(14일 유예)·유예 만료 시 익명화
-│   │   ├── AccountPurgeService.kt       # 유예 만료 계정을 4일마다 익명화하는 예약 작업(feed-crawl EventBridge 룰과 공유)
 │   │   ├── AccountPurgeJobHandler.kt    # account-purge 잡 처리기
+│   │   ├── SessionMemberEventListener.kt # 탈퇴 신청·영구 삭제 때 세션 폐기
 │   │   ├── PasswordResetService.kt      # 비밀번호 찾기 요청/확인
 │   │   ├── TableMemberActionToken.kt    # 비밀번호재설정·이메일인증용 단발성 토큰(해시 저장)
 │   │   ├── MemberActionTokenRepository.kt
@@ -66,7 +65,10 @@ src/main/kotlin/com/example/linksphere/
 │   │   ├── MemberDTO.kt                 # 가입·계정 수정 요청과 계정 응답(SignupRequest·UpdateAccountRequest·AccountResponse)
 │   │   ├── PasswordPattern.kt           # 가입·비밀번호 변경·재설정이 공유하는 비밀번호 정규식
 │   │   ├── EmailNormalizer.kt           # 이메일 비교·저장 전 정규화(trim·소문자)
-│   │   └── EmailVerificationGate.kt     # 이메일 인증 전 회원의 글·댓글·답글 작성과 링크 미리보기 차단
+│   │   ├── EmailVerificationGate.kt     # 이메일 인증 전 회원의 글·댓글·답글 작성과 링크 미리보기 차단
+│   │   ├── AccountDeletionService.kt    # 회원탈퇴 신청(14일 유예)·유예 만료 시 익명화, 단계마다 이벤트 발행
+│   │   ├── AccountPurgeService.kt       # 유예 만료 계정을 4일마다 익명화하는 예약 작업(feed-crawl EventBridge 룰과 공유)
+│   │   └── MemberLifecycleEvents.kt     # 탈퇴 신청·영구 삭제 이벤트(다른 패키지가 듣고 자기 데이터를 정리)
 │   ├── post/                            # 게시글 도메인
 │   │   ├── PostController.kt            # 게시글 CRUD + 비공개 토글
 │   │   ├── PostDTO.kt
@@ -81,6 +83,7 @@ src/main/kotlin/com/example/linksphere/
 │   │   ├── PostCategoryClassifier.kt    # AI 카테고리 분류
 │   │   ├── PostSearchQuery.kt           # 키워드·의미 검색 조건 조립
 │   │   ├── LinkPreviewController.kt     # 등록 전 링크 미리보기 API(GET /link-preview) — 부품은 linkpreview/
+│   │   ├── PostMemberEventListener.kt   # 회원 영구 삭제 때 그 회원의 조회 기록 삭제
 │   │   └── TablePost.kt
 │   ├── linkpreview/                     # URL 검증·메타데이터 추출·미리보기 캐시(API는 post/LinkPreviewController)
 │   │   ├── SafeUrlValidator.kt          # SSRF 방어(내부망·해석 불가 URL 거부)
@@ -99,6 +102,7 @@ src/main/kotlin/com/example/linksphere/
 │   │   ├── CommentPostProcessJobHandler.kt # comment-postprocess 잡 처리기
 │   │   ├── TableComment.kt
 │   │   ├── CommentLikeController.kt     # 댓글 좋아요·취소(API 문서에서는 "좋아요·북마크" 묶음)
+│   │   ├── CommentMemberEventListener.kt # 회원 영구 삭제 때 그 회원의 댓글 좋아요 삭제
 │   │   ├── CommentReactionRepository.kt
 │   │   └── TableCommentReaction.kt
 │   ├── interaction/                     # 좋아요·북마크(폴더 다중 소속 포함) 도메인
@@ -117,7 +121,8 @@ src/main/kotlin/com/example/linksphere/
 │   │   ├── TableBookmark.kt
 │   │   ├── TableBookmarkFolder.kt
 │   │   ├── TableBookmarkFolderItem.kt
-│   │   └── TablePostReaction.kt
+│   │   ├── TablePostReaction.kt
+│   │   └── InteractionMemberEventListener.kt # 회원 영구 삭제 때 그 회원의 북마크·폴더·글 좋아요 삭제
 │   ├── category/                        # 카테고리 도메인
 │   │   ├── CategoryController.kt
 │   │   ├── CategoryDTO.kt
@@ -195,6 +200,7 @@ src/main/kotlin/com/example/linksphere/
         ├── FcmTokenDTO.kt
         ├── FcmTokenRepository.kt
         ├── FcmTokenService.kt
+        ├── FcmTokenMemberEventListener.kt # 탈퇴 신청·영구 삭제 때 알림 토큰 삭제
         └── TableFcmToken.kt
 ```
 

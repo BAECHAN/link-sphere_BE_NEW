@@ -1,7 +1,6 @@
 package com.example.linksphere.domain.post
 
 import com.example.linksphere.domain.auth.AccessTokenCheck
-import com.example.linksphere.domain.auth.AccountDeletionService
 import com.example.linksphere.domain.auth.AuthController
 import com.example.linksphere.domain.auth.AuthResult
 import com.example.linksphere.domain.auth.AuthService
@@ -9,6 +8,7 @@ import com.example.linksphere.domain.auth.MemberSessionService
 import com.example.linksphere.domain.auth.PasswordResetService
 import com.example.linksphere.domain.comment.CommentController
 import com.example.linksphere.domain.comment.CommentService
+import com.example.linksphere.domain.member.AccountDeletionService
 import com.example.linksphere.domain.member.MemberRole
 import com.example.linksphere.global.config.SecurityConfig
 import com.example.linksphere.global.config.security.CustomAccessDeniedHandler

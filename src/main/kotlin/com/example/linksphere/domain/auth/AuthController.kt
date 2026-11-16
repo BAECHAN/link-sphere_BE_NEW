@@ -1,5 +1,6 @@
 package com.example.linksphere.domain.auth
 
+import com.example.linksphere.domain.member.AccountDeletionService
 import com.example.linksphere.domain.member.AccountResponse
 import com.example.linksphere.domain.member.SignupRequest
 import com.example.linksphere.global.common.ApiResponse

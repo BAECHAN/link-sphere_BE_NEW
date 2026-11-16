@@ -1,10 +1,12 @@
 package com.example.linksphere.domain.auth
 
+import com.example.linksphere.domain.member.AccountDeletionService
 import com.example.linksphere.domain.member.MemberRepository
 import com.example.linksphere.domain.member.MemberService
 import com.example.linksphere.domain.member.SignupRequest
 import com.example.linksphere.domain.member.TableMember
 import com.example.linksphere.global.exception.DuplicateMemberException
+import com.example.linksphere.infra.fcm.FcmTokenMemberEventListener
 import com.example.linksphere.support.PostgresIntegrationTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -30,6 +32,8 @@ import java.util.UUID
     MemberService::class,
     AccountDeletionService::class,
     MemberSessionService::class,
+    SessionMemberEventListener::class,
+    FcmTokenMemberEventListener::class,
     AccountResignupIntegrationTest.PasswordEncoderConfig::class,
 )
 class AccountResignupIntegrationTest {

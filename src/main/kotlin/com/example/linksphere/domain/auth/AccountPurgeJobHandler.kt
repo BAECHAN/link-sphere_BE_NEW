@@ -1,5 +1,6 @@
 package com.example.linksphere.domain.auth
 
+import com.example.linksphere.domain.member.AccountPurgeService
 import com.example.linksphere.global.job.JobHandler
 import com.example.linksphere.global.ratelimit.RateLimitService
 import com.fasterxml.jackson.databind.JsonNode

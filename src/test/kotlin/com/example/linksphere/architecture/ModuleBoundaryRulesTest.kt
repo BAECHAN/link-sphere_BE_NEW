@@ -17,16 +17,6 @@ import org.springframework.data.repository.Repository
  */
 internal val KNOWN_BOUNDARY_VIOLATIONS: Set<String> =
     setOf(
-        "domain.auth.AccountDeletionService -> domain.interaction.BookmarkFolderItemRepository",
-        "domain.auth.AccountDeletionService -> domain.interaction.BookmarkFolderRepository",
-        "domain.auth.AccountDeletionService -> domain.interaction.BookmarkRepository",
-        "domain.auth.AccountDeletionService -> domain.comment.CommentReactionRepository",
-        "domain.auth.AccountDeletionService -> domain.interaction.PostReactionRepository",
-        "domain.auth.AccountDeletionService -> domain.member.MemberRepository",
-        "domain.auth.AccountDeletionService -> domain.member.TableMember",
-        "domain.auth.AccountDeletionService -> domain.post.PostViewRepository",
-        "domain.auth.AccountDeletionService -> infra.fcm.FcmTokenRepository",
-        "domain.auth.AccountPurgeService -> domain.member.MemberRepository",
         "domain.auth.AuthService -> domain.member.TableMember",
         "domain.auth.PasswordResetService -> domain.member.MemberRepository",
         "domain.auth.PasswordResetService -> domain.member.TableMember",

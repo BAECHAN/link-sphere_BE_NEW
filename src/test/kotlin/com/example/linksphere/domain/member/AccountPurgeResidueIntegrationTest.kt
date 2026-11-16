@@ -1,7 +1,11 @@
-package com.example.linksphere.domain.auth
+package com.example.linksphere.domain.member
 
-import com.example.linksphere.domain.member.MemberRepository
-import com.example.linksphere.domain.member.TableMember
+import com.example.linksphere.domain.auth.MemberSessionService
+import com.example.linksphere.domain.auth.SessionMemberEventListener
+import com.example.linksphere.domain.comment.CommentMemberEventListener
+import com.example.linksphere.domain.interaction.InteractionMemberEventListener
+import com.example.linksphere.domain.post.PostMemberEventListener
+import com.example.linksphere.infra.fcm.FcmTokenMemberEventListener
 import com.example.linksphere.support.PostgresIntegrationTest
 import jakarta.persistence.EntityManager
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -22,14 +26,19 @@ import java.util.UUID
  * 탈퇴가 그 회원의 데이터를 빠짐없이 지우는지를 테이블에 남은 행 수로 고정한다
  * (docs/plans/2026-11-16-be-structure-stage2.md PR-1).
  *
- * 지금은 AccountDeletionService가 각 테이블을 직접 지운다. 2단계 PR-6에서 "회원이 지워졌다"를 알리고 기능마다 자기 데이터를
- * 지우는 방식으로 바뀌는데, 듣는 쪽을 하나 빠뜨려도 예외 없이 끝난다. 그때 이 테스트가 남은 행을 잡는다 - 어느 코드가
- * 지우는지는 보지 않고 결과만 본다. 남의 데이터를 건드리지 않는지도 함께 본다.
+ * AccountDeletionService는 "회원이 지워졌다"(MemberPurgedEvent)만 알리고 세션·알림 토큰·북마크 같은 데이터는 그것을 가진
+ * 패키지의 리스너가 지운다(PR-6). 듣는 쪽을 하나 빠뜨려도 예외 없이 끝나므로 이 테스트가 남은 행을 잡는다 - 어느 코드가
+ * 지우는지는 보지 않고 결과만 본다. 남의 데이터를 건드리지 않는지도 함께 본다. 새 리스너를 만들면 아래 @Import에 더한다.
  */
 @PostgresIntegrationTest
 @Import(
     AccountDeletionService::class,
     MemberSessionService::class,
+    SessionMemberEventListener::class,
+    FcmTokenMemberEventListener::class,
+    InteractionMemberEventListener::class,
+    CommentMemberEventListener::class,
+    PostMemberEventListener::class,
     AccountPurgeResidueIntegrationTest.PasswordEncoderConfig::class,
 )
 class AccountPurgeResidueIntegrationTest {
