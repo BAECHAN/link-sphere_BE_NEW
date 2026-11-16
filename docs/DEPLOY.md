@@ -1,6 +1,6 @@
 # AWS Lambda SnapStart 배포 가이드
 
-> 마지막 검토: 2026-11-12 (13번 검증의 호출 구성만 고침). 2026-11-11 (SES 승인 전 영향 문단의 `PostService`·`CommentService` 줄 번호만 고침). 2026-11-10 (서빙 경로를 serverless-java-container로 옮긴 것에 맞춰 "Lambda 실행 구조", "요청 경로를 serverless-java-container로 처리하는 이유", "SnapStart 동작 흐름", spring.factories 절, 13번 검증, 시행착오 3·5·7의 메모만 고침. 2026-11-07에는 같은 절에 비교 실험 결과와 깨진 주소의 운영 측정만 더함. 2026-11-06에는 AWS 설정 변경 경로와 명령 실행 위치만 다시 봄. 같은 날 "MockMvc 방식을 사용하는 이유", "init 단계에서 워밍업을 실행하는 이유", "메모리 2048MB인 이유"만 다시 봄. 2026-11-05에는 TLS 인자·임시 조회 이메일 제외·덤프 처리·로그 가림·cursor 스모크 테스트·요청 경로·Lambda 실행 역할·백업 보존 설정·CDK 안내만 다시 봄. 전체 검토는 2026-10-30)
+> 마지막 검토: 2026-11-16 (spring.factories 절에 "`minimize()`를 쓰지 않는 이유"만 더함). 2026-11-12 (13번 검증의 호출 구성만 고침). 2026-11-11 (SES 승인 전 영향 문단의 `PostService`·`CommentService` 줄 번호만 고침). 2026-11-10 (서빙 경로를 serverless-java-container로 옮긴 것에 맞춰 "Lambda 실행 구조", "요청 경로를 serverless-java-container로 처리하는 이유", "SnapStart 동작 흐름", spring.factories 절, 13번 검증, 시행착오 3·5·7의 메모만 고침. 2026-11-07에는 같은 절에 비교 실험 결과와 깨진 주소의 운영 측정만 더함. 2026-11-06에는 AWS 설정 변경 경로와 명령 실행 위치만 다시 봄. 같은 날 "MockMvc 방식을 사용하는 이유", "init 단계에서 워밍업을 실행하는 이유", "메모리 2048MB인 이유"만 다시 봄. 2026-11-05에는 TLS 인자·임시 조회 이메일 제외·덤프 처리·로그 가림·cursor 스모크 테스트·요청 경로·Lambda 실행 역할·백업 보존 설정·CDK 안내만 다시 봄. 전체 검토는 2026-10-30)
 
 ## 아키텍처 개요
 
@@ -181,6 +181,22 @@ Shadow 공식 변경 내역은 9.0.1에서 _"대부분의 ResourceTransformer �
 
 직접 측정: 병합 대상 `INCLUDE`를 지우고 `Multi-Release`를 켜면 자동 설정 목록 293줄 누락 등 15건으로 실패했다. 전체를 `INCLUDE`로
 바꾸면 중복 항목 20건으로 실패했다. 원래 설정에서는 병합 파일 37개를 확인하고 통과했고, 약 7초가 걸렸다.
+
+**`minimize()`를 쓰지 않는 이유** (2026-11-16 직접 측정, 기준 커밋 `2ab12bc`): JAR 크기를 줄이려고 Shadow의 `minimize()`를 켜 봤다.
+이 옵션은 프로젝트가 쓰지 않는 의존성 클래스를 지우는데, Shadow 문서는 지우지 않을 의존성을 따로 적는 옵션을 _"클래스가
+`Class.forName(String)`으로 동적으로 로드될 때"_ (번역, [Shadow Minimizing](https://gradleup.com/shadow/configuration/minimizing/)) 쓰라고
+안내한다. Spring은 클래스를 그렇게 이름으로 찾는다.
+
+| 설정 | JAR 크기 | 로컬 기동(`scripts/serving-path-experiment/run.sh`의 `GATE=1`, Lambda RIE) |
+| --- | --- | --- |
+| 지금 설정 | 93,823,451바이트 | 정상 |
+| `minimize()` | 56,668,207바이트(−39.6%) | 실패. `spring.factories`에 이름으로 적힌 `ConfigurationWarningsApplicationContextInitializer`가 없어 `LambdaHandler` 초기화에서 `ClassNotFoundException` |
+| `minimize { exclude(dependency(...)) }`로 Spring·Hibernate·Jackson·AWS SDK 등 29개 그룹을 남김 | 85,065,742바이트(−9.3%) | 실패. `org.apache.commons.logging.LogFactory`가 없어 `NoClassDefFoundError` |
+
+두 JAR 모두 `verifyShadowJar`는 통과했다(지워진 클래스는 이 검사 대상이 아니다). 남길 목록을 넓힐수록 줄어드는 양이 작아지고, 목록은
+의존성을 올릴 때마다 다시 맞춰야 한다. SnapStart가 초기화된 상태에서 복원하므로 JAR이 작아져 콜드 스타트가 줄어드는지도 확인되지
+않았다(뜨는 JAR이 없어 재지 못했다). 그래서 쓰지 않는다. 같은 측정에서 `exclude("META-INF/versions/**")`만 더하면 89,109,112바이트
+(−5.0%)였고 `verifyShadowJar`를 통과했다. 테스트는 돌리지 않았고 반영하지 않았다.
 
 ---
 
