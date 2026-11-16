@@ -78,6 +78,19 @@
 
 ### Changed
 
+- `infra` 개발 환경(bootRun)에서도 글·댓글의 뒷일(AI 요약, 댓글 알림·링크 프리뷰)이 실제로 실행됨
+  <details><summary>배경·구현</summary>
+
+  지금까지 로컬에서는 뒷일이 생략돼 글을 등록해도 `aiStatus`가 `PENDING`에 남았다. self-invoke가 Lambda 안에서만 되기 때문이다.
+  뒷일을 넘기는 방식을 인터페이스(`global/job/JobPublisher`)와 구현으로 나눠, 운영은 지금처럼 Lambda self-invoke
+  (`LambdaJobPublisher`), 개발 환경은 같은 프로세스의 전용 스레드(`InProcessJobPublisher`)로 같은 처리기를 탄다. 어느 쪽을 쓸지는
+  `app.job.publisher` 설정이 정한다 — 운영은 `LambdaHandler`가 `lambda`로 넣고, 로컬 도구(`tools/*Runner`) 프로필은 `skip`이
+  기본값이다. 운영의 잡 이름 6개와 `{linksphereJob, event}` 모양, URL·응답·DB 스키마는 그대로다. `LambdaHandler`의 잡 분기는
+  각 도메인의 `*JobHandler`로 옮겼고 `infra.aws`가 도메인의 이벤트 DTO를 참조하던 순환 간선 3개가 없어졌다. 로컬 서버는 운영 DB를
+  보므로 로컬에서 등록한 글에도 Gemini 호출과 크롤링이 돈다. 계획은 `docs/plans/2026-11-16-be-structure-stage2.md` PR-2.
+  (`JobPublisher`, `JobHandler`, `JobRunner`, `InProcessJobPublisher`, `SkippingJobPublisher`, `LambdaJobPublisher`, `LambdaHandler`)
+
+  </details>
 - `infra` 운영 Lambda의 요청 처리를 MockMvc에서 serverless-java-container로 옮김
   <details><summary>배경·구현</summary>
 

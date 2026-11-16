@@ -2,7 +2,7 @@ package com.example.linksphere.domain.comment
 
 import com.example.linksphere.domain.linkpreview.UrlMetadataExtractor
 import com.example.linksphere.domain.post.PostRepository
-import com.example.linksphere.infra.aws.CommentJobDispatcher
+import com.example.linksphere.global.job.JobPublisher
 import com.example.linksphere.infra.fcm.FcmNotificationService
 import org.slf4j.LoggerFactory
 import org.springframework.data.repository.findByIdOrNull
@@ -22,22 +22,22 @@ class CommentPostProcessService(
     private val postRepository: PostRepository,
     private val fcmNotificationService: FcmNotificationService,
     private val urlMetadataExtractor: UrlMetadataExtractor,
-    private val commentJobDispatcher: CommentJobDispatcher,
+    private val jobPublisher: JobPublisher,
 ) {
 
     private val logger = LoggerFactory.getLogger(CommentPostProcessService::class.java)
 
     // 여기서 직접 알림/크롤링을 처리하지 않는다 - 원래 요청(댓글 작성/수정)과 같은 실행 환경 안에서
     // 계속 처리하면 handleRequest() 반환 후 컨테이너가 얼어붙는 문제를 다시 겪는다.
-    // 별도 Lambda 호출(CommentJobDispatcher)로 위임만 하고 즉시 리턴한다.
+    // 뒷일로 맡기기만 하고(JobPublisher — 운영은 별도 Lambda 호출) 즉시 리턴한다.
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     fun handleCommentPostProcess(event: CommentPostProcessEvent) {
         logger.info("[Comment PostProcess] 이벤트 수신 (커밋 후), 별도 Lambda 호출로 위임 - commentId: ${event.commentId}")
-        commentJobDispatcher.dispatch(event)
+        jobPublisher.publish(CommentPostProcessJobHandler.JOB_NAME, event, "commentId: ${event.commentId}")
     }
 
-    // CommentJobDispatcher가 위임한 별도 Lambda 호출 안에서 LambdaHandler가 직접 호출하는 실제 처리부.
-    // 원래 요청과 완전히 독립된 실행 환경이므로 여기서 오래 걸려도 CloudFront/원래 응답에 영향 없다.
+    // 맡긴 뒷일을 CommentPostProcessJobHandler가 받아 호출하는 실제 처리부.
+    // 운영에서는 원래 요청과 완전히 독립된 실행 환경이므로 여기서 오래 걸려도 CloudFront/원래 응답에 영향 없다.
     @Transactional
     fun processCommentJob(event: CommentPostProcessEvent) {
         val comment = commentRepository.findByIdOrNull(event.commentId)

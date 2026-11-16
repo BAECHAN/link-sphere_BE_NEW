@@ -1,9 +1,9 @@
 package com.example.linksphere.domain.post
 
 import com.example.linksphere.domain.category.TableCategory
+import com.example.linksphere.global.job.JobPublisher
 import com.example.linksphere.infra.ai.GeminiService
 import com.example.linksphere.infra.ai.dto.AiAnalysisResult
-import com.example.linksphere.infra.aws.AiJobDispatcher
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
@@ -28,7 +28,7 @@ class PostAIServiceTest {
 
     @Mock private lateinit var postCategoryClassifier: PostCategoryClassifier
 
-    @Mock private lateinit var aiJobDispatcher: AiJobDispatcher
+    @Mock private lateinit var jobPublisher: JobPublisher
 
     @InjectMocks private lateinit var postAIService: PostAIService
 

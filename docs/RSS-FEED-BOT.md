@@ -294,7 +294,7 @@ PR을 올린다. 병합하면 시험 단계를 거쳐 운영에 적용된다. `a
 | Stage A 본체 | `domain/feed/FeedCrawlService.kt` |
 | RSS/Atom 파싱 | `domain/feed/FeedParser.kt` |
 | 중복 판정 키 생성 | `domain/feed/FeedUrlNormalizer.kt` |
-| self-invoke 페이로드 조립 | `infra/aws/FeedJobDispatcher.kt` → `infra/aws/LambdaSelfInvoker.kt`(AWS Lambda Invoke API 호출) |
+| self-invoke 페이로드 조립 | `global/job/JobPublisher.kt`(`JobMessage`) → `infra/aws/LambdaJobPublisher.kt` → `infra/aws/LambdaSelfInvoker.kt`(AWS Lambda Invoke API 호출). 받는 쪽은 `domain/feed/FeedItemJobHandler.kt` |
 | Stage B 본체(claim → createPost) | `domain/feed/FeedItemProcessor.kt` |
 | 원장 테이블 엔티티·쿼리 | `domain/feed/TableFeedSource.kt`/`TableFeedItem.kt`, `FeedSourceRepository.kt`/`FeedItemRepository.kt` |
 | 로컬 E2E 실행 도구 | `tools/FeedCrawlRunner.kt` |

@@ -1,6 +1,6 @@
 # Link-Sphere BE — 게시글 AI 분석 비동기화 (2026-08-01)
 
-> 마지막 검토: 2026-11-15 (YouTube 본문 흐름 그림의 `PostService.kt` 줄 번호만 고침). 2026-11-11 (YouTube 본문 흐름 그림의 `PostService.kt` 줄 번호만 고침). 2026-11-10 (§2 내부 작업 분기 설명의 서빙 경로 이름만 고침). 이전 2026-11-04
+> 마지막 검토: 2026-11-16 (§2의 발행·처리 클래스 이름, §2.2 로컬 환경 동작, §4.3의 처리기 코드만 고침 — 뒷일 전달을 `global/job`으로 옮김). 2026-11-15 (YouTube 본문 흐름 그림의 `PostService.kt` 줄 번호만 고침). 2026-11-11 (YouTube 본문 흐름 그림의 `PostService.kt` 줄 번호만 고침). 2026-11-10 (§2 내부 작업 분기 설명의 서빙 경로 이름만 고침). 이전 2026-11-04
 
 ## 1. 문제
 
@@ -49,8 +49,8 @@ Gemini 응답을 기다리는 도중 그대로 멈춰버릴 수 있었다. SSE(`
 Lambda 호출로 위임**하면 이 제약을 피할 수 있다.
 
 - `PostService.createPost()` 커밋 후, `PostAIService.handlePostCreatedEvent`가
-  `AiJobDispatcher`를 통해 이 Lambda 함수 자기 자신을 `InvocationType.EVENT`
-  (비동기)로 호출한다.
+  `JobPublisher`(운영 구현 `LambdaJobPublisher` → `LambdaSelfInvoker`)를 통해 이 Lambda 함수 자기 자신을
+  `InvocationType.EVENT`(비동기)로 호출한다.
 - 이 호출은 AWS Lambda 컨트롤 플레인에 작업을 "접수"시키고 202 Accepted를
   받는 것으로 끝난다 — Gemini를 호출하는 것과 성격이 같은 평범한 동기 외부 HTTP
   호출이며, 202를 받는 순간 원래 요청의 컨테이너가 얼든 말든 상관없다.
@@ -58,15 +58,15 @@ Lambda 호출로 위임**하면 이 제약을 피할 수 있다.
   처리하던 컨테이너와 메모리·스레드·생명주기를 전혀 공유하지 않는다.
 - `LambdaHandler.handleRequest`는 페이로드의 `linksphereJob` 필드로 일반 HTTP
   이벤트와 이 내부 작업 이벤트를 구분해서, 후자면 서블릿 경로(serverless-java-container)를 거치지 않고
-  `PostAIService.processAiJob`을 직접 호출한다.
+  `JobRunner`가 잡 이름이 맞는 처리기(`AiAnalysisJobHandler`)를 찾아 `PostAIService.processAiJob`을 직접 호출한다.
 
 ```
 POST /post
-  → 크롤링 → DB 커밋 → AiJobDispatcher.dispatch() [202 Accepted, ~1~2초]
+  → 크롤링 → DB 커밋 → JobPublisher.publish("ai-analysis") [202 Accepted, ~1~2초]
   → 응답 반환 (크롤링만 끝나면 바로 나감)
 
 (완전히 별도의 Lambda 실행 환경)
-  → LambdaHandler.handleAiJob()
+  → LambdaHandler → JobRunner → AiAnalysisJobHandler.handle()
     → PostAIService.processAiJob()
       → Gemini 요약(+제목·설명 폴백) + 카테고리 분류 (병렬)
       → DB 저장 (aiStatus: PENDING → COMPLETED(요약 없이 부분 저장 가능)/FAILED)
@@ -128,59 +128,35 @@ FE는 이 필드 전체로 UI를 분기하지는 않지만, `NONE` 값 하나는
 사용자에게 능동적으로 노출하는 로직은 여전히 없다 — 이걸 추가하려면 FE에서 이 필드를
 소비하는 로직이 별도로 필요하다.
 
-관련 파일: `AiJobDispatcher`, `LambdaHandler.handleAiJob`,
+관련 파일: `global/job/JobPublisher`·`JobRunner`, `infra/aws/LambdaJobPublisher`, `AiAnalysisJobHandler`,
 `PostAIService.processAiJob`, `GeminiService.analyzeContentAsync`,
 `PostCategoryClassifier.classifyAsync`, `GeminiService.embedDocument`,
 `PostAIService.saveEmbedding`
 
-### 2.2 로컬 환경에서는 AI 처리가 아예 스킵됨 (버그 아님)
+### 2.2 로컬 환경에서는 같은 프로세스에서 처리한다 (2026-11-16부터)
 
-self-invoke는 "이 Lambda 함수 자기 자신"을 호출하는 구조라, 호출할 함수 이름을
-알아야 한다. `LambdaSelfInvoker`는 이를 `AWS_LAMBDA_FUNCTION_NAME` 환경변수로
-판단하는데, 이 값은 실제 Lambda 실행 환경에서만 존재한다.
+self-invoke는 "이 Lambda 함수 자기 자신"을 호출하는 구조라 Lambda 밖에서는 쓸 수 없다. 그래서 뒷일을 넘기는 방식을
+콘센트(인터페이스 `JobPublisher`)와 플러그(구현)로 나눴다. 맡기는 쪽(`PostAIService.handlePostCreatedEvent`)과 처리하는
+쪽(`AiAnalysisJobHandler` → `processAiJob`)은 어느 환경에서나 같고, 가운데 전달만 `app.job.publisher` 설정이 고른다
+(`src/main/resources/application.yml`).
 
-```kotlin
-// LambdaSelfInvoker.kt
-private val functionName: String? = System.getenv("AWS_LAMBDA_FUNCTION_NAME")
+| 값 | 어디서 | 전달 방식 |
+| --- | --- | --- |
+| `lambda` | 운영 — `LambdaHandler`가 init에서 시스템 프로퍼티로 넣는다 | `LambdaJobPublisher` → `LambdaSelfInvoker`(self-invoke) → 별도 실행 환경의 `LambdaHandler` → `JobRunner` |
+| `in-process` | 개발 환경(`./gradlew bootRun`) 기본값 | `InProcessJobPublisher` — 같은 프로세스의 전용 스레드에서 `JobRunner`를 부른다 |
+| `skip` | `tools/*Runner` 프로필 기본값 | `SkippingJobPublisher` — 경고 로그만 남기고 버린다 |
 
-fun invoke(payload: Any, logContext: String): Boolean {
-    val fnName = functionName
-    if (fnName.isNullOrBlank()) {
-        logger.warn("[LambdaSelfInvoker] AWS_LAMBDA_FUNCTION_NAME 없음 - 위임 생략(로컬 환경으로 추정) - $logContext")
-        return false
-    }
-    ...
-```
+즉 **로컬에서 게시글을 등록하면 Gemini 요약·태그·카테고리 분류가 실제로 돈다**(`gemini.api.key`가 로컬에 있어야 한다).
+개발 환경 구현도 이벤트를 JSON으로 바꿨다가 되돌려 운영과 같은 처리기를 타므로, 직렬화가 안 되는 이벤트는 로컬에서 드러난다.
+로컬 서버는 운영 DB를 보므로(`application-secret.yml`) 로컬에서 등록한 글의 요약도 운영 DB에 저장된다.
 
-`./gradlew bootRun`으로 로컬 실행하면 이 환경변수가 없으므로 `invoke()`가 즉시
-`false`를 반환하고 끝난다. `AiJobDispatcher.dispatch()`도 그 결과를 그대로
-받아 경고 로그만 남기고 리턴한다:
+로컬 도구(`FeedCrawlRunner --commit` 등)는 기본값이 `skip`이라 도구로 등록한 글의 `aiStatus`는 `PENDING`에 남는다. 함께
+돌리려면 실행 인자에 `--app.job.publisher=in-process`를 준다.
 
-```
-[LambdaSelfInvoker] AWS_LAMBDA_FUNCTION_NAME 없음 - 위임 생략(로컬 환경으로 추정) - postId: ...
-[AiJobDispatcher] AI 작업 발행 생략(로컬 환경으로 추정) - postId: ...
-```
-
-즉 **로컬에서 게시글을 등록하면 크롤링·저장까지는 정상 동작하지만, Gemini
-요약·태그·카테고리 분류는 절대 실행되지 않는다** — `aiSummary`는 계속
-`null`, `aiStatus`는 계속 `PENDING`으로 남는다. `gemini.api.key`가 로컬에
-올바르게 설정돼 있어도 마찬가지다(호출 자체가 발행되지 않으므로 키 유효성과
-무관).
-
-2026-08-06 로컬 게시글 등록 후 "AI 응답이 안 오는 것 같다"는 문의로 재확인한
-사례: 프로덕션(배포된 Lambda)에 동일하게 게시글을 등록하자 `Requesting
-analysis` → `Response received` → `[AI] 분석 완료`까지 9초 내 정상 완료됐고,
-CloudWatch 로그 전 구간에 401/403 등 인증 오류는 없었다. 즉 API 키 문제가
-아니라 이 절에서 설명하는 로컬 환경의 구조적 스킵이었다.
-
-**로컬에서 AI 파이프라인 자체를 검증하려면** 배포된 환경(prod alias)에 직접
-게시글을 등록하고 CloudWatch(`/aws/lambda/link-sphere-api`)에서
-`[Gemini API]`, `[AI] 분석 완료` 로그를 확인하는 방법뿐이다. 로컬에서 이
-경로까지 동작하게 하려면 `AiJobDispatcher.dispatch()`가 `invoke()`
-실패(`false`) 시 `PostAIService.processAiJob(event)`를 직접 동기 호출하는
-fallback을 추가해야 하는데, 아직 구현하지 않았다 — 필요성이 제기됐을 때
-평가만 하고 보류한 상태(과한 작업은 아니라고 판단됨, 트레이드오프는 로컬
-게시글 등록 응답이 Gemini 호출 시간만큼 느려진다는 점).
+2026-11-16 전에는 로컬에서 뒷일이 아예 생략됐다 — `LambdaSelfInvoker`가 `AWS_LAMBDA_FUNCTION_NAME`이 없으면 발행하지 않고
+`false`를 돌려줬고, `aiSummary`는 `null`·`aiStatus`는 `PENDING`으로 남았다. 2026-08-06 "로컬에서 AI 응답이 안 오는 것 같다"는
+문의가 이 생략 때문이었다(운영에 같은 글을 등록하니 9초 안에 끝났고 인증 오류는 없었다). 그때는 동기 fallback을 평가만 하고
+보류했는데, 구조 재구성 2단계에서 전달 장치를 나누며 해소했다(`docs/plans/2026-11-16-be-structure-stage2.md` PR-2).
 
 ## 3. 시행착오 1 — self-invoke가 `$LATEST`를 타던 문제
 
@@ -216,7 +192,7 @@ IAM 정책([DEPLOY.md](./DEPLOY.md) 1절)도 정확히 이 이유로 끝에 와�
 "Resource": "arn:aws:lambda:ap-northeast-1:*:function:link-sphere-api*"
 ```
 
-`AiJobDispatcher`가 self-invoke할 때 필요한 `lambda:InvokeFunction` 권한도 같은
+`LambdaSelfInvoker`가 self-invoke할 때 필요한 `lambda:InvokeFunction` 권한도 같은
 패턴(`arn:aws:lambda:ap-northeast-1:<account>:function:link-sphere-api*`)으로
 Lambda 실행 역할에 부여해야 한다.
 
@@ -293,17 +269,16 @@ Transaction silently rolled back because it has been marked as rollback-only
 ```
 
 ```kotlin
-// LambdaHandler.kt — 트랜잭션이 이미 정리된 "바깥"
-private fun handleAiJob(event: JsonNode, output: OutputStream) {
-    val payload = mapper.treeToValue(event.get("event"), PostCreatedEvent::class.java)
-    val postAIService = applicationContext.getBean(PostAIService::class.java)
+// AiAnalysisJobHandler.kt — 트랜잭션이 이미 정리된 "바깥"(2026-11-16 전에는 LambdaHandler.handleAiJob)
+override fun handle(job: JsonNode) {
+    val event = objectMapper.treeToValue(job.get(JobMessage.EVENT_FIELD), PostCreatedEvent::class.java)
+
     try {
-        postAIService.processAiJob(payload)
+        postAIService.processAiJob(event)
     } catch (e: ObjectOptimisticLockingFailureException) {
         // 여기는 트랜잭션 밖이므로 안전하게 흡수해도 된다.
-        logger.info("[AI Job] 처리 중 post가 삭제됨 - postId: ${payload.postId}")
+        logger.info("[AI Job] 처리 중 post가 삭제됨 - postId: ${event.postId}")
     }
-    mapper.writeValue(output, mapOf("statusCode" to 200, "body" to "ok"))
 }
 ```
 

@@ -2,7 +2,7 @@ package com.example.linksphere.domain.feed
 
 import com.example.linksphere.domain.member.MemberRepository
 import com.example.linksphere.global.common.BatchJobLimits
-import com.example.linksphere.infra.aws.FeedJobDispatcher
+import com.example.linksphere.global.job.JobPublisher
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import java.time.LocalDateTime
@@ -20,7 +20,7 @@ class FeedCrawlService(
     private val feedItemRepository: FeedItemRepository,
     private val feedParser: FeedParser,
     private val memberRepository: MemberRepository,
-    private val feedJobDispatcher: FeedJobDispatcher,
+    private val jobPublisher: JobPublisher,
     private val feedItemProcessor: FeedItemProcessor,
 ) {
 
@@ -87,11 +87,13 @@ class FeedCrawlService(
         }
 
         val chunks = fresh.chunked(CHUNK_SIZE)
-        chunks.forEach { chunk -> feedJobDispatcher.dispatch(FeedItemJobEvent(botId = botId, items = chunk)) }
+        chunks.forEach { chunk ->
+            jobPublisher.publish(FeedItemJobHandler.JOB_NAME, FeedItemJobEvent(botId = botId, items = chunk), "items: ${chunk.size}")
+        }
         logger.info("[FeedCrawl] 후보 ${fresh.size}건, ${chunks.size}개 chunk로 dispatch")
     }
 
-    // Stage B: FeedJobDispatcher가 위임한 self-invoke 안에서 LambdaHandler가 직접 호출하는 처리부.
+    // Stage B: 맡긴 뒷일을 FeedItemJobHandler가 받아 호출하는 처리부.
     // 항목마다 별도 빈(FeedItemProcessor)을 통해 호출해야 @Transactional이 실제로 적용된다 —
     // 이 클래스 안에서 직접 호출하면 Spring 프록시를 우회한다(FeedItemProcessor 클래스 주석 참고).
     fun processFeedItemJob(event: FeedItemJobEvent) {

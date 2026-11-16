@@ -2,7 +2,7 @@ package com.example.linksphere.domain.feed
 
 import com.example.linksphere.domain.member.MemberRepository
 import com.example.linksphere.domain.member.TableMember
-import com.example.linksphere.infra.aws.FeedJobDispatcher
+import com.example.linksphere.global.job.JobPublisher
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
@@ -29,7 +29,7 @@ class FeedCrawlServiceTest {
 
     @Mock private lateinit var memberRepository: MemberRepository
 
-    @Mock private lateinit var feedJobDispatcher: FeedJobDispatcher
+    @Mock private lateinit var jobPublisher: JobPublisher
 
     @Mock private lateinit var feedItemProcessor: FeedItemProcessor
 
@@ -46,7 +46,7 @@ class FeedCrawlServiceTest {
         feedCrawlService.collectAndDispatch()
 
         verifyNoInteractions(feedSourceRepository)
-        verifyNoInteractions(feedJobDispatcher)
+        verifyNoInteractions(jobPublisher)
     }
 
     @Test
@@ -56,7 +56,7 @@ class FeedCrawlServiceTest {
 
         feedCrawlService.collectAndDispatch()
 
-        verifyNoInteractions(feedJobDispatcher)
+        verifyNoInteractions(jobPublisher)
     }
 
     @Test
@@ -72,7 +72,7 @@ class FeedCrawlServiceTest {
 
         feedCrawlService.collectAndDispatch()
 
-        verifyNoInteractions(feedJobDispatcher)
+        verifyNoInteractions(jobPublisher)
     }
 
     @Test
@@ -89,11 +89,11 @@ class FeedCrawlServiceTest {
 
         feedCrawlService.collectAndDispatch()
 
-        // dispatch(event: FeedItemJobEvent)는 Kotlin이 선언한 non-null 파라미터라, ArgumentCaptor나
+        // publish(jobName, event, logContext)는 Kotlin이 선언한 non-null 파라미터라, ArgumentCaptor나
         // eq()가 내부적으로 돌려주는 합성 null 값을 그대로 넘기면 Kotlin의 호출부 null 체크에 걸려
         // NPE가 난다 - 값을 정확히 알고 있으므로 매처 대신 실제 값으로 직접 비교한다.
         val expectedItems = listOf(FeedCrawlItem(source.id, "글 1", "https://example.com/1"))
-        verify(feedJobDispatcher).dispatch(FeedItemJobEvent(botId, expectedItems))
+        verify(jobPublisher).publish("feed-item", FeedItemJobEvent(botId, expectedItems), "items: 1")
     }
 
     @Test
@@ -116,10 +116,10 @@ class FeedCrawlServiceTest {
         feedCrawlService.collectAndDispatch()
 
         // 소스 순서가 셔플되어 어떤 5건이 뽑힐지 알 수 없으므로, non-null 파라미터를 요구하는
-        // dispatch()에 captor.capture()/any()를 직접 넘기면 90~93행과 같은 이유로 NPE가 난다.
+        // publish()에 captor.capture()/any()를 직접 넘기면 90~93행과 같은 이유로 NPE가 난다.
         // 실제 호출 기록을 그대로 조회해 우회한다.
-        val invocation = mockingDetails(feedJobDispatcher).invocations.single()
-        val dispatchedEvent = invocation.arguments[0] as FeedItemJobEvent
+        val invocation = mockingDetails(jobPublisher).invocations.single()
+        val dispatchedEvent = invocation.arguments[1] as FeedItemJobEvent
         assertEquals(5, dispatchedEvent.items.size)
     }
 
@@ -136,7 +136,7 @@ class FeedCrawlServiceTest {
         feedCrawlService.collectAndDispatch()
 
         val expectedItems = listOf(FeedCrawlItem(source.id, "본문 있는 글", "https://example.com/1", "본문 내용"))
-        verify(feedJobDispatcher).dispatch(FeedItemJobEvent(botId, expectedItems))
+        verify(jobPublisher).publish("feed-item", FeedItemJobEvent(botId, expectedItems), "items: 1")
     }
 
     @Test

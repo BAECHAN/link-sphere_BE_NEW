@@ -12,13 +12,13 @@ import org.springframework.context.annotation.Profile
 import org.springframework.stereotype.Component
 
 /**
- * 로컬에서 피드 수집 파이프라인을 검증하는 도구. LambdaSelfInvoker가 로컬(AWS_LAMBDA_FUNCTION_NAME
- * 없음)에서는 self-invoke를 스킵하므로, Stage A/B를 거치는 실제 Lambda 경로는 로컬에서 재현할 수
- * 없다 — 이 러너가 유일한 로컬 E2E 경로다. OrphanImageCleanupRunner와 동일하게 dry-run이 기본이며,
+ * 로컬에서 피드 수집 파이프라인을 검증하는 도구. self-invoke는 Lambda 밖에서 쓸 수 없어 Stage A/B를
+ * 거치는 실제 Lambda 경로는 로컬에서 재현할 수 없다 — 이 러너가 유일한 로컬 E2E 경로다. OrphanImageCleanupRunner와 동일하게 dry-run이 기본이며,
  * 관리자 API가 없는 이 코드베이스에서 admin 성격의 작업은 로컬 실행 도구로만 노출한다.
  *
- * 주의: --commit으로 실제 등록하면 self-invoke가 스킵되므로 등록된 글의 aiStatus가 PENDING에
- * 영구 고착된다(위와 같은 이유). "AI 파이프라인이 도는지" 검증 목적으로는 쓰지 말 것 - 실제로
+ * 주의: --commit으로 실제 등록하면 등록된 글의 aiStatus가 PENDING에 영구 고착된다 — 도구 프로필은
+ * 뒷일을 넘기지 않는 것이 기본값이다(application.yml의 app.job.publisher=skip). AI 분석까지 돌리려면
+ * 실행 인자에 --app.job.publisher=in-process를 더한다. "AI 파이프라인이 도는지" 검증 목적으로는 쓰지 말 것 - 실제로
  * 2026-09-03에 이 방식으로 등록한 10건이 그렇게 남아 프로덕션 봇 글 전수가 요약 없는 상태가 됐었다.
  *
  * 실행: ./gradlew bootRun --args='--spring.profiles.active=secret,feed-crawl'            (dry-run, 후보만 출력)
