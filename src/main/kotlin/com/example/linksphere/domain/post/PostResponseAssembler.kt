@@ -3,16 +3,13 @@ package com.example.linksphere.domain.post
 import com.example.linksphere.domain.category.CategoryInfo
 import com.example.linksphere.domain.category.CategoryResponse
 import com.example.linksphere.domain.category.CategoryService
-import com.example.linksphere.domain.interaction.BookmarkFolderItemRepository
-import com.example.linksphere.domain.interaction.BookmarkRepository
-import com.example.linksphere.domain.interaction.PostReactionRepository
 import com.example.linksphere.domain.member.MemberService
 import org.springframework.stereotype.Service
 import java.util.UUID
 
 /**
- * TablePost를 PostResponse로 조립한다 - 작성자·좋아요·북마크·댓글수를 여러 도메인의
- * Repository에서 모아 붙이는 읽기 전용 조립기다.
+ * TablePost를 PostResponse로 조립한다 - 작성자·좋아요·북마크·댓글수를 다른 패키지에 물어
+ * 모아 붙이는 읽기 전용 조립기다.
  *
  * PostService와 BookmarkFolderService 둘 다 이 조립 로직이 필요한데, 원래는 PostService가
  * 소유하고 BookmarkFolderService가 PostService를 주입받아 썼다. 그런데 BookmarkFolderService가
@@ -20,6 +17,7 @@ import java.util.UUID
  * Repository들)를 서비스 경유로 쓰게 바꾸면 순환 참조가 생긴다. 이 클래스는 post·interaction의
  * Service를 참조하지 않는 조립기라, 두 서비스가 각자 이 클래스를 주입받아도 순환이 생기지 않는다
  * (CategoryService·MemberService는 post·interaction을 참조하지 않아 써도 된다 - 카테고리 이름은 category에, 작성자는 member에 묻는다).
+ * 좋아요·북마크와 댓글 수는 post가 정한 약속(PostInteractionPort·PostCommentPort)으로 묻고 저장소만 참조하는 구현이 답한다.
  *
  * 트랜잭션은 스스로 열지 않는다 - 항상 이미 트랜잭션이 열려 있는 PostService/BookmarkFolderService의
  * 메서드 안에서 호출되는 것을 전제로 한다(Spring은 같은 스레드의 트랜잭션 컨텍스트를 공유하므로
@@ -28,9 +26,7 @@ import java.util.UUID
 @Service
 class PostResponseAssembler(
     private val memberService: MemberService,
-    private val bookmarkRepository: BookmarkRepository,
-    private val bookmarkFolderItemRepository: BookmarkFolderItemRepository,
-    private val postReactionRepository: PostReactionRepository,
+    private val postInteractionPort: PostInteractionPort,
     private val postCommentPort: PostCommentPort,
     private val categoryService: CategoryService,
 ) {
@@ -48,33 +44,8 @@ class PostResponseAssembler(
         // 공개 닉네임·이미지 규칙(탈퇴한 회원은 null)은 member가 적용해 돌려준다
         val authorMap = memberService.findProfiles(posts.map { it.userId }.distinct()).mapValues { (_, profile) -> UserSummary(profile.id, profile.nickname, profile.image) }
 
-        // 개수는 DB에서 GROUP BY로 센다(§7-8) - 예전에는 북마크·좋아요 행을 전부 읽어 메모리에서 셌다
-        val bookmarkCountMap = bookmarkRepository.countByPostIdIn(postIds).associate { it.postId to it.count.toInt() }
-        val myBookmarks =
-            if (currentUserId != null) {
-                bookmarkRepository.findAllByUserIdAndPostIdIn(currentUserId, postIds)
-            } else {
-                emptyList()
-            }
-        val bookmarkedPostIds = myBookmarks.map { it.postId }.toSet()
-        val folderIdsByPost: Map<UUID, List<UUID>> =
-            if (currentUserId != null) {
-                bookmarkFolderItemRepository.findAllByUserIdAndPostIdIn(currentUserId, postIds)
-                    .groupBy({ it.postId }, { it.folderId })
-            } else {
-                emptyMap()
-            }
-
-        val reactionCountMap = postReactionRepository.countByPostIdIn(postIds).associate { it.postId to it.count.toInt() }
-        val reactedPostIds =
-            if (currentUserId != null) {
-                postReactionRepository
-                    .findAllByUserIdAndPostIdIn(currentUserId, postIds)
-                    .map { it.postId }
-                    .toSet()
-            } else {
-                emptySet()
-            }
+        // 좋아요·북마크 수와 내 상태는 interaction이 구현한 포트에 묻는다(PostInteractionPort) - post는 그 저장소를 모른다
+        val interactions = postInteractionPort.findSummaries(postIds, currentUserId)
 
         // 댓글 수는 comment가 구현한 포트에 묻는다(PostCommentPort) - post는 댓글 저장소를 모른다
         val commentCountMap = postCommentPort.countByPostIds(postIds)
@@ -92,11 +63,7 @@ class PostResponseAssembler(
                 postId = postId,
                 author = author,
                 categoryMap = categoryMap,
-                likeCount = reactionCountMap[postId] ?: 0,
-                isLiked = postId in reactedPostIds,
-                bookmarkCount = bookmarkCountMap[postId] ?: 0,
-                isBookmarked = postId in bookmarkedPostIds,
-                bookmarkFolderIds = folderIdsByPost[postId] ?: emptyList(),
+                interaction = interactions.getValue(postId),
                 commentCount = commentCountMap[postId] ?: 0,
                 isSemanticMatch = searchTokens.isNotEmpty() && !PostSearchQuery.matchesKeywordLiterally(post, searchTokens),
             )
@@ -109,28 +76,12 @@ class PostResponseAssembler(
 
         val author = memberService.getProfile(post.userId).let { UserSummary(id = it.id, nickname = it.nickname, image = it.image) }
 
-        val isBookmarked = currentUserId?.let { bookmarkRepository.existsByUserIdAndPostId(it, postId) } ?: false
-        // isBookmarked 가 true 인 경우는 currentUserId != null 인 경로(위 let)를 통해서만 나올 수 있으므로
-        // 컴파일러가 이 분기 안에서 currentUserId 를 non-null 로 스마트캐스트한다.
-        val bookmarkFolderIds =
-            if (isBookmarked) {
-                bookmarkFolderItemRepository.findFolderIdsByUserIdAndPostId(currentUserId, postId)
-            } else {
-                emptyList()
-            }
         return buildPostResponse(
             post = post,
             postId = postId,
             author = author,
             categoryMap = categoriesById(post.categoryIds),
-            likeCount = postReactionRepository.countByPostId(postId).toInt(),
-            isLiked =
-            currentUserId?.let {
-                postReactionRepository.existsByUserIdAndPostId(it, postId)
-            } ?: false,
-            bookmarkCount = bookmarkRepository.countByPostId(postId).toInt(),
-            isBookmarked = isBookmarked,
-            bookmarkFolderIds = bookmarkFolderIds,
+            interaction = postInteractionPort.findSummary(postId, currentUserId),
             commentCount = postCommentPort.countByPostId(postId),
         )
     }
@@ -142,11 +93,7 @@ class PostResponseAssembler(
         postId: UUID,
         author: UserSummary,
         categoryMap: Map<Long, CategoryInfo>,
-        likeCount: Int,
-        isLiked: Boolean,
-        bookmarkCount: Int,
-        isBookmarked: Boolean,
-        bookmarkFolderIds: List<UUID> = emptyList(),
+        interaction: PostInteractionSummary,
         commentCount: Int,
         isSemanticMatch: Boolean = false,
     ): PostResponse = PostResponse(
@@ -164,14 +111,14 @@ class PostResponseAssembler(
         stats =
         PostStats(
             viewCount = post.viewCount ?: 0,
-            likeCount = likeCount,
+            likeCount = interaction.likeCount,
             commentCount = commentCount,
-            bookmarkCount = bookmarkCount,
+            bookmarkCount = interaction.bookmarkCount,
         ),
         userInteractions = PostUserInteractions(
-            isLiked = isLiked,
-            isBookmarked = isBookmarked,
-            bookmarkFolderIds = bookmarkFolderIds,
+            isLiked = interaction.isLiked,
+            isBookmarked = interaction.isBookmarked,
+            bookmarkFolderIds = interaction.bookmarkFolderIds,
         ),
         author = author,
         isSemanticMatch = isSemanticMatch,

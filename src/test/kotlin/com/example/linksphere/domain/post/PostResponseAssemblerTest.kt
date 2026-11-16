@@ -4,16 +4,18 @@ import com.example.linksphere.domain.category.CategoryInfo
 import com.example.linksphere.domain.category.CategoryResponse
 import com.example.linksphere.domain.category.CategoryService
 import com.example.linksphere.domain.interaction.BookmarkFolderItemRepository
+import com.example.linksphere.domain.interaction.BookmarkFolderRepository
 import com.example.linksphere.domain.interaction.BookmarkRepository
+import com.example.linksphere.domain.interaction.PostInteractionAdapter
 import com.example.linksphere.domain.interaction.PostReactionRepository
 import com.example.linksphere.domain.interaction.TableBookmarkFolderItem
 import com.example.linksphere.domain.member.MemberProfile
 import com.example.linksphere.domain.member.MemberService
 import com.example.linksphere.domain.member.TableMember
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
-import org.mockito.InjectMocks
 import org.mockito.Mock
 import org.mockito.Mockito.lenient
 import org.mockito.Mockito.times
@@ -42,7 +44,22 @@ class PostResponseAssemblerTest {
 
     @Mock private lateinit var categoryService: CategoryService
 
-    @InjectMocks private lateinit var assembler: PostResponseAssembler
+    @Mock private lateinit var bookmarkFolderRepository: BookmarkFolderRepository
+
+    private lateinit var assembler: PostResponseAssembler
+
+    // 좋아요·북마크는 interaction의 PostInteractionAdapter가 읽는다. 실제 구현에 mock 저장소를 물려 응답에 실리는 값과
+    // 쿼리 횟수를 예전과 같은 단언으로 본다
+    @BeforeEach
+    fun setUp() {
+        assembler =
+            PostResponseAssembler(
+                memberService = memberService,
+                postInteractionPort = PostInteractionAdapter(bookmarkRepository, bookmarkFolderItemRepository, bookmarkFolderRepository, postReactionRepository),
+                postCommentPort = postCommentPort,
+                categoryService = categoryService,
+            )
+    }
 
     // 글은 카테고리를 id로만 든다 - 이름은 CategoryService에서 받아 id 순으로 붙이고, 없는 id는 응답에서 뺀다
     @Test

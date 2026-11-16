@@ -4,6 +4,8 @@ import com.example.linksphere.domain.category.CategoryService
 import com.example.linksphere.domain.interaction.BookmarkFolderItemRepository
 import com.example.linksphere.domain.interaction.BookmarkFolderRepository
 import com.example.linksphere.domain.interaction.BookmarkRepository
+import com.example.linksphere.domain.interaction.PostInteractionAdapter
+import com.example.linksphere.domain.interaction.PostReactionRepository
 import com.example.linksphere.domain.interaction.TableBookmarkFolder
 import com.example.linksphere.domain.linkpreview.LinkPreviewService
 import com.example.linksphere.domain.linkpreview.SafeUrlValidator
@@ -26,12 +28,12 @@ import com.example.linksphere.infra.ai.GeminiService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import org.mockito.ArgumentCaptor
 import org.mockito.ArgumentMatchers
 import org.mockito.ArgumentMatchers.any
-import org.mockito.InjectMocks
 import org.mockito.Mock
 import org.mockito.Mockito.doThrow
 import org.mockito.Mockito.inOrder
@@ -80,7 +82,31 @@ class PostServiceTest {
 
     @Mock private lateinit var rateLimitService: RateLimitService
 
-    @InjectMocks private lateinit var postService: PostService
+    @Mock private lateinit var postReactionRepository: PostReactionRepository
+
+    private lateinit var postService: PostService
+
+    // 글 등록 때의 북마크 저장은 interaction의 PostInteractionAdapter가 맡는다. 실제 구현에 mock 저장소를 물려 "어느 폴더를
+    // 확인하고 무엇을 저장하는가"를 예전과 같은 단언으로 본다
+    @BeforeEach
+    fun setUp() {
+        postService =
+            PostService(
+                postRepository = postRepository,
+                categoryService = categoryService,
+                postInteractionPort = PostInteractionAdapter(bookmarkRepository, bookmarkFolderItemRepository, bookmarkFolderRepository, postReactionRepository),
+                postViewRepository = postViewRepository,
+                postResponseAssembler = postResponseAssembler,
+                eventPublisher = eventPublisher,
+                urlMetadataExtractor = urlMetadataExtractor,
+                safeUrlValidator = safeUrlValidator,
+                geminiService = geminiService,
+                memberService = memberService,
+                linkPreviewService = linkPreviewService,
+                advisoryLock = advisoryLock,
+                rateLimitService = rateLimitService,
+            )
+    }
 
     private fun privatePost(postId: UUID, ownerId: UUID) = TablePost(
         id = postId,
@@ -443,8 +469,11 @@ class PostServiceTest {
         val result =
             postService.createPost(userId, PostCreateRequest(url = url, folderIds = listOf(folderId1, folderId2)))
 
-        verify(postRepository).flush()
-        verify(bookmarkRepository).insertIgnoreConflict(userId, postId)
+        // 북마크 insert는 네이티브 쿼리라 글 행이 먼저 DB에 나가야 한다 - flush가 폴더 확인·북마크 저장보다 앞이다
+        val order = inOrder(postRepository, bookmarkFolderRepository, bookmarkRepository)
+        order.verify(postRepository).flush()
+        order.verify(bookmarkFolderRepository).findAllById(listOf(folderId1, folderId2))
+        order.verify(bookmarkRepository).insertIgnoreConflict(userId, postId)
         verify(bookmarkFolderItemRepository).insertIgnoreConflict(userId, postId, folderId1)
         verify(bookmarkFolderItemRepository).insertIgnoreConflict(userId, postId, folderId2)
         assertEquals(true, result.userInteractions.isBookmarked)

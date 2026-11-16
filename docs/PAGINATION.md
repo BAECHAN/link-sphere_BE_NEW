@@ -97,7 +97,7 @@ flowchart TD
 
 | 목록 | cursor 경로 | Phase 4에서 지운 옛 경로 |
 | --- | --- | --- |
-| 피드·검색 | [`PostRepositoryImpl.kt:19`](../src/main/kotlin/com/example/linksphere/domain/post/PostRepositoryImpl.kt#L19) `findPostsAfter`, [`PostService.kt:180`](../src/main/kotlin/com/example/linksphere/domain/post/PostService.kt#L180) | `findPosts`, `getAllPosts` |
+| 피드·검색 | [`PostRepositoryImpl.kt:19`](../src/main/kotlin/com/example/linksphere/domain/post/PostRepositoryImpl.kt#L19) `findPostsAfter`, [`PostService.kt:155`](../src/main/kotlin/com/example/linksphere/domain/post/PostService.kt#L155) | `findPosts`, `getAllPosts` |
 | 북마크 | [`BookmarkRepositoryImpl.kt:21`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkRepositoryImpl.kt#L21) `findBookmarkedPostsAfter`, [`BookmarkFolderService.kt:221`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkFolderService.kt#L221) | `findBookmarkedPosts`, `getBookmarkedPosts` |
 | 내 댓글 | [`CommentRepository.kt:30`](../src/main/kotlin/com/example/linksphere/domain/comment/CommentRepository.kt#L30) `findMyCommentsFirst`·`findMyCommentsAfter`, [`CommentService.kt:132`](../src/main/kotlin/com/example/linksphere/domain/comment/CommentService.kt#L132) | `findMyComments`, `getMyComments` |
 
@@ -200,7 +200,7 @@ flowchart TD
 | "이 키 다음부터" 조건식 | [`SeekPredicate.kt`](../src/main/kotlin/com/example/linksphere/global/common/SeekPredicate.kt) |
 | WHERE 형태·파생 테이블 형태 조회 | [`KeysetQuery.kt`](../src/main/kotlin/com/example/linksphere/global/common/KeysetQuery.kt) |
 | 정렬별 키 구성 | [`PostRepositoryCustom.kt:33`](../src/main/kotlin/com/example/linksphere/domain/post/PostRepositoryCustom.kt#L33) `PostListSort`, [`BookmarkRepositoryCustom.kt:36`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkRepositoryCustom.kt#L36) `BookmarkListSort` |
-| 검색 상태 이어 가기 | [`PostService.kt:180`](../src/main/kotlin/com/example/linksphere/domain/post/PostService.kt#L180), [`BookmarkFolderService.kt:221`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkFolderService.kt#L221) |
+| 검색 상태 이어 가기 | [`PostService.kt:155`](../src/main/kotlin/com/example/linksphere/domain/post/PostService.kt#L155), [`BookmarkFolderService.kt:221`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkFolderService.kt#L221) |
 | 끝까지 읽기·SQL 형태 테스트 | [`CursorPaginationIntegrationTest.kt`](../src/test/kotlin/com/example/linksphere/domain/post/CursorPaginationIntegrationTest.kt) |
 
 | 하고 싶은 일 | 방법 | 재배포 |

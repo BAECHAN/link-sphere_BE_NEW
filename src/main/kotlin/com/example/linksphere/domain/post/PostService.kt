@@ -1,9 +1,6 @@
 package com.example.linksphere.domain.post
 
 import com.example.linksphere.domain.category.CategoryService
-import com.example.linksphere.domain.interaction.BookmarkFolderItemRepository
-import com.example.linksphere.domain.interaction.BookmarkFolderRepository
-import com.example.linksphere.domain.interaction.BookmarkRepository
 import com.example.linksphere.domain.linkpreview.LinkPreviewService
 import com.example.linksphere.domain.linkpreview.SafeUrlValidator
 import com.example.linksphere.domain.linkpreview.UrlMetadata
@@ -14,7 +11,6 @@ import com.example.linksphere.global.common.AdvisoryLock
 import com.example.linksphere.global.common.CursorCodec
 import com.example.linksphere.global.common.KeysetSlice
 import com.example.linksphere.global.common.Paging
-import com.example.linksphere.global.exception.BookmarkFolderNotFoundException
 import com.example.linksphere.global.exception.DuplicatePostException
 import com.example.linksphere.global.exception.ForbiddenException
 import com.example.linksphere.global.exception.PostNotFoundException
@@ -33,9 +29,7 @@ import java.util.UUID
 class PostService(
     private val postRepository: PostRepository,
     private val categoryService: CategoryService,
-    private val bookmarkRepository: BookmarkRepository,
-    private val bookmarkFolderItemRepository: BookmarkFolderItemRepository,
-    private val bookmarkFolderRepository: BookmarkFolderRepository,
+    private val postInteractionPort: PostInteractionPort,
     private val postViewRepository: PostViewRepository,
     private val postResponseAssembler: PostResponseAssembler,
     private val eventPublisher: ApplicationEventPublisher,
@@ -129,7 +123,9 @@ class PostService(
 
         val shouldBookmark = request.bookmark || !request.folderIds.isNullOrEmpty()
         if (shouldBookmark) {
-            saveBookmarkWithFolders(userId, savedPost.id!!, request.folderIds.orEmpty().distinct())
+            // 북마크 저장은 interaction이 맡는다(PostInteractionPort). insert가 네이티브 쿼리라 posts 행이 먼저 DB에 있어야 해 flush한다
+            postRepository.flush()
+            postInteractionPort.bookmarkNewPost(userId, savedPost.id!!, request.folderIds.orEmpty().distinct())
         }
 
         if (pageContent != null) {
@@ -147,27 +143,6 @@ class PostService(
         }
 
         return postResponseAssembler.convertToResponse(savedPost, userId)
-    }
-
-    /**
-     * 등록과 동시에 북마크 생성. `InteractionService.addBookmarkFolder`와 동일한 검증·insert 순서를 따른다.
-     * insert가 네이티브 쿼리라 posts 행이 먼저 DB에 있어야 하므로 flush 후 실행한다.
-     */
-    private fun saveBookmarkWithFolders(userId: UUID, postId: UUID, folderIds: List<UUID>) {
-        postRepository.flush()
-
-        if (folderIds.isNotEmpty()) {
-            val folders = bookmarkFolderRepository.findAllById(folderIds)
-            val foundIds = folders.map { it.id }.toSet()
-            folderIds.firstOrNull { it !in foundIds }?.let { throw BookmarkFolderNotFoundException(it) }
-            folders.firstOrNull { it.userId != userId }
-                ?.let { throw ForbiddenException("Cannot add bookmark to another user's folder") }
-        }
-
-        bookmarkRepository.insertIgnoreConflict(userId, postId)
-        folderIds.forEach { folderId ->
-            bookmarkFolderItemRepository.insertIgnoreConflict(userId, postId, folderId)
-        }
     }
 
     /**

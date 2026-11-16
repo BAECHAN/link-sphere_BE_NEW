@@ -24,16 +24,6 @@ internal val KNOWN_BOUNDARY_VIOLATIONS: Set<String> =
         "domain.interaction.TableBookmark -> domain.post.TablePost",
         "domain.post.PostRepositoryImpl -> domain.interaction.TableBookmark",
         "domain.post.PostRepositoryImpl -> domain.interaction.TablePostReaction",
-        "domain.post.PostResponseAssembler -> domain.interaction.BookmarkFolderItemRepository",
-        "domain.post.PostResponseAssembler -> domain.interaction.BookmarkRepository",
-        "domain.post.PostResponseAssembler -> domain.interaction.PostReactionRepository",
-        "domain.post.PostResponseAssembler -> domain.interaction.TableBookmark",
-        "domain.post.PostResponseAssembler -> domain.interaction.TableBookmarkFolderItem",
-        "domain.post.PostResponseAssembler -> domain.interaction.TablePostReaction",
-        "domain.post.PostService -> domain.interaction.BookmarkFolderItemRepository",
-        "domain.post.PostService -> domain.interaction.BookmarkFolderRepository",
-        "domain.post.PostService -> domain.interaction.BookmarkRepository",
-        "domain.post.PostService -> domain.interaction.TableBookmarkFolder",
     )
 
 /**
