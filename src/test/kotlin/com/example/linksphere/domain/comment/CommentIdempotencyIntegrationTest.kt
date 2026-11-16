@@ -4,7 +4,7 @@ import com.example.linksphere.domain.linkpreview.UrlMetadataExtractor
 import com.example.linksphere.global.common.AdvisoryLock
 import com.example.linksphere.global.common.SupabaseStorageService
 import com.example.linksphere.global.exception.DuplicateCommentException
-import com.example.linksphere.infra.aws.CommentJobDispatcher
+import com.example.linksphere.global.job.JobPublisher
 import com.example.linksphere.infra.fcm.FcmNotificationService
 import com.example.linksphere.support.PostgresIntegrationTest
 import org.junit.jupiter.api.AfterEach
@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 import org.mockito.ArgumentMatchers
+import org.mockito.ArgumentMatchers.anyString
 import org.mockito.Mockito.never
 import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
@@ -49,7 +50,7 @@ class CommentIdempotencyIntegrationTest {
 
     @MockitoBean private lateinit var supabaseStorageService: SupabaseStorageService
 
-    @MockitoBean private lateinit var commentJobDispatcher: CommentJobDispatcher
+    @MockitoBean private lateinit var jobPublisher: JobPublisher
 
     @MockitoBean private lateinit var fcmNotificationService: FcmNotificationService
 
@@ -93,7 +94,7 @@ class CommentIdempotencyIntegrationTest {
 
         assertEquals(winnerId, loserId)
         assertEquals(1, countComments())
-        verify(commentJobDispatcher, never()).dispatch(anyNonNull())
+        verify(jobPublisher, never()).publish(anyString(), anyNonNull(), anyString())
     }
 
     @ParameterizedTest
@@ -110,7 +111,7 @@ class CommentIdempotencyIntegrationTest {
         assertEquals(winnerId, loserId)
         assertEquals(2, countComments())
         // 부모 댓글을 만들 때의 1회뿐이다
-        verify(commentJobDispatcher, times(1)).dispatch(anyNonNull())
+        verify(jobPublisher, times(1)).publish(anyString(), anyNonNull(), anyString())
     }
 
     // 앞 요청이 잠금을 쥔 채 커밋한다. 뒤 요청이 잠금 뒤에 키를 다시 보지 않으면 시간 창에 걸려 409가 된다.
@@ -124,7 +125,7 @@ class CommentIdempotencyIntegrationTest {
 
         assertEquals(winnerId, loserId)
         assertEquals(1, countComments())
-        verify(commentJobDispatcher, never()).dispatch(anyNonNull())
+        verify(jobPublisher, never()).publish(anyString(), anyNonNull(), anyString())
     }
 
     @Test
@@ -149,7 +150,7 @@ class CommentIdempotencyIntegrationTest {
 
         assertEquals(firstId, resentId)
         assertEquals(1, countComments())
-        verify(commentJobDispatcher, times(1)).dispatch(anyNonNull())
+        verify(jobPublisher, times(1)).publish(anyString(), anyNonNull(), anyString())
     }
 
     @Test
@@ -166,7 +167,7 @@ class CommentIdempotencyIntegrationTest {
         assertThrows(DuplicateCommentException::class.java) { createComment(UUID.randomUUID(), "내용") }
 
         assertEquals(1, countComments())
-        verify(commentJobDispatcher, times(1)).dispatch(anyNonNull())
+        verify(jobPublisher, times(1)).publish(anyString(), anyNonNull(), anyString())
     }
 
     @Test

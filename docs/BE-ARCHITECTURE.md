@@ -7,7 +7,7 @@
 > **읽고 나면**: 요청이 어느 코드를 거치는지, 레이어끼리 무엇을 참조하고 어떤 타입을 주고받는지(§3) 따라갈 수 있고, 자동 검사(§2)와 선례 패턴(§7)에 맞춰 새 코드를 쓸 수 있다.
 > 지금 코드가 규칙과 어긋나는 곳은 §9에 모아 두었다 — 그쪽을 본떠 쓰지 않는다.
 >
-> **마지막 검토**: 2026-11-15 (§1 패키지 그래프, §8 순수 함수 테스트 예시 경로, "남은 것"의 linkpreview 항목만 고침. 같은 날 §11 도구 선택 표의 Detekt 행도 고침). 이전 2026-11-12 (§4 실패 표의 `page=-1` 예, §7-8 N+1의 `countQuery` 예, §7-9 페이징의 `page` 서술만 고침, 같은 날 `page` 400 코드 제거를 반영). 이전 2026-11-11 (§3 컨트롤러·Service에 두는 한도와 §7-3 조회 기록만 고침). 이전 2026-11-10 (§1 요청 파이프라인의 서빙 경로만 고침), 2026-11-07
+> **마지막 검토**: 2026-11-16 (§1 잡 표·패키지 역할·그래프, §3 접미사 표, §7-5, §9 순환 간선만 고침 — 뒷일 전달을 `global/job`으로 옮김). 이전 2026-11-15 (§1 패키지 그래프, §8 순수 함수 테스트 예시 경로, "남은 것"의 linkpreview 항목만 고침. 같은 날 §11 도구 선택 표의 Detekt 행도 고침). 이전 2026-11-12 (§4 실패 표의 `page=-1` 예, §7-8 N+1의 `countQuery` 예, §7-9 페이징의 `page` 서술만 고침, 같은 날 `page` 400 코드 제거를 반영). 이전 2026-11-11 (§3 컨트롤러·Service에 두는 한도와 §7-3 조회 기록만 고침). 이전 2026-11-10 (§1 요청 파이프라인의 서빙 경로만 고침), 2026-11-07
 
 시스템 전체(CloudFront·S3·Lambda·배포 파이프라인)는 FE 레포
 [`docs/SYSTEM-ARCHITECTURE.md`](https://github.com/BAECHAN/link-sphere_FE_NEW/blob/main/docs/SYSTEM-ARCHITECTURE.md)가,
@@ -19,15 +19,15 @@
 ## 1. 요청 파이프라인
 
 Lambda 한 함수가 두 종류의 입력을 받는다. **HTTP 요청**은 serverless-java-container가 서블릿 요청으로 바꿔 서블릿 필터와
-Spring MVC를 그대로 태우고(Tomcat 소켓 없음), **내부 잡**(`linksphereJob` 필드가 있는 이벤트)은 서블릿 경로를 건너뛰고 Service 빈을
-직접 부른다. 경위는 [DEPLOY.md](./DEPLOY.md) "요청 경로를 serverless-java-container로 처리하는 이유".
+Spring MVC를 그대로 태우고(Tomcat 소켓 없음), **내부 잡**(`linksphereJob` 필드가 있는 이벤트)은 서블릿 경로를 건너뛰고 잡 이름이 맞는
+처리기(`JobHandler`)가 Service 빈을 직접 부른다. 경위는 [DEPLOY.md](./DEPLOY.md) "요청 경로를 serverless-java-container로 처리하는 이유".
 
 ```mermaid
 flowchart TD
   CF["CloudFront /api/* (OAC 서명)"] --> URL["Lambda Function URL<br/>prod alias"]
   EB["EventBridge 룰 (4일마다)"] --> H
   URL --> H{"LambdaHandler.handleRequest<br/>linksphereJob 있나?"}
-  H -->|"있음"| JOB["잡 분기 — Service 직접 호출<br/>서블릿 필터·DispatcherServlet 미경유"]
+  H -->|"있음"| JOB["JobRunner → 이름이 맞는 JobHandler<br/>Service 직접 호출, 서블릿 필터·DispatcherServlet 미경유"]
   H -->|"없음"| G["FunctionUrlOriginGuard<br/>→ 쿼리 정규화 → serverless-java-container<br/>(/api 제거, 서블릿 필터 전체)"]
   G --> F["SessionAuthenticationFilter<br/>토큰 해시로 매 요청 DB 조회"]
   F --> C["@RestController<br/>인증 추출 · 레이트리밋 · 위임"]
@@ -35,19 +35,25 @@ flowchart TD
   S --> R["Repository (JPA)"] --> DB[("PostgreSQL")]
   S -.->|"예외"| EH["GlobalExceptionHandler<br/>ErrorResponse(status, code, message)"]
   S -.->|"커밋 뒤 이벤트"| AC["@TransactionalEventListener(AFTER_COMMIT)"]
-  AC --> D["*JobDispatcher → LambdaSelfInvoker<br/>EVENT(비동기) 호출, prod alias"]
+  AC --> D["JobPublisher.publish<br/>운영: LambdaJobPublisher → LambdaSelfInvoker<br/>EVENT(비동기) 호출, prod alias"]
   D -->|"ai-analysis · comment-postprocess · feed-item"| H
   JOB --> S
 ```
 
-| 잡(`linksphereJob`) | 누가 보내나 | 받는 Service |
+| 잡(`linksphereJob`) | 누가 보내나 | 처리기(`JobHandler`) → 받는 Service |
 |---|---|---|
-| `ai-analysis` | 글 등록·수정 커밋 뒤 `PostAIService.handlePostCreatedEvent` → `AiJobDispatcher` | `PostAIService.processAiJob` |
-| `comment-postprocess` | 댓글 등록·답글·수정 커밋 뒤 `CommentPostProcessService.handleCommentPostProcess` → `CommentJobDispatcher` | `CommentPostProcessService.processCommentJob`(FCM 알림·링크 프리뷰) |
-| `feed-crawl` | EventBridge `link-sphere-feed-crawl` 룰 | `FeedCrawlService.collectAndDispatch` → `FeedJobDispatcher` |
-| `feed-item` | `FeedCrawlService`(5건씩) | `FeedCrawlService.processFeedItemJob` → 항목마다 `FeedItemProcessor.processFeedItem` → `PostService.createPost` → 다시 `ai-analysis` |
-| `account-purge` | 같은 EventBridge 룰 | `AccountPurgeService.purgeExpired` |
-| `orphan-image-gc` | 같은 EventBridge 룰(`dryRun` 지원) | `OrphanImageGcService.collect` |
+| `ai-analysis` | 글 등록·수정 커밋 뒤 `PostAIService.handlePostCreatedEvent` → `JobPublisher` | `AiAnalysisJobHandler` → `PostAIService.processAiJob` |
+| `comment-postprocess` | 댓글 등록·답글·수정 커밋 뒤 `CommentPostProcessService.handleCommentPostProcess` → `JobPublisher` | `CommentPostProcessJobHandler` → `CommentPostProcessService.processCommentJob`(FCM 알림·링크 프리뷰) |
+| `feed-crawl` | EventBridge `link-sphere-feed-crawl` 룰 | `FeedCrawlJobHandler` → `FeedCrawlService.collectAndDispatch` → `JobPublisher` |
+| `feed-item` | `FeedCrawlService`(5건씩) | `FeedItemJobHandler` → `FeedCrawlService.processFeedItemJob` → 항목마다 `FeedItemProcessor.processFeedItem` → `PostService.createPost` → 다시 `ai-analysis` |
+| `account-purge` | 같은 EventBridge 룰 | `AccountPurgeJobHandler` → `AccountPurgeService.purgeExpired`, `RateLimitService.purgeExpired` |
+| `orphan-image-gc` | 같은 EventBridge 룰(`dryRun` 지원) | `OrphanImageGcJobHandler` → `OrphanImageGcService.collect` |
+
+- 잡 이름 여섯 개는 떠 있는 호출과 EventBridge 룰의 입력이 쓰는 값이라 바꾸지 않는다(`JobWiringTest`가 고정한다).
+- **뒷일을 어떻게 넘길지는 `app.job.publisher` 설정이 고른다**(`application.yml`). 운영은 `lambda`(`LambdaHandler`가 init에서
+  넣는다), 개발 환경(`bootRun`)은 `in-process` — 같은 프로세스의 전용 스레드에서 같은 처리기를 탄다. 그래서 **로컬에서 글이나
+  댓글을 등록하면 Gemini 호출·크롤링·알림 발송이 실제로 돈다**(2026-11-16 전에는 생략됐다). `tools/*Runner` 프로필은 `skip`이
+  기본값이고, 돌리려면 실행 인자에 `--app.job.publisher=in-process`를 준다.
 
 - self-invoke를 쓰는 이유(같은 실행 환경에서 이어 처리하면 응답 반환 뒤 컨테이너가 얼어붙는다)와 PENDING 고착 복구는
   [`AI-ASYNC-PROCESSING.md`](AI-ASYNC-PROCESSING.md), 룰 조작은 [`DEPLOY.md`](DEPLOY.md), 콜드스타트·SnapStart는
@@ -60,13 +66,14 @@ flowchart TD
 
 | 패키지 | 담는 것 | 의존해도 되는 곳 |
 |---|---|---|
-| 루트 | `LambdaHandler`(진입점·잡 분기), `FunctionUrlOriginGuard`, `FunctionUrlResponse`(응답 직렬화) | 전부 |
+| 루트 | `LambdaHandler`(진입점, 잡이면 `JobRunner`로 넘김), `FunctionUrlOriginGuard`, `FunctionUrlResponse`(응답 직렬화) | 전부 |
 | `domain/<도메인>/` | 도메인별 평면 구조 — Controller·Service·Repository·`Table*` 엔티티·`*DTO.kt`와 그 도메인 전용 헬퍼 | 다른 도메인(§3), `global`, `infra` |
 | `global/common/` | 응답 래퍼, `SecurityUtils`, `SecureToken`, `ClientIpResolver`, `Paging`, `CursorCodec`, `SeekPredicate`, `KeysetQuery`, `SupabaseStorageService`, `TransactionCallbacks`, `BatchJobLimits` | `domain` 금지(허용 1쌍 예외, §3) |
 | `global/ratelimit/` | 범용 고정 윈도 레이트리밋 `RateLimitService`와 그 저장소 `RateLimitRepository`·`TableRateLimit`(테이블 이름은 옛 이름 `auth_rate_limits` 그대로) | 위와 같음 |
 | `global/config/` | Security·Swagger·Async 설정 | 위와 같음 |
+| `global/job/` | 뒷일 전달의 인터페이스 `JobPublisher`(맡긴다)·`JobHandler`(처리한다), 이름으로 처리기를 찾는 `JobRunner`, 개발 환경용 `InProcessJobPublisher`, 도구용 `SkippingJobPublisher` | 위와 같음 |
 | `global/exception/` | 커스텀 예외 전부 + `GlobalExceptionHandler` | — |
-| `infra/<기술>/` | 외부 연동(Gemini·YouTube·SES·FCM·Lambda self-invoke) | `domain`은 이벤트 DTO만(디스패처) |
+| `infra/<기술>/` | 외부 연동(Gemini·YouTube·SES·FCM·Lambda self-invoke) | `global`만 — `domain`을 참조하지 않는다 |
 | `tools/` | 로컬 1회성 CLI | 전부 |
 
 도메인 안에는 서브패키지를 만들지 않는다(`infra/<기술>/dto/`만 예외). 도메인·`global` 하위는 단수 소문자
@@ -76,7 +83,7 @@ flowchart TD
 
 아래 그림은 손으로 그린 것이 아니다. `PackageGraphDocTest`가 바이트코드에서 패키지(`domain.post`처럼 두 단계) 사이
 간선을 계산해 이 블록과 비교하고, 다르면 실패하면서 붙여 넣을 새 블록을 출력한다 — 새 의존을 만들면 이 그림이 같은 PR에서
-바뀌어 리뷰에 드러난다. 점선은 순환을 만들지만 허용한 간선이다(§9의 7개 중 6개 — `global.exception → global.common`은
+바뀌어 리뷰에 드러난다. 점선은 순환을 만들지만 허용한 간선이다(§9의 4개 중 3개 — `global.exception → global.common`은
 아래처럼 그림에서 뺀 패키지라 보이지 않는다). 모든 패키지가 예외를 던지느라 의존하는 `global.exception`은 그림에서만
 뺐고 순환 검사에는 들어간다. 루트(`LambdaHandler` 등)와 `tools/`는 두 단계 패키지가 아니라 그림·순환 검사 모두에서 빠진다 —
 다른 패키지가 이들을 참조하는 곳이 없어(2026-10-26 확인) 순환에 낄 수 없다.
@@ -98,6 +105,7 @@ flowchart LR
   subgraph global
     global_common["common"]
     global_config["config"]
+    global_job["job"]
     global_ratelimit["ratelimit"]
   end
   subgraph infra
@@ -111,6 +119,7 @@ flowchart LR
   domain_auth --> domain_member
   domain_auth --> domain_post
   domain_auth --> global_common
+  domain_auth --> global_job
   domain_auth --> global_ratelimit
   domain_auth --> infra_fcm
   domain_auth --> infra_mail
@@ -120,12 +129,12 @@ flowchart LR
   domain_comment --> domain_member
   domain_comment --> domain_post
   domain_comment --> global_common
-  domain_comment --> infra_aws
+  domain_comment --> global_job
   domain_comment --> infra_fcm
   domain_feed --> domain_linkpreview
   domain_feed --> domain_member
   domain_feed --> domain_post
-  domain_feed --> infra_aws
+  domain_feed --> global_job
   domain_interaction -.-> domain_comment
   domain_interaction --> domain_post
   domain_interaction --> global_common
@@ -139,18 +148,17 @@ flowchart LR
   domain_post --> domain_linkpreview
   domain_post --> domain_member
   domain_post --> global_common
+  domain_post --> global_job
   domain_post --> global_ratelimit
   domain_post --> infra_ai
-  domain_post --> infra_aws
   domain_upload --> domain_comment
   domain_upload --> domain_member
   domain_upload --> global_common
+  domain_upload --> global_job
   domain_upload --> global_ratelimit
   global_config --> domain_auth
   global_config --> global_common
-  infra_aws -.-> domain_comment
-  infra_aws -.-> domain_feed
-  infra_aws -.-> domain_post
+  infra_aws --> global_job
   infra_fcm --> global_common
 ```
 <!-- package-graph:end -->
@@ -188,7 +196,7 @@ flowchart LR
 | `persistenceMustNotDependOnUpperLayers` | Repository·엔티티가 Service·`@Component`·Controller·DTO를 참조 | 위와 같음 |
 | `dtosMustNotDependOnBeans` | `*DTO.kt`의 클래스가 Service·`@Component`·Repository·Controller를 참조 | 위와 같음 |
 | `apiDtosLiveInDtoFiles` | domain의 `*Request`·`*Response`를 `*DTO.kt` 밖에 정의 | 위와 같음 |
-| `packagesMustBeFreeOfCyclesExceptDocumented` | 패키지 사이 새 순환 — 허용 간선 7개는 `PackageGraphDocTest.kt`의 `DOCUMENTED_CYCLE_EDGES`, 이유는 §9 | 위와 같음 |
+| `packagesMustBeFreeOfCyclesExceptDocumented` | 패키지 사이 새 순환 — 허용 간선 4개는 `PackageGraphDocTest.kt`의 `DOCUMENTED_CYCLE_EDGES`, 이유는 §9 | 위와 같음 |
 | `문서의 패키지 의존 그래프가 코드와 같다` | §1 "실제 패키지 의존 그래프"가 코드와 어긋남 | `architecture/PackageGraphDocTest.kt` |
 | `순환 허용 간선 목록의 간선은 모두 실제로 있다` | 끊은 간선이 `DOCUMENTED_CYCLE_EDGES`에 남아 다시 생겨도 조용히 통과 | 위와 같음 |
 | `다른 패키지의 저장소·엔티티를 새로 쓰지 않는다` | 다른 패키지의 Repository·`@Entity`를 직접 쓰는 곳이 새로 생김 — 지금 있는 57곳은 `KNOWN_BOUNDARY_VIOLATIONS`에 적혀 있고 2단계에서 0으로 줄인다 | `architecture/ModuleBoundaryRulesTest.kt` |
@@ -308,7 +316,8 @@ flowchart TD
 |---|---|---|
 | `*Assembler` | 여러 Repository를 모아 응답 DTO를 조립(트랜잭션은 호출부 것을 씀) | `PostResponseAssembler` |
 | `*Processor` | 잡 항목 하나를 독립 트랜잭션으로 처리(같은 클래스 self-invocation을 피하려는 별도 빈) | `FeedItemProcessor` |
-| `*Dispatcher` | 커밋 뒤 이벤트를 self-invoke 잡으로 보냄 | `AiJobDispatcher` |
+| `*JobHandler` | 맡겨진 뒷일 한 종류를 받아 Service를 부름(`JobHandler` 구현) | `AiAnalysisJobHandler` |
+| `*JobPublisher` | 뒷일을 넘기는 방식 하나(`JobPublisher` 구현) | `LambdaJobPublisher` |
 | `*Client` | 외부 HTTP API 호출 | `YoutubeVideoClient` |
 | `*Validator` · `*Parser` · `*Extractor` · `*Normalizer` · `*Classifier` · `*Detector` | 한 가지 판단·변환 | `SafeUrlValidator`, `FeedParser` |
 
@@ -573,15 +582,21 @@ if (memberActionTokenRepository.consumeIfActive(token.id, Instant.now()) == 0) {
 - **안티패턴**: derived `deleteBy…`(검사가 막는다), 상속받은 `delete(entity)`·`deleteAll(entities)` — 규칙이 못 잡으니
   리뷰에서 본다(남은 곳은 §9). 새 코드는 일괄 DELETE 메서드를 만든다.
 
-### 7-5. 커밋 뒤 비동기 잡 (self-invoke)
+### 7-5. 커밋 뒤 비동기 잡 (뒷일 전달)
 
 - **언제**: 오래 걸리는 후처리(AI 분석, 알림·링크 프리뷰)를 요청 응답과 분리할 때.
-- **정석**: `PostService.createPost`(이벤트 발행) → `PostAIService.handlePostCreatedEvent`(AFTER_COMMIT, 디스패치만) →
-  `AiJobDispatcher` → `LambdaHandler`의 `"ai-analysis"` 분기 → `PostAIService.processAiJob`
-- **모양**: 이벤트 DTO는 그 도메인 `*DTO.kt`에(`PostCreatedEvent`), payload는 `{linksphereJob, event}`.
-  리스너는 디스패치만 하고 즉시 리턴한다. 처리부는 대상이 이미 지워졌을 수 있다고 보고 `?: return`.
-- 새 잡을 추가할 때: `infra/aws/<이름>JobDispatcher` + `LambdaHandler`의 `when`에 분기 + `handle<이름>Job` +
-  이 문서 §1 표.
+- **정석**: `PostService.createPost`(이벤트 발행) → `PostAIService.handlePostCreatedEvent`(AFTER_COMMIT, 맡기기만) →
+  `JobPublisher.publish("ai-analysis", event, …)` → (전달) → `JobRunner` → `AiAnalysisJobHandler` → `PostAIService.processAiJob`
+- **콘센트와 플러그**: 맡기는 쪽과 처리하는 쪽은 `global/job`의 인터페이스(`JobPublisher`·`JobHandler`)만 안다. 전달 방식은
+  구현이 정한다 — 운영은 `infra/aws/LambdaJobPublisher`(self-invoke, 받는 쪽은 `LambdaHandler`), 개발 환경은
+  `InProcessJobPublisher`(전용 스레드), 도구는 `SkippingJobPublisher`(§1). 그래서 `infra.aws`가 도메인의 이벤트 DTO를 모른다.
+- **모양**: 이벤트 DTO는 그 도메인 `*DTO.kt`에(`PostCreatedEvent`), payload는 `{linksphereJob, event}`(`JobMessage`).
+  리스너는 맡기기만 하고 즉시 리턴한다. 처리부는 대상이 이미 지워졌을 수 있다고 보고 `?: return`. 처리기는 `event` 필드를
+  DTO로 되돌려 Service를 부르고, "정상적인 경합"으로 볼 예외만 삼킨다(`AiAnalysisJobHandler`).
+- 새 잡을 추가할 때: 그 도메인에 `<이름>JobHandler`(`@Component`, `JOB_NAME` 상수) + 맡기는 쪽의 `jobPublisher.publish` +
+  이 문서 §1 표 + `JobWiringTest`의 이름 목록. `LambdaHandler`는 고치지 않는다.
+- 개발 환경 구현은 `AsyncConfig`의 풀을 쓰지 않는다 — AI 잡이 그 풀에 하위 작업을 맡기고 기다려, 잡이 같은 풀을 차지하면
+  서로 기다린다(`InProcessJobPublisher` KDoc).
 - **안티패턴**: 리스너에서 직접 무거운 처리, `@Async`로 요청 스레드 밖에 던지기(Lambda가 응답 뒤 얼어붙는다). `@Async`는
   잡 내부의 병렬화(`GeminiService.analyzeContentAsync`)에만 쓴다.
 
@@ -750,15 +765,15 @@ FE와 BE가 같은 테스트 원칙을 쓰면서 층 구성과 도구를 다르�
 | 외부 클라이언트가 RestClient가 아니라 `RestTemplate` | `SupabaseStorageService` — 타임아웃(연결 3초·읽기 10초)은 설정돼 있다 | 바꾸지 않음 — 전환하면 호출부 3곳과 DELETE+본문 동작까지 바뀌어 회귀 범위가 크다 |
 | 엔티티 안의 표시 규칙 | `TableMember.isWithdrawn`·`publicNickname`·`publicImage`, `TableLinkPreview.toMetadata` | 바꾸지 않음(기록만) |
 | 상속받은 `delete(entity)` 3곳 | `PostService.deletePost`, `CommentService.deleteComment`, `BookmarkFolderService.deleteFolder` | 바꾸지 않음 — 409 `CONCURRENT_UPDATE` 안전망에 기댄다 |
-| 패키지 순환을 만드는 간선 7개 | 아래 표 | 바꾸지 않음(지금은) — 새 순환은 `packagesMustBeFreeOfCyclesExceptDocumented`가 막는다. 해소 후보는 "남은 것" |
+| 패키지 순환을 만드는 간선 4개 | 아래 표 | 바꾸지 않음(지금은) — 새 순환은 `packagesMustBeFreeOfCyclesExceptDocumented`가 막는다. 해소 후보는 "남은 것" |
 
-**순환을 허용한 간선 7개** — `PackageGraphDocTest.kt`의 `DOCUMENTED_CYCLE_EDGES`가 정본이다. 이 간선을 빼면 패키지 그래프에
-순환이 없다(2026-10-26 계산).
+**순환을 허용한 간선 4개** — `PackageGraphDocTest.kt`의 `DOCUMENTED_CYCLE_EDGES`가 정본이다. 이 간선을 빼면 패키지 그래프에
+순환이 없다(2026-10-26 계산). `infra.aws → domain.post`·`comment`·`feed` 3개는 뒷일 전달을 `global/job`의 인터페이스로 바꿔
+없앴다(2026-11-16, `docs/plans/2026-11-16-be-structure-stage2.md` PR-2).
 
 | 간선 | 대표 위치 | 이유 |
 |---|---|---|
 | `global.exception → global.common` | `GlobalExceptionHandler` → `ErrorResponse` | 핸들러가 응답 봉투를 쓰고, 반대로 `CursorCodec`이 `InvalidInputException`을 던진다 |
-| `infra.aws → domain.post`·`comment`·`feed` | `AiJobDispatcher` → `PostCreatedEvent` 등 | 커밋 뒤 디스패처가 도메인의 이벤트 DTO를 받는다(§1 패키지 역할) |
 | `domain.post → domain.comment` | `PostResponseAssembler` → `CommentRepository`, `PostService` → `CommentService` | 목록 응답의 댓글 수, 글 삭제 때 댓글 이미지 정리 |
 | `domain.post → domain.interaction` | `PostResponseAssembler`·`PostService`·`PostRepositoryImpl` → 반응·북마크 Repository·엔티티 | 목록 응답의 좋아요·북마크 상태와 `filter=isLiked` 같은 조인 |
 | `domain.interaction → domain.comment` | `InteractionService` → `CommentRepository` | 댓글 좋아요 때 댓글 존재·삭제 여부 확인 |
@@ -797,7 +812,7 @@ FE와 BE가 같은 테스트 원칙을 쓰면서 층 구성과 도구를 다르�
 ### 새 배치 잡
 
 - [ ] §7-7 형태(데드라인 + 항목별 `runCatching` + 요약 로그), 항목 처리는 별도 빈의 `@Transactional`
-- [ ] `LambdaHandler` 잡 분기 + §1 표, EventBridge 대상 추가는 [`DEPLOY.md`](DEPLOY.md)
+- [ ] 그 도메인에 `<이름>JobHandler` + §1 표 + `JobWiringTest`의 이름 목록, EventBridge 대상 추가는 [`DEPLOY.md`](DEPLOY.md)
 
 ### 새 외부 클라이언트
 
@@ -816,7 +831,7 @@ FE와 BE가 같은 테스트 원칙을 쓰면서 층 구성과 도구를 다르�
 | 생성 응답 | [RFC 9110 §9.3.3](https://www.rfc-editor.org/rfc/rfc9110#section-9.3.3) | HTTP 201(`@ResponseStatus`, 2026-10-26 전에는 본문만 201) | 따른다. `Location`은 "남은 것" |
 | 405 응답 | [RFC 9110 §10.2.1](https://www.rfc-editor.org/rfc/rfc9110#section-10.2.1) | 405 + `Allow`(`handleSpringMvcException`, 2026-10-26 전에는 500) | 따른다 |
 | 경계 입력 검증 | Bean Validation(`@Valid`) | `@RequestBody` 23곳 중 10곳 | 방식 혼재로 둔다 — `PostCreateRequest`는 봇 경로(`FeedItemProcessor`)도 쓰므로 Service 검증이 어차피 필요하다 |
-| 모듈 순환 | [Spring Modulith 검증](https://docs.spring.io/spring-modulith/reference/verification.html), ArchUnit `slices().beFreeOfCycles()` | 허용 간선 7개(§9) | 새 순환만 막는다 |
+| 모듈 순환 | [Spring Modulith 검증](https://docs.spring.io/spring-modulith/reference/verification.html), ArchUnit `slices().beFreeOfCycles()` | 허용 간선 4개(§9) | 새 순환만 막는다 |
 | 관측성 | 구조화 로그·요청 상관 ID | 앱 로그는 logstash JSON 한 줄 + MDC `awsRequestId`(2026-10-26, `LambdaHandler`·`AsyncConfig`). Lambda LogFormat은 Text 유지 | 따른다 — 찾는 법은 `DEPLOY.md` "운영 로그 읽기" |
 | 멱등 등록 | [IETF 초안](https://datatracker.ietf.org/doc/draft-ietf-httpapi-idempotency-key-header/)(RFC 아님) `Idempotency-Key`. 처리 중인 같은 키는 409를 권한다 | 필수 헤더 + 행에 저장(§7-14). 처리 중이면 기다렸다가 같은 결과 | 이름·필수 시 400은 따른다. 처리 중 409는 따르지 않는다 - 키를 행에 두면 커밋 전까지 "처리 중"을 알 수 없고, 기다리면 사용자가 바로 성공을 받는다 |
 | 지원 버전 | [Spring Boot 지원 일정](https://api.spring.io/projects/spring-boot/generations) — 3.5.x OSS 지원 2026-06-30 종료 | 3.5.16(OSS 마지막 패치, 2026-10-26). Dependabot이 Gradle minor·patch를 월간으로 올린다 | 4.x 이동은 "남은 것" |
@@ -864,7 +879,7 @@ FE와 BE가 같은 테스트 원칙을 쓰면서 층 구성과 도구를 다르�
   - 엔티티 ID 생성 4종 — §7-13이 이미 "바꾸지 않음"으로 정했다. 새 엔티티의 `@GeneratedValue`만 검사로 막는다
     (`generatedIdsOnlyOnLegacyEntities`).
   - 커밋 뒤 처리 3종 — 비동기 잡 발행은 AFTER_COMMIT 리스너(`CommentPostProcessService`·`PostAIService`), 메일·스토리지 삭제는
-    `TransactionCallbacks.afterCommit`(5곳), 트랜잭션이 없는 피드 크롤링은 바로 디스패치(`FeedCrawlService`). 2026-10-26에
+    `TransactionCallbacks.afterCommit`(5곳), 트랜잭션이 없는 피드 크롤링은 바로 맡긴다(`FeedCrawlService`). 2026-10-26에
     합친 것은 인라인 `registerSynchronization` 복사본 5곳뿐이다.
 - **2026-10-26에 정리한 중복**: 커밋 뒤 처리 복사본(`TransactionCallbacks`), 비공개 글·이메일 인증 게이트(`PostVisibility`·
   `EmailVerificationGate`), `CommentService` 검증 3벌·응답 변환 2벌, 90초 마감(`BatchJobLimits`)·이메일 정규화

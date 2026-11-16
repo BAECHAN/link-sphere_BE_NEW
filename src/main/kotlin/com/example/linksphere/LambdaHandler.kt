@@ -13,21 +13,11 @@ import com.amazonaws.services.lambda.runtime.CognitoIdentity
 import com.amazonaws.services.lambda.runtime.Context
 import com.amazonaws.services.lambda.runtime.LambdaLogger
 import com.amazonaws.services.lambda.runtime.RequestStreamHandler
-import com.example.linksphere.domain.auth.AccountPurgeService
-import com.example.linksphere.domain.comment.CommentPostProcessEvent
-import com.example.linksphere.domain.comment.CommentPostProcessService
-import com.example.linksphere.domain.feed.FeedCrawlService
-import com.example.linksphere.domain.feed.FeedItemJobEvent
-import com.example.linksphere.domain.post.PostAIService
-import com.example.linksphere.domain.post.PostCreatedEvent
-import com.example.linksphere.domain.upload.OrphanImageGcService
 import com.example.linksphere.global.common.EmailMaskingLogCustomizer
-import com.example.linksphere.global.ratelimit.RateLimitService
+import com.example.linksphere.global.job.JobRunner
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.slf4j.MDC
-import org.springframework.context.ConfigurableApplicationContext
-import org.springframework.orm.ObjectOptimisticLockingFailureException
 import org.springframework.web.context.support.WebApplicationContextUtils
 import software.amazon.awssdk.core.warmup.SdkWarmUp
 import software.amazon.awssdk.services.lambda.LambdaClient
@@ -76,11 +66,10 @@ class LambdaHandler : RequestStreamHandler {
     companion object {
         private val logger = org.slf4j.LoggerFactory.getLogger(LambdaHandler::class.java)
 
-        // AI 작업 페이로드(PostCreatedEvent)의 Kotlin data class 역직렬화에 KotlinModule이 필요하다.
-        // readTree/writeValue(Map) 용도에는 영향 없어 기존 동작은 그대로 유지된다.
+        // 이벤트를 읽고(readTree) 응답 Map을 쓰는 데만 쓴다. 잡 내용(event 필드)은 각 JobHandler가 Spring의 ObjectMapper로 되돌린다.
         private val mapper = jacksonObjectMapper()
         private val container: SpringBootLambdaContainerHandler<HttpApiV2ProxyRequest, AwsProxyResponse>
-        private val applicationContext: ConfigurableApplicationContext
+        private val jobRunner: JobRunner
 
         // 실제 요청처럼 context-path(/api)를 붙인 경로다(라이브러리가 떼어 낸다). 실제 매핑과 정확히 일치해야 한다 —
         // 404가 나면 DispatcherServlet만 데워지고 정작 중요한 Hibernate·HikariCP는 건너뛴다(CategoryController는
@@ -105,6 +94,9 @@ class LambdaHandler : RequestStreamHandler {
             System.setProperty("logging.structured.format.console", "logstash")
             System.setProperty("logging.structured.json.customizer", EmailMaskingLogCustomizer::class.java.name)
             System.setProperty("spring.datasource.hikari.data-source-properties.sslmode", "require")
+            // 뒷일(AI 분석·댓글 알림 등)은 Lambda에서만 self-invoke로 넘긴다. 기본값(application.yml)은 같은 프로세스에서
+            // 처리하는 개발 환경용인데, Lambda는 응답 뒤 실행 환경을 얼려 그 방식으로는 처리가 멈춘다(global/job/JobPublisher).
+            System.setProperty("app.job.publisher", "lambda")
 
             // 기본값이 Tomcat·예전 경로와 다른 설정만 바꾼다(core 2.1.7 ContainerConfig.defaultConfig):
             // - rawPath의 /api를 떼고 요청의 context-path를 /api로 보여 준다. 보안 필터의 requestMatchers("/auth/login")가
@@ -130,8 +122,7 @@ class LambdaHandler : RequestStreamHandler {
             // 요청마다 클라이언트 IP를 INFO로 남기는 접속 로그를 끈다. 예전 경로에도 접속 로그는 없었다
             // (null이면 건너뛴다, core 2.1.7 LambdaContainerHandler.proxy).
             container.setLogFormatter(null)
-            applicationContext =
-                WebApplicationContextUtils.getRequiredWebApplicationContext(container.servletContext) as ConfigurableApplicationContext
+            jobRunner = WebApplicationContextUtils.getRequiredWebApplicationContext(container.servletContext).getBean(JobRunner::class.java)
 
             warmUp()
             warmUpAwsSdk()
@@ -215,34 +206,13 @@ class LambdaHandler : RequestStreamHandler {
     private fun dispatch(input: InputStream, output: OutputStream, context: Context) {
         val event = mapper.readTree(input)
 
-        // self-invoke(AiJobDispatcher·CommentJobDispatcher·FeedJobDispatcher)나 EventBridge 룰이 보낸 내부 작업이면
-        // HTTP 라우팅(serverless-java-container)을 거치지 않고 바로 처리한다 — rawPath/requestContext가 없는, Function URL 이벤트와
+        // self-invoke(LambdaJobPublisher)나 EventBridge 룰이 보낸 내부 작업이면 HTTP 라우팅(serverless-java-container)을
+        // 거치지 않고 잡 이름이 맞는 JobHandler가 바로 처리한다 — rawPath/requestContext가 없는, Function URL 이벤트와
         // 다른 모양이다. 잡 목록은 docs/BE-ARCHITECTURE.md §1.
-        when (event.get("linksphereJob")?.asText()) {
-            "ai-analysis" -> {
-                handleAiJob(event, output)
-                return
-            }
-            "comment-postprocess" -> {
-                handleCommentJob(event, output)
-                return
-            }
-            "feed-crawl" -> {
-                handleFeedCrawlJob(output)
-                return
-            }
-            "feed-item" -> {
-                handleFeedItemJob(event, output)
-                return
-            }
-            "account-purge" -> {
-                handleAccountPurgeJob(output)
-                return
-            }
-            "orphan-image-gc" -> {
-                handleOrphanImageGcJob(event, output)
-                return
-            }
+        // InvocationType.EVENT라 이 함수의 리턴값을 읽는 호출자가 없으므로 output 내용 자체는 의미가 없다.
+        if (jobRunner.run(event)) {
+            mapper.writeValue(output, mapOf("statusCode" to 200, "body" to "ok"))
+            return
         }
 
         // Phase 0: CloudFront를 거치지 않고 Function URL을 직접 두드린 요청을 막는다
@@ -280,72 +250,5 @@ class LambdaHandler : RequestStreamHandler {
             }
         }
         return found
-    }
-
-    // AiJobDispatcher가 위임한 AI 분석 작업을 처리한다. 원래 요청의 응답 흐름과 완전히
-    // 별도인 실행 환경(비동기 self-invoke)이라 여기서 오래 걸려도 무방하다.
-    // InvocationType.EVENT라 이 함수의 리턴값을 읽는 호출자가 없으므로 output 내용 자체는 의미가 없다.
-    private fun handleAiJob(event: JsonNode, output: OutputStream) {
-        val payload = mapper.treeToValue(event.get("event"), PostCreatedEvent::class.java)
-        val postAIService = applicationContext.getBean(PostAIService::class.java)
-        try {
-            postAIService.processAiJob(payload)
-        } catch (e: ObjectOptimisticLockingFailureException) {
-            // AI 분석 도중 post가 삭제된 정상적인 레이스 — processAiJob이 로그를 남기고
-            // 트랜잭션을 정상 롤백한 뒤 다시 던진 것이다. 여기서 삼켜야 Lambda가 이 호출을
-            // 실패로 보고 불필요하게 재시도하지 않는다.
-            logger.info("[AI Job] 처리 중 post가 삭제됨 - postId: ${payload.postId}")
-        }
-        mapper.writeValue(output, mapOf("statusCode" to 200, "body" to "ok"))
-    }
-
-    // CommentJobDispatcher가 위임한 댓글 후처리(알림 발송 + 링크 프리뷰 크롤링)를 처리한다.
-    // 삭제 레이스는 CommentPostProcessService.processCommentJob이 조용히 return하므로
-    // handleAiJob과 달리 별도 예외 처리가 필요 없다.
-    private fun handleCommentJob(event: JsonNode, output: OutputStream) {
-        val payload = mapper.treeToValue(event.get("event"), CommentPostProcessEvent::class.java)
-        val commentPostProcessService = applicationContext.getBean(CommentPostProcessService::class.java)
-        commentPostProcessService.processCommentJob(payload)
-        mapper.writeValue(output, mapOf("statusCode" to 200, "body" to "ok"))
-    }
-
-    // EventBridge cron이 직접 호출하는 Stage A 진입점(self-invoke가 아니라 외부 트리거).
-    // 피드 소스를 순회해 후보 URL만 모으고, 실제 게시글 생성은 Stage B(feed-item)로 넘긴다.
-    private fun handleFeedCrawlJob(output: OutputStream) {
-        val feedCrawlService = applicationContext.getBean(FeedCrawlService::class.java)
-        feedCrawlService.collectAndDispatch()
-        mapper.writeValue(output, mapOf("statusCode" to 200, "body" to "ok"))
-    }
-
-    // FeedJobDispatcher가 위임한 Stage B 처리부. 항목 하나가 실패해도 나머지는 계속 처리하므로
-    // (FeedCrawlService.processFeedItemJob 내부의 runCatching) 여기서 별도 예외 처리는 필요 없다.
-    private fun handleFeedItemJob(event: JsonNode, output: OutputStream) {
-        val payload = mapper.treeToValue(event.get("event"), FeedItemJobEvent::class.java)
-        val feedCrawlService = applicationContext.getBean(FeedCrawlService::class.java)
-        feedCrawlService.processFeedItemJob(payload)
-        mapper.writeValue(output, mapOf("statusCode" to 200, "body" to "ok"))
-    }
-
-    // EventBridge cron(4일마다, link-sphere-feed-crawl 룰을 feed-crawl과 공유)이 직접
-    // 호출하는 진입점 - 탈퇴 유예 14일이 지난 계정을 익명화하고, 끝난 레이트리밋 창의 행을 지운다.
-    // 회원 한 명이 실패해도 나머지는 계속 처리하므로(AccountPurgeService 내부의 runCatching)
-    // 여기서 별도 예외 처리는 필요 없다. 행 삭제가 실패하면 잡 오류로 드러나고, 다시 돌아도 결과가 같다.
-    private fun handleAccountPurgeJob(output: OutputStream) {
-        val accountPurgeService = applicationContext.getBean(AccountPurgeService::class.java)
-        accountPurgeService.purgeExpired()
-        applicationContext.getBean(RateLimitService::class.java).purgeExpired()
-        mapper.writeValue(output, mapOf("statusCode" to 200, "body" to "ok"))
-    }
-
-    // EventBridge cron(4일마다, link-sphere-feed-crawl 룰을 공유)이 호출하는 고아 이미지 정리.
-    // 수동 확인용으로 {"linksphereJob":"orphan-image-gc","dryRun":true}를 보내면 지우지 않고
-    // 로그에 요약과 후보 일부만 남긴다(docs/DEPLOY.md 11장).
-    private fun handleOrphanImageGcJob(event: JsonNode, output: OutputStream) {
-        val dryRun = event.get("dryRun")?.asBoolean() ?: false
-        val summary = applicationContext.getBean(OrphanImageGcService::class.java).collect(dryRun)
-        if (dryRun) {
-            summary.candidates.take(20).forEach { logger.info("[OrphanImageGc] 후보 $it") }
-        }
-        mapper.writeValue(output, mapOf("statusCode" to 200, "body" to "ok"))
     }
 }

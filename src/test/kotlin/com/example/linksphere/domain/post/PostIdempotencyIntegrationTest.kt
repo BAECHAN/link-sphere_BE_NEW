@@ -8,9 +8,9 @@ import com.example.linksphere.domain.linkpreview.UrlMetadata
 import com.example.linksphere.domain.linkpreview.UrlMetadataExtractor
 import com.example.linksphere.global.common.AdvisoryLock
 import com.example.linksphere.global.exception.DuplicatePostException
+import com.example.linksphere.global.job.JobPublisher
 import com.example.linksphere.global.ratelimit.RateLimitService
 import com.example.linksphere.infra.ai.GeminiService
-import com.example.linksphere.infra.aws.AiJobDispatcher
 import com.example.linksphere.support.PostgresIntegrationTest
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -68,7 +68,7 @@ class PostIdempotencyIntegrationTest {
 
     @MockitoBean private lateinit var postCategoryClassifier: PostCategoryClassifier
 
-    @MockitoBean private lateinit var aiJobDispatcher: AiJobDispatcher
+    @MockitoBean private lateinit var jobPublisher: JobPublisher
 
     @MockitoBean private lateinit var rateLimitService: RateLimitService
 
@@ -114,7 +114,7 @@ class PostIdempotencyIntegrationTest {
         assertEquals(first.get(15, TimeUnit.SECONDS), second.get(15, TimeUnit.SECONDS))
         assertEquals(1, countPosts())
         verify(urlMetadataExtractor, times(1)).extract(url)
-        verify(aiJobDispatcher, times(1)).dispatch(anyNonNull())
+        verify(jobPublisher, times(1)).publish(anyString(), anyNonNull(), anyString())
     }
 
     // 내용이 달라 잠금을 비켜 가면 유니크 인덱스가 막는다. bookmark면 flush에서, 아니면 커밋에서 위반이 난다 - 어느 쪽이든 트랜잭션
@@ -134,7 +134,7 @@ class PostIdempotencyIntegrationTest {
 
         assertEquals(first.get(15, TimeUnit.SECONDS), second.get(15, TimeUnit.SECONDS))
         assertEquals(1, countPosts())
-        verify(aiJobDispatcher, times(1)).dispatch(anyNonNull())
+        verify(jobPublisher, times(1)).publish(anyString(), anyNonNull(), anyString())
     }
 
     @Test
@@ -167,7 +167,7 @@ class PostIdempotencyIntegrationTest {
         assertEquals(firstId, resentId)
         assertEquals(1, countPosts())
         verify(urlMetadataExtractor, times(1)).extract(url)
-        verify(aiJobDispatcher, times(1)).dispatch(anyNonNull())
+        verify(jobPublisher, times(1)).publish(anyString(), anyNonNull(), anyString())
         verify(rateLimitService, times(1)).consume(anyString(), anyInt(), anyNonNull())
     }
 
@@ -196,7 +196,7 @@ class PostIdempotencyIntegrationTest {
 
         assertEquals(1, countPosts())
         verify(urlMetadataExtractor, times(1)).extract(url)
-        verify(aiJobDispatcher, times(1)).dispatch(anyNonNull())
+        verify(jobPublisher, times(1)).publish(anyString(), anyNonNull(), anyString())
     }
 
     @Test

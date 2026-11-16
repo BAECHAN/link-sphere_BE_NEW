@@ -4,7 +4,7 @@ import com.example.linksphere.domain.linkpreview.UrlMetadata
 import com.example.linksphere.domain.linkpreview.UrlMetadataExtractor
 import com.example.linksphere.domain.post.PostRepository
 import com.example.linksphere.domain.post.TablePost
-import com.example.linksphere.infra.aws.CommentJobDispatcher
+import com.example.linksphere.global.job.JobPublisher
 import com.example.linksphere.infra.fcm.FcmNotificationService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
@@ -30,7 +30,7 @@ class CommentPostProcessServiceTest {
 
     @Mock private lateinit var urlMetadataExtractor: UrlMetadataExtractor
 
-    @Mock private lateinit var commentJobDispatcher: CommentJobDispatcher
+    @Mock private lateinit var jobPublisher: JobPublisher
 
     @InjectMocks private lateinit var commentPostProcessService: CommentPostProcessService
 

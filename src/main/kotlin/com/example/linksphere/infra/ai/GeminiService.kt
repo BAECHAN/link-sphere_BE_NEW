@@ -22,7 +22,7 @@ class GeminiService(
 ) {
     private val logger = LoggerFactory.getLogger(GeminiService::class.java)
 
-    // 타임아웃 미설정 시 무제한 대기 → 별도 Lambda 호출(AiJobDispatcher)에서 AI 분석 전용으로
+    // 타임아웃 미설정 시 무제한 대기 → 별도 Lambda 호출(ai-analysis 잡)에서 AI 분석 전용으로
     // 실행되므로 CloudFront 60초 제약은 없지만, Lambda 함수 자체 타임아웃(120초) 안에는
     // 들어와야 하므로 커넥트/응답 상한은 그대로 둔다.
     private val requestFactory =

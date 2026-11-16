@@ -32,9 +32,9 @@ import java.time.LocalDateTime
  * 도메인을 지정해 강제 재분석한다. 다섯 다 "content를 다시 만들어 AI 잡을 돌린다"는 같은
  * 처리라 분기 없이 한 루프에서 처리한다.
  *
- * 로컬에서는 LambdaSelfInvoker가 self-invoke를 스킵하므로(AWS_LAMBDA_FUNCTION_NAME 없음)
+ * 도구 프로필은 뒷일을 넘기지 않으므로(application.yml의 app.job.publisher=skip)
  * eventPublisher.publishEvent로 위임하면 지금 이 복구 대상을 만든 바로 그 문제에 다시 빠진다.
- * 그래서 프로덕션에서 LambdaHandler.handleAiJob이 하는 것과 동일하게 PostAIService.processAiJob을
+ * 그래서 프로덕션에서 AiAnalysisJobHandler가 하는 것과 동일하게 PostAIService.processAiJob을
  * 직접 동기 호출한다 - 이 경로에서는 "PENDING으로 리셋 후 콜백을 기다리는" 중간 상태가 관찰될
  * 구간이 아예 없으므로(processAiJob이 COMPLETED/FAILED를 직접 쓴다) PostService.updatePost의
  * URL 재분석 흐름과 달리 PENDING 리셋은 생략한다.

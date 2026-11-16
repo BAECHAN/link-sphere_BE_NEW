@@ -1,8 +1,8 @@
 package com.example.linksphere.domain.post
 
 import com.example.linksphere.domain.linkpreview.WeakTitleDetector
+import com.example.linksphere.global.job.JobPublisher
 import com.example.linksphere.infra.ai.GeminiService
-import com.example.linksphere.infra.aws.AiJobDispatcher
 import org.slf4j.LoggerFactory
 import org.springframework.orm.ObjectOptimisticLockingFailureException
 import org.springframework.stereotype.Service
@@ -16,22 +16,22 @@ class PostAIService(
     private val postRepository: PostRepository,
     private val geminiService: GeminiService,
     private val postCategoryClassifier: PostCategoryClassifier,
-    private val aiJobDispatcher: AiJobDispatcher,
+    private val jobPublisher: JobPublisher,
 ) {
 
     private val logger = LoggerFactory.getLogger(PostAIService::class.java)
 
     // 여기서 직접 Gemini를 호출하지 않는다 — 원래 요청(POST /post)과 같은 실행 환경 안에서
     // 계속 처리하면 handleRequest() 반환 후 컨테이너가 얼어붙는 문제를 다시 겪는다.
-    // 별도 Lambda 호출(AiJobDispatcher)로 위임만 하고 즉시 리턴한다.
+    // 뒷일로 맡기기만 하고(JobPublisher — 운영은 별도 Lambda 호출) 즉시 리턴한다.
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     fun handlePostCreatedEvent(event: PostCreatedEvent) {
         logger.info("[AI] 이벤트 수신 (커밋 후), 별도 Lambda 호출로 위임 - postId: ${event.postId}")
-        aiJobDispatcher.dispatch(event)
+        jobPublisher.publish(AiAnalysisJobHandler.JOB_NAME, event, "postId: ${event.postId}")
     }
 
-    // AiJobDispatcher가 위임한 별도 Lambda 호출 안에서 LambdaHandler가 직접 호출하는 실제 처리부.
-    // 원래 요청과 완전히 독립된 실행 환경이므로 여기서 오래 걸려도 CloudFront/원래 응답에 영향 없다.
+    // 맡긴 뒷일을 AiAnalysisJobHandler가 받아 호출하는 실제 처리부.
+    // 운영에서는 원래 요청과 완전히 독립된 실행 환경이므로 여기서 오래 걸려도 CloudFront/원래 응답에 영향 없다.
     @Transactional
     fun processAiJob(event: PostCreatedEvent) {
         val postId = event.postId
@@ -126,7 +126,7 @@ class PostAIService(
             // saveAndFlush가 실패하면 Hibernate 세션이 이미 오염돼(rollback-only) 이 트랜잭션은
             // 커밋할 수 없다. 여기서 삼키고 정상 리턴하면 트랜잭션 매니저가 커밋을 시도하다가
             // rollback-only를 발견해 UnexpectedRollbackException을 새로 던진다(실제로 겪음).
-            // 반드시 다시 던져 정상적으로 롤백시키고, 호출자(LambdaHandler)가 "삭제로 인한
+            // 반드시 다시 던져 정상적으로 롤백시키고, 호출자(AiAnalysisJobHandler)가 "삭제로 인한
             // 정상 레이스"로 처리하게 한다.
             logger.info("[AI] 분석 중 post가 삭제됨 - postId: $postId")
             throw e

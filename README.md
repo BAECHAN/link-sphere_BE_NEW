@@ -50,6 +50,7 @@ src/main/kotlin/com/example/linksphere/
 │   │   ├── AuthService.kt
 │   │   ├── AccountDeletionService.kt    # 회원탈퇴 신청(14일 유예)·유예 만료 시 익명화
 │   │   ├── AccountPurgeService.kt       # 유예 만료 계정을 4일마다 익명화하는 예약 작업(feed-crawl EventBridge 룰과 공유)
+│   │   ├── AccountPurgeJobHandler.kt    # account-purge 잡 처리기
 │   │   ├── PasswordResetService.kt      # 비밀번호 찾기 요청/확인
 │   │   ├── TableMemberActionToken.kt    # 비밀번호재설정·이메일인증용 단발성 토큰(해시 저장)
 │   │   ├── MemberActionTokenRepository.kt
@@ -75,6 +76,7 @@ src/main/kotlin/com/example/linksphere/
 │   │   ├── PostService.kt
 │   │   ├── PostVisibility.kt            # 비공개 글을 작성자 외에는 404로 숨기는 게이트
 │   │   ├── PostAIService.kt             # AI 분석 비동기 처리
+│   │   ├── AiAnalysisJobHandler.kt      # ai-analysis 잡 처리기(JobHandler)
 │   │   ├── PostResponseAssembler.kt     # 목록·상세 응답 조립(작성자·좋아요·북마크·댓글수 batch fetch)
 │   │   ├── PostCategoryClassifier.kt    # AI 카테고리 분류
 │   │   ├── PostSearchQuery.kt           # 키워드·의미 검색 조건 조립
@@ -93,7 +95,8 @@ src/main/kotlin/com/example/linksphere/
 │   │   ├── CommentRepository.kt
 │   │   ├── CommentService.kt            # 댓글·답글 CRUD (알림·링크프리뷰는 CommentPostProcessService가 커밋 후 별도 처리)
 │   │   ├── CommentLimits.kt             # 댓글 이미지 5장·본문 6,000바이트(서비스 검사, 스펙에도 실림)
-│   │   ├── CommentPostProcessService.kt # 커밋 뒤 self-invoke 잡: FCM 알림·링크 프리뷰
+│   │   ├── CommentPostProcessService.kt # 커밋 뒤 뒷일(잡): FCM 알림·링크 프리뷰
+│   │   ├── CommentPostProcessJobHandler.kt # comment-postprocess 잡 처리기
 │   │   └── TableComment.kt
 │   ├── interaction/                     # 좋아요·북마크(폴더 다중 소속 포함) 도메인
 │   │   ├── InteractionController.kt     # 좋아요·북마크 저장/해제 + 폴더 소속 추가/제거
@@ -121,7 +124,8 @@ src/main/kotlin/com/example/linksphere/
 │   │   ├── CategoryService.kt
 │   │   └── TableCategory.kt
 │   ├── feed/                            # RSS 피드 자동 수집 (봇 계정, 컨트롤러 없음)
-│   │   ├── FeedCrawlService.kt          # Stage A: 피드 fetch → 후보 URL 5건씩 self-invoke
+│   │   ├── FeedCrawlService.kt          # Stage A: 피드 fetch → 후보 URL 5건씩 뒷일로 맡김
+│   │   ├── FeedCrawlJobHandler.kt / FeedItemJobHandler.kt  # feed-crawl·feed-item 잡 처리기
 │   │   ├── FeedItemProcessor.kt         # Stage B: claim → createPost (항목당 독립 트랜잭션)
 │   │   ├── FeedParser.kt                # Jsoup xmlParser로 RSS 2.0 / Atom 파싱
 │   │   ├── FeedUrlNormalizer.kt         # 중복 판정용 URL 정규화 (dedupe 키 전용)
@@ -131,7 +135,8 @@ src/main/kotlin/com/example/linksphere/
 │       ├── UploadController.kt
 │       ├── UploadDTO.kt
 │       ├── UploadService.kt
-│       └── OrphanImageGcService.kt      # 어디서도 참조하지 않는 스토리지 이미지 회수(EventBridge 잡)
+│       ├── OrphanImageGcService.kt      # 어디서도 참조하지 않는 스토리지 이미지 회수(EventBridge 잡)
+│       └── OrphanImageGcJobHandler.kt   # orphan-image-gc 잡 처리기
 ├── global/
 │   ├── common/
 │   │   ├── ApiResponse.kt               # 공통 응답 래퍼
@@ -150,6 +155,12 @@ src/main/kotlin/com/example/linksphere/
 │   │   ├── RateLimitService.kt          # bucketKey·limit·window 기반 범용 고정윈도 카운터
 │   │   ├── RateLimitRepository.kt
 │   │   └── TableRateLimit.kt            # 카운터 행(인증·요청 한도와 조회수 집계가 함께 씀, 테이블 auth_rate_limits)
+│   ├── job/                             # 뒷일 전달(docs/BE-ARCHITECTURE.md §7-5)
+│   │   ├── JobPublisher.kt              # 뒷일을 맡기는 인터페이스 + {linksphereJob, event} 모양(JobMessage)
+│   │   ├── JobHandler.kt                # 뒷일 한 종류를 처리하는 인터페이스(각 도메인이 구현)
+│   │   ├── JobRunner.kt                 # 잡 이름으로 처리기를 찾아 실행
+│   │   ├── InProcessJobPublisher.kt     # 개발 환경용 — 같은 프로세스의 전용 스레드
+│   │   └── SkippingJobPublisher.kt      # 로컬 도구용 — 맡기지 않고 버림
 │   ├── config/
 │   │   ├── AsyncConfig.kt               # 비동기 스레드풀 설정
 │   │   ├── SecurityConfig.kt            # Spring Security & CORS 설정
@@ -166,10 +177,8 @@ src/main/kotlin/com/example/linksphere/
     ├── ai/
     │   ├── GeminiService.kt             # Gemini AI 콘텐츠 분석·임베딩 생성 (폴백 모델 포함)
     │   └── dto/GeminiDtos.kt
-    ├── aws/                             # Lambda self-invoke 디스패처 (AI 분석·피드 수집·댓글 후처리)
-    │   ├── AiJobDispatcher.kt
-    │   ├── CommentJobDispatcher.kt
-    │   ├── FeedJobDispatcher.kt
+    ├── aws/                             # 운영용 뒷일 전달 — Lambda self-invoke
+    │   ├── LambdaJobPublisher.kt        # JobPublisher 구현(app.job.publisher=lambda)
     │   └── LambdaSelfInvoker.kt
     ├── mail/
     │   └── MailService.kt               # AWS SES 메일 발송(실패해도 로그만, fail-open)
