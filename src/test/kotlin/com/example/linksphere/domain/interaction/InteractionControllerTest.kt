@@ -2,12 +2,14 @@ package com.example.linksphere.domain.interaction
 
 import com.example.linksphere.domain.auth.MemberSessionService
 import com.example.linksphere.domain.post.PostLikeResponse
+import com.example.linksphere.global.exception.BookmarkLimitExceededException
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.`when`
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest
 import org.springframework.context.annotation.ComponentScan
 import org.springframework.context.annotation.FilterType
+import org.springframework.http.MediaType
 import org.springframework.orm.ObjectOptimisticLockingFailureException
 import org.springframework.security.test.context.support.WithMockUser
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf
@@ -15,6 +17,7 @@ import org.springframework.security.web.SecurityFilterChain
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
@@ -53,6 +56,29 @@ class InteractionControllerTest {
         mockMvc.perform(put("/post/$postId/like").with(csrf()))
             .andExpect(status().isConflict)
             .andExpect(jsonPath("$.code").value("CONCURRENT_UPDATE"))
+    }
+
+    // 북마크 저장 한도(docs/plans/2026-11-17-bookmark-limit-liked-filter.md) - 예외가 500으로 새지 않고 FE가 가려 읽을 코드로 나간다
+    @Test
+    @WithMockUser(username = USER_ID)
+    fun `북마크 저장·폴더 담기·일괄 담기가 한도에 걸리면 409 BOOKMARK_LIMIT_EXCEEDED 로 응답한다`() {
+        val postId = UUID.randomUUID()
+        val folderId = UUID.randomUUID()
+        val userId = UUID.fromString(USER_ID)
+        `when`(interactionService.setBookmark(postId, userId, true)).thenThrow(BookmarkLimitExceededException(10_000))
+        `when`(interactionService.addBookmarkFolder(postId, folderId, userId)).thenThrow(BookmarkLimitExceededException(10_000))
+        `when`(bookmarkFolderService.batchAddBookmarksToFolder(userId, folderId, listOf(postId))).thenThrow(BookmarkLimitExceededException(10_000))
+
+        listOf(
+            put("/post/$postId/bookmark"),
+            post("/bookmark/$postId/folders/$folderId"),
+            post("/bookmark/batch/folders/$folderId/add").contentType(MediaType.APPLICATION_JSON).content("""{"postIds":["$postId"]}"""),
+        ).forEach { request ->
+            mockMvc.perform(request.with(csrf()))
+                .andExpect(status().isConflict)
+                .andExpect(jsonPath("$.status").value(409))
+                .andExpect(jsonPath("$.code").value("BOOKMARK_LIMIT_EXCEEDED"))
+        }
     }
 
     @Test

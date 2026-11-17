@@ -44,6 +44,9 @@ interface BookmarkRepository :
     fun deleteByUserId(@Param("userId") userId: UUID): Int
     fun countByPostId(postId: UUID): Long
 
+    // 그 회원의 북마크 수 - 저장 한도 검사(BookmarkQuota.kt)
+    fun countByUserId(userId: UUID): Long
+
     // 글 목록의 북마크 수 - 행을 다 읽지 않고 DB에서 센다(docs/BE-ARCHITECTURE.md §7-8, CommentRepository.countByPostIdIn과 같은 형태)
     @Query("SELECT b.postId as postId, COUNT(b.userId) as count FROM TableBookmark b WHERE b.postId IN :postIds GROUP BY b.postId")
     fun countByPostIdIn(@Param("postIds") postIds: List<UUID>): List<PostBookmarkCount>

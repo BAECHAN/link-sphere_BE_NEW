@@ -54,6 +54,7 @@ class InteractionService(
         }
 
         assertPostVisible(postId, userId)
+        bookmarkRepository.assertCanAdd(userId, postId)
         bookmarkRepository.insertIgnoreConflict(userId, postId)
 
         return BookmarkFoldersResponse(
@@ -74,6 +75,7 @@ class InteractionService(
             ?: throw BookmarkFolderNotFoundException(folderId)
         if (folder.userId != userId) throw ForbiddenException("Cannot add bookmark to another user's folder")
 
+        bookmarkRepository.assertCanAdd(userId, postId)
         bookmarkRepository.insertIgnoreConflict(userId, postId)
         bookmarkFolderItemRepository.insertIgnoreConflict(userId, postId, folderId)
 

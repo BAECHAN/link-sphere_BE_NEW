@@ -11,6 +11,22 @@
 
 ### Added
 
+- `interaction` 한 회원의 북마크를 10,000개까지만 저장, 넘으면 409 `BOOKMARK_LIMIT_EXCEEDED`
+  <details><summary>배경·구현</summary>
+
+  글 목록의 `filter=isBookmarked`와 북마크함의 제목순·열람순·검색은 그 회원의 북마크 글 id 전부를 `IN` 목록으로 넘긴다. 드라이버
+  (pgjdbc)는 한 문장의 바인드 값이 65,535개를 넘으면 예외를 던져, 북마크가 그만큼 쌓인 회원은 그 화면이 500이 된다. 그 전에 저장을
+  막는다. 북마크가 새로 생기는 네 경로(북마크 저장, 폴더에 담기, 여러 글 일괄 담기, 북마크와 함께 글 등록)가 insert 전에 수를 세고,
+  한도에 닿았으면 409로 거절한다. 일괄 담기는 묶음 전체를, 글 등록은 등록 자체를 거절한다. 이미 북마크한 글의 저장·폴더 담기와 해제는
+  한도와 상관없이 된다. 세고 나서 넣기 때문에 동시 요청으로 몇 개 넘을 수 있다. 북마크 10,000개에서 잰 응답 시간(로컬 테스트 컨테이너,
+  7회 중앙값)은 북마크함 제목순 161ms·검색 75ms, 피드 필터 37ms다. 운영 최대는 95개라(2026-11-17 조회) 지금 걸리는 회원은 없다.
+  근거는 `docs/plans/2026-11-17-bookmark-limit-liked-filter.md`.
+  (`BookmarkLimits.kt`(신규), `BookmarkQuota.kt`(신규), `BookmarkLimitExceededException.kt`(신규), `InteractionService.kt`,
+  `BookmarkFolderService.kt`, `PostInteractionAdapter.kt`, `BookmarkRepository.kt`, `GlobalExceptionHandler.kt`,
+  `InteractionController.kt`, `PostController.kt`)
+
+  </details>
+
 - `auth`·`infra` 이메일 컬럼은 평문으로 두기로 정하고 로그·DB 연결·레이트리밋 행·중복 검사의 유출 지점을 막음
   <details><summary>배경·구현</summary>
 

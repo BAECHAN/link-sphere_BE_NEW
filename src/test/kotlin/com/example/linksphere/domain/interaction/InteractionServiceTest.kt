@@ -4,6 +4,7 @@ import com.example.linksphere.domain.post.PostLookupService
 import com.example.linksphere.domain.post.PostRepository
 import com.example.linksphere.domain.post.TablePost
 import com.example.linksphere.global.exception.BookmarkFolderNotFoundException
+import com.example.linksphere.global.exception.BookmarkLimitExceededException
 import com.example.linksphere.global.exception.ForbiddenException
 import com.example.linksphere.global.exception.PostNotFoundException
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -48,6 +49,83 @@ class InteractionServiceTest {
                 bookmarkFolderRepository,
                 bookmarkFolderItemRepository,
             )
+    }
+
+    @Test
+    fun `setBookmark(true) 는 북마크가 한도만큼 있으면 새 글을 저장하지 않고 BookmarkLimitExceededException`() {
+        val userId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val post = TablePost(id = postId, userId = UUID.randomUUID(), url = "https://example.com", title = "제목")
+
+        `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
+        `when`(bookmarkRepository.findAllByUserIdAndPostIdIn(userId, listOf(postId))).thenReturn(emptyList())
+        `when`(bookmarkRepository.countByUserId(userId)).thenReturn(10_000L)
+
+        assertThrows(BookmarkLimitExceededException::class.java) {
+            interactionService.setBookmark(postId, userId, bookmarked = true)
+        }
+        verify(bookmarkRepository, never()).insertIgnoreConflict(userId, postId)
+    }
+
+    @Test
+    fun `setBookmark(true) 는 한도보다 하나 적으면 저장한다`() {
+        val userId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val post = TablePost(id = postId, userId = UUID.randomUUID(), url = "https://example.com", title = "제목")
+
+        `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
+        `when`(bookmarkRepository.findAllByUserIdAndPostIdIn(userId, listOf(postId))).thenReturn(emptyList())
+        `when`(bookmarkRepository.countByUserId(userId)).thenReturn(9_999L)
+
+        interactionService.setBookmark(postId, userId, bookmarked = true)
+
+        verify(bookmarkRepository).insertIgnoreConflict(userId, postId)
+    }
+
+    @Test
+    fun `setBookmark(true) 는 이미 북마크한 글이면 한도에 닿아 있어도 200 이다`() {
+        val userId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val post = TablePost(id = postId, userId = UUID.randomUUID(), url = "https://example.com", title = "제목")
+
+        `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
+        `when`(bookmarkRepository.findAllByUserIdAndPostIdIn(userId, listOf(postId)))
+            .thenReturn(listOf(TableBookmark(userId = userId, postId = postId)))
+
+        val result = interactionService.setBookmark(postId, userId, bookmarked = true)
+
+        assertTrue(result.isBookmarked)
+        verify(bookmarkRepository, never()).countByUserId(userId)
+    }
+
+    @Test
+    fun `setBookmark(false) 는 한도를 보지 않는다`() {
+        val userId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+
+        interactionService.setBookmark(postId, userId, bookmarked = false)
+
+        verify(bookmarkRepository, never()).countByUserId(userId)
+        verify(bookmarkRepository).deleteByUserIdAndPostId(userId, postId)
+    }
+
+    @Test
+    fun `addBookmarkFolder 는 북마크가 새로 생기는데 한도에 닿아 있으면 BookmarkLimitExceededException`() {
+        val userId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val folderId = UUID.randomUUID()
+        val post = TablePost(id = postId, userId = UUID.randomUUID(), url = "https://example.com", title = "제목")
+
+        `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
+        `when`(bookmarkFolderRepository.findById(folderId))
+            .thenReturn(Optional.of(TableBookmarkFolder(id = folderId, userId = userId, name = "개발")))
+        `when`(bookmarkRepository.findAllByUserIdAndPostIdIn(userId, listOf(postId))).thenReturn(emptyList())
+        `when`(bookmarkRepository.countByUserId(userId)).thenReturn(10_000L)
+
+        assertThrows(BookmarkLimitExceededException::class.java) {
+            interactionService.addBookmarkFolder(postId, folderId, userId)
+        }
+        verify(bookmarkFolderItemRepository, never()).insertIgnoreConflict(userId, postId, folderId)
     }
 
     @Test

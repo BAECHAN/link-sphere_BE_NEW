@@ -7,7 +7,7 @@
 > **읽고 나면**: 요청이 어느 코드를 거치는지, 레이어끼리 무엇을 참조하고 어떤 타입을 주고받는지(§3) 따라갈 수 있고, 자동 검사(§2)와 선례 패턴(§7)에 맞춰 새 코드를 쓸 수 있다.
 > 지금 코드가 규칙과 어긋나는 곳은 §9에 모아 두었다 — 그쪽을 본떠 쓰지 않는다.
 >
-> **마지막 검토**: 2026-11-17 (§2 검사 표와 §3의 다른 도메인 금지 항목만 고침 — `@Query` 문자열에 적은 다른 패키지의 엔티티·테이블 이름 검사를 더함). 이전 2026-11-16 (§2·§3의 위반 수, §5 역할·권한 흐름, §6 메서드 이름만 고침 — auth가 회원 테이블을 조인하지 않고 역할을 member에 묻게 함). 같은 날 앞서 (§1 그래프, §2·§3의 위반 수, §3 접미사 표, §7-5만 고침 — 탈퇴 로직을 member로 옮기고 다른 패키지의 데이터는 동기 이벤트를 듣는 쪽이 지우게 함). 같은 날 앞서 (§1 패키지 역할·그래프, §2 검사 표, §3 global → domain 예외, §9 순환 간선만 고침 — `ErrorResponse`를 `global/exception`으로 옮기고 `SecurityConfig`가 auth 필터의 구체 타입을 모르게 함). 같은 날 앞서 (§1 잡 표·패키지 역할·그래프, §3 접미사 표, §7-5, §9 순환 간선만 고침 — 뒷일 전달을 `global/job`으로 옮김). 이전 2026-11-15 (§1 패키지 그래프, §8 순수 함수 테스트 예시 경로, "남은 것"의 linkpreview 항목만 고침. 같은 날 §11 도구 선택 표의 Detekt 행도 고침). 이전 2026-11-12 (§4 실패 표의 `page=-1` 예, §7-8 N+1의 `countQuery` 예, §7-9 페이징의 `page` 서술만 고침, 같은 날 `page` 400 코드 제거를 반영). 이전 2026-11-11 (§3 컨트롤러·Service에 두는 한도와 §7-3 조회 기록만 고침). 이전 2026-11-10 (§1 요청 파이프라인의 서빙 경로만 고침), 2026-11-07
+> **마지막 검토**: 2026-11-18 (§4 실패 표의 `BOOKMARK_LIMIT_EXCEEDED` 행과 §7 상수 항목의 `BookmarkLimits`만 고침 — 회원당 북마크 저장 한도를 더함). 이전 2026-11-17 (§2 검사 표와 §3의 다른 도메인 금지 항목만 고침 — `@Query` 문자열에 적은 다른 패키지의 엔티티·테이블 이름 검사를 더함). 이전 2026-11-16 (§2·§3의 위반 수, §5 역할·권한 흐름, §6 메서드 이름만 고침 — auth가 회원 테이블을 조인하지 않고 역할을 member에 묻게 함). 같은 날 앞서 (§1 그래프, §2·§3의 위반 수, §3 접미사 표, §7-5만 고침 — 탈퇴 로직을 member로 옮기고 다른 패키지의 데이터는 동기 이벤트를 듣는 쪽이 지우게 함). 같은 날 앞서 (§1 패키지 역할·그래프, §2 검사 표, §3 global → domain 예외, §9 순환 간선만 고침 — `ErrorResponse`를 `global/exception`으로 옮기고 `SecurityConfig`가 auth 필터의 구체 타입을 모르게 함). 같은 날 앞서 (§1 잡 표·패키지 역할·그래프, §3 접미사 표, §7-5, §9 순환 간선만 고침 — 뒷일 전달을 `global/job`으로 옮김). 이전 2026-11-15 (§1 패키지 그래프, §8 순수 함수 테스트 예시 경로, "남은 것"의 linkpreview 항목만 고침. 같은 날 §11 도구 선택 표의 Detekt 행도 고침). 이전 2026-11-12 (§4 실패 표의 `page=-1` 예, §7-8 N+1의 `countQuery` 예, §7-9 페이징의 `page` 서술만 고침, 같은 날 `page` 400 코드 제거를 반영). 이전 2026-11-11 (§3 컨트롤러·Service에 두는 한도와 §7-3 조회 기록만 고침). 이전 2026-11-10 (§1 요청 파이프라인의 서빙 경로만 고침), 2026-11-07
 
 시스템 전체(CloudFront·S3·Lambda·배포 파이프라인)는 FE 레포
 [`docs/SYSTEM-ARCHITECTURE.md`](https://github.com/BAECHAN/link-sphere_FE_NEW/blob/main/docs/SYSTEM-ARCHITECTURE.md)가,
@@ -379,6 +379,7 @@ return ApiResponse(HttpStatus.OK.value(), "Link preview", postService.previewLin
 | `DuplicateMemberException` | 409 | `DUPLICATE_MEMBER`(이메일 중복) |
 | `DuplicateNicknameException` | 409 | `DUPLICATE_NICKNAME`(가입·수정 모두) |
 | `DuplicateFolderNameException` | 409 | `DUPLICATE_FOLDER_NAME` |
+| `BookmarkLimitExceededException` | 409 | `BOOKMARK_LIMIT_EXCEEDED`(회원당 북마크 10,000개 한도) |
 | `DuplicatePostException` | 409 | `DUPLICATE_POST`(다른 키로 1시간 안에 같은 URL) |
 | `DuplicateCommentException` | 409 | `DUPLICATE_COMMENT`(다른 키로 1분 안에 같은 대상·본문) |
 | `SessionMismatchException` | 409 | `SESSION_MISMATCH` |
@@ -704,7 +705,8 @@ for (id in ids) {
 - 다른 클래스가 참조해야 하는 값만 공개 상수로 둔다(`AccountDeletionService.GRACE_PERIOD`).
 - 여러 클래스가 같은 제약을 공유하면 그 제약을 이름으로 가진 `object`에 둔다 — 배치 잡 90초 마감은
   `BatchJobLimits.DEADLINE_MILLIS`(Lambda 120초 타임아웃 근거), 이메일 정규화는 `EmailNormalizer.normalize`,
-  댓글 한도는 `CommentLimits`(WAF 8KB 벽 근거), 폴더 이름 길이는 `BookmarkFolderLimits`, 비밀번호 형식은 `PasswordPattern`.
+  댓글 한도는 `CommentLimits`(WAF 8KB 벽 근거), 폴더 이름 길이는 `BookmarkFolderLimits`, 회원당 북마크 수는 `BookmarkLimits`(드라이버의 바인드 값 65,535개 벽 근거 — 북마크가
+  새로 생기는 네 경로가 `BookmarkQuota.kt`의 `assertCanAdd`·`assertCanAddAll`(일괄 담기)로 검사), 비밀번호 형식은 `PasswordPattern`.
 - **요청 입력 한도는 OpenAPI 스펙에도 싣는다** — FE는 폼 검증 상수를 손으로 두고, 스펙 값과 계약 테스트로
   대조한다(FE `docs/OPENAPI-CODEGEN.md` §5-6). BE 값이 바뀌면 FE가 스펙을 갱신(codegen:fetch)할 때 그 테스트가 실패해 고칠 자리를 알린다.
   Bean Validation(`@Size`·`@Pattern`)으로 검사하는 필드는 springdoc이 알아서 싣는다. 서비스에서 검사하는 한도는 DTO 필드에

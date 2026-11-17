@@ -10,6 +10,7 @@ import com.example.linksphere.domain.linkpreview.UrlMetadataExtractor
 import com.example.linksphere.domain.member.MemberService
 import com.example.linksphere.global.common.AdvisoryLock
 import com.example.linksphere.global.exception.BookmarkFolderNotFoundException
+import com.example.linksphere.global.exception.BookmarkLimitExceededException
 import com.example.linksphere.global.exception.ForbiddenException
 import com.example.linksphere.global.ratelimit.RateLimitService
 import com.example.linksphere.infra.ai.GeminiService
@@ -260,6 +261,29 @@ class PostInteractionPortIntegrationTest {
         assertThrows(BookmarkFolderNotFoundException::class.java) {
             postService.createPost(viewer, PostCreateRequest(url = "https://example.com/both", folderIds = listOf(othersFolder, UUID.randomUUID())))
         }
+    }
+
+    // 북마크 저장 한도(docs/plans/2026-11-17-bookmark-limit-liked-filter.md) - 폴더가 없을 때처럼 등록 자체가 실패한다
+    @Test
+    fun `북마크가 한도만큼 있는 회원이 북마크와 함께 등록하면 실패하고 북마크 없이 등록하면 된다`() {
+        stubMetadata()
+        val full = UUID.randomUUID()
+        jdbc.update("INSERT INTO members (id, nickname, email_verified) VALUES (?, 'full', true)", full)
+        jdbc.update(
+            "INSERT INTO posts (id, user_id, url, title, is_private) " +
+                "SELECT gen_random_uuid(), ?, 'https://example.com/seed/' || g, 'seed ' || g, false FROM generate_series(1, 10000) g",
+            writer,
+        )
+        jdbc.update("INSERT INTO bookmarks (user_id, post_id) SELECT ?, id FROM posts WHERE url LIKE 'https://example.com/seed/%'", full)
+
+        assertThrows(BookmarkLimitExceededException::class.java) {
+            postService.createPost(full, PostCreateRequest(url = "https://example.com/over", bookmark = true))
+        }
+        assertEquals(10_000, count("SELECT count(*) FROM bookmarks WHERE user_id = ?", full))
+
+        val created = postService.createPost(full, PostCreateRequest(url = "https://example.com/plain"))
+
+        assertEquals(false, created.userInteractions.isBookmarked)
     }
 
     private fun feedIds(filter: String, viewerId: UUID?): Set<UUID> = postService.getPostsByCursor(null, null, filter, null, null, 20, viewerId).content.map { it.id }.toSet()
