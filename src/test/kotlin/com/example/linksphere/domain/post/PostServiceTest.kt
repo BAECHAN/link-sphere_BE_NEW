@@ -762,7 +762,7 @@ class PostServiceTest {
     fun `getPostsByCursor는 검색 첫 쪽에서 의미 검색 여부를 cursor에 담고 건수를 센다`() {
         val embedding = floatArrayOf(1f)
         `when`(geminiService.embedQuery(PostEmbeddingText.query("spring"))).thenReturn(embedding)
-        `when`(postRepository.findPostsAfter(null, "spring", emptySet(), null, emptySet(), null, PostListSort.RELEVANCE, null, 10, embedding, true))
+        `when`(postRepository.findPostsAfter(null, "spring", emptySet(), null, null, emptySet(), null, PostListSort.RELEVANCE, null, 10, embedding, true))
             .thenReturn(KeysetSlice(listOf(searchPost()), relevanceKeys, 5L))
 
         val result = postService.getPostsByCursor(null, "spring", null, null, null, 10, null)
@@ -776,7 +776,7 @@ class PostServiceTest {
         val embedding = floatArrayOf(1f)
         var consumed = 0
         `when`(geminiService.embedQuery(PostEmbeddingText.query("spring"))).thenReturn(embedding)
-        `when`(postRepository.findPostsAfter(null, "spring", emptySet(), null, emptySet(), null, PostListSort.RELEVANCE, relevanceKeys, 10, embedding, false))
+        `when`(postRepository.findPostsAfter(null, "spring", emptySet(), null, null, emptySet(), null, PostListSort.RELEVANCE, relevanceKeys, 10, embedding, false))
             .thenReturn(KeysetSlice(listOf(searchPost()), relevanceKeys))
 
         val result =
@@ -792,7 +792,7 @@ class PostServiceTest {
     // 키워드로 시작한 뒤 의미 점수가 켜지면 키워드 점수 기준의 cursor와 맞지 않아 글을 놓친다(docs/PAGINATION.md)
     @Test
     fun `getPostsByCursor는 키워드로 시작한 뒤쪽에서 임베딩과 호출 한도를 쓰지 않는다`() {
-        `when`(postRepository.findPostsAfter(null, "spring", emptySet(), null, emptySet(), null, PostListSort.RELEVANCE, relevanceKeys, 10, null, false))
+        `when`(postRepository.findPostsAfter(null, "spring", emptySet(), null, null, emptySet(), null, PostListSort.RELEVANCE, relevanceKeys, 10, null, false))
             .thenReturn(KeysetSlice(listOf(searchPost()), relevanceKeys))
 
         val result =
@@ -806,7 +806,7 @@ class PostServiceTest {
 
     @Test
     fun `getPostsByCursor는 호출 한도를 넘으면 키워드로 내려가 뒤쪽도 그대로 유지한다`() {
-        `when`(postRepository.findPostsAfter(null, "spring", emptySet(), null, emptySet(), null, PostListSort.RELEVANCE, relevanceKeys, 10, null, false))
+        `when`(postRepository.findPostsAfter(null, "spring", emptySet(), null, null, emptySet(), null, PostListSort.RELEVANCE, relevanceKeys, 10, null, false))
             .thenReturn(KeysetSlice(listOf(searchPost()), relevanceKeys))
 
         val result = postService.getPostsByCursor(null, "spring", null, null, relevanceCursor(semantic = true), 10, null) { false }
@@ -818,7 +818,7 @@ class PostServiceTest {
     @Test
     fun `getPostsByCursor는 뒤쪽에서 임베딩이 실패하면 키워드로 내려가 뒤쪽도 그대로 유지한다`() {
         `when`(geminiService.embedQuery(PostEmbeddingText.query("spring"))).thenReturn(null)
-        `when`(postRepository.findPostsAfter(null, "spring", emptySet(), null, emptySet(), null, PostListSort.RELEVANCE, relevanceKeys, 10, null, false))
+        `when`(postRepository.findPostsAfter(null, "spring", emptySet(), null, null, emptySet(), null, PostListSort.RELEVANCE, relevanceKeys, 10, null, false))
             .thenReturn(KeysetSlice(listOf(searchPost()), relevanceKeys))
 
         val result = postService.getPostsByCursor(null, "spring", null, null, relevanceCursor(semantic = true), 10, null)
@@ -829,9 +829,9 @@ class PostServiceTest {
     @Test
     fun `getPostsByCursor는 첫 쪽이 비면 자판 보정으로 재검색하고 cursor에 표시한다`() {
         `when`(geminiService.embedQuery(PostEmbeddingText.query("spdlqj"))).thenReturn(null)
-        `when`(postRepository.findPostsAfter(null, "spdlqj", emptySet(), null, emptySet(), null, PostListSort.RELEVANCE, null, 10, null, true))
+        `when`(postRepository.findPostsAfter(null, "spdlqj", emptySet(), null, null, emptySet(), null, PostListSort.RELEVANCE, null, 10, null, true))
             .thenReturn(KeysetSlice(emptyList(), null, 0L))
-        `when`(postRepository.findPostsAfter(null, "네이버", emptySet(), null, emptySet(), null, PostListSort.RELEVANCE, null, 10, null, true))
+        `when`(postRepository.findPostsAfter(null, "네이버", emptySet(), null, null, emptySet(), null, PostListSort.RELEVANCE, null, 10, null, true))
             .thenReturn(KeysetSlice(listOf(searchPost()), relevanceKeys, 1L))
 
         val result = postService.getPostsByCursor(null, "spdlqj", null, null, null, 10, null)
@@ -843,7 +843,7 @@ class PostServiceTest {
 
     @Test
     fun `getPostsByCursor는 보정으로 시작한 뒤쪽을 보정어로 읽고 응답에 보정어를 유지한다`() {
-        `when`(postRepository.findPostsAfter(null, "네이버", emptySet(), null, emptySet(), null, PostListSort.RELEVANCE, relevanceKeys, 10, null, false))
+        `when`(postRepository.findPostsAfter(null, "네이버", emptySet(), null, null, emptySet(), null, PostListSort.RELEVANCE, relevanceKeys, 10, null, false))
             .thenReturn(KeysetSlice(listOf(searchPost()), relevanceKeys))
 
         val result = postService.getPostsByCursor(null, "spdlqj", null, null, relevanceCursor(semantic = false, corrected = true), 10, null)
@@ -856,7 +856,7 @@ class PostServiceTest {
     // 예전에는 쪽마다 totalElements == 0으로 판정했다. 건수를 세지 않으니 빈 마지막 쪽을 0건 검색으로 오인하면 안 된다.
     @Test
     fun `getPostsByCursor는 뒤쪽이 비어도 자판 보정을 시도하지 않는다`() {
-        `when`(postRepository.findPostsAfter(null, "spdlqj", emptySet(), null, emptySet(), null, PostListSort.RELEVANCE, relevanceKeys, 10, null, false))
+        `when`(postRepository.findPostsAfter(null, "spdlqj", emptySet(), null, null, emptySet(), null, PostListSort.RELEVANCE, relevanceKeys, 10, null, false))
             .thenReturn(KeysetSlice(emptyList()))
 
         val result = postService.getPostsByCursor(null, "spdlqj", null, null, relevanceCursor(semantic = false), 10, null)
@@ -867,7 +867,7 @@ class PostServiceTest {
 
     @Test
     fun `getPostsByCursor는 검색이 아니면 임베딩과 호출 한도를 쓰지 않고 마지막 쪽이면 cursor가 없다`() {
-        `when`(postRepository.findPostsAfter(null, null, emptySet(), null, emptySet(), null, PostListSort.LATEST, null, 10, null, false))
+        `when`(postRepository.findPostsAfter(null, null, emptySet(), null, null, emptySet(), null, PostListSort.LATEST, null, 10, null, false))
             .thenReturn(KeysetSlice(listOf(searchPost())))
 
         val result =
@@ -894,12 +894,12 @@ class PostServiceTest {
 
     @Test
     fun `getPostsByCursor는 size를 최대 페이지 크기로 자른다`() {
-        `when`(postRepository.findPostsAfter(null, null, emptySet(), null, emptySet(), null, PostListSort.LATEST, null, Paging.MAX_PAGE_SIZE, null, false))
+        `when`(postRepository.findPostsAfter(null, null, emptySet(), null, null, emptySet(), null, PostListSort.LATEST, null, Paging.MAX_PAGE_SIZE, null, false))
             .thenReturn(KeysetSlice(emptyList()))
 
         postService.getPostsByCursor(null, null, null, null, null, 100_000, null)
 
-        verify(postRepository).findPostsAfter(null, null, emptySet(), null, emptySet(), null, PostListSort.LATEST, null, Paging.MAX_PAGE_SIZE, null, false)
+        verify(postRepository).findPostsAfter(null, null, emptySet(), null, null, emptySet(), null, PostListSort.LATEST, null, Paging.MAX_PAGE_SIZE, null, false)
     }
 
     @Test
@@ -970,29 +970,89 @@ class PostServiceTest {
         val filters = setOf("isLiked", "excludeBots")
         `when`(memberService.findIdsByNicknameContaining("Kim")).thenReturn(setOf(authorId))
         `when`(memberService.findBotIds()).thenReturn(setOf(botId))
-        `when`(postRepository.findPostsAfter(null, null, filters, setOf(authorId), setOf(botId), null, PostListSort.LATEST, null, 10, null, false))
+        `when`(postRepository.findPostsAfter(null, null, filters, null, setOf(authorId), setOf(botId), null, PostListSort.LATEST, null, 10, null, false))
             .thenReturn(KeysetSlice(emptyList()))
 
         postService.getPostsByCursor(null, null, " isLiked, excludeBots ,", "Kim", null, 10, null)
 
-        verify(postRepository).findPostsAfter(null, null, filters, setOf(authorId), setOf(botId), null, PostListSort.LATEST, null, 10, null, false)
+        verify(postRepository).findPostsAfter(null, null, filters, null, setOf(authorId), setOf(botId), null, PostListSort.LATEST, null, 10, null, false)
+    }
+
+    // isBookmarked·isLiked는 interaction에 글 id를 물어 저장소에 id 집합으로 넘긴다(같은 계획 PR-9b). 둘 다 걸면 둘 다 한 글만 남는다
+    @Test
+    fun `getPostsByCursor는 북마크와 좋아요 필터를 글 id 집합으로 바꿔 저장소에 넘긴다`() {
+        val userId = UUID.randomUUID()
+        val both = UUID.randomUUID()
+        val bookmarkedOnly = UUID.randomUUID()
+        val likedOnly = UUID.randomUUID()
+        `when`(bookmarkRepository.findPostIdsByUserId(userId)).thenReturn(listOf(both, bookmarkedOnly))
+        `when`(postReactionRepository.findPostIdsByUserId(userId)).thenReturn(listOf(likedOnly, both))
+        `when`(postRepository.findPostsAfter(null, null, setOf("isBookmarked"), setOf(both, bookmarkedOnly), null, emptySet(), userId, PostListSort.LATEST, null, 10, null, false))
+            .thenReturn(KeysetSlice(emptyList()))
+        `when`(postRepository.findPostsAfter(null, null, setOf("isBookmarked", "isLiked"), setOf(both), null, emptySet(), userId, PostListSort.LATEST, null, 10, null, false))
+            .thenReturn(KeysetSlice(emptyList()))
+
+        postService.getPostsByCursor(null, null, "isBookmarked", null, null, 10, userId)
+        postService.getPostsByCursor(null, null, "isBookmarked,isLiked", null, null, 10, userId)
+
+        verify(postRepository).findPostsAfter(null, null, setOf("isBookmarked"), setOf(both, bookmarkedOnly), null, emptySet(), userId, PostListSort.LATEST, null, 10, null, false)
+        verify(postRepository).findPostsAfter(null, null, setOf("isBookmarked", "isLiked"), setOf(both), null, emptySet(), userId, PostListSort.LATEST, null, 10, null, false)
+    }
+
+    // 북마크한 글이 없으면 빈 집합을 넘긴다(결과 없음). null(거르지 않음)로 바꾸면 전체 글이 나온다
+    @Test
+    fun `getPostsByCursor는 북마크한 글이 없으면 저장소에 빈 id 집합을 넘긴다`() {
+        val userId = UUID.randomUUID()
+        `when`(bookmarkRepository.findPostIdsByUserId(userId)).thenReturn(emptyList())
+        `when`(postRepository.findPostsAfter(null, null, setOf("isBookmarked"), emptySet(), null, emptySet(), userId, PostListSort.LATEST, null, 10, null, false))
+            .thenReturn(KeysetSlice(emptyList()))
+
+        postService.getPostsByCursor(null, null, "isBookmarked", null, null, 10, userId)
+
+        verify(postRepository).findPostsAfter(null, null, setOf("isBookmarked"), emptySet(), null, emptySet(), userId, PostListSort.LATEST, null, 10, null, false)
+    }
+
+    // id가 경고 기준(10,000)을 넘어도 로그만 남기고 줄이지 않는다 - 잘라 내면 북마크가 많은 회원의 결과에서 글이 빠진다
+    @Test
+    fun `getPostsByCursor는 북마크한 글이 경고 기준보다 많아도 id 집합을 줄이지 않고 넘긴다`() {
+        val userId = UUID.randomUUID()
+        val bookmarked = List(10_001) { UUID.randomUUID() }
+        `when`(bookmarkRepository.findPostIdsByUserId(userId)).thenReturn(bookmarked)
+        `when`(postRepository.findPostsAfter(null, null, setOf("isBookmarked"), bookmarked.toSet(), null, emptySet(), userId, PostListSort.LATEST, null, 10, null, false))
+            .thenReturn(KeysetSlice(emptyList()))
+
+        postService.getPostsByCursor(null, null, "isBookmarked", null, null, 10, userId)
+
+        verify(postRepository).findPostsAfter(null, null, setOf("isBookmarked"), bookmarked.toSet(), null, emptySet(), userId, PostListSort.LATEST, null, 10, null, false)
+    }
+
+    // 비로그인의 isBookmarked·isLiked는 전처럼 무시한다 - interaction에 묻지 않고 거르지도 않는다
+    @Test
+    fun `getPostsByCursor는 비로그인이면 북마크와 좋아요 필터를 무시한다`() {
+        `when`(postRepository.findPostsAfter(null, null, setOf("isBookmarked", "isLiked"), null, null, emptySet(), null, PostListSort.LATEST, null, 10, null, false))
+            .thenReturn(KeysetSlice(emptyList()))
+
+        postService.getPostsByCursor(null, null, "isBookmarked,isLiked", null, null, 10, null)
+
+        verify(postRepository).findPostsAfter(null, null, setOf("isBookmarked", "isLiked"), null, null, emptySet(), null, PostListSort.LATEST, null, 10, null, false)
+        verifyNoInteractions(bookmarkRepository, postReactionRepository)
     }
 
     // 맞는 회원이 없으면 빈 집합을 넘긴다(결과 없음). null(거르지 않음)로 바꾸면 전체 글이 나온다
     @Test
     fun `getPostsByCursor는 닉네임에 맞는 회원이 없으면 빈 작성자 집합을 넘긴다`() {
         `when`(memberService.findIdsByNicknameContaining("nobody")).thenReturn(emptySet())
-        `when`(postRepository.findPostsAfter(null, null, emptySet(), emptySet(), emptySet(), null, PostListSort.LATEST, null, 10, null, false))
+        `when`(postRepository.findPostsAfter(null, null, emptySet(), null, emptySet(), emptySet(), null, PostListSort.LATEST, null, 10, null, false))
             .thenReturn(KeysetSlice(emptyList()))
 
         postService.getPostsByCursor(null, null, null, "nobody", null, 10, null)
 
-        verify(postRepository).findPostsAfter(null, null, emptySet(), emptySet(), emptySet(), null, PostListSort.LATEST, null, 10, null, false)
+        verify(postRepository).findPostsAfter(null, null, emptySet(), null, emptySet(), emptySet(), null, PostListSort.LATEST, null, 10, null, false)
     }
 
     @Test
     fun `getPostsByCursor는 닉네임이 비었고 봇 제외가 없으면 member에 묻지 않는다`() {
-        `when`(postRepository.findPostsAfter(null, null, setOf("isMyPosts"), null, emptySet(), null, PostListSort.LATEST, null, 10, null, false))
+        `when`(postRepository.findPostsAfter(null, null, setOf("isMyPosts"), null, null, emptySet(), null, PostListSort.LATEST, null, 10, null, false))
             .thenReturn(KeysetSlice(emptyList()))
 
         postService.getPostsByCursor(null, null, "isMyPosts", "  ", null, 10, null)

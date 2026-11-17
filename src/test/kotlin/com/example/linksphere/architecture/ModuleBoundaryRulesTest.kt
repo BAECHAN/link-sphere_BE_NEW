@@ -22,8 +22,6 @@ internal val KNOWN_BOUNDARY_VIOLATIONS: Set<String> =
         "domain.interaction.BookmarkRepositoryImpl -> domain.post.TablePost",
         "domain.interaction.BookmarkRepositoryImpl -> domain.post.TablePostView",
         "domain.interaction.TableBookmark -> domain.post.TablePost",
-        "domain.post.PostRepositoryImpl -> domain.interaction.TableBookmark",
-        "domain.post.PostRepositoryImpl -> domain.interaction.TablePostReaction",
     )
 
 /**

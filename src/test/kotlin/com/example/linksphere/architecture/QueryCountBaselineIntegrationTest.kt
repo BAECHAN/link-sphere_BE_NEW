@@ -150,14 +150,14 @@ class QueryCountBaselineIntegrationTest {
 
     @Test
     fun `피드 목록 - 내가 북마크한 글만`() {
-        val page = countingQueries(FEED_LOGGED_IN) { feed(filter = "isBookmarked") }
+        val page = countingQueries(FEED_INTERACTION_FILTER) { feed(filter = "isBookmarked") }
 
         assertEquals(2, page.content.size)
     }
 
     @Test
     fun `피드 목록 - 내가 좋아요한 글만`() {
-        val page = countingQueries(FEED_LOGGED_IN) { feed(filter = "isLiked") }
+        val page = countingQueries(FEED_INTERACTION_FILTER) { feed(filter = "isLiked") }
 
         assertEquals(1, page.content.size)
     }
@@ -300,6 +300,10 @@ class QueryCountBaselineIntegrationTest {
         // PR-7b(글·댓글이 회원 테이블을 직접 읽지 않는다): 닉네임·봇 필터는 member에 회원 id를 묻는 문장이 하나 더 든다
         // (글 쿼리 안의 서브쿼리였다). 댓글 목록은 작성자를 댓글과 조인해 읽던 것을 member에 한 번에 묻는다
         private const val FEED_AUTHOR_FILTER = 12L
+
+        // PR-9b(글 쿼리가 북마크·좋아요 테이블을 직접 읽지 않는다): isBookmarked·isLiked 필터는 interaction에 글 id를 묻는 문장이
+        // 하나 더 든다(글 쿼리 안의 서브쿼리였다). 로그인 피드 11 → 12
+        private const val FEED_INTERACTION_FILTER = 12L
         private const val COMMENT_LIST = 5L
 
         // PR-8(댓글이 글 테이블을 직접 읽지 않는다): 내 댓글은 댓글과 글을 조인해 한 문장으로 읽던 것이 "댓글 읽기"와

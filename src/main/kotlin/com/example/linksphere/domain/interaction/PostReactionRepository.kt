@@ -39,4 +39,8 @@ interface PostReactionRepository : JpaRepository<TablePostReaction, PostReaction
     @Query("SELECT r.postId as postId, COUNT(r.userId) as count FROM TablePostReaction r WHERE r.postId IN :postIds GROUP BY r.postId")
     fun countByPostIdIn(@Param("postIds") postIds: List<UUID>): List<PostLikeCount>
     fun findAllByUserIdAndPostIdIn(userId: UUID, postIds: List<UUID>): List<TablePostReaction>
+
+    // 글 목록의 filter=isLiked - post가 이 id 집합으로 거른다(PostInteractionPort.findLikedPostIds)
+    @Query("SELECT r.postId FROM TablePostReaction r WHERE r.userId = :userId")
+    fun findPostIdsByUserId(@Param("userId") userId: UUID): List<UUID>
 }

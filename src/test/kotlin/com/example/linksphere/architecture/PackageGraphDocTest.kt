@@ -8,15 +8,13 @@ import org.junit.jupiter.api.Test
 import java.io.File
 
 /**
- * 순환을 만들어도 되는 패키지 간선 — 이 1개를 빼면 패키지 그래프에 순환이 없다(docs/BE-ARCHITECTURE.md §9).
+ * 순환을 만들어도 되는 패키지 간선 — 지금은 없다. 패키지 그래프에 순환이 하나도 없다(docs/BE-ARCHITECTURE.md §9).
  * LayerSkeletonRulesTest의 순환 규칙이 이 목록만 무시하고, 아래 그래프 문서 검사가 이 간선을 점선으로 그린다.
  * 간선을 더하려면 §9에 이유를 적고 여기에 추가한다.
  */
 internal val DOCUMENTED_CYCLE_EDGES: List<Pair<String, String>> =
-    listOf(
-        // 글 목록의 isLiked·isBookmarked 필터 서브쿼리(PostRepositoryImpl)가 반응·북마크 엔티티를 쓴다
-        "domain.post" to "domain.interaction",
-    )
+    // 마지막 간선 domain.post → domain.interaction은 필터를 글 id 집합으로 바꿔 없앴다(docs/plans/2026-11-16-be-structure-stage2.md PR-9b)
+    emptyList()
 
 /**
  * docs/BE-ARCHITECTURE.md §1의 "실제 패키지 의존 그래프"가 코드와 같은지 본다. 그림을 손으로 그리면 새 의존이
@@ -82,7 +80,7 @@ class PackageGraphDocTest {
         val edges = packageEdges(includeHidden = true)
         val stale = DOCUMENTED_CYCLE_EDGES.filterNot { it in edges }
 
-        assertTrue(stale.isEmpty(), "DOCUMENTED_CYCLE_EDGES에 없어진 간선이 남아 있다 - 목록·§9 표·\"N개\" 문구에서 지운다: $stale")
+        assertTrue(stale.isEmpty(), "DOCUMENTED_CYCLE_EDGES에 없어진 간선이 남아 있다 - 목록·§9·\"N개\" 문구에서 지운다: $stale")
     }
 
     private fun packageEdges(includeHidden: Boolean = false): Set<Pair<String, String>> {

@@ -115,8 +115,8 @@ class LayerSkeletonRulesTest {
             .should(be(declaredInDtoFile))
             .`as`("domain의 *Request·*Response는 그 도메인의 *DTO.kt에 둔다")
 
-    // 패키지(domain.post, global.common …) 사이 순환을 막는다. 지금 있는 순환은 DOCUMENTED_CYCLE_EDGES의 1개 간선뿐이고
-    // (PackageGraphDocTest.kt, 이유는 BE-ARCHITECTURE §9), 그 간선만 무시하면 순환이 없다. 이 규칙은 그 밖의 새 순환을
+    // 패키지(domain.post, global.common …) 사이 순환을 막는다. 지금은 순환이 없고 DOCUMENTED_CYCLE_EDGES도 비어 있다
+    // (PackageGraphDocTest.kt, 경위는 BE-ARCHITECTURE §9). 목록에 간선을 적으면 그 간선만 무시한다. 이 규칙은 새 순환을
     // 막는다 — 기존 servicesMustNotHaveCrossDomainCycles는 *Service끼리만 묶어 Assembler·Repository를 거친 순환을 보지 못한다.
     @ArchTest
     val packagesMustBeFreeOfCyclesExceptDocumented: ArchRule =
@@ -127,7 +127,7 @@ class LayerSkeletonRulesTest {
                 resideInAPackage("com.example.linksphere.$from.."),
                 resideInAPackage("com.example.linksphere.$to.."),
             )
-        }.`as`("패키지 사이에 문서화된 1개 간선 말고는 순환을 만들지 않는다")
+        }.`as`("패키지 사이에 순환을 만들지 않는다(DOCUMENTED_CYCLE_EDGES에 적은 간선은 무시한다)")
 
     // 커밋 뒤 부수 효과(파일 삭제·메일)는 TransactionCallbacks.afterCommit으로만 등록한다 - 복사본 5곳을 모은 헬퍼다(§7-6)
     @ArchTest

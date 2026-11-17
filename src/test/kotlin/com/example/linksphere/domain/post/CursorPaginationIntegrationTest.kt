@@ -461,7 +461,7 @@ class CursorPaginationIntegrationTest {
 
     // ── 도우미 ────────────────────────────────────────────
 
-    private fun findFeed(sort: PostListSort, search: String? = null, after: List<Comparable<*>>?, size: Int, embedding: FloatArray? = null, withTotal: Boolean = false) = postRepository.findPostsAfter(null, search, emptySet(), null, emptySet(), null, sort, after, size, embedding, withTotal)
+    private fun findFeed(sort: PostListSort, search: String? = null, after: List<Comparable<*>>?, size: Int, embedding: FloatArray? = null, withTotal: Boolean = false) = postRepository.findPostsAfter(null, search, emptySet(), null, null, emptySet(), null, sort, after, size, embedding, withTotal)
 
     private fun walkFeed(sort: PostListSort, search: String? = null, size: Int = 3, embedding: FloatArray? = null, between: (Int) -> Unit = {}): List<UUID> = walk(sort.name, sort.keyTypes, between) { after -> findFeed(sort, search, after, size, embedding) }.map { it.id!! }
 

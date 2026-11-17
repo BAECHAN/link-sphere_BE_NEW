@@ -55,8 +55,17 @@ class PostService(
         private val VIEW_COUNT_WINDOW = Duration.ofHours(24)
         private const val VIEW_COUNT_LIMIT = 1
 
-        // 목록의 filter 파라미터 값 - 봇 계정이 쓴 글을 뺀다. 나머지 값(isBookmarked 등)은 PostRepositoryImpl이 푼다
+        // 목록의 filter 파라미터 값 - 봇 계정이 쓴 글을 뺀다. 글 테이블만으로 거르는 값(isMyPosts·isPrivate)은 PostRepositoryImpl이 푼다
         private const val EXCLUDE_BOTS_FILTER = "excludeBots"
+
+        // 목록의 filter 파라미터 값 - 내가 북마크·좋아요한 글만. id 집합을 interaction에 물어 IN으로 건다
+        private const val BOOKMARKED_FILTER = "isBookmarked"
+        private const val LIKED_FILTER = "isLiked"
+
+        // IN 목록이 이 수를 넘으면 경고 로그를 남긴다(결과는 줄이지 않는다). 드라이버는 한 문장의 바인드 값이 65,535개를 넘으면
+        // 예외를 던지므로(pgjdbc 42.7.11 PgPreparedStatement.maximumNumberOfParameters, simple 모드만 예외) 그 전에 알아채려는
+        // 값이다. 운영의 회원당 최대는 북마크 95·좋아요 9다(2026-11-17, 읽기 전용 계정 조회)
+        private const val POST_ID_FILTER_WARN_SIZE = 10_000
     }
 
     fun findByIdempotencyKey(userId: UUID, idempotencyKey: UUID): PostResponse? = postRepository.findByUserIdAndIdempotencyKey(userId, idempotencyKey)
@@ -176,6 +185,7 @@ class PostService(
         // 닉네임·봇 필터는 member에 id를 물어 저장소에는 id 집합만 넘긴다 - 글 쿼리가 회원 테이블을 직접 읽지 않는다
         val authorIds = nickname?.takeIf { it.isNotBlank() }?.let { memberService.findIdsByNicknameContaining(it) }
         val excludedAuthorIds = if (EXCLUDE_BOTS_FILTER in filters) memberService.findBotIds() else emptySet()
+        val postIds = resolveInteractionFilter(filters, currentUserId)
 
         if (state?.semantic == true && !semantic) {
             logger.warn("[Search] scope=feed semantic degraded to keyword")
@@ -186,6 +196,7 @@ class PostService(
                 categoryIds,
                 correctedSearch ?: search,
                 filters,
+                postIds,
                 authorIds,
                 excludedAuthorIds,
                 currentUserId,
@@ -199,7 +210,7 @@ class PostService(
         // 쪽마다 건수를 세지 않으므로 첫 쪽이 비었을 때만 보정을 판정한다. 뒤쪽이 비었다고 0건 검색은 아니다.
         val candidate = search?.takeIf { isFirstSearchPage && slice.content.isEmpty() }?.let { HangulKeyboardConverter.convertIfMislayout(it) }
         if (candidate != null) {
-            val correctedSlice = postRepository.findPostsAfter(categoryIds, candidate, filters, authorIds, excludedAuthorIds, currentUserId, sort, null, limit, withTotal = true)
+            val correctedSlice = postRepository.findPostsAfter(categoryIds, candidate, filters, postIds, authorIds, excludedAuthorIds, currentUserId, sort, null, limit, withTotal = true)
             if (correctedSlice.content.isNotEmpty()) {
                 logSearch(search = search, total = correctedSlice.total ?: PostSearchQuery.TOTAL_NOT_COUNTED, corrected = true, semantic = false)
                 return cursorResponse(correctedSlice, sort, currentUserId, PostSearchQuery.tokenize(candidate), candidate, semantic = false)
@@ -225,6 +236,34 @@ class PostService(
         val namesOrSlugs = category?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty()
 
         return if (namesOrSlugs.isEmpty()) null else categoryService.resolveIds(namesOrSlugs)
+    }
+
+    /**
+     * filter의 isBookmarked·isLiked를 글 id 집합으로 푼다 - 글 쿼리가 북마크·좋아요 테이블을 직접 읽지 않고 interaction에 묻는다.
+     * 둘 다 없거나 비로그인이면 null(거르지 않음)이고, 둘 다 있으면 둘 다 한 글만 남는다.
+     */
+    private fun resolveInteractionFilter(filters: Set<String>, viewerId: UUID?): Set<UUID>? {
+        if (viewerId == null) {
+            return null
+        }
+
+        val idSets =
+            listOfNotNull(
+                if (BOOKMARKED_FILTER in filters) postInteractionPort.findBookmarkedPostIds(viewerId) else null,
+                if (LIKED_FILTER in filters) postInteractionPort.findLikedPostIds(viewerId) else null,
+            )
+
+        if (idSets.isEmpty()) {
+            return null
+        }
+
+        val postIds = idSets.reduce { acc, ids -> acc intersect ids }
+
+        if (postIds.size > POST_ID_FILTER_WARN_SIZE) {
+            logger.warn("[PostFilter] id 목록이 큼 - size={}, filters={}", postIds.size, filters)
+        }
+
+        return postIds
     }
 
     private fun cursorResponse(

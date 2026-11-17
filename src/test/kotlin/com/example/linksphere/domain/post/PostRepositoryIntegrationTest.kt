@@ -37,28 +37,67 @@ class PostRepositoryIntegrationTest {
         insertLike(me, othersPrivateLikedByMe)
     }
 
+    // filter=isLiked·isBookmarked는 PostService가 interaction에 글 id를 물어 postIds로 넘긴다(같은 계획 PR-9b). 저장소는 id 집합으로만
+    // 거른다 - filter 문자열부터 응답까지는 PostInteractionPortIntegrationTest가 본다
     @Test
-    fun `isLiked 는 내가 좋아요한 글만 돌려준다`() {
-        val page = findPosts(filter = "isLiked", currentUserId = me)
+    fun `postIds 를 주면 그 글만 돌려준다`() {
+        val page = findPosts(postIds = setOf(likedByMe), currentUserId = me)
 
         assertEquals(setOf(likedByMe), page.content.map { it.id }.toSet())
     }
 
-    // 공개 게이트(공개 글 OR 내 글)가 AND로 함께 붙는다 — 좋아요했어도 남의 비공개 글은 새지 않고, count도 같은 집합을 센다
+    // 공개 게이트(공개 글 OR 내 글)가 AND로 함께 붙는다 — id가 넘어와도 남의 비공개 글은 새지 않고, count도 같은 집합을 센다
     @Test
-    fun `isLiked 는 내가 좋아요한 남의 비공개 글을 빼고 센다`() {
-        val page = findPosts(filter = "isLiked", currentUserId = me)
+    fun `postIds 에 남의 비공개 글이 들어 있어도 빼고 센다`() {
+        val page = findPosts(postIds = setOf(likedByMe, othersPrivateLikedByMe), currentUserId = me)
 
         assertEquals(1L, page.total)
         assertEquals(false, page.content.any { it.id == othersPrivateLikedByMe })
     }
 
-    // isBookmarked·isMyPosts와 같다 — 비로그인이면 조건을 붙이지 않아 공개 피드 전체가 나온다
+    // 비로그인의 isLiked·isBookmarked는 PostService가 null로 넘긴다 — 조건을 붙이지 않아 공개 피드 전체가 나온다
     @Test
-    fun `비로그인이면 isLiked 를 무시하고 공개 글을 모두 돌려준다`() {
-        val page = findPosts(filter = "isLiked", currentUserId = null)
+    fun `postIds 가 null 이면 거르지 않고 공개 글을 모두 돌려준다`() {
+        val page = findPosts(postIds = null, currentUserId = null)
 
         assertEquals(setOf(likedByMe, likedByOther, notLiked), page.content.map { it.id }.toSet())
+    }
+
+    // 좋아요·북마크한 글이 없는 경우다 — "거르지 않음"으로 읽으면 전체 글이 나온다
+    @Test
+    fun `postIds 가 빈 집합이면 전체 글이 아니라 빈 결과이고 건수는 0이다`() {
+        val page = findPosts(postIds = emptySet(), currentUserId = me)
+
+        assertEquals(emptyList<UUID>(), page.content.map { it.id })
+        assertEquals(0L, page.total)
+        assertEquals(null, page.nextKeys)
+    }
+
+    // 검색은 건수 쿼리와 관련도 정렬 쿼리가 따로 나간다 - 둘 다 같은 id 조건을 본다
+    @Test
+    fun `검색과 postIds 를 함께 주면 건수도 그 글 가운데 검색에 걸린 것만 센다`() {
+        val inSetHit = UUID.randomUUID()
+        val outOfSetHit = UUID.randomUUID()
+        insertPost(inSetHit, owner = other, title = "kotlin coroutine guide")
+        insertPost(outOfSetHit, owner = other, title = "kotlin flow basics")
+
+        val page =
+            postRepository.findPostsAfter(
+                categoryIds = null,
+                search = "kotlin",
+                filters = emptySet(),
+                postIds = setOf(inSetHit, likedByMe),
+                authorIds = null,
+                excludedAuthorIds = emptySet(),
+                currentUserId = me,
+                sort = PostListSort.RELEVANCE,
+                after = null,
+                size = 20,
+                withTotal = true,
+            )
+
+        assertEquals(listOf(inSetHit), page.content.map { it.id })
+        assertEquals(1L, page.total)
     }
 
     @Test
@@ -82,10 +121,11 @@ class PostRepositoryIntegrationTest {
 
     private fun viewCountInDb(postId: UUID): Int = jdbc.queryForObject("SELECT COALESCE(view_count, 0) FROM posts WHERE id = ?", Int::class.java, postId)!!
 
-    private fun findPosts(filter: String, currentUserId: UUID?) = postRepository.findPostsAfter(
+    private fun findPosts(postIds: Set<UUID>?, currentUserId: UUID?) = postRepository.findPostsAfter(
         categoryIds = null,
         search = null,
-        filters = setOf(filter),
+        filters = emptySet(),
+        postIds = postIds,
         authorIds = null,
         excludedAuthorIds = emptySet(),
         currentUserId = currentUserId,
@@ -99,11 +139,12 @@ class PostRepositoryIntegrationTest {
         jdbc.update("INSERT INTO members (id) VALUES (?)", id)
     }
 
-    private fun insertPost(id: UUID, owner: UUID, isPrivate: Boolean = false) {
+    private fun insertPost(id: UUID, owner: UUID, isPrivate: Boolean = false, title: String = "t") {
         jdbc.update(
-            "INSERT INTO posts (id, user_id, url, title, is_private) VALUES (?, ?, 'https://example.com', 't', ?)",
+            "INSERT INTO posts (id, user_id, url, title, is_private) VALUES (?, ?, 'https://example.com', ?, ?)",
             id,
             owner,
+            title,
             isPrivate,
         )
     }

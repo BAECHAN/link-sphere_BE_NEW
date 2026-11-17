@@ -61,6 +61,10 @@ class PostInteractionAdapter(
         )
     }
 
+    override fun findBookmarkedPostIds(userId: UUID): Set<UUID> = bookmarkRepository.findPostIdsByUserId(userId).toSet()
+
+    override fun findLikedPostIds(userId: UUID): Set<UUID> = postReactionRepository.findPostIdsByUserId(userId).toSet()
+
     // InteractionService.addBookmarkFolder와 같은 검증·insert 순서다. insert가 네이티브 쿼리라 트랜잭션 밖에서 불리면 안 된다
     @Transactional(propagation = Propagation.MANDATORY)
     override fun bookmarkNewPost(userId: UUID, postId: UUID, folderIds: List<UUID>) {

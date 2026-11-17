@@ -49,6 +49,10 @@ interface BookmarkRepository :
     fun countByPostIdIn(@Param("postIds") postIds: List<UUID>): List<PostBookmarkCount>
     fun findAllByUserIdAndPostIdIn(userId: UUID, postIds: List<UUID>): List<TableBookmark>
 
+    // 글 목록의 filter=isBookmarked - post가 이 id 집합으로 거른다(PostInteractionPort.findBookmarkedPostIds)
+    @Query("SELECT b.postId FROM TableBookmark b WHERE b.userId = :userId")
+    fun findPostIdsByUserId(@Param("userId") userId: UUID): List<UUID>
+
     // 미분류(bookmark_folder_items 소속 0개) 북마크 수 — 폴더 목록 응답에 사용
     @Query(
         "SELECT COUNT(b) FROM TableBookmark b WHERE b.userId = :userId " +
