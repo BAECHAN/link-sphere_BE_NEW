@@ -1,7 +1,5 @@
 package com.example.linksphere.domain.post
 
-import com.example.linksphere.domain.interaction.TableBookmark
-import com.example.linksphere.domain.interaction.TablePostReaction
 import com.example.linksphere.global.common.KeysetQuery
 import com.example.linksphere.global.common.KeysetSlice
 import com.example.linksphere.global.common.KeysetSpec
@@ -20,6 +18,7 @@ class PostRepositoryImpl : PostRepositoryCustom {
         categoryIds: Set<Long>?,
         search: String?,
         filters: Set<String>,
+        postIds: Set<UUID>?,
         authorIds: Set<UUID>?,
         excludedAuthorIds: Set<UUID>,
         currentUserId: UUID?,
@@ -29,11 +28,16 @@ class PostRepositoryImpl : PostRepositoryCustom {
         queryEmbedding: FloatArray?,
         withTotal: Boolean,
     ): KeysetSlice<TablePost> {
+        // 북마크·좋아요한 글이 하나도 없으면 DB에 묻지 않는다 - 빈 IN 목록을 만들지 않고, 의미 검색 후보 조회도 건너뛴다
+        if (postIds != null && postIds.isEmpty()) {
+            return KeysetSlice(content = emptyList(), total = if (withTotal) 0L else null)
+        }
+
         val cb = entityManager.criteriaBuilder
         // 건수와 본 쿼리가 같은 후보 집합을 보도록 한 번만 계산한다
         val semanticMatches = PostSearchQuery.resolveSemanticMatches(entityManager, queryEmbedding)
         val predicatesOf = { root: Root<TablePost>, query: AbstractQuery<*> ->
-            buildPredicates(cb, root, query, categoryIds, search, filters, authorIds, excludedAuthorIds, currentUserId, semanticMatches)
+            buildPredicates(cb, root, query, categoryIds, search, filters, postIds, authorIds, excludedAuthorIds, currentUserId, semanticMatches)
         }
 
         val total =
@@ -65,6 +69,7 @@ class PostRepositoryImpl : PostRepositoryCustom {
         categoryIds: Set<Long>?,
         search: String?,
         filters: Set<String>,
+        postIds: Set<UUID>?,
         authorIds: Set<UUID>?,
         excludedAuthorIds: Set<UUID>,
         currentUserId: UUID?,
@@ -111,56 +116,14 @@ class PostRepositoryImpl : PostRepositoryCustom {
             predicates.add(cb.not(root.get<UUID>("userId").`in`(excludedAuthorIds)))
         }
 
+        // 내가 북마크·좋아요한 글만 - id 집합은 PostService가 interaction에 물어 넘긴다. 빈 집합은 findPostsAfter가 먼저 걸러 여기 오지 않는다
+        if (postIds != null) {
+            predicates.add(root.get<UUID>("id").`in`(postIds))
+        }
+
         // Filters (Multiple supported) - 쉼표로 나누는 일은 PostService가 한다
         for (f in filters) {
             when (f) {
-                "isBookmarked" -> {
-                    if (currentUserId != null) {
-                        val subquery =
-                            query.subquery(UUID::class.java)
-                        val bookmarkRoot =
-                            subquery.from(
-                                TableBookmark::class.java,
-                            )
-                        subquery.select(bookmarkRoot.get("postId"))
-                        subquery.where(
-                            cb.equal(
-                                bookmarkRoot.get<UUID>(
-                                    "userId",
-                                ),
-                                currentUserId,
-                            ),
-                        )
-                        // Post ID must be in the list of bookmarked
-                        // Post IDs
-                        predicates.add(
-                            root.get<UUID>("id").`in`(subquery),
-                        )
-                    }
-                }
-                "isLiked" -> {
-                    // isBookmarked와 같은 형태 — 내가 좋아요한(post_reactions) 글만 남긴다
-                    if (currentUserId != null) {
-                        val subquery =
-                            query.subquery(UUID::class.java)
-                        val reactionRoot =
-                            subquery.from(
-                                TablePostReaction::class.java,
-                            )
-                        subquery.select(reactionRoot.get("postId"))
-                        subquery.where(
-                            cb.equal(
-                                reactionRoot.get<UUID>(
-                                    "userId",
-                                ),
-                                currentUserId,
-                            ),
-                        )
-                        predicates.add(
-                            root.get<UUID>("id").`in`(subquery),
-                        )
-                    }
-                }
                 "isMyPosts" -> {
                     if (currentUserId != null) {
                         predicates.add(

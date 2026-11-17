@@ -67,6 +67,7 @@ class PostSearchIntegrationTest {
         categoryIds = null,
         search = keyword,
         filters = emptySet(),
+        postIds = null,
         authorIds = null,
         excludedAuthorIds = emptySet(),
         currentUserId = null,

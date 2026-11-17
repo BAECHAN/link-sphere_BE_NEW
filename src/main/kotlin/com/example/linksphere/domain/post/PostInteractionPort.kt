@@ -18,6 +18,12 @@ interface PostInteractionPort {
     /** 글 하나의 좋아요·북마크 수와 viewerId의 상태. */
     fun findSummary(postId: UUID, viewerId: UUID?): PostInteractionSummary
 
+    /** userId가 북마크한 글의 id 전부. 글 목록의 `filter=isBookmarked`가 이 집합으로 거른다(PR-9b). */
+    fun findBookmarkedPostIds(userId: UUID): Set<UUID>
+
+    /** userId가 좋아요한 글의 id 전부. 글 목록의 `filter=isLiked`가 이 집합으로 거른다(PR-9b). */
+    fun findLikedPostIds(userId: UUID): Set<UUID>
+
     /**
      * 글을 등록하면서 북마크하고 폴더에 넣는다. 없는 폴더는 BookmarkFolderNotFoundException, 남의 폴더는 ForbiddenException이다.
      * 글 행이 DB에 있어야 하므로(북마크 테이블의 FK) 부르는 쪽이 먼저 flush하고, 부르는 쪽의 트랜잭션 안에서 실행한다.

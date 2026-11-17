@@ -130,6 +130,88 @@ class PostInteractionPortIntegrationTest {
         assertEquals(2, anonymous.stats.bookmarkCount)
     }
 
+    // filter=isLiked·isBookmarked는 post가 interaction에 글 id를 물어 IN으로 거른다(같은 계획 PR-9b) - 예전에는 글 쿼리의 서브쿼리였다
+    @Test
+    fun `isBookmarked 와 isLiked 필터는 내가 한 글만 돌려주고 함께 걸면 둘 다 한 글만 남는다`() {
+        val bookmarkedOnly = insertPost("bookmarked-only")
+        val likedOnly = insertPost("liked-only")
+        jdbc.update("INSERT INTO bookmarks (user_id, post_id) VALUES (?, ?)", viewer, bookmarkedOnly)
+        jdbc.update("INSERT INTO post_reactions (user_id, post_id) VALUES (?, ?)", viewer, likedOnly)
+
+        assertEquals(setOf(busyPost, bookmarkedOnly), feedIds("isBookmarked", viewer))
+        assertEquals(setOf(busyPost, likedOnly), feedIds("isLiked", viewer))
+        assertEquals(setOf(busyPost), feedIds("isBookmarked,isLiked", viewer))
+    }
+
+    // 남의 북마크·좋아요가 내 필터에 섞이지 않고, 한 것이 없으면 전체 글이 아니라 빈 결과다
+    @Test
+    fun `북마크나 좋아요한 글이 없으면 필터 결과가 비고 남이 한 글은 나오지 않는다`() {
+        assertEquals(emptySet<UUID>(), feedIds("isBookmarked", writer))
+        assertEquals(emptySet<UUID>(), feedIds("isLiked", writer))
+        assertEquals(setOf(busyPost), feedIds("isBookmarked", other))
+    }
+
+    // 좋아요·북마크했어도 남의 비공개 글은 필터 결과에 새지 않는다(공개 게이트가 함께 걸린다)
+    @Test
+    fun `북마크·좋아요한 뒤 비공개로 바뀐 남의 글은 필터 결과에서 빠진다`() {
+        val turnedPrivate = insertPost("turned-private")
+        jdbc.update("INSERT INTO bookmarks (user_id, post_id) VALUES (?, ?)", viewer, turnedPrivate)
+        jdbc.update("INSERT INTO post_reactions (user_id, post_id) VALUES (?, ?)", viewer, turnedPrivate)
+        jdbc.update("UPDATE posts SET is_private = true WHERE id = ?", turnedPrivate)
+
+        assertEquals(setOf(busyPost), feedIds("isBookmarked", viewer))
+        assertEquals(setOf(busyPost), feedIds("isLiked", viewer))
+    }
+
+    @Test
+    fun `비로그인이면 isBookmarked 와 isLiked 를 무시하고 공개 글을 모두 돌려준다`() {
+        assertEquals(setOf(busyPost, quietPost), feedIds("isBookmarked,isLiked", null))
+    }
+
+    // 검색은 관련도 정렬 경로(점수 계산 뒤 정렬)를 탄다 - 그 경로에서도 id 조건이 함께 걸려야 한다
+    @Test
+    fun `검색어와 isBookmarked 를 함께 걸면 북마크한 글 가운데 검색에 걸린 글만 나온다`() {
+        val bookmarkedHit = insertPost("kotlin coroutine guide")
+        val notBookmarkedHit = insertPost("kotlin flow basics")
+        jdbc.update("INSERT INTO bookmarks (user_id, post_id) VALUES (?, ?)", viewer, bookmarkedHit)
+
+        val found = postService.getPostsByCursor(null, "kotlin", "isBookmarked", null, null, 20, viewer).content.map { it.id }
+        val withoutFilter = postService.getPostsByCursor(null, "kotlin", null, null, null, 20, viewer).content.map { it.id }.toSet()
+
+        assertEquals(listOf(bookmarkedHit), found)
+        assertEquals(setOf(bookmarkedHit, notBookmarkedHit), withoutFilter)
+    }
+
+    // 북마크한 글이 없으면 검색 첫 쪽도 비고, 자판 보정 재검색으로 남의 글이 새지 않는다
+    @Test
+    fun `북마크한 글이 없으면 검색어를 함께 걸어도 빈 결과다`() {
+        insertPost("kotlin flow basics")
+
+        val page = postService.getPostsByCursor(null, "kotlin", "isBookmarked", null, null, 20, writer)
+
+        assertEquals(emptyList<UUID>(), page.content.map { it.id })
+        assertEquals(null, page.nextCursor)
+    }
+
+    // 필터를 건 채로 쪽을 넘겨도 순서(최신순)와 개수가 맞아야 한다
+    @Test
+    fun `isBookmarked 필터를 건 목록을 쪽을 넘겨 가며 끝까지 중복·누락 없이 읽는다`() {
+        val extra = (1..5).map { insertPost("extra-$it", minutesAgo = it) }
+        (extra + quietPost).forEach { jdbc.update("INSERT INTO bookmarks (user_id, post_id) VALUES (?, ?)", viewer, it) }
+        insertPost("not-bookmarked", minutesAgo = 0)
+
+        val pages = mutableListOf<List<UUID>>()
+        var cursor: String? = null
+        do {
+            val page = postService.getPostsByCursor(null, null, "isBookmarked", null, cursor, 3, viewer)
+            pages += page.content.map { it.id }
+            cursor = page.nextCursor
+        } while (cursor != null)
+
+        assertEquals(extra + listOf(busyPost, quietPost), pages.flatten())
+        assertEquals(listOf(3, 3, 1), pages.map { it.size })
+    }
+
     // 북마크 insert는 네이티브 쿼리라 글 행이 DB에 먼저 나가 있어야 한다(FK). PostService가 flush를 부르는지는 여기서 가려지지
     // 않는다 - flush를 빼도 통과한다(원인은 추적하지 않았다. Hibernate가 네이티브 쿼리 앞에서 밀린 쓰기를 내보내는 것으로
     // 추정한다). 호출 순서는 PostServiceTest가 본다
@@ -178,6 +260,22 @@ class PostInteractionPortIntegrationTest {
         assertThrows(BookmarkFolderNotFoundException::class.java) {
             postService.createPost(viewer, PostCreateRequest(url = "https://example.com/both", folderIds = listOf(othersFolder, UUID.randomUUID())))
         }
+    }
+
+    private fun feedIds(filter: String, viewerId: UUID?): Set<UUID> = postService.getPostsByCursor(null, null, filter, null, null, 20, viewerId).content.map { it.id }.toSet()
+
+    private fun insertPost(title: String, minutesAgo: Int = 30): UUID {
+        val id = UUID.randomUUID()
+        jdbc.update(
+            "INSERT INTO posts (id, user_id, url, title, is_private, created_at) VALUES (?, ?, ?, ?, false, now() - make_interval(mins => ?))",
+            id,
+            writer,
+            "https://example.com/$title",
+            title,
+            minutesAgo,
+        )
+
+        return id
     }
 
     private fun stubMetadata() {
