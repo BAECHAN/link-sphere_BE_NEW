@@ -23,6 +23,10 @@ interface PostRepository :
     @Query("SELECT p.id AS id, p.title AS title FROM TablePost p WHERE p.id IN :ids AND (p.isPrivate = false OR p.userId = :viewerId)")
     fun findVisibleTitles(@Param("ids") ids: Collection<UUID>, @Param("viewerId") viewerId: UUID): List<VisiblePostTitle>
 
+    // 북마크함이 최신순·오래된순으로 읽은 글 가운데 보이는 것만 남긴다(PostCandidateService.findVisibleIds). 공개 조건은 위와 같다. 빈 목록으로 부르지 않는다.
+    @Query("SELECT p.id FROM TablePost p WHERE p.id IN :ids AND (p.isPrivate = false OR p.userId = :viewerId)")
+    fun findVisibleIds(@Param("ids") ids: Collection<UUID>, @Param("viewerId") viewerId: UUID): List<UUID>
+
     fun findByUserIdAndIdempotencyKey(userId: UUID, idempotencyKey: UUID): TablePost?
 
     fun existsByUserIdAndUrlAndCreatedAtAfter(userId: UUID, url: String, after: LocalDateTime): Boolean

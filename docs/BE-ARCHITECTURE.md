@@ -134,7 +134,6 @@ flowchart LR
   domain_interaction --> domain_member
   domain_interaction --> domain_post
   domain_interaction --> global_common
-  domain_interaction --> infra_ai
   domain_linkpreview --> global_common
   domain_linkpreview --> infra_youtube
   domain_member --> global_common
@@ -193,7 +192,7 @@ flowchart LR
 | `packagesMustBeFreeOfCyclesExceptDocumented` | 패키지 사이 새 순환 — 허용 간선은 `PackageGraphDocTest.kt`의 `DOCUMENTED_CYCLE_EDGES`(지금은 비어 있다), 경위는 §9 | 위와 같음 |
 | `문서의 패키지 의존 그래프가 코드와 같다` | §1 "실제 패키지 의존 그래프"가 코드와 어긋남 | `architecture/PackageGraphDocTest.kt` |
 | `순환 허용 간선 목록의 간선은 모두 실제로 있다` | 끊은 간선이 `DOCUMENTED_CYCLE_EDGES`에 남아 다시 생겨도 조용히 통과 | 위와 같음 |
-| `다른 패키지의 저장소·엔티티를 새로 쓰지 않는다` | 다른 패키지의 Repository·`@Entity`를 직접 쓰는 곳이 새로 생김 — 지금 있는 5곳은 `KNOWN_BOUNDARY_VIOLATIONS`에 적혀 있고 2단계에서 0으로 줄인다 | `architecture/ModuleBoundaryRulesTest.kt` |
+| `다른 패키지의 저장소·엔티티를 새로 쓰지 않는다` | 다른 패키지의 Repository·`@Entity`를 직접 쓰는 곳이 새로 생김 — 지금은 0곳이고 `KNOWN_BOUNDARY_VIOLATIONS`는 빈 목록이다(2단계 PR-9c에서 비었다) | `architecture/ModuleBoundaryRulesTest.kt` |
 | `알려진 위반 목록의 항목은 모두 실제로 있다` | 없앤 위반이 `KNOWN_BOUNDARY_VIOLATIONS`에 남아 다시 생겨도 조용히 통과 | 위와 같음 |
 | `afterCommitGoesThroughTransactionCallbacks` | `TransactionSynchronizationManager.registerSynchronization` 직접 호출(§7-6) | `architecture/LayerSkeletonRulesTest.kt` |
 | `emailVerificationGoesThroughGate` | `EmailVerificationGate` 밖에서 `EmailNotVerifiedException` 생성 | 위와 같음 |
@@ -276,7 +275,7 @@ flowchart TD
 | `*Controller.kt` | 인증 추출 → (필요하면) 레이트리밋 → Service 위임 → `ApiResponse` 반환. Service가 돌려준 스칼라를 응답 DTO로 감싸는 것은 된다(아래 "허용하는 것") | Repository·엔티티 참조, 비즈니스 분기, 숫자 상태코드 |
 | `*Service.kt` | 검증 · 권한 · 예외 throw · 엔티티 → 응답 DTO 변환(직접, `*Assembler`, DTO의 `companion from()`) · 트랜잭션 경계 | HTTP 개념(쿠키·헤더·서블릿·`ApiResponse`) |
 | `*Repository.kt` | 쿼리 메서드(파생·JPQL·네이티브) | 예외 throw, 비즈니스 판단 |
-| `*RepositoryCustom` + `*RepositoryImpl` | Criteria API가 필요한 동적 검색(`PostRepositoryImpl`, `BookmarkRepositoryImpl`) | 위와 같음 |
+| `*RepositoryCustom` + `*RepositoryImpl` | Criteria API가 필요한 동적 조회(`PostRepositoryImpl`, `BookmarkRepositoryImpl`) | 위와 같음 |
 | `Table*.kt` | JPA 엔티티 | 비즈니스 규칙(§9에 예외 있음) |
 | `*DTO.kt` | 도메인별 Request/Response `data class` 모음 — 요청은 `*Request`, 응답은 `*Response` 접미사, nullable은 명시, 목록 기본값은 `= emptyList()` | 컨트롤러·서비스 파일 안에 DTO 정의 |
 
@@ -293,9 +292,9 @@ flowchart TD
   만들어 넘기고 임베딩이 필요한 요청에서만 쓴다(넘어도 막지 않고 키워드 검색으로 강등한다). 로그인·가입·비밀번호 재설정처럼 Service
   안에서 판정이 갈리는 한도는 지금처럼 Service에서 건다. 조회 기록의 조회자 판단(`PostService.recordView`)도 Service에 둔다 —
   요청을 막는 한도가 아니라 조회수를 올릴지 정하는 규칙이고, 봇은 이 메서드를 부르지 않는다(§7-3).
-- **다른 도메인 Repository·엔티티 직접 사용(줄이는 중)** — 예: interaction의 `BookmarkRepositoryImpl`이 post의 `TablePost`를 쓴다.
-  지금 있는 5곳만 남기고 새로 쓰는 것은 `ModuleBoundaryRulesTest`가 막는다(2026-11-16, 처음 57곳). 남은 곳은 2단계
-  (`docs/plans/2026-11-16-be-structure-stage2.md`)에서 그 패키지의 Service에 묻는 방식으로 바꿔 0으로 줄인다. Service끼리의
+- **다른 도메인 Repository·엔티티 직접 사용 금지** — 예전에는 interaction의 `BookmarkRepositoryImpl`이 post의 `TablePost`를 조인했다.
+  2단계(`docs/plans/2026-11-16-be-structure-stage2.md`)에서 그 패키지의 Service에 묻는 방식으로 바꿔 0곳이 됐고(2026-11-17, 처음 57곳),
+  새로 쓰는 것은 `ModuleBoundaryRulesTest`가 막는다. Service끼리의
   순환은 지금처럼 `servicesMustNotHaveCrossDomainCycles`가 막고, 순환이 생기면 `PostResponseAssembler`처럼 자기를 부르는
   Service를 참조하지 않는 조립기로 뺀다(§7-8). 조립기가 `CategoryService`·`MemberService`처럼 post를 모르는 Service에 묻는 것은 순환이 아니다.
 - **global → domain 0쌍** — 예외가 없고 `globalMustNotDependOnDomain`이 막는다. 마지막 1쌍이던 `SecurityConfig` →
@@ -658,6 +657,10 @@ for (id in ids) {
 - 다른 패키지의 데이터로 목록을 거를 때는 그 테이블을 서브쿼리로 읽지 않고 id 집합을 물어 `IN`으로 건다 — `filter=isBookmarked`·
   `isLiked`는 `PostService`가 포트에서 내가 한 글 id를 받아 저장소에 넘긴다(닉네임·봇 필터와 같은 방식). 빈 집합이면 DB에 묻지 않고
   빈 결과를 내고, null이면 거르지 않는다(비로그인이거나 이 필터가 없을 때). 집합이 10,000개를 넘으면 경고 로그를 남긴다 — 결과는 줄이지 않는다.
+- 다른 패키지가 가진 id 가운데로 글 목록을 읽을 때는 그 패키지가 글 테이블을 조인하지 않는다 — 북마크함은 자기 테이블에서 글 id를
+  읽어 `PostCandidateService`에 넘기고, 공개 여부·검색·글 쪽 정렬 키(제목·열람 시각·검색 점수)와 응답 조립은 post가 한다
+  (`BookmarkedPostFinder`). 순서가 두 패키지의 값에 걸치면(제목이 같은 글은 북마크 시각순) 첫 키는 post가 DB에서 정렬하고 같은 키
+  안의 순서만 묻는 쪽이 맞춘다(docs/PAGINATION.md §5.2). 검색어 임베딩·자판 보정·검색 로그는 피드와 북마크함이 `PostSearchFlow` 하나를 쓴다.
 - 조립기를 Service 밖 클래스로 두면 Service 순환도 피한다(KDoc 참고).
 - **안티패턴**: 목록을 돌며 항목마다 `findById`·`countBy…` 호출. 단건 상세(`convertToResponse`)는 여러 번 조회해도 된다.
 

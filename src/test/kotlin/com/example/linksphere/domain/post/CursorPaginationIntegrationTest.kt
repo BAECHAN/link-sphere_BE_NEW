@@ -3,7 +3,7 @@ package com.example.linksphere.domain.post
 import com.example.linksphere.domain.comment.CommentRepository
 import com.example.linksphere.domain.comment.TableComment
 import com.example.linksphere.domain.interaction.BookmarkListSort
-import com.example.linksphere.domain.interaction.BookmarkRepository
+import com.example.linksphere.domain.interaction.BookmarkedPostFinder
 import com.example.linksphere.global.common.CursorCodec
 import com.example.linksphere.global.common.CursorKeyType
 import com.example.linksphere.global.common.KeysetSlice
@@ -21,9 +21,11 @@ import org.junit.jupiter.params.provider.EnumSource
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.system.CapturedOutput
 import org.springframework.boot.test.system.OutputCaptureExtension
+import org.springframework.context.annotation.Import
 import org.springframework.data.domain.Limit
 import org.springframework.jdbc.core.ConnectionCallback
 import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.test.context.bean.override.mockito.MockitoBean
 import java.sql.Timestamp
 import java.time.LocalDateTime
 import java.util.UUID
@@ -33,6 +35,7 @@ import kotlin.math.sin
 // 세 목록의 cursor 조회를 실제 Postgres에서 검증한다 - 끝까지 읽은 결과가 전체 정렬과 같은가, 쪽 사이 쓰기에 어떻게 반응하는가,
 // 설계가 기대는 SQL 형태(인덱스 범위 탐색, 점수를 안쪽에서 한 번만 계산)가 실제로 만들어지는가. 설계 근거는 docs/PAGINATION.md.
 @PostgresIntegrationTest
+@Import(BookmarkedPostFinder::class, PostCandidateService::class)
 @ExtendWith(OutputCaptureExtension::class)
 class CursorPaginationIntegrationTest {
 
@@ -40,7 +43,10 @@ class CursorPaginationIntegrationTest {
 
     @Autowired private lateinit var postRepository: PostRepository
 
-    @Autowired private lateinit var bookmarkRepository: BookmarkRepository
+    @Autowired private lateinit var bookmarkedPostFinder: BookmarkedPostFinder
+
+    // 북마크 목록은 글 id까지만 본다 - 응답 조립기는 띄우지 않는다
+    @MockitoBean private lateinit var postResponseAssembler: PostResponseAssembler
 
     @Autowired private lateinit var commentRepository: CommentRepository
 
@@ -250,10 +256,12 @@ class CursorPaginationIntegrationTest {
         insertPost("북마크 안 한 react 글")
 
         val walked = walkBookmarks(BookmarkListSort.RELEVANCE, search = "react")
-        val atOnce = bookmarkRepository.findBookmarkedPostsAfter(me, null, false, BookmarkListSort.RELEVANCE, "react", null, 50)
+        val atOnce = bookmarkedPostFinder.findAfter(me, null, false, BookmarkListSort.RELEVANCE, "react", null, 50)
 
-        assertEquals(atOnce.content.map { it.id }, walked)
+        assertEquals(atOnce.content, walked)
         assertEquals(7, walked.toSet().size)
+        // 일곱 글은 점수가 같다 - 그 안의 순서는 북마크 시각 최근순, 글 id 큰 순이다
+        assertEquals(ids("SELECT b.post_id FROM bookmarks b JOIN posts p ON p.id = b.post_id WHERE b.user_id = ? AND p.title LIKE '%react%' ORDER BY b.created_at DESC, b.post_id DESC", me), walked)
     }
 
     // 끼어드는 글은 어느 정렬에서든 cursor 앞에 오도록 제목·시각을 잡는다. 지우는 글은 둘째 쪽의 마지막 글, 즉 cursor의 기준 행이다.
@@ -326,7 +334,7 @@ class CursorPaginationIntegrationTest {
                 post
             }
 
-        val first = bookmarkRepository.findBookmarkedPostsAfter(me, null, false, BookmarkListSort.TITLE, null, null, 1)
+        val first = bookmarkedPostFinder.findAfter(me, null, false, BookmarkListSort.TITLE, null, null, 1)
         val cursor = CursorCodec.encode(BookmarkListSort.TITLE.name, first.nextKeys!!)
 
         assertTrue(cursor.toByteArray().size < 1_200, "cursor ${cursor.toByteArray().size}바이트")
@@ -414,9 +422,9 @@ class CursorPaginationIntegrationTest {
         val time = Timestamp.valueOf(keys[0] as LocalDateTime)
 
         listOf(BookmarkListSort.LATEST, BookmarkListSort.OLDEST).forEach { sort ->
-            bookmarkRepository.findBookmarkedPostsAfter(me, null, false, sort, null, keys, 10)
+            bookmarkedPostFinder.findAfter(me, null, false, sort, null, keys, 10)
 
-            assertUsesIndex(lastSelect(output, "from bookmarks"), "idx_bookmarks_user_created_at_post", me, false, me, time, time, time, keys[1], 11)
+            assertUsesIndex(lastSelect(output, "from bookmarks"), "idx_bookmarks_user_created_at_post", me, time, time, time, keys[1], 11)
         }
     }
 
@@ -447,16 +455,18 @@ class CursorPaginationIntegrationTest {
         assertTrue(sql.contains(" as bigint)"), sql)
     }
 
-    // 최근 열람순 키는 북마크 행만으로 계산돼 조인 전에 거를 수 있고, 파생 테이블이면 offset 0이 그걸 막는다. 제목은 글 표의 컬럼이라 반대다(docs/PAGINATION.md §5.2).
+    // 최근 열람순 키는 싼 식이라 WHERE에 바로 쓰고, 제목 앞부분은 파생 테이블에서 한 번만 계산한다(docs/PAGINATION.md §5.2). 정렬 키 쿼리는
+    // 이제 post가 후보 id로 글 테이블에 낸다(같은 계획 PR-9c) - 후보가 비면 쿼리가 나가지 않아 북마크를 하나 둔다.
     @Test
     fun `최근 열람순은 조건을 WHERE에 바로 쓰고 제목순은 파생 테이블에서 비교한다`(output: CapturedOutput) {
         val time = LocalDateTime.of(2026, 3, 1, 0, 0)
+        bookmark(insertPost("후보"))
 
-        bookmarkRepository.findBookmarkedPostsAfter(me, null, false, BookmarkListSort.VIEWED, null, listOf(time, time, UUID.randomUUID()), 10)
-        assertFalse(lastSelect(output, "from bookmarks").contains("derived1_0"))
+        bookmarkedPostFinder.findAfter(me, null, false, BookmarkListSort.VIEWED, null, listOf(time, time, UUID.randomUUID()), 10)
+        assertFalse(lastSelect(output, "from posts").contains("derived1_0"))
 
-        bookmarkRepository.findBookmarkedPostsAfter(me, null, false, BookmarkListSort.TITLE, null, listOf("제목", time, UUID.randomUUID()), 10)
-        assertTrue(lastSelect(output, "from bookmarks").contains("derived1_0"))
+        bookmarkedPostFinder.findAfter(me, null, false, BookmarkListSort.TITLE, null, listOf("제목", time, UUID.randomUUID()), 10)
+        assertTrue(lastSelect(output, "from posts").contains("derived1_0"))
     }
 
     // ── 도우미 ────────────────────────────────────────────
@@ -474,8 +484,8 @@ class CursorPaginationIntegrationTest {
         embedding: FloatArray? = null,
         between: (Int) -> Unit = {},
     ): List<UUID> = walk(sort.name, sort.keyTypes, between) { after ->
-        bookmarkRepository.findBookmarkedPostsAfter(me, folderId, onlyUncategorized, sort, search, after, size, embedding)
-    }.map { it.id!! }
+        bookmarkedPostFinder.findAfter(me, folderId, onlyUncategorized, sort, search, after, size, embedding)
+    }
 
     private fun walkComments(size: Int = 3, between: (Int) -> Unit = {}): List<UUID> = walk("LATEST", listOf(CursorKeyType.TIME, CursorKeyType.ID), between) { after ->
         val rows: List<TableComment> =

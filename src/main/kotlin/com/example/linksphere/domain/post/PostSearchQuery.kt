@@ -11,7 +11,7 @@ import java.util.UUID
 /**
  * 게시글 검색용 토큰 파싱 + 매칭 predicate + 관련도 점수 로직.
  *
- * 피드(Root<TablePost>)와 북마크(Join<TableBookmark, TablePost>) 양쪽에서 공유한다.
+ * 피드(findPostsAfter)와 다른 패키지가 넘긴 후보 글의 정렬(rankVisibleAmong - 북마크함) 양쪽에서 공유한다.
  * - 내용은 공백 제거 후 매칭(lower(replace(field, ' ', ''))), 검색어는 공백으로 토큰 분리
  * - 공백 제거본과 기호까지 제거한 본 양쪽을 OR로 매칭한다(예: "NN/g"가 "nng"로도 걸리게) -
  *   기호 제거는 필드 쪽에만 적용하고 검색어 쪽은 그대로 둔다("node.js"가 "nodejs"로는 안
@@ -86,7 +86,7 @@ object PostSearchQuery {
     /**
      * queryEmbedding으로 임계값(MAX_COSINE_DISTANCE) 안의 게시글 id → 거리 맵을 네이티브
      * 쿼리로 미리 뽑는다. count/data 양쪽 쿼리가 이 결과를 공유해야 총 건수와 실제 반환
-     * 건수가 항상 일치한다 - findPostsAfter/findBookmarkedPostsAfter에서 한 번만 호출한다.
+     * 건수가 항상 일치한다 - findPostsAfter/rankVisibleAmong에서 한 번만 호출한다.
      */
     fun resolveSemanticMatches(entityManager: EntityManager, queryEmbedding: FloatArray?): Map<UUID, Double> {
         if (queryEmbedding == null) return emptyMap()

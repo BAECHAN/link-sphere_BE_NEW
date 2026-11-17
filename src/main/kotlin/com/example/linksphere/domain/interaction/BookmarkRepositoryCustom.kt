@@ -1,38 +1,33 @@
 package com.example.linksphere.domain.interaction
 
-import com.example.linksphere.domain.post.TablePost
 import com.example.linksphere.global.common.CursorKeyType
-import com.example.linksphere.global.common.KeysetSlice
+import java.time.LocalDateTime
 import java.util.UUID
+
+/** 북마크 한 건의 정렬 키 - 북마크한 시각과 글 id(복합 PK라 단일 id가 없어 글 id로 동점을 끊는다). */
+data class BookmarkKey(val createdAt: LocalDateTime, val postId: UUID)
 
 interface BookmarkRepositoryCustom {
     /**
-     * 본인의 북마크에 해당하는 Post를 cursor로 이어 읽는다. after(이전 쪽 마지막 행의 키 값) 다음부터 size개를 읽는다.
-     * 첫 쪽이면 after는 null이다. withTotal이면 후보 건수를 함께 센다.
+     * 본인의 북마크를 북마크한 시각 순으로 이어 읽는다(글 테이블은 읽지 않는다). after(앞서 읽은 마지막 행의 [시각, 글 id]) 다음부터
+     * limit개를 읽는다. 처음이면 after는 null이다. 글이 지금 보이는지는 묻는 쪽이 post에 확인한다(BookmarkedPostFinder).
      *
      * folderId/onlyUncategorized 조합 (다중 폴더 소속 — bookmark_folder_items 기준):
      *  - folderId=null, onlyUncategorized=false → 전체 북마크 (소속 무관, 중복 없이 1회)
      *  - folderId=null, onlyUncategorized=true  → 미분류 (소속 0개, NOT EXISTS)
      *  - folderId=UUID, onlyUncategorized=false → 해당 폴더에 소속 (EXISTS)
-     *
-     * search: 제목/설명/태그 부분 검색 (null/blank면 미적용)
-     *
-     * Post visibility 적용: isPrivate=false OR post.userId=userId
      */
-    fun findBookmarkedPostsAfter(
+    fun findBookmarkKeysAfter(
         userId: UUID,
         folderId: UUID?,
         onlyUncategorized: Boolean,
-        sort: BookmarkListSort,
-        search: String?,
+        descending: Boolean,
         after: List<Comparable<*>>?,
-        size: Int,
-        queryEmbedding: FloatArray? = null,
-        withTotal: Boolean = false,
-    ): KeysetSlice<TablePost>
+        limit: Int,
+    ): List<BookmarkKey>
 }
 
-// 북마크 목록의 정렬과 cursor에 담는 키 구성. 키 순서는 BookmarkRepositoryImpl.findBookmarkedPostsAfter와 맞춘다
+// 북마크 목록의 정렬과 cursor에 담는 키 구성. 키 순서는 BookmarkedPostFinder.findAfter와 맞춘다
 enum class BookmarkListSort(val keyTypes: List<CursorKeyType>) {
     LATEST(listOf(CursorKeyType.TIME, CursorKeyType.ID)),
     OLDEST(listOf(CursorKeyType.TIME, CursorKeyType.ID)),

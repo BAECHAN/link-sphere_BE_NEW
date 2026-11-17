@@ -100,7 +100,8 @@ class PostServiceTest {
                 eventPublisher = eventPublisher,
                 urlMetadataExtractor = urlMetadataExtractor,
                 safeUrlValidator = safeUrlValidator,
-                geminiService = geminiService,
+                // 검색 흐름은 실제 PostSearchFlow에 mock GeminiService를 물려 임베딩·자판 보정을 예전과 같은 단언으로 본다
+                postSearchFlow = PostSearchFlow(geminiService),
                 memberService = memberService,
                 linkPreviewService = linkPreviewService,
                 advisoryLock = advisoryLock,
@@ -976,6 +977,23 @@ class PostServiceTest {
         postService.getPostsByCursor(null, null, " isLiked, excludeBots ,", "Kim", null, 10, null)
 
         verify(postRepository).findPostsAfter(null, null, filters, null, setOf(authorId), setOf(botId), null, PostListSort.LATEST, null, 10, null, false)
+    }
+
+    // 검색 흐름을 PostSearchFlow로 옮긴 뒤에도 순서는 같다 - 임베딩 호출 한도를 먼저 쓰고 그다음 필터의 id를 묻는다
+    @Test
+    fun `getPostsByCursor는 검색어 임베딩을 필터의 id 조회보다 먼저 부른다`() {
+        val botId = UUID.randomUUID()
+        val embedding = floatArrayOf(1f)
+        `when`(geminiService.embedQuery(PostEmbeddingText.query("spring"))).thenReturn(embedding)
+        `when`(memberService.findBotIds()).thenReturn(setOf(botId))
+        `when`(postRepository.findPostsAfter(null, "spring", setOf("excludeBots"), null, null, setOf(botId), null, PostListSort.RELEVANCE, null, 10, embedding, true))
+            .thenReturn(KeysetSlice(listOf(searchPost()), relevanceKeys, 1L))
+
+        postService.getPostsByCursor(null, "spring", "excludeBots", null, null, 10, null)
+
+        val order = inOrder(geminiService, memberService)
+        order.verify(geminiService).embedQuery(PostEmbeddingText.query("spring"))
+        order.verify(memberService).findBotIds()
     }
 
     // isBookmarked·isLiked는 interaction에 글 id를 물어 저장소에 id 집합으로 넘긴다(같은 계획 PR-9b). 둘 다 걸면 둘 다 한 글만 남는다

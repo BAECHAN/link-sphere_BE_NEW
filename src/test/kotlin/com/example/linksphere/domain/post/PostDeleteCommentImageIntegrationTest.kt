@@ -38,7 +38,7 @@ import java.util.UUID
  * 순서는 PostServiceTest가 본다.
  */
 @PostgresIntegrationTest
-@Import(PostService::class, PostResponseAssembler::class, PostInteractionAdapter::class, CommentService::class, CommentCountAdapter::class, CommentPostEventListener::class, PostLookupService::class, CategoryService::class, MemberService::class)
+@Import(PostService::class, PostSearchFlow::class, PostResponseAssembler::class, PostInteractionAdapter::class, CommentService::class, CommentCountAdapter::class, CommentPostEventListener::class, PostLookupService::class, CategoryService::class, MemberService::class)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class PostDeleteCommentImageIntegrationTest {
 

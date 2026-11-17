@@ -80,6 +80,8 @@ src/main/kotlin/com/example/linksphere/
 │   │   ├── PostService.kt
 │   │   ├── PostVisibility.kt            # 비공개 글을 작성자 외에는 404로 숨기는 게이트
 │   │   ├── PostLookupService.kt         # 다른 패키지가 글을 id로 묻는 창구(볼 수 있는 글인지·작성자·제목)
+│   │   ├── PostCandidateService.kt      # 다른 패키지가 가진 글 id 가운데로 목록을 묻는 창구(보이는 글·정렬 키·응답 조립)
+│   │   ├── PostSearchFlow.kt            # 피드·북마크함 공통 검색 흐름(임베딩·자판 보정·검색 로그)
 │   │   ├── PostCommentPort.kt           # 글 응답의 댓글 수를 묻는 약속(comment가 구현)
 │   │   ├── PostInteractionPort.kt       # 글 응답의 좋아요·북마크와 글 등록 때의 북마크 저장을 묻는 약속(interaction이 구현)
 │   │   ├── PostLifecycleEvents.kt       # 글 삭제 직전 이벤트(다른 패키지가 듣고 자기 데이터를 정리)
@@ -122,7 +124,8 @@ src/main/kotlin/com/example/linksphere/
 │   │   ├── BookmarkFolderLimits.kt      # 폴더 이름 15자(서비스 검사, 스펙에도 실림)
 │   │   ├── BookmarkRepository.kt
 │   │   ├── BookmarkRepositoryCustom.kt
-│   │   ├── BookmarkRepositoryImpl.kt    # 폴더 필터 EXISTS/NOT EXISTS 세미조인
+│   │   ├── BookmarkRepositoryImpl.kt    # 북마크만 시각순으로 읽음(폴더 필터 EXISTS/NOT EXISTS 세미조인)
+│   │   ├── BookmarkedPostFinder.kt      # 북마크한 글 id를 cursor로 읽음(보이는 글·검색·글 쪽 정렬 키는 post에 물음)
 │   │   ├── BookmarkFolderRepository.kt
 │   │   ├── BookmarkFolderItemRepository.kt  # bookmark_folder_items (N:M 소속)
 │   │   ├── PostReactionRepository.kt

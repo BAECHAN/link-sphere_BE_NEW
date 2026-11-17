@@ -26,7 +26,8 @@ class KeysetSpec(val keys: List<SeekKey>, val predicates: List<Predicate>)
 object KeysetQuery {
     /**
      * 조건을 WHERE에 바로 쓴다. 첫 키에 인덱스가 있으면(최신순·오래된순) 인덱스로 시작 지점을 찾고, 첫 키가 조인할 표를 읽지 않는 싼 식이면
-     * (최근 열람순) 조인 전에 행을 걸러 조인할 행이 준다(직접 측정, docs/PAGINATION.md §9.8).
+     * (최근 열람순) 조인 전에 행을 걸러 조인할 행이 준다(직접 측정, docs/PAGINATION.md §9.8). 열람순·제목순의 측정은 북마크 목록이 글 테이블을
+     * 조인해 한 문장으로 읽던 때의 것이다 - 지금은 조인이 없고(post가 후보 글 id로 읽는다) 형태 선택만 그대로 옮겼다.
      */
     fun directRows(entityManager: EntityManager, after: List<Comparable<*>>?, limit: Int, spec: (AbstractQuery<*>) -> KeysetSpec): List<List<Comparable<*>>> {
         val cb = entityManager.criteriaBuilder
@@ -42,7 +43,7 @@ object KeysetQuery {
     }
 
     /**
-     * 식을 파생 테이블에서 한 번만 계산하고 바깥에서 비교한다. 첫 키가 비싼 식이거나(검색 점수) 조인한 표의 컬럼을 읽을 때(제목 앞부분) 쓴다.
+     * 식을 파생 테이블에서 한 번만 계산하고 바깥에서 비교한다. 첫 키가 비싼 식이거나(검색 점수) 조인한 표의 컬럼을 읽던 자리에(제목 앞부분) 쓴다.
      * 검색 점수를 WHERE에 쓰면 행마다 다시 계산해 10만 행에서 offset의 약 2배가 걸렸다(직접 측정, docs/PAGINATION.md §9.3). `offset 0`은
      * Postgres가 파생 테이블을 바깥 쿼리로 합치지 못하게 막아 식을 다시 계산하는 일을 없앤다. 대신 바깥 조건도 조인 아래로 못 내려가 후보 전체를 조인한다.
      */

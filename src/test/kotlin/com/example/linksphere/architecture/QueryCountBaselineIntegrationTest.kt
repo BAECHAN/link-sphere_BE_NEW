@@ -7,13 +7,16 @@ import com.example.linksphere.domain.comment.CommentCountAdapter
 import com.example.linksphere.domain.comment.CommentPostEventListener
 import com.example.linksphere.domain.comment.CommentService
 import com.example.linksphere.domain.interaction.BookmarkFolderService
+import com.example.linksphere.domain.interaction.BookmarkedPostFinder
 import com.example.linksphere.domain.interaction.PostInteractionAdapter
 import com.example.linksphere.domain.linkpreview.LinkPreviewService
 import com.example.linksphere.domain.linkpreview.SafeUrlValidator
 import com.example.linksphere.domain.linkpreview.UrlMetadataExtractor
 import com.example.linksphere.domain.member.MemberService
+import com.example.linksphere.domain.post.PostCandidateService
 import com.example.linksphere.domain.post.PostLookupService
 import com.example.linksphere.domain.post.PostResponseAssembler
+import com.example.linksphere.domain.post.PostSearchFlow
 import com.example.linksphere.domain.post.PostService
 import com.example.linksphere.global.common.AdvisoryLock
 import com.example.linksphere.global.common.SecureToken
@@ -47,6 +50,8 @@ import java.util.UUID
 @PostgresIntegrationTest
 @Import(
     PostService::class,
+    PostSearchFlow::class,
+    PostCandidateService::class,
     PostResponseAssembler::class,
     PostInteractionAdapter::class,
     CommentService::class,
@@ -54,6 +59,7 @@ import java.util.UUID
     CommentPostEventListener::class,
     PostLookupService::class,
     BookmarkFolderService::class,
+    BookmarkedPostFinder::class,
     CategoryService::class,
     MemberSessionService::class,
     MemberService::class,
@@ -230,6 +236,13 @@ class QueryCountBaselineIntegrationTest {
     }
 
     @Test
+    fun `북마크 목록 - 전체, 제목순`() {
+        val page = countingQueries(BOOKMARK_LIST_BY_TITLE) { bookmarkFolderService.getBookmarkedPostsByCursor(viewer, "all", "title", null, null, 20) }
+
+        assertEquals(2, page.content.size)
+    }
+
+    @Test
     fun `북마크 목록 - 검색`() {
         val page = countingQueries(BOOKMARK_SEARCH) { bookmarkFolderService.getBookmarkedPostsByCursor(viewer, "all", null, "post", null, 20) }
 
@@ -309,9 +322,16 @@ class QueryCountBaselineIntegrationTest {
         // PR-8(댓글이 글 테이블을 직접 읽지 않는다): 내 댓글은 댓글과 글을 조인해 한 문장으로 읽던 것이 "댓글 읽기"와
         // "post에 볼 수 있는 글의 제목 묻기"로 나뉘었다. 볼 수 없는 글의 댓글이 빠져 쪽이 덜 차면 다시 읽는 만큼 더 든다
         private const val MY_COMMENTS = 2L
-        private const val BOOKMARK_LIST = 11L
-        private const val BOOKMARK_LIST_IN_FOLDER = 12L
+
+        // PR-9c(북마크함이 글 테이블을 직접 읽지 않는다): 최신순·오래된순은 북마크와 글을 조인해 한 문장으로 읽던 것이 "북마크 읽기"와
+        // "post에 보이는 글 묻기"로 나뉘어 하나 더 든다(11 → 12, 폴더 안 12 → 13). 보이지 않는 글 때문에 쪽이 덜 차면 다시 읽는 만큼 더 든다.
+        // 검색은 그대로다 - 건수와 정렬 키를 따로 읽던 두 문장이 "후보 북마크 읽기"와 "post가 후보를 정렬"로 바뀌었다
+        private const val BOOKMARK_LIST = 12L
+        private const val BOOKMARK_LIST_IN_FOLDER = 13L
         private const val BOOKMARK_SEARCH = 12L
+
+        // 제목순·열람순(검색 없음)도 검색과 같은 길이다 - "후보 북마크 읽기"와 "post가 후보를 정렬". 한 문장이던 때보다 하나 더 든다
+        private const val BOOKMARK_LIST_BY_TITLE = 12L
         private const val BOOKMARK_SEARCH_IN_FOLDER = 13L
 
         // 세션 1 + 회원 역할 1. 조인으로 한 번에 읽던 것을 나눠 읽는다(2단계 PR-7a, auth가 회원 테이블을 직접 보지 않는다)
