@@ -3,9 +3,12 @@ package com.example.linksphere.architecture
 import com.tngtech.archunit.core.domain.JavaClass
 import com.tngtech.archunit.core.importer.ClassFileImporter
 import com.tngtech.archunit.core.importer.ImportOption
+import jakarta.persistence.CollectionTable
 import jakarta.persistence.Entity
+import jakarta.persistence.Table
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.Repository
 
 /**
@@ -22,15 +25,20 @@ internal val KNOWN_BOUNDARY_VIOLATIONS: Set<String> = emptySet()
  * 전용 객체만 받는다. 저장소와 엔티티는 테이블 구조 그대로라, 밖에서 쓰면 테이블을 바꿀 때 영향받는 곳을 그 패키지 안에서
  * 다 찾을 수 없다.
  *
- * 바이트코드의 타입 참조(필드·인자·반환 타입·호출 대상)만 본다. 두 가지는 보지 못한다. 저장소가 돌려준 엔티티를 지역 변수로만
- * 받아 다른 곳에 넘기는 코드(저장소 쪽 항목이 사라지면 함께 사라진다), 그리고 `@Query` 문자열에 글자로 적힌 다른 패키지의
- * 엔티티·테이블 이름(예전의 MemberSessionRepository·FcmTokenRepository - 지금은 없고, 계획 PR-10에서 따로 검사한다). 루트(LambdaHandler)와 `tools/`는
- * PackageGraphDocTest와 같은 이유로 빠진다 - `tools/`는 로컬에서 한 번 돌리는 도구다.
+ * 첫 검사는 바이트코드의 타입 참조(필드·인자·반환 타입·호출 대상)를 본다. 저장소가 돌려준 엔티티를 지역 변수로만 받아 다른 곳에
+ * 넘기는 코드는 보지 못한다(저장소 쪽 항목이 사라지면 함께 사라진다). `@Query` 문자열에 글자로 적힌 다른 패키지의 엔티티·테이블
+ * 이름(예전의 MemberSessionRepository·FcmTokenRepository)은 타입 참조가 아니라서 세 번째 검사가 문자열을 읽어 따로 본다(SQL은 대소문자를
+ * 가리지 않으니 이름도 가리지 않고 찾는다). `@Query`가 아닌 곳에 적은 SQL 문자열(createNativeQuery), 이름으로 부르는 쿼리,
+ * `@JoinTable`·`@SecondaryTable`·상속받은 필드의 테이블 이름은 보지 못한다 - 지금 코드에는 없다. 루트(LambdaHandler)와 `tools/`는 PackageGraphDocTest와 같은 이유로
+ * 빠진다 - `tools/`는 로컬에서 한 번 돌리는 도구다.
  */
 class ModuleBoundaryRulesTest {
 
     // 계산이 아무것도 못 찾아 "위반 없음"으로 통과하는 것을 막는다 - 저장소·엔티티를 이만큼은 찾아야 한다(2026-11 기준 40개 이상)
     private val minimumPersistenceClassCount = 20
+
+    // 같은 이유로 `@Query` 문장도 이만큼은 찾아야 한다(2026-11 기준 70개 이상)
+    private val minimumQueryCount = 40
 
     @Test
     fun `다른 패키지의 저장소·엔티티를 새로 쓰지 않는다`() {
@@ -50,6 +58,47 @@ class ModuleBoundaryRulesTest {
         val stale = KNOWN_BOUNDARY_VIOLATIONS - violations()
 
         assertTrue(stale.isEmpty(), "KNOWN_BOUNDARY_VIOLATIONS에 이미 없앤 항목이 남아 있다 - 목록에서 지운다:\n${stale.sorted().joinToString("\n") { "  - $it" }}")
+    }
+
+    @Test
+    fun `@Query 문자열에 다른 패키지의 엔티티·테이블 이름을 적지 않는다`() {
+        val classes = ClassFileImporter().withImportOption(ImportOption.DoNotIncludeTests()).importPackages("com.example.linksphere")
+        // 이름 -> 그 엔티티·테이블을 가진 패키지. JPQL은 엔티티 이름(TablePost), 네이티브 SQL은 테이블 이름(posts·post_categories)으로 적는다
+        val owners =
+            classes.filter { it.isAnnotatedWith(Entity::class.java) }.flatMap { entity ->
+                val owner = packageOf(entity) ?: return@flatMap emptyList()
+                val tables = listOfNotNull(entity.tryGetAnnotationOfType(Table::class.java).orElse(null)?.name)
+                val collectionTables = entity.fields.mapNotNull { it.tryGetAnnotationOfType(CollectionTable::class.java).orElse(null)?.name }
+
+                (listOf(entity.simpleName) + tables + collectionTables).filter { it.isNotBlank() }.map { it to owner }
+            }.toMap()
+        val queries =
+            classes.flatMap { repository ->
+                val from = packageOf(repository) ?: return@flatMap emptyList()
+                repository.methods.mapNotNull { method ->
+                    method.tryGetAnnotationOfType(Query::class.java).orElse(null)?.let { Triple(from, "${repository.simpleName}.${method.name}", "${it.value}\n${it.countQuery}") }
+                }
+            }
+
+        assertTrue(queries.size >= minimumQueryCount, "`@Query` 문장을 최소 $minimumQueryCount 개 찾아야 하는데 ${queries.size}개만 찾았다. 임포트 범위를 확인한다.")
+        assertTrue(owners.size >= minimumPersistenceClassCount, "엔티티·테이블 이름을 최소 $minimumPersistenceClassCount 개 찾아야 하는데 ${owners.size}개만 찾았다.")
+
+        // 연결 테이블 이름을 읽는 길이 깨지면 위 개수 기준으로는 드러나지 않는다 - 지금 있는 하나를 이름으로 확인한다
+        assertTrue(owners["post_categories"] == "domain.post", "@CollectionTable의 연결 테이블 이름(post_categories)을 찾지 못했다.")
+
+        val found =
+            queries.flatMap { (from, where, text) ->
+                owners.filter { (name, owner) -> owner != from && Regex("(?<![A-Za-z0-9_])${Regex.escape(name)}(?![A-Za-z0-9_])", RegexOption.IGNORE_CASE).containsMatchIn(text) }
+                    .map { (name, owner) -> "$where -> $name($owner)" }
+            }
+
+        assertTrue(
+            found.isEmpty(),
+            buildString {
+                appendLine("`@Query` 문자열이 다른 패키지의 엔티티·테이블을 직접 읽는다. 그 패키지의 Service에 id를 물어 받아 쓰도록 바꾼다:")
+                found.sorted().forEach { appendLine("  + $it") }
+            },
+        )
     }
 
     private fun violations(): Set<String> {

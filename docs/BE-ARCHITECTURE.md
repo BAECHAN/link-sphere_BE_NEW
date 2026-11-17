@@ -7,7 +7,7 @@
 > **읽고 나면**: 요청이 어느 코드를 거치는지, 레이어끼리 무엇을 참조하고 어떤 타입을 주고받는지(§3) 따라갈 수 있고, 자동 검사(§2)와 선례 패턴(§7)에 맞춰 새 코드를 쓸 수 있다.
 > 지금 코드가 규칙과 어긋나는 곳은 §9에 모아 두었다 — 그쪽을 본떠 쓰지 않는다.
 >
-> **마지막 검토**: 2026-11-16 (§2·§3의 위반 수, §5 역할·권한 흐름, §6 메서드 이름만 고침 — auth가 회원 테이블을 조인하지 않고 역할을 member에 묻게 함). 같은 날 앞서 (§1 그래프, §2·§3의 위반 수, §3 접미사 표, §7-5만 고침 — 탈퇴 로직을 member로 옮기고 다른 패키지의 데이터는 동기 이벤트를 듣는 쪽이 지우게 함). 같은 날 앞서 (§1 패키지 역할·그래프, §2 검사 표, §3 global → domain 예외, §9 순환 간선만 고침 — `ErrorResponse`를 `global/exception`으로 옮기고 `SecurityConfig`가 auth 필터의 구체 타입을 모르게 함). 같은 날 앞서 (§1 잡 표·패키지 역할·그래프, §3 접미사 표, §7-5, §9 순환 간선만 고침 — 뒷일 전달을 `global/job`으로 옮김). 이전 2026-11-15 (§1 패키지 그래프, §8 순수 함수 테스트 예시 경로, "남은 것"의 linkpreview 항목만 고침. 같은 날 §11 도구 선택 표의 Detekt 행도 고침). 이전 2026-11-12 (§4 실패 표의 `page=-1` 예, §7-8 N+1의 `countQuery` 예, §7-9 페이징의 `page` 서술만 고침, 같은 날 `page` 400 코드 제거를 반영). 이전 2026-11-11 (§3 컨트롤러·Service에 두는 한도와 §7-3 조회 기록만 고침). 이전 2026-11-10 (§1 요청 파이프라인의 서빙 경로만 고침), 2026-11-07
+> **마지막 검토**: 2026-11-17 (§2 검사 표와 §3의 다른 도메인 금지 항목만 고침 — `@Query` 문자열에 적은 다른 패키지의 엔티티·테이블 이름 검사를 더함). 이전 2026-11-16 (§2·§3의 위반 수, §5 역할·권한 흐름, §6 메서드 이름만 고침 — auth가 회원 테이블을 조인하지 않고 역할을 member에 묻게 함). 같은 날 앞서 (§1 그래프, §2·§3의 위반 수, §3 접미사 표, §7-5만 고침 — 탈퇴 로직을 member로 옮기고 다른 패키지의 데이터는 동기 이벤트를 듣는 쪽이 지우게 함). 같은 날 앞서 (§1 패키지 역할·그래프, §2 검사 표, §3 global → domain 예외, §9 순환 간선만 고침 — `ErrorResponse`를 `global/exception`으로 옮기고 `SecurityConfig`가 auth 필터의 구체 타입을 모르게 함). 같은 날 앞서 (§1 잡 표·패키지 역할·그래프, §3 접미사 표, §7-5, §9 순환 간선만 고침 — 뒷일 전달을 `global/job`으로 옮김). 이전 2026-11-15 (§1 패키지 그래프, §8 순수 함수 테스트 예시 경로, "남은 것"의 linkpreview 항목만 고침. 같은 날 §11 도구 선택 표의 Detekt 행도 고침). 이전 2026-11-12 (§4 실패 표의 `page=-1` 예, §7-8 N+1의 `countQuery` 예, §7-9 페이징의 `page` 서술만 고침, 같은 날 `page` 400 코드 제거를 반영). 이전 2026-11-11 (§3 컨트롤러·Service에 두는 한도와 §7-3 조회 기록만 고침). 이전 2026-11-10 (§1 요청 파이프라인의 서빙 경로만 고침), 2026-11-07
 
 시스템 전체(CloudFront·S3·Lambda·배포 파이프라인)는 FE 레포
 [`docs/SYSTEM-ARCHITECTURE.md`](https://github.com/BAECHAN/link-sphere_FE_NEW/blob/main/docs/SYSTEM-ARCHITECTURE.md)가,
@@ -194,6 +194,7 @@ flowchart LR
 | `순환 허용 간선 목록의 간선은 모두 실제로 있다` | 끊은 간선이 `DOCUMENTED_CYCLE_EDGES`에 남아 다시 생겨도 조용히 통과 | 위와 같음 |
 | `다른 패키지의 저장소·엔티티를 새로 쓰지 않는다` | 다른 패키지의 Repository·`@Entity`를 직접 쓰는 곳이 새로 생김 — 지금은 0곳이고 `KNOWN_BOUNDARY_VIOLATIONS`는 빈 목록이다(2단계 PR-9c에서 비었다) | `architecture/ModuleBoundaryRulesTest.kt` |
 | `알려진 위반 목록의 항목은 모두 실제로 있다` | 없앤 위반이 `KNOWN_BOUNDARY_VIOLATIONS`에 남아 다시 생겨도 조용히 통과 | 위와 같음 |
+| `@Query 문자열에 다른 패키지의 엔티티·테이블 이름을 적지 않는다` | `@Query` 문자열에 글자로 적은 다른 패키지의 엔티티 이름(JPQL)·테이블 이름(네이티브 SQL, `post_categories` 같은 연결 테이블 포함) — 타입 참조가 아니라서 위 검사가 못 본다 | 위와 같음 |
 | `afterCommitGoesThroughTransactionCallbacks` | `TransactionSynchronizationManager.registerSynchronization` 직접 호출(§7-6) | `architecture/LayerSkeletonRulesTest.kt` |
 | `emailVerificationGoesThroughGate` | `EmailVerificationGate` 밖에서 `EmailNotVerifiedException` 생성 | 위와 같음 |
 | `generatedIdsOnlyOnLegacyEntities` | `TableMember`·`TablePost`·`TableCategory` 밖의 `@GeneratedValue`(§7-13) | 위와 같음 |
@@ -294,7 +295,8 @@ flowchart TD
   요청을 막는 한도가 아니라 조회수를 올릴지 정하는 규칙이고, 봇은 이 메서드를 부르지 않는다(§7-3).
 - **다른 도메인 Repository·엔티티 직접 사용 금지** — 예전에는 interaction의 `BookmarkRepositoryImpl`이 post의 `TablePost`를 조인했다.
   2단계(`docs/plans/2026-11-16-be-structure-stage2.md`)에서 그 패키지의 Service에 묻는 방식으로 바꿔 0곳이 됐고(2026-11-17, 처음 57곳),
-  새로 쓰는 것은 `ModuleBoundaryRulesTest`가 막는다. Service끼리의
+  새로 쓰는 것은 `ModuleBoundaryRulesTest`가 막는다. 같은 테스트가 `@Query` 문자열에 글자로 적은 다른 패키지의 엔티티·테이블 이름도
+  막는다(`@Query`가 아닌 곳에 적은 SQL 문자열, 이름으로 부르는 쿼리, `@JoinTable`·`@SecondaryTable`의 테이블 이름은 보지 못한다 — 지금 코드에는 없다). `tools/*Runner`는 이 규칙들의 대상이 아니다(§1). Service끼리의
   순환은 지금처럼 `servicesMustNotHaveCrossDomainCycles`가 막고, 순환이 생기면 `PostResponseAssembler`처럼 자기를 부르는
   Service를 참조하지 않는 조립기로 뺀다(§7-8). 조립기가 `CategoryService`·`MemberService`처럼 post를 모르는 Service에 묻는 것은 순환이 아니다.
 - **global → domain 0쌍** — 예외가 없고 `globalMustNotDependOnDomain`이 막는다. 마지막 1쌍이던 `SecurityConfig` →
