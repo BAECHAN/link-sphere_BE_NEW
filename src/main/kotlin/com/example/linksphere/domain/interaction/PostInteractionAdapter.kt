@@ -76,6 +76,8 @@ class PostInteractionAdapter(
                 ?.let { throw ForbiddenException("Cannot add bookmark to another user's folder") }
         }
 
+        // 한도를 넘으면 예외가 호출부의 트랜잭션을 되돌려 글도 등록되지 않는다(폴더가 없을 때와 같다)
+        bookmarkRepository.assertCanAdd(userId, postId)
         bookmarkRepository.insertIgnoreConflict(userId, postId)
         folderIds.forEach { folderId ->
             bookmarkFolderItemRepository.insertIgnoreConflict(userId, postId, folderId)

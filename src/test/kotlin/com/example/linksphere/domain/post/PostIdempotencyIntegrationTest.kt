@@ -8,6 +8,7 @@ import com.example.linksphere.domain.linkpreview.UrlMetadata
 import com.example.linksphere.domain.linkpreview.UrlMetadataExtractor
 import com.example.linksphere.domain.member.MemberService
 import com.example.linksphere.global.common.AdvisoryLock
+import com.example.linksphere.global.exception.BookmarkLimitExceededException
 import com.example.linksphere.global.exception.DuplicatePostException
 import com.example.linksphere.global.job.JobPublisher
 import com.example.linksphere.global.ratelimit.RateLimitService
@@ -237,6 +238,28 @@ class PostIdempotencyIntegrationTest {
         postService.updatePost(postId, userId, PostUpdateRequest(title = "새 제목"))
 
         assertEquals(key, jdbc.queryForObject("SELECT idempotency_key FROM posts WHERE id = ?", UUID::class.java, postId))
+    }
+
+    // 북마크 저장 한도(docs/plans/2026-11-17-bookmark-limit-liked-filter.md) - 실패한 등록이 커밋되지 않아야 글도 키도 남지 않는다.
+    // 테스트 트랜잭션 밖에서 실제로 커밋·롤백되는 것을 본다
+    @Test
+    fun `북마크 한도로 실패한 등록은 글과 키를 남기지 않아 같은 키로 북마크 없이 다시 등록할 수 있다`() {
+        jdbc.update(
+            "INSERT INTO posts (id, user_id, url, title, is_private) " +
+                "SELECT gen_random_uuid(), ?, 'https://example.com/seed/' || g, 'seed ' || g, false FROM generate_series(1, 10000) g",
+            otherUserId,
+        )
+        jdbc.update("INSERT INTO bookmarks (user_id, post_id) SELECT ?, id FROM posts WHERE user_id = ?", userId, otherUserId)
+        val key = UUID.randomUUID()
+
+        assertThrows(BookmarkLimitExceededException::class.java) { create(key, url, bookmark = true) }
+
+        assertEquals(0, countPosts())
+        assertEquals(10_000, jdbc.queryForObject("SELECT COUNT(*) FROM bookmarks WHERE user_id = ?", Int::class.java, userId))
+
+        create(key, url)
+
+        assertEquals(1, countPosts())
     }
 
     private fun create(key: UUID, url: String, bookmark: Boolean = false, member: UUID = userId): UUID = controller

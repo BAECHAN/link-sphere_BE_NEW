@@ -170,6 +170,8 @@ class BookmarkFolderService(
         // 단건 addBookmarkFolder(InteractionService.assertPostVisible)와 동일한 규칙 - 남의
         // 비공개 글은 북마크할 수 없다. 여기선 개수가 가변이라 한 번에 조회해 순회한다.
         postLookupService.requireAllVisible(postIds, userId)
+        // 묶음 가운데 새로 생길 북마크까지 더해 한도를 넘으면 묶음 전체를 거절한다(위 공개 여부 확인과 같은 방식)
+        bookmarkRepository.assertCanAddAll(userId, postIds)
 
         postIds.forEach { postId ->
             bookmarkRepository.insertIgnoreConflict(userId, postId)

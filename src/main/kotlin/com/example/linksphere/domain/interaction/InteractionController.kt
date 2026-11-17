@@ -50,7 +50,8 @@ class InteractionController(
     @Operation(
         summary = "게시글 북마크",
         description = "이미 저장된 상태여도 200 이다(멱등). 북마크만 보장하고 기존 폴더 소속은 건드리지 않는다 — " +
-            "응답 folderIds 는 서버의 실제 소속이다. 실패: 404 POST_NOT_FOUND",
+            "응답 folderIds 는 서버의 실제 소속이다. 실패: 404 POST_NOT_FOUND · " +
+            "409 BOOKMARK_LIMIT_EXCEEDED(회원당 북마크 10,000개 한도 - 이미 저장한 글은 한도와 상관없이 200)",
     )
     @PutMapping("/post/{postId}/bookmark")
     fun putPostBookmark(
@@ -80,7 +81,8 @@ class InteractionController(
     @Operation(
         summary = "북마크를 폴더에 추가",
         description = "북마크가 안 돼 있었다면 함께 생성한다. 실패: 404 POST_NOT_FOUND · " +
-            "404 FOLDER_NOT_FOUND · 403 FORBIDDEN(남의 폴더)",
+            "404 FOLDER_NOT_FOUND · 403 FORBIDDEN(남의 폴더) · " +
+            "409 BOOKMARK_LIMIT_EXCEEDED(북마크가 새로 생기는데 회원당 10,000개 한도에 닿음)",
     )
     @PostMapping("/bookmark/{postId}/folders/{folderId}")
     fun addBookmarkFolder(
@@ -125,7 +127,8 @@ class InteractionController(
     @Operation(
         summary = "여러 게시글을 폴더에 일괄 추가",
         description = "data.processedCount 는 요청에 담긴 postId 개수 그대로다 — 이미 저장돼 있던 " +
-            "postId 도 포함해서 센다(중복 여부를 걸러내지 않는다).",
+            "postId 도 포함해서 센다(중복 여부를 걸러내지 않는다). 실패: 409 BOOKMARK_LIMIT_EXCEEDED(새로 생길 북마크를 " +
+            "더하면 회원당 10,000개 한도를 넘음 - 묶음 전체가 반영되지 않는다)",
     )
     @PostMapping("/bookmark/batch/folders/{folderId}/add")
     fun batchAddBookmarksToFolder(

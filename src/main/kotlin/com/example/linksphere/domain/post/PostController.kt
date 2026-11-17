@@ -48,6 +48,7 @@ class PostController(
             "400 INVALID_URL · 400 URL_UNRESOLVABLE(도메인 없음) · 400 URL_NOT_ALLOWED(내부망) · " +
             "403 EMAIL_NOT_VERIFIED · 404 FOLDER_NOT_FOUND · 403 FORBIDDEN(남의 폴더) · " +
             "409 DUPLICATE_POST(다른 키로 1시간 안에 같은 URL을 등록함) · " +
+            "409 BOOKMARK_LIMIT_EXCEEDED(북마크와 함께 등록하는데 회원당 북마크 10,000개 한도에 닿음 - 글도 등록되지 않는다) · " +
             "429 RATE_LIMIT_EXCEEDED(회원당 시간당 등록 한도 초과)",
     )
     @PostMapping

@@ -9,6 +9,7 @@ import com.example.linksphere.domain.post.TablePost
 import com.example.linksphere.global.common.CursorCodec
 import com.example.linksphere.global.common.KeysetSlice
 import com.example.linksphere.global.exception.BookmarkFolderNotFoundException
+import com.example.linksphere.global.exception.BookmarkLimitExceededException
 import com.example.linksphere.global.exception.DuplicateFolderNameException
 import com.example.linksphere.global.exception.ForbiddenException
 import com.example.linksphere.global.exception.InvalidInputException
@@ -24,6 +25,7 @@ import org.junit.jupiter.api.extension.ExtendWith
 import org.mockito.ArgumentCaptor
 import org.mockito.Mock
 import org.mockito.Mockito.doThrow
+import org.mockito.Mockito.never
 import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.verifyNoInteractions
@@ -431,6 +433,52 @@ class BookmarkFolderServiceTest {
             verify(bookmarkRepository).insertIgnoreConflict(userId, postId)
             verify(bookmarkFolderItemRepository).insertIgnoreConflict(userId, postId, folderId)
         }
+    }
+
+    @Test
+    fun `batchAddBookmarksToFolder 는 새로 생길 북마크를 더해 한도를 넘으면 아무것도 넣지 않고 BookmarkLimitExceededException`() {
+        val userId = UUID.randomUUID()
+        val folderId = UUID.randomUUID()
+        val folder = TableBookmarkFolder(id = folderId, userId = userId, name = "개발")
+        val bookmarkedId = UUID.randomUUID()
+        val newIds = listOf(UUID.randomUUID(), UUID.randomUUID())
+        val postIds = listOf(bookmarkedId) + newIds
+        val posts = postIds.map {
+            TablePost(id = it, userId = userId, url = "https://a.com", title = "글", isPrivate = false)
+        }
+
+        `when`(bookmarkFolderRepository.findById(folderId)).thenReturn(Optional.of(folder))
+        `when`(postRepository.findAllById(postIds)).thenReturn(posts)
+        `when`(bookmarkRepository.findAllByUserIdAndPostIdIn(userId, postIds))
+            .thenReturn(listOf(TableBookmark(userId = userId, postId = bookmarkedId)))
+        // 9,999개 + 새 글 2개 = 10,001개
+        `when`(bookmarkRepository.countByUserId(userId)).thenReturn(9_999L)
+
+        assertThrows(BookmarkLimitExceededException::class.java) {
+            bookmarkFolderService.batchAddBookmarksToFolder(userId, folderId, postIds)
+        }
+        postIds.forEach { postId ->
+            verify(bookmarkRepository, never()).insertIgnoreConflict(userId, postId)
+        }
+    }
+
+    @Test
+    fun `batchAddBookmarksToFolder 는 모두 이미 북마크한 글이면 한도에 닿아 있어도 처리한다`() {
+        val userId = UUID.randomUUID()
+        val folderId = UUID.randomUUID()
+        val folder = TableBookmarkFolder(id = folderId, userId = userId, name = "개발")
+        val postIds = listOf(UUID.randomUUID(), UUID.randomUUID())
+        val posts = postIds.map {
+            TablePost(id = it, userId = userId, url = "https://a.com", title = "글", isPrivate = false)
+        }
+
+        `when`(bookmarkFolderRepository.findById(folderId)).thenReturn(Optional.of(folder))
+        `when`(postRepository.findAllById(postIds)).thenReturn(posts)
+        `when`(bookmarkRepository.findAllByUserIdAndPostIdIn(userId, postIds))
+            .thenReturn(postIds.map { TableBookmark(userId = userId, postId = it) })
+
+        assertEquals(2, bookmarkFolderService.batchAddBookmarksToFolder(userId, folderId, postIds))
+        verify(bookmarkRepository, never()).countByUserId(userId)
     }
 
     @Test

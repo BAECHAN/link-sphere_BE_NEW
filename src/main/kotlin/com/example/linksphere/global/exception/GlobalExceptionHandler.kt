@@ -170,6 +170,20 @@ class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(response)
     }
 
+    // 북마크 저장 한도(BookmarkLimits) - 지금 상태로는 더 담을 수 없다는 뜻이라 DUPLICATE_*처럼 409다. 북마크를 지우면 풀린다
+    @ExceptionHandler(BookmarkLimitExceededException::class)
+    fun handleBookmarkLimitExceededException(
+        e: BookmarkLimitExceededException,
+    ): ResponseEntity<ErrorResponse> {
+        val response =
+            ErrorResponse(
+                status = HttpStatus.CONFLICT.value(),
+                code = "BOOKMARK_LIMIT_EXCEEDED",
+                message = e.message ?: "Bookmark limit exceeded",
+            )
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(response)
+    }
+
     @ExceptionHandler(InvalidCredentialsException::class)
     fun handleInvalidCredentialsException(
         e: InvalidCredentialsException,
