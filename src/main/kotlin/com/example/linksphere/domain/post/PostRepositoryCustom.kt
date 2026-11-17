@@ -30,6 +30,20 @@ interface PostRepositoryCustom {
         queryEmbedding: FloatArray? = null,
         withTotal: Boolean = false,
     ): KeysetSlice<TablePost>
+
+    /**
+     * candidateIds 가운데 viewerId가 볼 수 있고 search에 걸리는 글을 order의 키 순서로 모두 돌려준다(PostCandidateService.rankVisible).
+     * 쪽을 자르지 않는다 - 같은 키 안의 순서를 묻는 쪽이 정하므로 어디서 끊을지 여기서는 알 수 없다. fromKey가 있으면 그 키와
+     * 같거나 뒤인 글만 돌려준다. 후보가 비면 DB에 묻지 않는다.
+     */
+    fun rankVisibleAmong(
+        candidateIds: Collection<UUID>,
+        viewerId: UUID,
+        order: PostRankOrder,
+        search: String?,
+        fromKey: Comparable<*>?,
+        queryEmbedding: FloatArray? = null,
+    ): List<RankedPost>
 }
 
 // 피드의 정렬과 cursor에 담는 키 구성. 키 순서는 PostRepositoryImpl.findPostsAfter와 맞춘다

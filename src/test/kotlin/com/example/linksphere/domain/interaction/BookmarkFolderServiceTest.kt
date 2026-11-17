@@ -1,9 +1,10 @@
 package com.example.linksphere.domain.interaction
 
+import com.example.linksphere.domain.post.PostCandidateService
 import com.example.linksphere.domain.post.PostEmbeddingText
 import com.example.linksphere.domain.post.PostLookupService
 import com.example.linksphere.domain.post.PostRepository
-import com.example.linksphere.domain.post.PostResponseAssembler
+import com.example.linksphere.domain.post.PostSearchFlow
 import com.example.linksphere.domain.post.TablePost
 import com.example.linksphere.global.common.CursorCodec
 import com.example.linksphere.global.common.KeysetSlice
@@ -47,7 +48,9 @@ class BookmarkFolderServiceTest {
 
     @Mock private lateinit var bookmarkFolderItemRepository: BookmarkFolderItemRepository
 
-    @Mock private lateinit var postResponseAssembler: PostResponseAssembler
+    @Mock private lateinit var bookmarkedPostFinder: BookmarkedPostFinder
+
+    @Mock private lateinit var postCandidateService: PostCandidateService
 
     @Mock private lateinit var geminiService: GeminiService
 
@@ -56,6 +59,8 @@ class BookmarkFolderServiceTest {
     private lateinit var bookmarkFolderService: BookmarkFolderService
 
     // 글은 실제 PostLookupService(post의 공개 조회)를 거쳐 읽는다 - 저장소만 mock이라 공개 여부 판정까지 이 테스트가 그대로 본다.
+    // 검색 흐름도 실제 PostSearchFlow에 mock GeminiService를 물린다. 글 id 조회(BookmarkedPostFinder)와 응답 조립(PostCandidateService)은
+    // mock이다 - 실제 쿼리는 BookmarkedPostsQueryIntegrationTest·BookmarkedPostsByCursorIntegrationTest가 본다.
     @BeforeEach
     fun setUp() {
         bookmarkFolderService =
@@ -63,8 +68,9 @@ class BookmarkFolderServiceTest {
                 bookmarkFolderRepository,
                 bookmarkRepository,
                 bookmarkFolderItemRepository,
-                postResponseAssembler,
-                geminiService,
+                bookmarkedPostFinder,
+                PostSearchFlow(geminiService),
+                postCandidateService,
                 PostLookupService(postRepository),
             )
     }
@@ -226,12 +232,12 @@ class BookmarkFolderServiceTest {
     @Test
     fun `getBookmarkedPostsByCursor 는 folderKey uncategorized 면 미분류만 조회한다`() {
         val userId = UUID.randomUUID()
-        `when`(bookmarkRepository.findBookmarkedPostsAfter(userId, null, true, BookmarkListSort.LATEST, null, null, 10, null, false))
+        `when`(bookmarkedPostFinder.findAfter(userId, null, true, BookmarkListSort.LATEST, null, null, 10, null, false))
             .thenReturn(KeysetSlice(emptyList()))
 
         bookmarkFolderService.getBookmarkedPostsByCursor(userId, "uncategorized", null, null, null, 10)
 
-        verify(bookmarkRepository).findBookmarkedPostsAfter(userId, null, true, BookmarkListSort.LATEST, null, null, 10, null, false)
+        verify(bookmarkedPostFinder).findAfter(userId, null, true, BookmarkListSort.LATEST, null, null, 10, null, false)
     }
 
     @Test
@@ -241,12 +247,12 @@ class BookmarkFolderServiceTest {
         val folder = TableBookmarkFolder(id = folderId, userId = userId, name = "개발")
 
         `when`(bookmarkFolderRepository.findById(folderId)).thenReturn(Optional.of(folder))
-        `when`(bookmarkRepository.findBookmarkedPostsAfter(userId, folderId, false, BookmarkListSort.LATEST, null, null, 10, null, false))
+        `when`(bookmarkedPostFinder.findAfter(userId, folderId, false, BookmarkListSort.LATEST, null, null, 10, null, false))
             .thenReturn(KeysetSlice(emptyList()))
 
         bookmarkFolderService.getBookmarkedPostsByCursor(userId, folderId.toString(), null, null, null, 10)
 
-        verify(bookmarkRepository).findBookmarkedPostsAfter(userId, folderId, false, BookmarkListSort.LATEST, null, null, 10, null, false)
+        verify(bookmarkedPostFinder).findAfter(userId, folderId, false, BookmarkListSort.LATEST, null, null, 10, null, false)
     }
 
     @Test
@@ -276,8 +282,6 @@ class BookmarkFolderServiceTest {
 
     private fun relevanceState(cursor: String?) = CursorCodec.decode(cursor!!, BookmarkListSort.RELEVANCE.name, BookmarkListSort.RELEVANCE.keyTypes)
 
-    private fun bookmarkedPost(userId: UUID) = TablePost(id = UUID.randomUUID(), userId = userId, url = "https://example.com", title = "제목")
-
     @Test
     fun `getBookmarkedPostsByCursor 는 정렬 이름을 키 구성으로 바꾸고 모르는 값은 최신순으로 본다`() {
         val userId = UUID.randomUUID()
@@ -290,7 +294,7 @@ class BookmarkFolderServiceTest {
             "viewed" to BookmarkListSort.VIEWED,
             "views" to BookmarkListSort.LATEST,
         ).forEach { (sort, expected) ->
-            `when`(bookmarkRepository.findBookmarkedPostsAfter(userId, null, false, expected, null, null, 10, null, false))
+            `when`(bookmarkedPostFinder.findAfter(userId, null, false, expected, null, null, 10, null, false))
                 .thenReturn(KeysetSlice(emptyList()))
 
             bookmarkFolderService.getBookmarkedPostsByCursor(userId, "all", sort, null, null, 10)
@@ -302,8 +306,8 @@ class BookmarkFolderServiceTest {
         val userId = UUID.randomUUID()
         val embedding = floatArrayOf(1f)
         `when`(geminiService.embedQuery(PostEmbeddingText.query("spring"))).thenReturn(embedding)
-        `when`(bookmarkRepository.findBookmarkedPostsAfter(userId, null, false, BookmarkListSort.RELEVANCE, "spring", null, 10, embedding, true))
-            .thenReturn(KeysetSlice(listOf(bookmarkedPost(userId)), relevanceKeys, 5L))
+        `when`(bookmarkedPostFinder.findAfter(userId, null, false, BookmarkListSort.RELEVANCE, "spring", null, 10, embedding, true))
+            .thenReturn(KeysetSlice(listOf(UUID.randomUUID()), relevanceKeys, 5L))
 
         val result = bookmarkFolderService.getBookmarkedPostsByCursor(userId, "all", null, "spring", null, 10)
 
@@ -316,8 +320,8 @@ class BookmarkFolderServiceTest {
         val embedding = floatArrayOf(1f)
         val cursor = CursorCodec.encode(BookmarkListSort.RELEVANCE.name, relevanceKeys, semantic = true)
         `when`(geminiService.embedQuery(PostEmbeddingText.query("spring"))).thenReturn(embedding)
-        `when`(bookmarkRepository.findBookmarkedPostsAfter(userId, null, false, BookmarkListSort.RELEVANCE, "spring", relevanceKeys, 10, embedding, false))
-            .thenReturn(KeysetSlice(listOf(bookmarkedPost(userId)), relevanceKeys))
+        `when`(bookmarkedPostFinder.findAfter(userId, null, false, BookmarkListSort.RELEVANCE, "spring", relevanceKeys, 10, embedding, false))
+            .thenReturn(KeysetSlice(listOf(UUID.randomUUID()), relevanceKeys))
 
         val result = bookmarkFolderService.getBookmarkedPostsByCursor(userId, "all", null, "spring", cursor, 10)
 
@@ -328,8 +332,8 @@ class BookmarkFolderServiceTest {
     fun `getBookmarkedPostsByCursor 는 키워드로 시작한 뒤쪽에서 임베딩을 부르지 않는다`() {
         val userId = UUID.randomUUID()
         val cursor = CursorCodec.encode(BookmarkListSort.RELEVANCE.name, relevanceKeys, semantic = false)
-        `when`(bookmarkRepository.findBookmarkedPostsAfter(userId, null, false, BookmarkListSort.RELEVANCE, "spring", relevanceKeys, 10, null, false))
-            .thenReturn(KeysetSlice(listOf(bookmarkedPost(userId)), relevanceKeys))
+        `when`(bookmarkedPostFinder.findAfter(userId, null, false, BookmarkListSort.RELEVANCE, "spring", relevanceKeys, 10, null, false))
+            .thenReturn(KeysetSlice(listOf(UUID.randomUUID()), relevanceKeys))
 
         val result = bookmarkFolderService.getBookmarkedPostsByCursor(userId, "all", null, "spring", cursor, 10)
 
@@ -342,8 +346,8 @@ class BookmarkFolderServiceTest {
         val userId = UUID.randomUUID()
         val cursor = CursorCodec.encode(BookmarkListSort.RELEVANCE.name, relevanceKeys, semantic = true)
         `when`(geminiService.embedQuery(PostEmbeddingText.query("spring"))).thenReturn(null)
-        `when`(bookmarkRepository.findBookmarkedPostsAfter(userId, null, false, BookmarkListSort.RELEVANCE, "spring", relevanceKeys, 10, null, false))
-            .thenReturn(KeysetSlice(listOf(bookmarkedPost(userId)), relevanceKeys))
+        `when`(bookmarkedPostFinder.findAfter(userId, null, false, BookmarkListSort.RELEVANCE, "spring", relevanceKeys, 10, null, false))
+            .thenReturn(KeysetSlice(listOf(UUID.randomUUID()), relevanceKeys))
 
         val result = bookmarkFolderService.getBookmarkedPostsByCursor(userId, "all", null, "spring", cursor, 10)
 
@@ -354,11 +358,11 @@ class BookmarkFolderServiceTest {
     fun `getBookmarkedPostsByCursor 는 첫 쪽이 비면 자판 보정으로 재검색하고 뒤쪽도 보정어로 읽는다`() {
         val userId = UUID.randomUUID()
         `when`(geminiService.embedQuery(PostEmbeddingText.query("spdlqj"))).thenReturn(null)
-        `when`(bookmarkRepository.findBookmarkedPostsAfter(userId, null, false, BookmarkListSort.RELEVANCE, "spdlqj", null, 10, null, true))
+        `when`(bookmarkedPostFinder.findAfter(userId, null, false, BookmarkListSort.RELEVANCE, "spdlqj", null, 10, null, true))
             .thenReturn(KeysetSlice(emptyList(), null, 0L))
-        `when`(bookmarkRepository.findBookmarkedPostsAfter(userId, null, false, BookmarkListSort.RELEVANCE, "네이버", null, 10, null, true))
-            .thenReturn(KeysetSlice(listOf(bookmarkedPost(userId)), relevanceKeys, 1L))
-        `when`(bookmarkRepository.findBookmarkedPostsAfter(userId, null, false, BookmarkListSort.RELEVANCE, "네이버", relevanceKeys, 10, null, false))
+        `when`(bookmarkedPostFinder.findAfter(userId, null, false, BookmarkListSort.RELEVANCE, "네이버", null, 10, null, true))
+            .thenReturn(KeysetSlice(listOf(UUID.randomUUID()), relevanceKeys, 1L))
+        `when`(bookmarkedPostFinder.findAfter(userId, null, false, BookmarkListSort.RELEVANCE, "네이버", relevanceKeys, 10, null, false))
             .thenReturn(KeysetSlice(emptyList()))
 
         val first = bookmarkFolderService.getBookmarkedPostsByCursor(userId, "all", null, "spdlqj", null, 10)

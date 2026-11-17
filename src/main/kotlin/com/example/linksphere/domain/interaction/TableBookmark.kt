@@ -1,6 +1,5 @@
 package com.example.linksphere.domain.interaction
 
-import com.example.linksphere.domain.post.TablePost
 import jakarta.persistence.*
 import java.io.Serializable
 import java.time.LocalDateTime
@@ -26,7 +25,4 @@ class TableBookmark(
     @Id @Column(name = "user_id", nullable = false) val userId: UUID,
     @Id @Column(name = "post_id", nullable = false) val postId: UUID,
     @Column(name = "created_at") val createdAt: LocalDateTime = LocalDateTime.now(),
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "post_id", insertable = false, updatable = false)
-    val post: TablePost? = null,
 )

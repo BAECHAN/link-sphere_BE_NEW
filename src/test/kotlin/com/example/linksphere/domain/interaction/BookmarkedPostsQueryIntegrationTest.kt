@@ -1,23 +1,33 @@
 package com.example.linksphere.domain.interaction
 
+import com.example.linksphere.domain.post.PostCandidateService
+import com.example.linksphere.domain.post.PostResponseAssembler
 import com.example.linksphere.support.PostgresIntegrationTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.context.annotation.Import
 import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.test.context.bean.override.mockito.MockitoBean
 import java.util.UUID
 
-// 북마크 목록 조회(BookmarkRepositoryImpl.findBookmarkedPostsAfter)를 실제 Postgres에서 검증한다 — Criteria API로 만든
+// 북마크 목록 조회(BookmarkedPostFinder.findAfter)를 실제 Postgres에서 검증한다 - 북마크 테이블은 interaction이 읽고 공개 여부·검색·
+// 글 쪽 정렬 키는 post에 묻는다(docs/plans/2026-11-16-be-structure-stage2.md PR-9c. 그 전에는 BookmarkRepositoryImpl의 한 문장이었고
+// 아래 기대값은 그때 그대로다). Criteria API로 만든
 // 폴더 EXISTS 세미조인·가시성·정렬·검색 조건은 서비스 단위 테스트가 저장소를 목으로 바꿔 한 번도 실행되지 않았다
 // (2026-10-31 JaCoCo 1회 측정에서 당시 offset 메서드 90줄 중 1줄만 실행됨, claude-base docs/METRICS.md)
 @PostgresIntegrationTest
+@Import(BookmarkedPostFinder::class, PostCandidateService::class)
 class BookmarkedPostsQueryIntegrationTest {
 
     @Autowired private lateinit var jdbc: JdbcTemplate
 
-    @Autowired private lateinit var bookmarkRepository: BookmarkRepository
+    @Autowired private lateinit var bookmarkedPostFinder: BookmarkedPostFinder
+
+    // 이 테스트는 글 id까지만 본다 - 응답 조립기는 띄우지 않는다
+    @MockitoBean private lateinit var postResponseAssembler: PostResponseAssembler
 
     private val userId = UUID.randomUUID()
     private val otherUserId = UUID.randomUUID()
@@ -42,7 +52,7 @@ class BookmarkedPostsQueryIntegrationTest {
 
         val page = find()
 
-        assertEquals(listOf(newer, older), page.content.map { it.id })
+        assertEquals(listOf(newer, older), page.content)
         assertEquals(2L, page.total)
     }
 
@@ -62,9 +72,9 @@ class BookmarkedPostsQueryIntegrationTest {
         val uncategorizedPage = find(onlyUncategorized = true)
 
         // 두 폴더에 든 글도 EXISTS 세미조인이라 한 번만 나온다
-        assertEquals(listOf(inAandB, inA), folderPage.content.map { it.id })
+        assertEquals(listOf(inAandB, inA), folderPage.content)
         assertEquals(2L, folderPage.total)
-        assertEquals(listOf(uncategorized), uncategorizedPage.content.map { it.id })
+        assertEquals(listOf(uncategorized), uncategorizedPage.content)
         assertEquals(1L, uncategorizedPage.total)
     }
 
@@ -79,7 +89,7 @@ class BookmarkedPostsQueryIntegrationTest {
 
         val page = find()
 
-        assertEquals(listOf(othersPublic, myPrivate), page.content.map { it.id })
+        assertEquals(listOf(othersPublic, myPrivate), page.content)
         assertEquals(2L, page.total)
     }
 
@@ -92,8 +102,8 @@ class BookmarkedPostsQueryIntegrationTest {
         bookmark(userId, a, hoursAgo = 2)
         bookmark(userId, c, hoursAgo = 1)
 
-        assertEquals(listOf(b, a, c), find(sort = "oldest").content.map { it.id })
-        assertEquals(listOf(a, b, c), find(sort = "title").content.map { it.id })
+        assertEquals(listOf(b, a, c), find(sort = "oldest").content)
+        assertEquals(listOf(a, b, c), find(sort = "title").content)
     }
 
     @Test
@@ -113,7 +123,7 @@ class BookmarkedPostsQueryIntegrationTest {
 
         val page = find(sort = "viewed")
 
-        assertEquals(listOf(viewedRecently, viewedLongAgo, neverViewedNew, neverViewedOld), page.content.map { it.id })
+        assertEquals(listOf(viewedRecently, viewedLongAgo, neverViewedNew, neverViewedOld), page.content)
     }
 
     @Test
@@ -125,7 +135,7 @@ class BookmarkedPostsQueryIntegrationTest {
 
         val page = find(search = "react")
 
-        assertEquals(listOf(match), page.content.map { it.id })
+        assertEquals(listOf(match), page.content)
         assertEquals(1L, page.total)
     }
 
@@ -138,7 +148,7 @@ class BookmarkedPostsQueryIntegrationTest {
 
         val page = find(search = "react", queryEmbedding = unitVector(0).toFloatArray())
 
-        assertEquals(listOf(semantic), page.content.map { it.id })
+        assertEquals(listOf(semantic), page.content)
         assertEquals(1L, page.total)
     }
 
@@ -149,8 +159,8 @@ class BookmarkedPostsQueryIntegrationTest {
         val first = find(size = 2)
         val second = find(after = first.nextKeys, size = 2)
 
-        assertEquals(listOf(ids[0], ids[1]), first.content.map { it.id })
-        assertEquals(listOf(ids[2]), second.content.map { it.id })
+        assertEquals(listOf(ids[0], ids[1]), first.content)
+        assertEquals(listOf(ids[2]), second.content)
         assertEquals(3L, first.total)
         assertEquals(null, second.nextKeys)
     }
@@ -171,7 +181,7 @@ class BookmarkedPostsQueryIntegrationTest {
         after: List<Comparable<*>>? = null,
         size: Int = 20,
         queryEmbedding: FloatArray? = null,
-    ) = bookmarkRepository.findBookmarkedPostsAfter(
+    ) = bookmarkedPostFinder.findAfter(
         userId,
         folderId,
         onlyUncategorized,

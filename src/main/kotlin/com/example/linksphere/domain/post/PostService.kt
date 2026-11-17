@@ -9,13 +9,11 @@ import com.example.linksphere.domain.linkpreview.WeakTitleDetector
 import com.example.linksphere.domain.member.MemberService
 import com.example.linksphere.global.common.AdvisoryLock
 import com.example.linksphere.global.common.CursorCodec
-import com.example.linksphere.global.common.KeysetSlice
 import com.example.linksphere.global.common.Paging
 import com.example.linksphere.global.exception.DuplicatePostException
 import com.example.linksphere.global.exception.ForbiddenException
 import com.example.linksphere.global.exception.PostNotFoundException
 import com.example.linksphere.global.ratelimit.RateLimitService
-import com.example.linksphere.infra.ai.GeminiService
 import org.slf4j.LoggerFactory
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
@@ -35,7 +33,7 @@ class PostService(
     private val eventPublisher: ApplicationEventPublisher,
     private val urlMetadataExtractor: UrlMetadataExtractor,
     private val safeUrlValidator: SafeUrlValidator,
-    private val geminiService: GeminiService,
+    private val postSearchFlow: PostSearchFlow,
     private val memberService: MemberService,
     private val linkPreviewService: LinkPreviewService,
     private val advisoryLock: AdvisoryLock,
@@ -66,6 +64,9 @@ class PostService(
         // 예외를 던지므로(pgjdbc 42.7.11 PgPreparedStatement.maximumNumberOfParameters, simple 모드만 예외) 그 전에 알아채려는
         // 값이다. 운영의 회원당 최대는 북마크 95·좋아요 9다(2026-11-17, 읽기 전용 계정 조회)
         private const val POST_ID_FILTER_WARN_SIZE = 10_000
+
+        // 검색 로그에 남는 이름
+        private const val SEARCH_SCOPE = "feed"
     }
 
     fun findByIdempotencyKey(userId: UUID, idempotencyKey: UUID): PostResponse? = postRepository.findByUserIdAndIdempotencyKey(userId, idempotencyKey)
@@ -172,59 +173,25 @@ class PostService(
         tryConsumeEmbedding: () -> Boolean = { true },
     ): PostPageResponse {
         val limit = Paging.coerceSize(size)
-        val searchTokens = PostSearchQuery.tokenize(search)
-        val sort = if (searchTokens.isEmpty()) PostListSort.LATEST else PostListSort.RELEVANCE
+        val sort = if (PostSearchQuery.tokenize(search).isEmpty()) PostListSort.LATEST else PostListSort.RELEVANCE
         val state = cursor?.let { CursorCodec.decode(it, sort.name, sort.keyTypes) }
-        val correctedSearch = search?.takeIf { state?.corrected == true }?.let { HangulKeyboardConverter.convertIfMislayout(it) }
-        val wantsEmbedding = searchTokens.isNotEmpty() && correctedSearch == null && state?.semantic != false
-        val queryEmbedding = search?.takeIf { wantsEmbedding && tryConsumeEmbedding() }?.let { geminiService.embedQuery(PostEmbeddingText.query(it)) }
-        val semantic = queryEmbedding != null
-        val isFirstSearchPage = state == null && searchTokens.isNotEmpty()
-        val categoryIds = resolveCategoryFilter(category)
         val filters = filter?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }?.toSet().orEmpty()
+        // 필터의 id 조회는 처음 읽을 때(find 안) 한 번 한다 - 검색어 임베딩(PostSearchFlow)이 이 조회들보다 먼저 불리던 순서를 지킨다
+        val categoryIds by lazy { resolveCategoryFilter(category) }
         // 닉네임·봇 필터는 member에 id를 물어 저장소에는 id 집합만 넘긴다 - 글 쿼리가 회원 테이블을 직접 읽지 않는다
-        val authorIds = nickname?.takeIf { it.isNotBlank() }?.let { memberService.findIdsByNicknameContaining(it) }
-        val excludedAuthorIds = if (EXCLUDE_BOTS_FILTER in filters) memberService.findBotIds() else emptySet()
-        val postIds = resolveInteractionFilter(filters, currentUserId)
-
-        if (state?.semantic == true && !semantic) {
-            logger.warn("[Search] scope=feed semantic degraded to keyword")
-        }
-
-        val slice =
-            postRepository.findPostsAfter(
-                categoryIds,
-                correctedSearch ?: search,
-                filters,
-                postIds,
-                authorIds,
-                excludedAuthorIds,
-                currentUserId,
-                sort,
-                state?.keys,
-                limit,
-                queryEmbedding,
-                withTotal = isFirstSearchPage,
-            )
-
-        // 쪽마다 건수를 세지 않으므로 첫 쪽이 비었을 때만 보정을 판정한다. 뒤쪽이 비었다고 0건 검색은 아니다.
-        val candidate = search?.takeIf { isFirstSearchPage && slice.content.isEmpty() }?.let { HangulKeyboardConverter.convertIfMislayout(it) }
-        if (candidate != null) {
-            val correctedSlice = postRepository.findPostsAfter(categoryIds, candidate, filters, postIds, authorIds, excludedAuthorIds, currentUserId, sort, null, limit, withTotal = true)
-            if (correctedSlice.content.isNotEmpty()) {
-                logSearch(search = search, total = correctedSlice.total ?: PostSearchQuery.TOTAL_NOT_COUNTED, corrected = true, semantic = false)
-                return cursorResponse(correctedSlice, sort, currentUserId, PostSearchQuery.tokenize(candidate), candidate, semantic = false)
+        val authorIds by lazy { nickname?.takeIf { it.isNotBlank() }?.let { memberService.findIdsByNicknameContaining(it) } }
+        val excludedAuthorIds by lazy { if (EXCLUDE_BOTS_FILTER in filters) memberService.findBotIds() else emptySet() }
+        val postIds by lazy { resolveInteractionFilter(filters, currentUserId) }
+        // 임베딩·자판 보정·검색 로그는 북마크함과 같은 흐름을 쓴다(PostSearchFlow)
+        val result =
+            postSearchFlow.run(SEARCH_SCOPE, search, state, tryConsumeEmbedding) { query, after, queryEmbedding, withTotal ->
+                postRepository.findPostsAfter(categoryIds, query, filters, postIds, authorIds, excludedAuthorIds, currentUserId, sort, after, limit, queryEmbedding, withTotal)
             }
-        }
 
-        logSearch(search = search, total = slice.total ?: PostSearchQuery.TOTAL_NOT_COUNTED, corrected = correctedSearch != null, semantic = semantic)
-        return cursorResponse(
-            slice,
-            sort,
-            currentUserId,
-            correctedSearch?.let { PostSearchQuery.tokenize(it) } ?: searchTokens,
-            correctedSearch,
-            semantic.takeIf { searchTokens.isNotEmpty() },
+        return PostPageResponse(
+            content = postResponseAssembler.buildResponsesFromPosts(result.slice.content, currentUserId, result.searchTokens),
+            nextCursor = result.slice.nextKeys?.let { CursorCodec.encode(sort.name, it, result.semantic, corrected = true.takeIf { result.correctedSearch != null }) },
+            correctedSearch = result.correctedSearch,
         )
     }
 
@@ -264,37 +231,6 @@ class PostService(
         }
 
         return postIds
-    }
-
-    private fun cursorResponse(
-        slice: KeysetSlice<TablePost>,
-        sort: PostListSort,
-        currentUserId: UUID?,
-        tokens: List<String>,
-        correctedSearch: String?,
-        semantic: Boolean?,
-    ): PostPageResponse = PostPageResponse(
-        content = postResponseAssembler.buildResponsesFromPosts(slice.content, currentUserId, tokens),
-        nextCursor = slice.nextKeys?.let { CursorCodec.encode(sort.name, it, semantic, corrected = true.takeIf { correctedSearch != null }) },
-        correctedSearch = correctedSearch,
-    )
-
-    /**
-     * 검색어별 결과 건수를 로그로 남긴다 - 0건 검색어 파악, 의미 검색 임계값 튜닝 근거로 쓴다.
-     * 검색어 원문은 CloudWatch에 남지만 사용자 식별 정보는 포함하지 않고, 줄바꿈·따옴표는
-     * Logs Insights 파싱이 깨지지 않도록 한 줄로 정리한다.
-     */
-    private fun logSearch(search: String?, total: Long, corrected: Boolean, semantic: Boolean) {
-        if (search.isNullOrBlank()) return
-
-        logger.info(
-            "[Search] scope=feed tokens={} total={} corrected={} semantic={} q=\"{}\"",
-            PostSearchQuery.tokenize(search).size,
-            total,
-            corrected,
-            semantic,
-            search.replace(Regex("[\\r\\n\"]"), " ").take(100),
-        )
     }
 
     fun getPostById(id: UUID, currentUserId: UUID?): PostResponse {

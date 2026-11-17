@@ -1,21 +1,16 @@
 package com.example.linksphere.domain.interaction
 
-import com.example.linksphere.domain.post.HangulKeyboardConverter
-import com.example.linksphere.domain.post.PostEmbeddingText
+import com.example.linksphere.domain.post.PostCandidateService
 import com.example.linksphere.domain.post.PostLookupService
 import com.example.linksphere.domain.post.PostPageResponse
-import com.example.linksphere.domain.post.PostResponseAssembler
+import com.example.linksphere.domain.post.PostSearchFlow
 import com.example.linksphere.domain.post.PostSearchQuery
-import com.example.linksphere.domain.post.TablePost
 import com.example.linksphere.global.common.CursorCodec
-import com.example.linksphere.global.common.KeysetSlice
 import com.example.linksphere.global.common.Paging
 import com.example.linksphere.global.exception.BookmarkFolderNotFoundException
 import com.example.linksphere.global.exception.DuplicateFolderNameException
 import com.example.linksphere.global.exception.ForbiddenException
 import com.example.linksphere.global.exception.InvalidInputException
-import com.example.linksphere.infra.ai.GeminiService
-import org.slf4j.LoggerFactory
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
@@ -28,12 +23,11 @@ class BookmarkFolderService(
     private val bookmarkFolderRepository: BookmarkFolderRepository,
     private val bookmarkRepository: BookmarkRepository,
     private val bookmarkFolderItemRepository: BookmarkFolderItemRepository,
-    private val postResponseAssembler: PostResponseAssembler,
-    private val geminiService: GeminiService,
+    private val bookmarkedPostFinder: BookmarkedPostFinder,
+    private val postSearchFlow: PostSearchFlow,
+    private val postCandidateService: PostCandidateService,
     private val postLookupService: PostLookupService,
 ) {
-
-    private val logger = LoggerFactory.getLogger(BookmarkFolderService::class.java)
 
     @Transactional(readOnly = true)
     fun getFolders(userId: UUID): FolderListResponse {
@@ -214,8 +208,8 @@ class BookmarkFolderService(
      * sort: "latest"(default) / "oldest" / "title" / "viewed" - 모르는 값은 latest로 본다(BookmarkListSort.of)
      * search: 제목/설명/태그 부분 검색 (null/blank면 미적용)
      *
-     * 첫 쪽의 의미 검색·자판 보정 여부를 cursor에 담아 뒤쪽도 같은 기준으로 읽는다
-     * (PostService.getPostsByCursor와 같은 규칙, 이유는 그쪽 주석 참고).
+     * 첫 쪽의 의미 검색·자판 보정 여부를 cursor에 담아 뒤쪽도 같은 기준으로 읽는다(PostSearchFlow). 글 id는
+     * BookmarkedPostFinder가 읽고 응답은 post가 조립한다 - 이 패키지는 글 테이블을 직접 읽지 않는다.
      */
     @Transactional(readOnly = true)
     fun getBookmarkedPostsByCursor(
@@ -228,66 +222,20 @@ class BookmarkFolderService(
     ): PostPageResponse {
         val (folderId, onlyUncategorized) = resolveFolderKey(userId, folderKey)
         val limit = Paging.coerceSize(size)
-        val searchTokens = PostSearchQuery.tokenize(search)
-        val listSort = BookmarkListSort.of(sort, searching = searchTokens.isNotEmpty())
+        val listSort = BookmarkListSort.of(sort, searching = PostSearchQuery.tokenize(search).isNotEmpty())
         val state = cursor?.let { CursorCodec.decode(it, listSort.name, listSort.keyTypes) }
-        val correctedSearch = search?.takeIf { state?.corrected == true }?.let { HangulKeyboardConverter.convertIfMislayout(it) }
-        val wantsEmbedding = searchTokens.isNotEmpty() && correctedSearch == null && state?.semantic != false
-        val queryEmbedding = search?.takeIf { wantsEmbedding }?.let { geminiService.embedQuery(PostEmbeddingText.query(it)) }
-        val semantic = queryEmbedding != null
-        val isFirstSearchPage = state == null && searchTokens.isNotEmpty()
-
-        if (state?.semantic == true && !semantic) {
-            logger.warn("[Search] scope=bookmark semantic degraded to keyword")
-        }
-
-        val slice =
-            bookmarkRepository.findBookmarkedPostsAfter(
-                userId,
-                folderId,
-                onlyUncategorized,
-                listSort,
-                correctedSearch ?: search,
-                state?.keys,
-                limit,
-                queryEmbedding,
-                withTotal = isFirstSearchPage,
-            )
-
-        // 쪽마다 건수를 세지 않으므로 첫 쪽이 비었을 때만 보정을 판정한다. 뒤쪽이 비었다고 0건 검색은 아니다.
-        val candidate = search?.takeIf { isFirstSearchPage && slice.content.isEmpty() }?.let { HangulKeyboardConverter.convertIfMislayout(it) }
-        if (candidate != null) {
-            val correctedSlice =
-                bookmarkRepository.findBookmarkedPostsAfter(userId, folderId, onlyUncategorized, listSort, candidate, null, limit, withTotal = true)
-            if (correctedSlice.content.isNotEmpty()) {
-                logSearch(search = search, total = correctedSlice.total ?: PostSearchQuery.TOTAL_NOT_COUNTED, corrected = true, semantic = false)
-                return cursorResponse(correctedSlice, listSort, userId, PostSearchQuery.tokenize(candidate), candidate, semantic = false)
+        // 임베딩·자판 보정·검색 로그는 피드와 같은 흐름을 쓴다. 북마크 검색은 임베딩 호출 한도를 쓰지 않는다(tryConsumeEmbedding을 넘기지 않는다)
+        val result =
+            postSearchFlow.run(SEARCH_SCOPE, search, state) { query, after, queryEmbedding, withTotal ->
+                bookmarkedPostFinder.findAfter(userId, folderId, onlyUncategorized, listSort, query, after, limit, queryEmbedding, withTotal)
             }
-        }
 
-        logSearch(search = search, total = slice.total ?: PostSearchQuery.TOTAL_NOT_COUNTED, corrected = correctedSearch != null, semantic = semantic)
-        return cursorResponse(
-            slice,
-            listSort,
-            userId,
-            correctedSearch?.let { PostSearchQuery.tokenize(it) } ?: searchTokens,
-            correctedSearch,
-            semantic.takeIf { searchTokens.isNotEmpty() },
+        return PostPageResponse(
+            content = postCandidateService.buildResponses(result.slice.content, userId, result.searchTokens),
+            nextCursor = result.slice.nextKeys?.let { CursorCodec.encode(listSort.name, it, result.semantic, corrected = true.takeIf { result.correctedSearch != null }) },
+            correctedSearch = result.correctedSearch,
         )
     }
-
-    private fun cursorResponse(
-        slice: KeysetSlice<TablePost>,
-        sort: BookmarkListSort,
-        userId: UUID,
-        tokens: List<String>,
-        correctedSearch: String?,
-        semantic: Boolean?,
-    ): PostPageResponse = PostPageResponse(
-        content = postResponseAssembler.buildResponsesFromPosts(slice.content, userId, tokens),
-        nextCursor = slice.nextKeys?.let { CursorCodec.encode(sort.name, it, semantic, corrected = true.takeIf { correctedSearch != null }) },
-        correctedSearch = correctedSearch,
-    )
 
     // "all" / "uncategorized" / 폴더 UUID를 (폴더 id, 미분류만 볼지)로 바꾼다. 남의 폴더는 여기서 막는다.
     private fun resolveFolderKey(userId: UUID, folderKey: String): Pair<UUID?, Boolean> = when (folderKey) {
@@ -309,20 +257,6 @@ class BookmarkFolderService(
         }
     }
 
-    /** PostService.logSearch와 동일한 형태 - 북마크함 검색어별 결과 건수를 로그로 남긴다. */
-    private fun logSearch(search: String?, total: Long, corrected: Boolean, semantic: Boolean) {
-        if (search.isNullOrBlank()) return
-
-        logger.info(
-            "[Search] scope=bookmark tokens={} total={} corrected={} semantic={} q=\"{}\"",
-            PostSearchQuery.tokenize(search).size,
-            total,
-            corrected,
-            semantic,
-            search.replace(Regex("[\\r\\n\"]"), " ").take(100),
-        )
-    }
-
     // 앞뒤 공백을 뗀 이름을 돌려준다. 길이는 Postgres varchar(n)·FE와 같이 문자(코드포인트) 수로 센다 - String.length(UTF-16)로
     // 세면 이모지가 두 번 세진다. 길이를 보지 않던 때는 101자 이름이 저장 때 "value too long" 무결성 위반이 돼 전역 안전망이
     // 409 DUPLICATE_RESOURCE("이미 존재하는 항목")로 바꿨다(BookmarkFolderRepositoryIntegrationTest, 2026-10-26 재현).
@@ -338,6 +272,11 @@ class BookmarkFolderService(
         }
 
         return name
+    }
+
+    private companion object {
+        // 검색 로그에 남는 이름
+        const val SEARCH_SCOPE = "bookmark"
     }
 
     private fun DataIntegrityViolationException.asDuplicateFolderName(name: String): RuntimeException = if (mostSpecificCause.message?.contains("uk_bookmark_folders_user_name") == true) {

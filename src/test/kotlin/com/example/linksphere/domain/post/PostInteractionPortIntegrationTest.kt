@@ -33,7 +33,7 @@ import java.util.UUID
  * 가는지, 그리고 글 등록 때의 북마크·폴더 소속이 FK를 지켜 실제로 저장되는지는 mock으로 보이지 않는다.
  */
 @PostgresIntegrationTest
-@Import(PostService::class, PostResponseAssembler::class, PostInteractionAdapter::class, CommentCountAdapter::class, CategoryService::class, MemberService::class)
+@Import(PostService::class, PostSearchFlow::class, PostResponseAssembler::class, PostInteractionAdapter::class, CommentCountAdapter::class, CategoryService::class, MemberService::class)
 class PostInteractionPortIntegrationTest {
 
     @Autowired private lateinit var postService: PostService

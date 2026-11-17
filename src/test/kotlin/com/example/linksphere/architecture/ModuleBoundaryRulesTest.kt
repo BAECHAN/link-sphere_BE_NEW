@@ -13,16 +13,9 @@ import org.springframework.data.repository.Repository
  * (docs/plans/2026-11-16-be-structure-stage2.md). 형식은 `쓰는 클래스 -> 쓰이는 저장소·엔티티`.
  *
  * 이 목록은 줄어들기만 한다. 새로 쓰는 곳이 생기면 아래 테스트가 실패하고, 없앤 곳을 목록에 남겨 둬도 실패한다
- * (DOCUMENTED_CYCLE_EDGES와 같은 방식). 2단계 PR마다 해당 줄을 지우고 PR-10에서 빈 목록이 된다.
+ * (DOCUMENTED_CYCLE_EDGES와 같은 방식). 2단계 PR마다 해당 줄을 지워 PR-9c에서 빈 목록이 됐다 - 지금은 "새로 쓰지 않는다" 규칙만 남았다.
  */
-internal val KNOWN_BOUNDARY_VIOLATIONS: Set<String> =
-    setOf(
-        "domain.interaction.BookmarkFolderService -> domain.post.TablePost",
-        "domain.interaction.BookmarkRepositoryCustom -> domain.post.TablePost",
-        "domain.interaction.BookmarkRepositoryImpl -> domain.post.TablePost",
-        "domain.interaction.BookmarkRepositoryImpl -> domain.post.TablePostView",
-        "domain.interaction.TableBookmark -> domain.post.TablePost",
-    )
+internal val KNOWN_BOUNDARY_VIOLATIONS: Set<String> = emptySet()
 
 /**
  * 패키지(`domain.post`, `infra.fcm` 등 두 단계)는 다른 패키지의 저장소·엔티티를 모른다 - 그 패키지의 Service에 묻고 id와

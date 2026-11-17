@@ -97,8 +97,8 @@ flowchart TD
 
 | 목록 | cursor 경로 | Phase 4에서 지운 옛 경로 |
 | --- | --- | --- |
-| 피드·검색 | [`PostRepositoryImpl.kt:17`](../src/main/kotlin/com/example/linksphere/domain/post/PostRepositoryImpl.kt#L17) `findPostsAfter`, [`PostService.kt:164`](../src/main/kotlin/com/example/linksphere/domain/post/PostService.kt#L164) | `findPosts`, `getAllPosts` |
-| 북마크 | [`BookmarkRepositoryImpl.kt:21`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkRepositoryImpl.kt#L21) `findBookmarkedPostsAfter`, [`BookmarkFolderService.kt:221`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkFolderService.kt#L221) | `findBookmarkedPosts`, `getBookmarkedPosts` |
+| 피드·검색 | [`PostRepositoryImpl.kt:17`](../src/main/kotlin/com/example/linksphere/domain/post/PostRepositoryImpl.kt#L17) `findPostsAfter`, [`PostService.kt:165`](../src/main/kotlin/com/example/linksphere/domain/post/PostService.kt#L165) | `findPosts`, `getAllPosts` |
+| 북마크 | [`BookmarkedPostFinder.kt:27`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkedPostFinder.kt#L27) `findAfter`(북마크는 [`BookmarkRepositoryImpl.kt:19`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkRepositoryImpl.kt#L19) `findBookmarkKeysAfter`, 글 쪽 정렬 키는 [`PostRepositoryImpl.kt:65`](../src/main/kotlin/com/example/linksphere/domain/post/PostRepositoryImpl.kt#L65) `rankVisibleAmong`), [`BookmarkFolderService.kt:215`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkFolderService.kt#L215) | `findBookmarkedPosts`, `getBookmarkedPosts` |
 | 내 댓글 | [`CommentRepository.kt:30`](../src/main/kotlin/com/example/linksphere/domain/comment/CommentRepository.kt#L30) `findMyCommentsFirst`·`findMyCommentsAfter`, [`CommentService.kt:132`](../src/main/kotlin/com/example/linksphere/domain/comment/CommentService.kt#L132) | `findMyComments`, `getMyComments` |
 
 `page`는 받지 않는다. 다른 모르는 쿼리 파라미터처럼 무시되고 cursor 첫 쪽이 나간다. Phase 4(#196)에서는 숨긴 파라미터로 받아 400으로 끝냈는데, 같은 날 그 코드도 지웠다(#198, 사용자 결정). 지운 이유와 대가는 이렇다.
@@ -136,6 +136,17 @@ flowchart TD
 파생 테이블에 붙는 `offset 0`은 양날이다. Postgres가 안쪽을 합쳐 식을 다시 계산하는 일을 막지만, 바깥 조건을 안쪽 조인 아래로 내리는 것도 함께 막는다.
 
 코드는 [`KeysetQuery.kt`](../src/main/kotlin/com/example/linksphere/global/common/KeysetQuery.kt)의 `directRows`(WHERE)와 `derivedRows`(파생 테이블)다.
+
+**북마크 목록은 2026-11-17부터 한 문장이 아니다**(BE 구조 2단계 PR-9c, `BookmarkedPostFinder`). interaction이 글 테이블을 조인하지 않게 하려고 둘로 나눴다. 순서와 cursor(§5.1 표)는 그대로다.
+
+| 정렬 | 읽는 방법 |
+| --- | --- |
+| 최신순·오래된순(검색 없음) | interaction이 북마크 테이블만 위 표의 첫 줄 형태로 읽고(인덱스), post에 "이 가운데 보이는 글"을 물어 빠진 만큼 51개씩 더 읽어 채운다 |
+| 제목순·열람순·관련도순, 검색 | interaction이 후보(그 회원·폴더의 북마크 전체)의 글 id를 post에 넘긴다. post가 `id IN (후보)`로 걸러 첫 키 순서로 **쪽을 자르지 않고** 돌려주고, interaction이 키가 같은 글끼리만 북마크 시각·글 id로 줄 세워 쪽을 자른다 |
+
+- 첫 키의 형태 선택(제목 앞부분·검색 점수는 파생 테이블, 열람 시각은 WHERE)은 그대로 옮겼다. 다만 위 표의 "조인한 표의 컬럼"·"조인 전에 계산되는 싼 식"이라는 이유와 §9.8의 측정값은 한 문장이던 때의 것이다. 나뉜 뒤의 형태는 다시 재지 않았다.
+- 키가 같은 글의 순서를 메모리에서 맞출 때 글 id는 Postgres의 uuid 순서(바이트 순)로 비교한다. `UUID.compareTo`는 부호 있는 비교라 순서가 다르다.
+- 후보는 한 회원의 북마크 수만큼이다(운영 최대 95개, 2026-11-17 읽기 전용 계정 조회). 10,000개를 넘으면 경고 로그를 남긴다.
 
 `(k1, k2) < (x, y)` 행 비교가 가장 간단하지만, 이 레포가 쓰는 Hibernate 6.6.53의 `tuple()`은 `JpaCompoundSelection`을 돌려줘 `lessThan`에 넣을 수 없다(javap 확인). 그래서 OR로 펼친 형태를 쓴다([`SeekPredicate.kt`](../src/main/kotlin/com/example/linksphere/global/common/SeekPredicate.kt)). 정렬 키 전체는 §5.1 표다.
 
@@ -181,8 +192,8 @@ flowchart TD
 | 쪽 크기 상한 | 50 | [`Paging.kt:12`](../src/main/kotlin/com/example/linksphere/global/common/Paging.kt#L12) |
 | 임베딩 호출 제한 | IP당 10분 60회. `semantic=false` cursor면 쓰지 않음 | [`PostController.kt:37-38`](../src/main/kotlin/com/example/linksphere/domain/post/PostController.kt#L37-L38) |
 | 점수 키 단위 | 10,000(소수 넷째 자리까지 본다) | [`PostSearchQuery.kt:61`](../src/main/kotlin/com/example/linksphere/domain/post/PostSearchQuery.kt#L61) |
-| 제목 키 길이 | 앞 200자 | [`BookmarkRepositoryImpl.kt:88`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkRepositoryImpl.kt#L88) |
-| 열람 기록 없는 글의 키 | 1970-01-01 | [`BookmarkRepositoryImpl.kt:89`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkRepositoryImpl.kt#L89) |
+| 제목 키 길이 | 앞 200자 | [`PostRepositoryImpl.kt:123`](../src/main/kotlin/com/example/linksphere/domain/post/PostRepositoryImpl.kt#L123) |
+| 열람 기록 없는 글의 키 | 1970-01-01 | [`PostRepositoryImpl.kt:124`](../src/main/kotlin/com/example/linksphere/domain/post/PostRepositoryImpl.kt#L124) |
 | cursor 형식 버전 | 1 | [`CursorCodec.kt:41`](../src/main/kotlin/com/example/linksphere/global/common/CursorCodec.kt#L41) |
 | 질의 임베딩 읽기 제한 시간 | 1,500ms | [`GeminiService.kt:39`](../src/main/kotlin/com/example/linksphere/infra/ai/GeminiService.kt#L39) |
 | 쿼리 문자열 크기 한도 | 2,048바이트 | AWS WAF `SizeRestrictions_QUERYSTRING`, 콘솔 관리. AWS 문서는 _"2,048바이트를 넘는 URI 쿼리 문자열을 검사한다"_ (번역, [AWS](https://docs.aws.amazon.com/waf/latest/developerguide/aws-managed-rule-groups-baseline.html))고 쓴다. cursor가 이 안에 들어야 한다 |
@@ -199,13 +210,13 @@ flowchart TD
 | cursor 인코딩·검증 | [`CursorCodec.kt`](../src/main/kotlin/com/example/linksphere/global/common/CursorCodec.kt) |
 | "이 키 다음부터" 조건식 | [`SeekPredicate.kt`](../src/main/kotlin/com/example/linksphere/global/common/SeekPredicate.kt) |
 | WHERE 형태·파생 테이블 형태 조회 | [`KeysetQuery.kt`](../src/main/kotlin/com/example/linksphere/global/common/KeysetQuery.kt) |
-| 정렬별 키 구성 | [`PostRepositoryCustom.kt:36`](../src/main/kotlin/com/example/linksphere/domain/post/PostRepositoryCustom.kt#L36) `PostListSort`, [`BookmarkRepositoryCustom.kt:36`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkRepositoryCustom.kt#L36) `BookmarkListSort` |
-| 검색 상태 이어 가기 | [`PostService.kt:164`](../src/main/kotlin/com/example/linksphere/domain/post/PostService.kt#L164), [`BookmarkFolderService.kt:221`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkFolderService.kt#L221) |
+| 정렬별 키 구성 | [`PostRepositoryCustom.kt:50`](../src/main/kotlin/com/example/linksphere/domain/post/PostRepositoryCustom.kt#L50) `PostListSort`, [`BookmarkRepositoryCustom.kt:31`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkRepositoryCustom.kt#L31) `BookmarkListSort` |
+| 검색 상태 이어 가기 | [`PostService.kt:165`](../src/main/kotlin/com/example/linksphere/domain/post/PostService.kt#L165), [`BookmarkFolderService.kt:215`](../src/main/kotlin/com/example/linksphere/domain/interaction/BookmarkFolderService.kt#L215). 공통 흐름은 [`PostSearchFlow.kt:36`](../src/main/kotlin/com/example/linksphere/domain/post/PostSearchFlow.kt#L36) |
 | 끝까지 읽기·SQL 형태 테스트 | [`CursorPaginationIntegrationTest.kt`](../src/test/kotlin/com/example/linksphere/domain/post/CursorPaginationIntegrationTest.kt) |
 
 | 하고 싶은 일 | 방법 | 재배포 |
 | --- | --- | --- |
-| 정렬 추가 | `BookmarkListSort`에 키 구성을 추가하고 `findBookmarkedPostsAfter`의 첫 키를 만든다. 첫 키에 따라 `directRows`나 `derivedRows`를 고른다(§5.2 표). 애매하면 두 형태를 같은 실행에서 재 본다(§9.8). 마지막 키는 고유해야 하고 NULL이면 안 된다 | 필요 |
+| 정렬 추가 | `BookmarkListSort`에 키 구성을 추가하고, 첫 키가 글의 값이면 `PostRankOrder`와 `PostRepositoryImpl.rankVisibleAmong`의 첫 키를 만든다(`BookmarkedPostFinder`가 둘을 잇는다). 첫 키에 따라 `directRows`나 `derivedRows`를 고른다(§5.2 표). 애매하면 두 형태를 같은 실행에서 재 본다(§9.8). 마지막 키는 고유해야 하고 NULL이면 안 된다 | 필요 |
 | cursor 형식 변경 | `VERSION`을 올리되 옛 값도 계속 읽는다. 열려 있는 탭이 옛 cursor를 들고 있고, 400이면 재시도해도 같은 값을 보낸다 | 필요 |
 | 쪽 크기 상한 변경 | `Paging.MAX_PAGE_SIZE` | 필요 |
 | 실험 전체 다시 돌리기(약 25분) | `./scripts/pagination-experiment/run.sh > results.md` | 불필요 |
@@ -360,7 +371,7 @@ offset 경로는 쪽마다 전체 건수를 센다. 화면에서 이 값을 읽�
 - **검색의 차이 대부분은 count다.** count를 세는 검색 첫 쪽은 920ms, 세지 않는 뒤쪽은 566ms로 약 354ms 차이다. 이를 offset의 928ms에서 빼면 offset 본 쿼리는 약 574ms로 cursor와 비슷하다(따로 재지 않고 뺄셈으로 얻은 값). §9.3의 서브쿼리 형태와 같은 결과다.
 - **인덱스를 타는 목록은 인덱스 조건으로 시작 지점을 찾는다.** 같은 테스트가 `EXPLAIN`에 인덱스 이름과 `Index Cond`가 있고 `Sort`가 없는지 본다. 표가 작아 순차·비트맵 탐색을 끄고 확인하므로 "쓸 수 있는 형태"라는 뜻이다. 운영 계획은 배포 뒤 읽기 계정으로 본다.
 
-**제목순·최근 열람순의 형태 비교.** 같은 실행·같은 데이터에서 두 형태를 번갈아 쟀다(`BookmarkRepositoryImpl`의 `fetchRows`를 임시로 바꿔 측정, 조건은 위와 같다). 앞선 실행(`jit`·`prepareThreshold` 기본값)에서 두 형태가 돌려준 행이 네 위치 모두 같은 것을 확인했다.
+**제목순·최근 열람순의 형태 비교.** 같은 실행·같은 데이터에서 두 형태를 번갈아 쟀다(당시 `BookmarkRepositoryImpl`의 `fetchRows`를 임시로 바꿔 측정, 조건은 위와 같다. 지금 그 선택은 `PostRepositoryImpl.rankVisibleAmong`에 있다). 앞선 실행(`jit`·`prepareThreshold` 기본값)에서 두 형태가 돌려준 행이 네 위치 모두 같은 것을 확인했다.
 
 | 정렬 | 위치 | 파생 테이블(ms) | WHERE(ms) |
 | --- | --- | --- | --- |
