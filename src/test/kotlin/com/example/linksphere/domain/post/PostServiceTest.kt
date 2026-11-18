@@ -44,6 +44,7 @@ import org.mockito.Mockito.verifyNoInteractions
 import org.mockito.Mockito.`when`
 import org.mockito.junit.jupiter.MockitoExtension
 import org.springframework.context.ApplicationEventPublisher
+import org.springframework.data.domain.Limit
 import java.time.Duration
 import java.time.LocalDateTime
 import java.util.Optional
@@ -1004,7 +1005,7 @@ class PostServiceTest {
         val bookmarkedOnly = UUID.randomUUID()
         val likedOnly = UUID.randomUUID()
         `when`(bookmarkRepository.findPostIdsByUserId(userId)).thenReturn(listOf(both, bookmarkedOnly))
-        `when`(postReactionRepository.findPostIdsByUserId(userId)).thenReturn(listOf(likedOnly, both))
+        `when`(postReactionRepository.findRecentPostIdsByUserId(userId, Limit.of(10_001))).thenReturn(listOf(likedOnly, both))
         `when`(postRepository.findPostsAfter(null, null, setOf("isBookmarked"), setOf(both, bookmarkedOnly), null, emptySet(), userId, PostListSort.LATEST, null, 10, null, false))
             .thenReturn(KeysetSlice(emptyList()))
         `when`(postRepository.findPostsAfter(null, null, setOf("isBookmarked", "isLiked"), setOf(both), null, emptySet(), userId, PostListSort.LATEST, null, 10, null, false))
@@ -1015,6 +1016,24 @@ class PostServiceTest {
 
         verify(postRepository).findPostsAfter(null, null, setOf("isBookmarked"), setOf(both, bookmarkedOnly), null, emptySet(), userId, PostListSort.LATEST, null, 10, null, false)
         verify(postRepository).findPostsAfter(null, null, setOf("isBookmarked", "isLiked"), setOf(both), null, emptySet(), userId, PostListSort.LATEST, null, 10, null, false)
+    }
+
+    // 좋아요는 한도보다 하나 더 읽어 넘쳤는지 안다. 넘쳤으면 최근 10,000개만 저장소에 넘기고 응답에 그 수를 싣는다
+    @Test
+    fun `getPostsByCursor는 좋아요가 10,000개를 넘으면 최근 10,000개만 넘기고 likedFilterLimit을 싣는다`() {
+        val userId = UUID.randomUUID()
+        val recentFirst = List(10_001) { UUID.randomUUID() }
+        val kept = recentFirst.take(10_000).toSet()
+        `when`(postReactionRepository.findRecentPostIdsByUserId(userId, Limit.of(10_001))).thenReturn(recentFirst, recentFirst.take(10_000))
+        `when`(postRepository.findPostsAfter(null, null, setOf("isLiked"), kept, null, emptySet(), userId, PostListSort.LATEST, null, 10, null, false))
+            .thenReturn(KeysetSlice(emptyList()))
+
+        val truncated = postService.getPostsByCursor(null, null, "isLiked", null, null, 10, userId)
+        val exact = postService.getPostsByCursor(null, null, "isLiked", null, null, 10, userId)
+
+        assertEquals(10_000, truncated.likedFilterLimit)
+        assertEquals(null, exact.likedFilterLimit)
+        verify(postRepository, times(2)).findPostsAfter(null, null, setOf("isLiked"), kept, null, emptySet(), userId, PostListSort.LATEST, null, 10, null, false)
     }
 
     // 북마크한 글이 없으면 빈 집합을 넘긴다(결과 없음). null(거르지 않음)로 바꾸면 전체 글이 나온다

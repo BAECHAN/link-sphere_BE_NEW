@@ -169,6 +169,48 @@ class PostInteractionPortIntegrationTest {
         assertEquals(setOf(busyPost, quietPost), feedIds("isBookmarked,isLiked", null))
     }
 
+    // 좋아요 필터는 최근 10,000개 안에서 거른다(docs/plans/2026-11-17-bookmark-limit-liked-filter.md) - 딱 10,000개면 전부 본다
+    @Test
+    fun `좋아요가 10,000개면 isLiked 필터가 가장 오래된 좋아요까지 돌려주고 잘림 표시가 없다`() {
+        val liked = seedHeavyLiker(bulkLikes = 9_998)
+
+        val page = postService.getPostsByCursor(null, null, "isLiked", null, null, 20, liked.member)
+
+        assertEquals(10_000, count("SELECT count(*) FROM post_reactions WHERE user_id = ?", liked.member))
+        assertEquals(listOf(liked.oldest, busyPost), page.content.map { it.id }.take(2))
+        assertEquals(null, page.likedFilterLimit)
+    }
+
+    // 하나 더 많으면 가장 오래전에 좋아요한 글이 빠지고, 화면이 안내할 수 있게 응답에 개수를 싣는다
+    @Test
+    fun `좋아요가 10,001개면 isLiked 필터에서 가장 오래된 좋아요가 빠지고 잘림 표시가 실린다`() {
+        val liked = seedHeavyLiker(bulkLikes = 9_999)
+
+        val page = postService.getPostsByCursor(null, null, "isLiked", null, null, 20, liked.member)
+
+        assertEquals(10_001, count("SELECT count(*) FROM post_reactions WHERE user_id = ?", liked.member))
+        assertEquals(busyPost, page.content.first().id)
+        assertEquals(false, liked.oldest in page.content.map { it.id })
+        assertEquals(10_000, page.likedFilterLimit)
+    }
+
+    // 북마크 필터와 함께 걸면 최근 좋아요 10,000개와 북마크의 교집합이다. 좋아요 필터를 안 건 목록에는 표시가 없다
+    @Test
+    fun `좋아요가 10,001개인 회원이 isBookmarked 와 함께 걸면 최근 좋아요 안의 북마크만 남는다`() {
+        val liked = seedHeavyLiker(bulkLikes = 9_999)
+        listOf(liked.oldest, busyPost).forEach { jdbc.update("INSERT INTO bookmarks (user_id, post_id) VALUES (?, ?)", liked.member, it) }
+
+        val both = postService.getPostsByCursor(null, null, "isBookmarked,isLiked", null, null, 20, liked.member)
+        val bookmarkedOnly = postService.getPostsByCursor(null, null, "isBookmarked", null, null, 20, liked.member)
+        val unfiltered = postService.getPostsByCursor(null, null, null, null, null, 20, liked.member)
+
+        assertEquals(listOf(busyPost), both.content.map { it.id })
+        assertEquals(10_000, both.likedFilterLimit)
+        assertEquals(listOf(liked.oldest, busyPost), bookmarkedOnly.content.map { it.id })
+        assertEquals(null, bookmarkedOnly.likedFilterLimit)
+        assertEquals(null, unfiltered.likedFilterLimit)
+    }
+
     // 검색은 관련도 정렬 경로(점수 계산 뒤 정렬)를 탄다 - 그 경로에서도 id 조건이 함께 걸려야 한다
     @Test
     fun `검색어와 isBookmarked 를 함께 걸면 북마크한 글 가운데 검색에 걸린 글만 나온다`() {
@@ -287,6 +329,32 @@ class PostInteractionPortIntegrationTest {
     }
 
     private fun feedIds(filter: String, viewerId: UUID?): Set<UUID> = postService.getPostsByCursor(null, null, filter, null, null, 20, viewerId).content.map { it.id }.toSet()
+
+    private data class HeavyLiker(val member: UUID, val oldest: UUID)
+
+    /**
+     * 좋아요가 bulkLikes + 2개인 회원을 만든다. 가장 오래전에 좋아요한 글(oldest)은 피드에서는 가장 새 글이라, 필터에 걸리면
+     * 첫 쪽 맨 위에 온다. 가장 최근에 좋아요한 글은 busyPost이고 나머지는 하루 전 글들이다.
+     */
+    private fun seedHeavyLiker(bulkLikes: Int): HeavyLiker {
+        val member = UUID.randomUUID()
+        val oldest = insertPost("oldest-liked", minutesAgo = 0)
+        jdbc.update("INSERT INTO members (id, nickname, email_verified) VALUES (?, 'heavy', true)", member)
+        jdbc.update(
+            "INSERT INTO posts (id, user_id, url, title, is_private, created_at) " +
+                "SELECT gen_random_uuid(), ?, 'https://example.com/liked/' || g, 'liked ' || g, false, now() - interval '1 day' FROM generate_series(1, ?) g",
+            writer,
+            bulkLikes,
+        )
+        jdbc.update(
+            "INSERT INTO post_reactions (user_id, post_id, created_at) SELECT ?, id, now() - interval '1 hour' FROM posts WHERE url LIKE 'https://example.com/liked/%'",
+            member,
+        )
+        jdbc.update("INSERT INTO post_reactions (user_id, post_id, created_at) VALUES (?, ?, now() - interval '30 days')", member, oldest)
+        jdbc.update("INSERT INTO post_reactions (user_id, post_id, created_at) VALUES (?, ?, now())", member, busyPost)
+
+        return HeavyLiker(member, oldest)
+    }
 
     private fun insertPost(title: String, minutesAgo: Int = 30): UUID {
         val id = UUID.randomUUID()

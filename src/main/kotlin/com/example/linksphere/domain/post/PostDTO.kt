@@ -84,6 +84,8 @@ data class PostPageResponse(
     val nextCursor: String? = null,
     // 한/영 자판 미스매칭 보정으로 재검색했을 때만 채워진다 (예: spdlqj -> 네이버)
     val correctedSearch: String? = null,
+    // filter=isLiked가 최근 좋아요 일부만 보고 걸렀을 때 그 개수(10000). 좋아요가 그 이하라 전부 봤거나 필터가 없으면 null이다
+    val likedFilterLimit: Int? = null,
 )
 
 data class PostCreatedEvent(
