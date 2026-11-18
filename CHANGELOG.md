@@ -94,6 +94,21 @@
 
 ### Changed
 
+- `post`·`interaction` 글 목록의 `filter=isLiked`가 최근 좋아요 10,000개 안에서 거르고, 잘랐으면 응답에 `likedFilterLimit`을 실음
+  <details><summary>배경·구현</summary>
+
+  `filter=isLiked`는 그 회원이 좋아요한 글 id 전부를 `IN` 목록으로 넘겼다. 드라이버(pgjdbc)는 한 문장의 바인드 값이 65,535개를
+  넘으면 예외를 던져, 좋아요가 그만큼 쌓인 회원은 이 필터가 500이 된다. 북마크는 저장 한도로 막았지만(위 Added) 좋아요는 누르는 수를
+  제한하지 않기로 해, 필터가 보는 범위를 줄인다. interaction이 최근에 좋아요한 순서(`created_at DESC, post_id DESC`)로 10,001개를
+  읽어 10,000개만 post에 넘기고, 하나가 더 있었으면 잘랐다고 알린다. 그때만 목록 응답의 `likedFilterLimit`이 `10000`이고, 좋아요가
+  10,000개 이하이거나 이 필터를 안 걸었으면 `null`이라 지금과 결과가 같다. `isBookmarked`와 함께 걸면 최근 좋아요 10,000개와
+  북마크의 교집합이다. 좋아요 누르기·취소와 좋아요 수는 바뀌지 않는다. 인덱스는 더하지 않았다 — PK가 `(user_id, post_id)`라 그
+  회원의 행만 읽어 정렬한다. 운영 최대는 9개라(2026-11-17 조회) 지금 잘리는 회원은 없다. 화면 안내는 FE가 이어서 붙인다.
+  근거는 `docs/plans/2026-11-17-bookmark-limit-liked-filter.md`.
+  (`PostReactionRepository.kt`, `PostInteractionPort.kt`, `PostInteractionAdapter.kt`, `PostService.kt`, `PostDTO.kt`, `PostController.kt`)
+
+  </details>
+
 - `auth` 로그인한 요청의 인증 확인이 DB를 한 번 더 읽음(세션 1번 + 회원 역할 1번)
   <details><summary>배경·구현</summary>
 

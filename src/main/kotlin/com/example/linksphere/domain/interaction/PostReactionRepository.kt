@@ -1,5 +1,6 @@
 package com.example.linksphere.domain.interaction
 
+import org.springframework.data.domain.Limit
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
@@ -40,7 +41,8 @@ interface PostReactionRepository : JpaRepository<TablePostReaction, PostReaction
     fun countByPostIdIn(@Param("postIds") postIds: List<UUID>): List<PostLikeCount>
     fun findAllByUserIdAndPostIdIn(userId: UUID, postIds: List<UUID>): List<TablePostReaction>
 
-    // 글 목록의 filter=isLiked - post가 이 id 집합으로 거른다(PostInteractionPort.findLikedPostIds)
-    @Query("SELECT r.postId FROM TablePostReaction r WHERE r.userId = :userId")
-    fun findPostIdsByUserId(@Param("userId") userId: UUID): List<UUID>
+    // 글 목록의 filter=isLiked - post가 이 id 집합으로 거른다(PostInteractionPort.findRecentLikedPostIds). 최근에 좋아요한 순서로
+    // limit개만 읽는다. 같은 시각이면 글 id로 순서를 정해 잘리는 글이 요청마다 달라지지 않게 한다
+    @Query("SELECT r.postId FROM TablePostReaction r WHERE r.userId = :userId ORDER BY r.createdAt DESC, r.postId DESC")
+    fun findRecentPostIdsByUserId(@Param("userId") userId: UUID, limit: Limit): List<UUID>
 }

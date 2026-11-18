@@ -21,15 +21,27 @@ interface PostInteractionPort {
     /** userId가 북마크한 글의 id 전부. 글 목록의 `filter=isBookmarked`가 이 집합으로 거른다(PR-9b). */
     fun findBookmarkedPostIds(userId: UUID): Set<UUID>
 
-    /** userId가 좋아요한 글의 id 전부. 글 목록의 `filter=isLiked`가 이 집합으로 거른다(PR-9b). */
-    fun findLikedPostIds(userId: UUID): Set<UUID>
+    /**
+     * userId가 최근에 좋아요한 글의 id를 LIKED_FILTER_LIMIT개까지. 글 목록의 `filter=isLiked`가 이 집합으로 거른다(PR-9b).
+     * 좋아요는 수에 한도가 없어 전부 넘기면 IN 목록이 드라이버의 바인드 한계(65,535)에 닿는다. 그래서 최근 것만 넘기고, 더 있어서
+     * 잘랐으면 truncated로 알린다(docs/plans/2026-11-17-bookmark-limit-liked-filter.md).
+     */
+    fun findRecentLikedPostIds(userId: UUID): LikedPostIds
 
     /**
      * 글을 등록하면서 북마크하고 폴더에 넣는다. 없는 폴더는 BookmarkFolderNotFoundException, 남의 폴더는 ForbiddenException이다.
      * 글 행이 DB에 있어야 하므로(북마크 테이블의 FK) 부르는 쪽이 먼저 flush하고, 부르는 쪽의 트랜잭션 안에서 실행한다.
      */
     fun bookmarkNewPost(userId: UUID, postId: UUID, folderIds: List<UUID>)
+
+    companion object {
+        // filter=isLiked가 보는 최근 좋아요 수. 북마크 저장 한도(BookmarkLimits.MAX_BOOKMARKS_PER_MEMBER)와 같은 값이다
+        const val LIKED_FILTER_LIMIT = 10_000
+    }
 }
+
+/** 최근에 좋아요한 글 id(ids)와, 좋아요가 더 있어서 잘랐는지(truncated). */
+data class LikedPostIds(val ids: Set<UUID>, val truncated: Boolean)
 
 data class PostInteractionSummary(
     val likeCount: Int,

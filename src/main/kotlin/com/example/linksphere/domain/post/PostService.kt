@@ -181,19 +181,24 @@ class PostService(
         // 닉네임·봇 필터는 member에 id를 물어 저장소에는 id 집합만 넘긴다 - 글 쿼리가 회원 테이블을 직접 읽지 않는다
         val authorIds by lazy { nickname?.takeIf { it.isNotBlank() }?.let { memberService.findIdsByNicknameContaining(it) } }
         val excludedAuthorIds by lazy { if (EXCLUDE_BOTS_FILTER in filters) memberService.findBotIds() else emptySet() }
-        val postIds by lazy { resolveInteractionFilter(filters, currentUserId) }
+        val interactionFilter by lazy { resolveInteractionFilter(filters, currentUserId) }
         // 임베딩·자판 보정·검색 로그는 북마크함과 같은 흐름을 쓴다(PostSearchFlow)
         val result =
             postSearchFlow.run(SEARCH_SCOPE, search, state, tryConsumeEmbedding) { query, after, queryEmbedding, withTotal ->
-                postRepository.findPostsAfter(categoryIds, query, filters, postIds, authorIds, excludedAuthorIds, currentUserId, sort, after, limit, queryEmbedding, withTotal)
+                postRepository.findPostsAfter(categoryIds, query, filters, interactionFilter.postIds, authorIds, excludedAuthorIds, currentUserId, sort, after, limit, queryEmbedding, withTotal)
             }
 
         return PostPageResponse(
             content = postResponseAssembler.buildResponsesFromPosts(result.slice.content, currentUserId, result.searchTokens),
             nextCursor = result.slice.nextKeys?.let { CursorCodec.encode(sort.name, it, result.semantic, corrected = true.takeIf { result.correctedSearch != null }) },
             correctedSearch = result.correctedSearch,
+            // 최근 좋아요만 보고 걸렀으면 그 개수를 실어 화면이 안내하게 한다
+            likedFilterLimit = PostInteractionPort.LIKED_FILTER_LIMIT.takeIf { interactionFilter.likedTruncated },
         )
     }
+
+    /** postIds가 null이면 거르지 않는다. likedTruncated는 좋아요가 한도보다 많아 최근 것만 봤다는 뜻이다. */
+    private data class InteractionFilter(val postIds: Set<UUID>?, val likedTruncated: Boolean = false)
 
     /**
      * category 파라미터(쉼표로 여러 개, 이름이나 slug)를 카테고리 id로 푼다. 파라미터가 없으면 null(거르지 않음)이고,
@@ -207,21 +212,22 @@ class PostService(
 
     /**
      * filter의 isBookmarked·isLiked를 글 id 집합으로 푼다 - 글 쿼리가 북마크·좋아요 테이블을 직접 읽지 않고 interaction에 묻는다.
-     * 둘 다 없거나 비로그인이면 null(거르지 않음)이고, 둘 다 있으면 둘 다 한 글만 남는다.
+     * 둘 다 없거나 비로그인이면 거르지 않고, 둘 다 있으면 둘 다 한 글만 남는다. 좋아요는 최근 것만 본다(PostInteractionPort.findRecentLikedPostIds).
      */
-    private fun resolveInteractionFilter(filters: Set<String>, viewerId: UUID?): Set<UUID>? {
+    private fun resolveInteractionFilter(filters: Set<String>, viewerId: UUID?): InteractionFilter {
         if (viewerId == null) {
-            return null
+            return InteractionFilter(postIds = null)
         }
 
+        val liked = if (LIKED_FILTER in filters) postInteractionPort.findRecentLikedPostIds(viewerId) else null
         val idSets =
             listOfNotNull(
                 if (BOOKMARKED_FILTER in filters) postInteractionPort.findBookmarkedPostIds(viewerId) else null,
-                if (LIKED_FILTER in filters) postInteractionPort.findLikedPostIds(viewerId) else null,
+                liked?.ids,
             )
 
         if (idSets.isEmpty()) {
-            return null
+            return InteractionFilter(postIds = null)
         }
 
         val postIds = idSets.reduce { acc, ids -> acc intersect ids }
@@ -230,7 +236,7 @@ class PostService(
             logger.warn("[PostFilter] id 목록이 큼 - size={}, filters={}", postIds.size, filters)
         }
 
-        return postIds
+        return InteractionFilter(postIds, likedTruncated = liked?.truncated == true)
     }
 
     fun getPostById(id: UUID, currentUserId: UUID?): PostResponse {

@@ -1,9 +1,11 @@
 package com.example.linksphere.domain.interaction
 
+import com.example.linksphere.domain.post.LikedPostIds
 import com.example.linksphere.domain.post.PostInteractionPort
 import com.example.linksphere.domain.post.PostInteractionSummary
 import com.example.linksphere.global.exception.BookmarkFolderNotFoundException
 import com.example.linksphere.global.exception.ForbiddenException
+import org.springframework.data.domain.Limit
 import org.springframework.stereotype.Component
 import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
@@ -63,7 +65,12 @@ class PostInteractionAdapter(
 
     override fun findBookmarkedPostIds(userId: UUID): Set<UUID> = bookmarkRepository.findPostIdsByUserId(userId).toSet()
 
-    override fun findLikedPostIds(userId: UUID): Set<UUID> = postReactionRepository.findPostIdsByUserId(userId).toSet()
+    // 한도보다 하나 더 읽어, 한도를 넘는 좋아요가 있는지를 count 쿼리 없이 안다
+    override fun findRecentLikedPostIds(userId: UUID): LikedPostIds {
+        val recent = postReactionRepository.findRecentPostIdsByUserId(userId, Limit.of(PostInteractionPort.LIKED_FILTER_LIMIT + 1))
+
+        return LikedPostIds(ids = recent.take(PostInteractionPort.LIKED_FILTER_LIMIT).toSet(), truncated = recent.size > PostInteractionPort.LIKED_FILTER_LIMIT)
+    }
 
     // InteractionService.addBookmarkFolder와 같은 검증·insert 순서다. insert가 네이티브 쿼리라 트랜잭션 밖에서 불리면 안 된다
     @Transactional(propagation = Propagation.MANDATORY)
