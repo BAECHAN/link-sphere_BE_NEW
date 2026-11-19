@@ -82,7 +82,8 @@ app:
       - https://www.linksphere.click
   frontend:
     # 비밀번호 재설정·이메일 인증 메일의 링크를 만들 때와, 댓글에 붙은 주소가 우리 글인지
-    # 가릴 때(PostLinkParser) 쓴다. APP_FRONTEND_URL 환경변수로 덮어쓸 수 있다
+    # 가릴 때(PostLinkParser), 미리보기 봇용 OG HTML의 og:url을 만들 때(PostOgService) 쓴다.
+    # APP_FRONTEND_URL 환경변수로 덮어쓸 수 있다
     # (docs/DEPLOY.md 참고). 커스텀 도메인(linksphere.click) 확정 후 기본값을 이걸로
     # 바꿈(2026-09-29).
     url: https://linksphere.click

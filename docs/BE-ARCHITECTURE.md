@@ -7,7 +7,7 @@
 > **읽고 나면**: 요청이 어느 코드를 거치는지, 레이어끼리 무엇을 참조하고 어떤 타입을 주고받는지(§3) 따라갈 수 있고, 자동 검사(§2)와 선례 패턴(§7)에 맞춰 새 코드를 쓸 수 있다.
 > 지금 코드가 규칙과 어긋나는 곳은 §9에 모아 두었다 — 그쪽을 본떠 쓰지 않는다.
 >
-> **마지막 검토**: 2026-11-19 (§7-8·§7-10의 `PostLookupService` 항목만 고침 — 댓글의 우리 글 링크 카드를 글에서 직접 읽게 함). 이전 2026-11-18 (§7-8의 id 집합 필터 항목만 고침 — `filter=isLiked`가 최근 좋아요 10,000개만 넘기게 함). 같은 날 앞서 (§4 실패 표의 `BOOKMARK_LIMIT_EXCEEDED` 행과 §7 상수 항목의 `BookmarkLimits`만 고침 — 회원당 북마크 저장 한도를 더함). 이전 2026-11-17 (§2 검사 표와 §3의 다른 도메인 금지 항목만 고침 — `@Query` 문자열에 적은 다른 패키지의 엔티티·테이블 이름 검사를 더함). 이전 2026-11-16 (§2·§3의 위반 수, §5 역할·권한 흐름, §6 메서드 이름만 고침 — auth가 회원 테이블을 조인하지 않고 역할을 member에 묻게 함). 같은 날 앞서 (§1 그래프, §2·§3의 위반 수, §3 접미사 표, §7-5만 고침 — 탈퇴 로직을 member로 옮기고 다른 패키지의 데이터는 동기 이벤트를 듣는 쪽이 지우게 함). 같은 날 앞서 (§1 패키지 역할·그래프, §2 검사 표, §3 global → domain 예외, §9 순환 간선만 고침 — `ErrorResponse`를 `global/exception`으로 옮기고 `SecurityConfig`가 auth 필터의 구체 타입을 모르게 함). 같은 날 앞서 (§1 잡 표·패키지 역할·그래프, §3 접미사 표, §7-5, §9 순환 간선만 고침 — 뒷일 전달을 `global/job`으로 옮김). 이전 2026-11-15 (§1 패키지 그래프, §8 순수 함수 테스트 예시 경로, "남은 것"의 linkpreview 항목만 고침. 같은 날 §11 도구 선택 표의 Detekt 행도 고침). 이전 2026-11-12 (§4 실패 표의 `page=-1` 예, §7-8 N+1의 `countQuery` 예, §7-9 페이징의 `page` 서술만 고침, 같은 날 `page` 400 코드 제거를 반영). 이전 2026-11-11 (§3 컨트롤러·Service에 두는 한도와 §7-3 조회 기록만 고침). 이전 2026-11-10 (§1 요청 파이프라인의 서빙 경로만 고침), 2026-11-07
+> **마지막 검토**: 2026-11-19 (§2 반환 규칙 행과 §4 성공 응답의 HTML 예외만 고침 — 메신저 미리보기 봇용 OG HTML 엔드포인트를 더함). 같은 날 앞서 (§7-8·§7-10의 `PostLookupService` 항목만 고침 — 댓글의 우리 글 링크 카드를 글에서 직접 읽게 함). 이전 2026-11-18 (§7-8의 id 집합 필터 항목만 고침 — `filter=isLiked`가 최근 좋아요 10,000개만 넘기게 함). 같은 날 앞서 (§4 실패 표의 `BOOKMARK_LIMIT_EXCEEDED` 행과 §7 상수 항목의 `BookmarkLimits`만 고침 — 회원당 북마크 저장 한도를 더함). 이전 2026-11-17 (§2 검사 표와 §3의 다른 도메인 금지 항목만 고침 — `@Query` 문자열에 적은 다른 패키지의 엔티티·테이블 이름 검사를 더함). 이전 2026-11-16 (§2·§3의 위반 수, §5 역할·권한 흐름, §6 메서드 이름만 고침 — auth가 회원 테이블을 조인하지 않고 역할을 member에 묻게 함). 같은 날 앞서 (§1 그래프, §2·§3의 위반 수, §3 접미사 표, §7-5만 고침 — 탈퇴 로직을 member로 옮기고 다른 패키지의 데이터는 동기 이벤트를 듣는 쪽이 지우게 함). 같은 날 앞서 (§1 패키지 역할·그래프, §2 검사 표, §3 global → domain 예외, §9 순환 간선만 고침 — `ErrorResponse`를 `global/exception`으로 옮기고 `SecurityConfig`가 auth 필터의 구체 타입을 모르게 함). 같은 날 앞서 (§1 잡 표·패키지 역할·그래프, §3 접미사 표, §7-5, §9 순환 간선만 고침 — 뒷일 전달을 `global/job`으로 옮김). 이전 2026-11-15 (§1 패키지 그래프, §8 순수 함수 테스트 예시 경로, "남은 것"의 linkpreview 항목만 고침. 같은 날 §11 도구 선택 표의 Detekt 행도 고침). 이전 2026-11-12 (§4 실패 표의 `page=-1` 예, §7-8 N+1의 `countQuery` 예, §7-9 페이징의 `page` 서술만 고침, 같은 날 `page` 400 코드 제거를 반영). 이전 2026-11-11 (§3 컨트롤러·Service에 두는 한도와 §7-3 조회 기록만 고침). 이전 2026-11-10 (§1 요청 파이프라인의 서빙 경로만 고침), 2026-11-07
 
 시스템 전체(CloudFront·S3·Lambda·배포 파이프라인)는 FE 레포
 [`docs/SYSTEM-ARCHITECTURE.md`](https://github.com/BAECHAN/link-sphere_FE_NEW/blob/main/docs/SYSTEM-ARCHITECTURE.md)가,
@@ -179,7 +179,7 @@ flowchart LR
 | `onlySecurityUtilsReadsPrincipalName` | `Principal`·`Authentication`의 `name`을 `SecurityUtils` 밖에서 읽어 직접 파싱 | `architecture/AppWideArchitectureRulesTest.kt` |
 | `엔드포인트는 Principal이나 @AuthenticationPrincipal로 사용자를 받지 않는다` | 사용자를 `Authentication` + `getUserId()` 밖의 방식으로 받음 | `architecture/ControllerSignatureRulesTest.kt` |
 | `Authentication 파라미터의 nullable은 @SecurityRequirements가 붙은 공개 엔드포인트에만 쓴다` | 인증 필수 엔드포인트의 `Authentication?` — Kotlin nullability를 봐야 해 리플렉션으로 검사 | 위와 같음 |
-| `엔드포인트는 ApiResponse 또는 ResponseEntity로 감싼 ApiResponse를 반환한다` | 응답 래퍼를 안 쓰는 엔드포인트(제네릭 반환형 검사) | 위와 같음 |
+| `엔드포인트는 ApiResponse 또는 ResponseEntity로 감싼 ApiResponse를 반환한다` | 응답 래퍼를 안 쓰는 엔드포인트(제네릭 반환형 검사) — 예외는 HTML을 주는 `htmlEndpoints` 하나(§4) | 위와 같음 |
 | `응답 데이터에 이름 없는 Map을 쓰지 않는다` | `ApiResponse<Map<…>>` | 위와 같음 |
 | `본문 status가 201인 엔드포인트는 HTTP 상태도 201이다` | 본문 `HttpStatus.CREATED`와 `@ResponseStatus(CREATED)` 중 하나만 있음(바이트코드의 상수 읽기를 본다) | 위와 같음 |
 | `ResponseEntity는 응답 헤더를 붙이는 엔드포인트만 반환한다` | 헤더 빌더(`header`·`headers`·`cacheControl`)를 부르지 않는데 `ResponseEntity` 반환 — 같은 클래스의 private 함수 한 단계까지 따라간다 | 위와 같음 |
@@ -339,6 +339,10 @@ return ApiResponse(HttpStatus.OK.value(), "Link preview", postService.previewLin
   그 밖은 200이다(`본문 status가 201인 엔드포인트는 HTTP 상태도 201이다`). 2026-10-26 전에는 생성 5곳이 본문만 201이었다.
 - 응답 헤더(쿠키·캐시)를 붙이는 곳만 `ResponseEntity<ApiResponse<T>>`를 쓴다 — `AuthController`의 쿠키 6곳(로그인·갱신·로그아웃·전체 로그아웃·비밀번호 변경·탈퇴),
   `CategoryController`의 목록(`ResponseEntity는 응답 헤더를 붙이는 엔드포인트만 반환한다`). 상태만 바꿀 때는 `@ResponseStatus`다.
+- **HTML을 주는 엔드포인트 하나만 `ApiResponse`로 감싸지 않는다** — `PostOgController.getPostOgHtml`(`GET /og/post/{id}`,
+  `ResponseEntity<String>`, `text/html;charset=UTF-8`)이다. 메신저 미리보기 봇은 JSON을 읽지 않고 HTML의 `<meta property="og:*">`만
+  읽는다(2026-11-19, FE `docs/plans/2026-11-19-post-link-in-app-and-og.md` Phase 2-1). 반환 규칙 검사의 예외 목록(`htmlEndpoints`)에
+  이 하나만 있다. `@Controller`로 바꿔 검사를 피하면 `@RestController` 기준의 레이어 규칙(§2)에서 빠지므로 그렇게 하지 않는다.
 - `data`는 `*DTO.kt`의 이름 있는 타입이다 — `Map`은 OpenAPI 스키마 이름이 생기지 않아 FE 생성 타입이 익명이 된다
   (`응답 데이터에 이름 없는 Map을 쓰지 않는다`).
 - `message`는 FE가 화면에 쓰지 않는다(FE는 `TEXTS`로 문구를 정한다) — 언어가 섞여 있어도 계약 문제는 아니다.
