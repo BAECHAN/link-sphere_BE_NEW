@@ -2,6 +2,8 @@ package com.example.linksphere.domain.comment
 
 import com.example.linksphere.domain.member.MemberProfile
 import com.example.linksphere.domain.member.MemberService
+import com.example.linksphere.domain.post.PostLinkParser
+import com.example.linksphere.domain.post.PostLinkPreview
 import com.example.linksphere.domain.post.PostLookupService
 import com.example.linksphere.global.common.AdvisoryLock
 import com.example.linksphere.global.common.CursorCodec
@@ -52,6 +54,7 @@ private val DUPLICATE_COMMENT_WINDOW = Duration.ofMinutes(1)
 class CommentService(
     private val commentRepository: CommentRepository,
     private val postLookupService: PostLookupService,
+    private val postLinkParser: PostLinkParser,
     private val memberService: MemberService,
     private val commentReactionRepository: CommentReactionRepository,
     private val supabaseStorageService: SupabaseStorageService,
@@ -87,6 +90,8 @@ class CommentService(
         // 작성자는 댓글과 조인하지 않고 id를 모아 member에 한 번에 묻는다(공개 닉네임·이미지 규칙은 member가 적용한다)
         val profiles = memberService.findProfiles(comments.map { it.userId })
 
+        val linkedPosts = findLinkedPosts(comments, currentUserId)
+
         // Map to DTOs first, keep flat list
         val commentDTOs =
             comments.map { comment ->
@@ -94,7 +99,7 @@ class CommentService(
                     profiles[comment.userId]?.let { authorOf(it) }
                         ?: CommentAuthor(UUID.randomUUID(), DELETED_MEMBER_NICKNAME, null) // Should not happen with consistent DB
 
-                toResponse(comment, author, isLiked = userLikes.contains(comment.id), likeCount = likeCounts[comment.id] ?: 0)
+                toResponse(comment, author, isLiked = userLikes.contains(comment.id), likeCount = likeCounts[comment.id] ?: 0, linkedPosts = linkedPosts)
             }
 
         // Reconstruct hierarchy
@@ -484,14 +489,48 @@ class CommentService(
         }
     }
 
-    // 등록·답글·수정의 응답 - 방금 쓴 댓글이라 좋아요는 아직 0이고(수정도 지금처럼 0/false로 낸다) 삭제 상태가 아니다
-    private fun toCommentResponse(comment: TableComment, member: MemberProfile) = toResponse(comment, authorOf(member), isLiked = false, likeCount = 0)
+    // 등록·답글·수정의 응답 - 방금 쓴 댓글이라 좋아요는 아직 0이고(수정도 지금처럼 0/false로 낸다) 삭제 상태가 아니다.
+    // 응답을 받는 사람이 댓글을 쓴 본인이라 링크된 글도 본인이 볼 수 있는지로 묻는다
+    private fun toCommentResponse(comment: TableComment, member: MemberProfile) = toResponse(
+        comment,
+        authorOf(member),
+        isLiked = false,
+        likeCount = 0,
+        linkedPosts = findLinkedPosts(listOf(comment), member.id),
+    )
 
     private fun authorOf(member: MemberProfile) = CommentAuthor(member.id, member.nickname ?: DELETED_MEMBER_NICKNAME, member.image)
 
+    // 댓글에 붙은 우리 글 주소의 글을 viewerId가 볼 수 있는 것만 한 번에 읽는다(글 id -> 카드 정보). 삭제된 댓글은 링크 카드를
+    // 싣지 않으므로 묻지 않고, 우리 글 주소가 하나도 없으면 post가 DB를 보지 않는다
+    private fun findLinkedPosts(comments: List<TableComment>, viewerId: UUID?): Map<UUID, PostLinkPreview> {
+        val postIds = comments.filterNot { it.isDeleted }.mapNotNull { it.linkUrl?.let(postLinkParser::postIdOf) }.distinct()
+
+        return postLookupService.findVisiblePreviews(postIds, viewerId)
+    }
+
+    // 우리 글 주소면 크롤링 저장값을 쓰지 않고 지금의 글에서 읽은 값을 싣는다 - 글을 고치거나 비공개로 바꾸면 바로 따라간다.
+    // 볼 수 없는 글(남의 비공개·삭제)이면 카드를 싣지 않아 글이 있다는 사실도 드러내지 않는다(PostVisibility와 같은 방향).
+    // 그 밖의 주소는 후처리 잡이 크롤링해 저장한 값이고, 아직 크롤링 전이면 제목 자리에 주소가 나간다
+    private fun toLinkMetadata(comment: TableComment, url: String, linkedPosts: Map<UUID, PostLinkPreview>): LinkMetadata? {
+        val linkedPostId = postLinkParser.postIdOf(url)
+
+        if (linkedPostId != null) {
+            return linkedPosts[linkedPostId]?.let { LinkMetadata(url = url, title = it.title, description = it.description, ogImage = it.ogImage) }
+        }
+
+        return LinkMetadata(url = url, title = comment.linkTitle ?: url, description = comment.linkDescription, ogImage = comment.linkOgImage)
+    }
+
     // 목록·단건이 함께 쓰는 변환. 삭제된(톰스톤) 댓글은 본문을 안내 문구로 바꾸고 좋아요·링크 미리보기를 싣지 않는다 - 삭제와
     // 좋아요가 동시에 일어난 경쟁 상황의 잔여값이 표현 계층까지 새지 않도록 여기서도 명시적으로 0/false로 고정한다.
-    private fun toResponse(comment: TableComment, author: CommentAuthor, isLiked: Boolean, likeCount: Int) = CommentResponse(
+    private fun toResponse(
+        comment: TableComment,
+        author: CommentAuthor,
+        isLiked: Boolean,
+        likeCount: Int,
+        linkedPosts: Map<UUID, PostLinkPreview>,
+    ) = CommentResponse(
         id = comment.id,
         content = if (comment.isDeleted) DELETED_COMMENT_CONTENT else comment.content,
         isDeleted = comment.isDeleted,
@@ -502,14 +541,7 @@ class CommentService(
         linkMetadata = if (comment.isDeleted) {
             null
         } else {
-            comment.linkUrl?.let {
-                LinkMetadata(
-                    url = it,
-                    title = comment.linkTitle ?: it,
-                    description = comment.linkDescription,
-                    ogImage = comment.linkOgImage,
-                )
-            }
+            comment.linkUrl?.let { toLinkMetadata(comment, it, linkedPosts) }
         },
     )
 }

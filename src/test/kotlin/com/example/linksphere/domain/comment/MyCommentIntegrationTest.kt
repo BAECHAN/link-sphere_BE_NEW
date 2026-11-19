@@ -1,6 +1,7 @@
 package com.example.linksphere.domain.comment
 
 import com.example.linksphere.domain.member.MemberService
+import com.example.linksphere.domain.post.PostLinkParser
 import com.example.linksphere.domain.post.PostLookupService
 import com.example.linksphere.global.common.AdvisoryLock
 import com.example.linksphere.global.common.SupabaseStorageService
@@ -24,7 +25,7 @@ import java.util.UUID
  * 두 패키지의 쿼리가 함께 돌아야 확인된다 - 예전에는 CommentRepository의 조인 쿼리 하나가 맡던 일이다.
  */
 @PostgresIntegrationTest
-@Import(CommentService::class, PostLookupService::class, MemberService::class)
+@Import(CommentService::class, PostLookupService::class, PostLinkParser::class, MemberService::class)
 class MyCommentIntegrationTest {
 
     @Autowired private lateinit var commentService: CommentService

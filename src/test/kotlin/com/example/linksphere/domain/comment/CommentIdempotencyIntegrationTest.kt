@@ -2,6 +2,7 @@ package com.example.linksphere.domain.comment
 
 import com.example.linksphere.domain.linkpreview.UrlMetadataExtractor
 import com.example.linksphere.domain.member.MemberService
+import com.example.linksphere.domain.post.PostLinkParser
 import com.example.linksphere.domain.post.PostLookupService
 import com.example.linksphere.global.common.AdvisoryLock
 import com.example.linksphere.global.common.SupabaseStorageService
@@ -40,7 +41,7 @@ import java.util.concurrent.TimeUnit
 // 같은 키를 INSERT하고 커밋을 늦춰 재현한다. 뒤 요청은 사전 조회를 통과한 뒤 유니크 인덱스에서 기다렸다가 위반으로 끝난다.
 // 커밋이 겹쳐야 하므로 테스트 트랜잭션 밖에서 돌고 끝나면 지운다.
 @PostgresIntegrationTest
-@Import(CommentService::class, CommentPostProcessService::class, AdvisoryLock::class, MemberService::class, PostLookupService::class)
+@Import(CommentService::class, CommentPostProcessService::class, AdvisoryLock::class, MemberService::class, PostLookupService::class, PostLinkParser::class)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class CommentIdempotencyIntegrationTest {
 

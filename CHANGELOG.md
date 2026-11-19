@@ -94,6 +94,24 @@
 
 ### Changed
 
+- `comment` 댓글에 붙은 우리 글 주소의 링크 카드가 그 글의 제목·설명·썸네일을 실음
+  <details><summary>배경·구현</summary>
+
+  댓글에 LinkSphere 글 주소(`https://linksphere.click/post/<id>`)를 붙이면 링크 카드에 "Link Sphere"와 주소만 나왔다. 댓글
+  후처리가 주소를 크롤링해 제목·썸네일을 저장하는데, 우리 글 주소는 어떤 글이든 같은 SPA 껍데기 HTML을 돌려줘 제목이 전부
+  "Link Sphere"이고 썸네일 태그가 없다. 이제 댓글 응답을 만들 때 `link_url`이 우리 글 상세 주소면(`PostLinkParser` — 호스트가
+  `app.frontend.url`의 호스트이고 경로가 `/post/<UUID>`, `www.`·끝 `/`·쿼리·`#` 허용) 저장값 대신 글 테이블에서 제목·설명·썸네일을
+  읽어 `linkMetadata`에 싣는다. 글 id를 모아 한 번에 묻고(`PostLookupService.findVisiblePreviews`), 우리 글 링크가 없는 응답에는
+  쿼리가 늘지 않는다. 보는 사람이 볼 수 없는 글(남의 비공개 글, 없는 글)은 `linkMetadata`가 `null`이라 카드가 실리지 않고, 비로그인은
+  공개 글만 본다. 볼 때마다 읽으므로 글을 고치거나 비공개로 바꾸면 다음 조회부터 반영된다. 댓글 목록과 등록·답글·수정 응답이
+  대상이고, 응답 모양(`LinkMetadata` 4칸)은 그대로라 FE 코드는 바뀌지 않는다. 후처리는 우리 글 주소면 크롤링을 건너뛴다.
+  외부 링크 카드는 지금처럼 저장된 크롤링 값을 쓴다. 이미 저장된 옛 값은 읽지 않으므로 고치지 않았고 DB 스키마도 그대로다.
+  계획은 `docs/plans/2026-11-19-comment-post-link-preview.md`.
+  (`PostLinkParser`(신규), `PostLinkPreview`(신규), `PostRepository.kt`, `PostLookupService.kt`, `CommentService.kt`,
+  `CommentPostProcessService.kt`)
+
+  </details>
+
 - `post`·`interaction` 글 목록의 `filter=isLiked`가 최근 좋아요 10,000개 안에서 거르고, 잘랐으면 응답에 `likedFilterLimit`을 실음
   <details><summary>배경·구현</summary>
 

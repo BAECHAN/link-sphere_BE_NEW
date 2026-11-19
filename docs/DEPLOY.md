@@ -321,7 +321,7 @@ Lambda 콘솔 → Configuration → Environment variables:
 | `SUPABASE_URL` | `https://<project>.supabase.co` |
 | `ORIGIN_VERIFY_SECRET` | CloudFront가 오리진 커스텀 헤더로 붙이는 값(§5-1 참고). 미설정 시 그 검사는 건너뛴다(fail-open) |
 | `APP_MAIL_FROM` | SES에서 검증된 발신 주소(§9-1 참고). 현재 `noreply@linksphere.click`로 설정돼 있다(2026-09-29, 도메인 검증 완료 후) - 비어있으면 메일 발송을 건너뛴다(fail-open) |
-| `APP_FRONTEND_URL` | 비밀번호 재설정·이메일 인증 링크에 쓸 프론트엔드 도메인. 커스텀 도메인(`linksphere.click`)이 `application.yml` 기본값에 이미 반영돼 있어(2026-09-29) 지금은 미설정이 정상이다 - 도메인이 다시 바뀌면 이 환경변수로 덮어쓴다 |
+| `APP_FRONTEND_URL` | 비밀번호 재설정·이메일 인증 링크에 쓸 프론트엔드 도메인. 댓글에 붙은 주소가 우리 글인지 가릴 때도 이 값의 호스트와 비교한다(`PostLinkParser`). 커스텀 도메인(`linksphere.click`)이 `application.yml` 기본값에 이미 반영돼 있어(2026-09-29) 지금은 미설정이 정상이다 - 도메인이 다시 바뀌면 이 환경변수로 덮어쓴다 |
 | `APP_CORS_ALLOWED_ORIGINS` | CORS 허용 오리진 목록(쉼표 구분, 예: `https://a.com,https://b.com`). `application.yml`의 `app.cors.allowed-origins` 기본값에 이미 도메인이 반영돼 있어 지금은 미설정이 정상이다. **새 도메인을 붙일 때 이 목록에 추가하는 걸 빠뜨리면 브라우저가 로그인 요청 자체를 403 `Invalid CORS request`로 막는다** - 2026-09-29 `linksphere.click` 연결 때 실제로 겪은 장애, 원인 파악까지 시간이 걸렸다(에러가 CORS 문제라고 바로 드러나긴 했으나 어디에 도메인을 등록해야 하는지 소스를 찾아야 했음) |
 
 > Spring Boot는 `SPRING_DATASOURCE_URL` → `spring.datasource.url` 형식으로 환경변수를 자동 바인딩한다.

@@ -12,6 +12,13 @@ interface VisiblePostTitle {
     val title: String
 }
 
+interface VisiblePostPreview {
+    val id: UUID
+    val title: String
+    val description: String?
+    val ogImage: String?
+}
+
 interface PostRepository :
     JpaRepository<TablePost, UUID>,
     PostRepositoryCustom {
@@ -22,6 +29,21 @@ interface PostRepository :
     // 댓글을 단 뒤 원글이 비공개로 바뀌면 남의 글 제목이 새지 않게 여기서 뺀다. 빈 목록으로 부르지 않는다.
     @Query("SELECT p.id AS id, p.title AS title FROM TablePost p WHERE p.id IN :ids AND (p.isPrivate = false OR p.userId = :viewerId)")
     fun findVisibleTitles(@Param("ids") ids: Collection<UUID>, @Param("viewerId") viewerId: UUID): List<VisiblePostTitle>
+
+    // 댓글의 링크 카드가 우리 글 주소의 제목·설명·썸네일을 묻는다(PostLookupService.findVisiblePreviews). 공개 조건은 위와 같다 -
+    // 댓글을 쓴 뒤 그 글이 비공개로 바뀌면 여기서 빠진다. 빈 목록으로 부르지 않는다.
+    @Query(
+        "SELECT p.id AS id, p.title AS title, p.description AS description, p.ogImage AS ogImage FROM TablePost p " +
+            "WHERE p.id IN :ids AND (p.isPrivate = false OR p.userId = :viewerId)",
+    )
+    fun findVisiblePreviews(@Param("ids") ids: Collection<UUID>, @Param("viewerId") viewerId: UUID): List<VisiblePostPreview>
+
+    // 비로그인이 보는 댓글의 링크 카드다 - 공개 글만 나간다(목록 쿼리 PostRepositoryImpl이 비로그인을 따로 가르는 것과 같다). 빈 목록으로 부르지 않는다.
+    @Query(
+        "SELECT p.id AS id, p.title AS title, p.description AS description, p.ogImage AS ogImage FROM TablePost p " +
+            "WHERE p.id IN :ids AND p.isPrivate = false",
+    )
+    fun findPublicPreviews(@Param("ids") ids: Collection<UUID>): List<VisiblePostPreview>
 
     // 북마크함이 최신순·오래된순으로 읽은 글 가운데 보이는 것만 남긴다(PostCandidateService.findVisibleIds). 공개 조건은 위와 같다. 빈 목록으로 부르지 않는다.
     @Query("SELECT p.id FROM TablePost p WHERE p.id IN :ids AND (p.isPrivate = false OR p.userId = :viewerId)")

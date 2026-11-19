@@ -79,7 +79,9 @@ src/main/kotlin/com/example/linksphere/
 │   │   ├── PostRepositoryImpl.kt        # JPA Criteria/JPQL 검색·필터 구현
 │   │   ├── PostService.kt
 │   │   ├── PostVisibility.kt            # 비공개 글을 작성자 외에는 404로 숨기는 게이트
-│   │   ├── PostLookupService.kt         # 다른 패키지가 글을 id로 묻는 창구(볼 수 있는 글인지·작성자·제목)
+│   │   ├── PostLookupService.kt         # 다른 패키지가 글을 id로 묻는 창구(볼 수 있는 글인지·작성자·제목·링크 카드 정보)
+│   │   ├── PostLinkParser.kt            # 주소가 우리 글 상세(/post/<id>)인지 읽어 글 id를 줌(댓글 링크 카드용)
+│   │   ├── PostLinkPreview.kt           # comment에 내주는 전용 객체(링크 카드에 쓸 글 제목·설명·썸네일, TablePost 대신)
 │   │   ├── PostCandidateService.kt      # 다른 패키지가 가진 글 id 가운데로 목록을 묻는 창구(보이는 글·정렬 키·응답 조립)
 │   │   ├── PostSearchFlow.kt            # 피드·북마크함 공통 검색 흐름(임베딩·자판 보정·검색 로그)
 │   │   ├── PostCommentPort.kt           # 글 응답의 댓글 수를 묻는 약속(comment가 구현)
@@ -104,7 +106,7 @@ src/main/kotlin/com/example/linksphere/
 │   │   ├── CommentController.kt         # 댓글·답글 CRUD (이미지 포함)
 │   │   ├── CommentDTO.kt
 │   │   ├── CommentRepository.kt
-│   │   ├── CommentService.kt            # 댓글·답글 CRUD (알림·링크프리뷰는 CommentPostProcessService가 커밋 후 별도 처리)
+│   │   ├── CommentService.kt            # 댓글·답글 CRUD (알림·외부 링크 프리뷰는 CommentPostProcessService가 커밋 후 별도 처리, 우리 글 링크 카드는 응답 때 post에 물음)
 │   │   ├── CommentLimits.kt             # 댓글 이미지 5장·본문 6,000바이트(서비스 검사, 스펙에도 실림)
 │   │   ├── CommentPostProcessService.kt # 커밋 뒤 뒷일(잡): FCM 알림·링크 프리뷰
 │   │   ├── CommentPostProcessJobHandler.kt # comment-postprocess 잡 처리기
