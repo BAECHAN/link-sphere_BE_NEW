@@ -2,6 +2,7 @@ package com.example.linksphere.domain.comment
 
 import com.example.linksphere.domain.linkpreview.UrlMetadata
 import com.example.linksphere.domain.linkpreview.UrlMetadataExtractor
+import com.example.linksphere.domain.post.PostLinkParser
 import com.example.linksphere.domain.post.PostLookupService
 import com.example.linksphere.domain.post.PostRepository
 import com.example.linksphere.domain.post.TablePost
@@ -14,6 +15,8 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import org.mockito.Mock
 import org.mockito.Mockito.doThrow
+import org.mockito.Mockito.never
+import org.mockito.Mockito.verify
 import org.mockito.Mockito.verifyNoInteractions
 import org.mockito.Mockito.`when`
 import org.mockito.junit.jupiter.MockitoExtension
@@ -42,6 +45,7 @@ class CommentPostProcessServiceTest {
             CommentPostProcessService(
                 commentRepository,
                 PostLookupService(postRepository),
+                PostLinkParser("https://linksphere.click"),
                 fcmNotificationService,
                 urlMetadataExtractor,
                 jobPublisher,
@@ -105,6 +109,29 @@ class CommentPostProcessServiceTest {
         commentPostProcessService.processCommentJob(CommentPostProcessEvent(commentId = commentId, notify = false))
 
         verifyNoInteractions(urlMetadataExtractor)
+        assertNull(comment.linkTitle)
+    }
+
+    // 우리 글 주소는 어떤 글이든 같은 SPA 껍데기라 크롤링하면 제목이 "Link Sphere"로 저장된다. 링크 카드는 응답을 만들 때
+    // 글에서 직접 읽으므로(CommentLinkedPostIntegrationTest) 여기서는 크롤링도 저장도 하지 않는다
+    @Test
+    fun `processCommentJob은 linkUrl이 우리 글 주소면 크롤링하지 않고 저장값도 채우지 않는다`() {
+        val commentId = UUID.randomUUID()
+        val comment =
+            TableComment(
+                id = commentId,
+                postId = UUID.randomUUID(),
+                userId = UUID.randomUUID(),
+                content = "이 글 보세요",
+                linkUrl = "https://linksphere.click/post/${UUID.randomUUID()}",
+            )
+
+        `when`(commentRepository.findById(commentId)).thenReturn(Optional.of(comment))
+
+        commentPostProcessService.processCommentJob(CommentPostProcessEvent(commentId = commentId, notify = false))
+
+        verifyNoInteractions(urlMetadataExtractor)
+        verify(commentRepository, never()).save(comment)
         assertNull(comment.linkTitle)
     }
 }

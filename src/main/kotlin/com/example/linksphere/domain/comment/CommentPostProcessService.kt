@@ -1,6 +1,7 @@
 package com.example.linksphere.domain.comment
 
 import com.example.linksphere.domain.linkpreview.UrlMetadataExtractor
+import com.example.linksphere.domain.post.PostLinkParser
 import com.example.linksphere.domain.post.PostLookupService
 import com.example.linksphere.global.job.JobPublisher
 import com.example.linksphere.infra.fcm.FcmNotificationService
@@ -20,6 +21,7 @@ import org.springframework.transaction.event.TransactionalEventListener
 class CommentPostProcessService(
     private val commentRepository: CommentRepository,
     private val postLookupService: PostLookupService,
+    private val postLinkParser: PostLinkParser,
     private val fcmNotificationService: FcmNotificationService,
     private val urlMetadataExtractor: UrlMetadataExtractor,
     private val jobPublisher: JobPublisher,
@@ -81,6 +83,13 @@ class CommentPostProcessService(
 
     private fun updateLinkMetadata(comment: TableComment) {
         val url = comment.linkUrl ?: return
+
+        // 우리 글 주소는 크롤링하지 않는다 - 어떤 글이든 같은 SPA 껍데기 HTML이라 제목이 "Link Sphere"로만 나온다.
+        // 링크 카드는 응답을 만들 때 글에서 직접 읽는다(CommentService.toLinkMetadata)
+        if (postLinkParser.postIdOf(url) != null) {
+            return
+        }
+
         val meta = urlMetadataExtractor.extract(url)
         comment.linkTitle = meta.title
         comment.linkDescription = meta.description

@@ -35,7 +35,7 @@ import java.util.UUID
  * "응답에 이름 붙이기", "없는 id 버리기", "연결 행 쓰고 지우기"가 SQL과 FK까지 가야 확인된다 - mock으로는 보이지 않는다.
  */
 @PostgresIntegrationTest
-@Import(PostService::class, PostSearchFlow::class, PostResponseAssembler::class, PostInteractionAdapter::class, CommentService::class, CommentCountAdapter::class, CommentPostEventListener::class, PostLookupService::class, CategoryService::class, MemberService::class)
+@Import(PostService::class, PostSearchFlow::class, PostResponseAssembler::class, PostInteractionAdapter::class, CommentService::class, CommentCountAdapter::class, CommentPostEventListener::class, PostLookupService::class, PostLinkParser::class, CategoryService::class, MemberService::class)
 class PostCategoryIntegrationTest {
 
     @Autowired private lateinit var postService: PostService

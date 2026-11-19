@@ -3,6 +3,7 @@ package com.example.linksphere.domain.comment
 import com.example.linksphere.domain.member.MemberProfile
 import com.example.linksphere.domain.member.MemberService
 import com.example.linksphere.domain.member.TableMember
+import com.example.linksphere.domain.post.PostLinkParser
 import com.example.linksphere.domain.post.PostLookupService
 import com.example.linksphere.domain.post.PostRepository
 import com.example.linksphere.domain.post.TablePost
@@ -69,6 +70,7 @@ class CommentServiceTest {
             CommentService(
                 commentRepository,
                 PostLookupService(postRepository),
+                PostLinkParser("https://linksphere.click"),
                 memberService,
                 commentReactionRepository,
                 supabaseStorageService,

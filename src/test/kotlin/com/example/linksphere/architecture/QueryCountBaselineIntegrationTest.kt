@@ -14,6 +14,7 @@ import com.example.linksphere.domain.linkpreview.SafeUrlValidator
 import com.example.linksphere.domain.linkpreview.UrlMetadataExtractor
 import com.example.linksphere.domain.member.MemberService
 import com.example.linksphere.domain.post.PostCandidateService
+import com.example.linksphere.domain.post.PostLinkParser
 import com.example.linksphere.domain.post.PostLookupService
 import com.example.linksphere.domain.post.PostResponseAssembler
 import com.example.linksphere.domain.post.PostSearchFlow
@@ -58,6 +59,7 @@ import java.util.UUID
     CommentCountAdapter::class,
     CommentPostEventListener::class,
     PostLookupService::class,
+    PostLinkParser::class,
     BookmarkFolderService::class,
     BookmarkedPostFinder::class,
     CategoryService::class,
