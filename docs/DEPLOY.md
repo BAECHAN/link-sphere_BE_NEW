@@ -1,6 +1,6 @@
 # AWS Lambda SnapStart 배포 가이드
 
-> 마지막 검토: 2026-11-16 (spring.factories 절에 "`minimize()`를 쓰지 않는 이유"만 더함). 2026-11-12 (13번 검증의 호출 구성만 고침). 2026-11-11 (SES 승인 전 영향 문단의 `PostService`·`CommentService` 줄 번호만 고침). 2026-11-10 (서빙 경로를 serverless-java-container로 옮긴 것에 맞춰 "Lambda 실행 구조", "요청 경로를 serverless-java-container로 처리하는 이유", "SnapStart 동작 흐름", spring.factories 절, 13번 검증, 시행착오 3·5·7의 메모만 고침. 2026-11-07에는 같은 절에 비교 실험 결과와 깨진 주소의 운영 측정만 더함. 2026-11-06에는 AWS 설정 변경 경로와 명령 실행 위치만 다시 봄. 같은 날 "MockMvc 방식을 사용하는 이유", "init 단계에서 워밍업을 실행하는 이유", "메모리 2048MB인 이유"만 다시 봄. 2026-11-05에는 TLS 인자·임시 조회 이메일 제외·덤프 처리·로그 가림·cursor 스모크 테스트·요청 경로·Lambda 실행 역할·백업 보존 설정·CDK 안내만 다시 봄. 전체 검토는 2026-10-30)
+> 마지막 검토: 2026-11-20 (환경변수 표의 `APP_FRONTEND_URL` 설명만 고침 — 미리보기 봇용 OG HTML의 `og:url`). 2026-11-16 (spring.factories 절에 "`minimize()`를 쓰지 않는 이유"만 더함). 2026-11-12 (13번 검증의 호출 구성만 고침). 2026-11-11 (SES 승인 전 영향 문단의 `PostService`·`CommentService` 줄 번호만 고침). 2026-11-10 (서빙 경로를 serverless-java-container로 옮긴 것에 맞춰 "Lambda 실행 구조", "요청 경로를 serverless-java-container로 처리하는 이유", "SnapStart 동작 흐름", spring.factories 절, 13번 검증, 시행착오 3·5·7의 메모만 고침. 2026-11-07에는 같은 절에 비교 실험 결과와 깨진 주소의 운영 측정만 더함. 2026-11-06에는 AWS 설정 변경 경로와 명령 실행 위치만 다시 봄. 같은 날 "MockMvc 방식을 사용하는 이유", "init 단계에서 워밍업을 실행하는 이유", "메모리 2048MB인 이유"만 다시 봄. 2026-11-05에는 TLS 인자·임시 조회 이메일 제외·덤프 처리·로그 가림·cursor 스모크 테스트·요청 경로·Lambda 실행 역할·백업 보존 설정·CDK 안내만 다시 봄. 전체 검토는 2026-10-30)
 
 ## 아키텍처 개요
 
@@ -321,7 +321,7 @@ Lambda 콘솔 → Configuration → Environment variables:
 | `SUPABASE_URL` | `https://<project>.supabase.co` |
 | `ORIGIN_VERIFY_SECRET` | CloudFront가 오리진 커스텀 헤더로 붙이는 값(§5-1 참고). 미설정 시 그 검사는 건너뛴다(fail-open) |
 | `APP_MAIL_FROM` | SES에서 검증된 발신 주소(§9-1 참고). 현재 `noreply@linksphere.click`로 설정돼 있다(2026-09-29, 도메인 검증 완료 후) - 비어있으면 메일 발송을 건너뛴다(fail-open) |
-| `APP_FRONTEND_URL` | 비밀번호 재설정·이메일 인증 링크에 쓸 프론트엔드 도메인. 댓글에 붙은 주소가 우리 글인지 가릴 때도 이 값의 호스트와 비교한다(`PostLinkParser`). 커스텀 도메인(`linksphere.click`)이 `application.yml` 기본값에 이미 반영돼 있어(2026-09-29) 지금은 미설정이 정상이다 - 도메인이 다시 바뀌면 이 환경변수로 덮어쓴다 |
+| `APP_FRONTEND_URL` | 비밀번호 재설정·이메일 인증 링크에 쓸 프론트엔드 도메인. 댓글에 붙은 주소가 우리 글인지 가릴 때도 이 값의 호스트와 비교한다(`PostLinkParser`). 미리보기 봇용 OG HTML의 `og:url`(`<이 값>/post/<id>`)도 이 값으로 만든다(`PostOgService`). 커스텀 도메인(`linksphere.click`)이 `application.yml` 기본값에 이미 반영돼 있어(2026-09-29) 지금은 미설정이 정상이다 - 도메인이 다시 바뀌면 이 환경변수로 덮어쓴다 |
 | `APP_CORS_ALLOWED_ORIGINS` | CORS 허용 오리진 목록(쉼표 구분, 예: `https://a.com,https://b.com`). `application.yml`의 `app.cors.allowed-origins` 기본값에 이미 도메인이 반영돼 있어 지금은 미설정이 정상이다. **새 도메인을 붙일 때 이 목록에 추가하는 걸 빠뜨리면 브라우저가 로그인 요청 자체를 403 `Invalid CORS request`로 막는다** - 2026-09-29 `linksphere.click` 연결 때 실제로 겪은 장애, 원인 파악까지 시간이 걸렸다(에러가 CORS 문제라고 바로 드러나긴 했으나 어디에 도메인을 등록해야 하는지 소스를 찾아야 했음) |
 
 > Spring Boot는 `SPRING_DATASOURCE_URL` → `spring.datasource.url` 형식으로 환경변수를 자동 바인딩한다.

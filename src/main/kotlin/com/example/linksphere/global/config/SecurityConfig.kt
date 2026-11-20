@@ -60,6 +60,9 @@ class SecurityConfig(
                     "/actuator/**",
                 )
                     .permitAll()
+                // 메신저 미리보기 봇이 받는 글의 OG HTML - 봇은 토큰을 보내지 않고, 응답은 보는 사람과 상관없이 항상 비로그인 기준이라
+                // 아래 공개 조회처럼 만료 토큰을 가려 401을 줄 까닭이 없다(PostOgService)
+                it.requestMatchers(HttpMethod.GET, "/og/post/*").permitAll()
                 // 누가 보느냐에 따라 응답이 달라지는 공개 조회 - 토큰 없이 오면 비로그인으로 허용하되, 토큰을 냈는데
                 // 만료·무효면(RequestAuthenticationFilter 구현이 exception 속성을 남김) 거부해 진입점이 401을 쓰게 한다.
                 // permitAll이면 만료 토큰이 조용히 비로그인으로 처리돼 FE가 갱신하지 못하고, 본인 비공개 글이 빠진

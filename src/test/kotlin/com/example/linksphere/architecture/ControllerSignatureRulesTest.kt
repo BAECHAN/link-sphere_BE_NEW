@@ -77,12 +77,18 @@ class ControllerSignatureRulesTest {
         )
     }
 
+    // 메신저 미리보기 봇은 JSON을 읽지 않고 HTML의 <meta property="og:*">만 읽는다 - 이 엔드포인트만 HTML을 그대로 돌려준다
+    // (docs/plans/2026-11-19-post-link-in-app-and-og.md Phase 2-1, FE 레포)
+    private val htmlEndpoints = setOf("PostOgController.getPostOgHtml")
+
     @Test
     fun `엔드포인트는 ApiResponse 또는 ResponseEntity로 감싼 ApiResponse를 반환한다`() {
         val violations =
-            endpoints().mapNotNull { (controller, method) ->
-                if (returnsApiResponse(method)) null else "${controller.simpleName}.${method.name}: ${method.genericReturnType.typeName}"
-            }
+            endpoints()
+                .filterNot { (controller, method) -> "${controller.simpleName}.${method.name}" in htmlEndpoints }
+                .mapNotNull { (controller, method) ->
+                    if (returnsApiResponse(method)) null else "${controller.simpleName}.${method.name}: ${method.genericReturnType.typeName}"
+                }
 
         assertNoViolations(violations, "ApiResponse(HttpStatus.X.value(), 메시지, data)로 감싼다(본문이 없으면 Unit)")
     }

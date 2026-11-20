@@ -81,6 +81,8 @@ src/main/kotlin/com/example/linksphere/
 │   │   ├── PostVisibility.kt            # 비공개 글을 작성자 외에는 404로 숨기는 게이트
 │   │   ├── PostLookupService.kt         # 다른 패키지가 글을 id로 묻는 창구(볼 수 있는 글인지·작성자·제목·링크 카드 정보)
 │   │   ├── PostLinkParser.kt            # 주소가 우리 글 상세(/post/<id>)인지 읽어 글 id를 줌(댓글 링크 카드용)
+│   │   ├── PostOgController.kt          # 메신저 미리보기 봇용 글 OG 태그 HTML(GET /og/post/{id}) — ApiResponse로 감싸지 않음
+│   │   ├── PostOgService.kt             # 그 HTML 조립(항상 비로그인 기준, 볼 수 없는 글은 사이트 기본값)
 │   │   ├── PostLinkPreview.kt           # comment에 내주는 전용 객체(링크 카드에 쓸 글 제목·설명·썸네일, TablePost 대신)
 │   │   ├── PostCandidateService.kt      # 다른 패키지가 가진 글 id 가운데로 목록을 묻는 창구(보이는 글·정렬 키·응답 조립)
 │   │   ├── PostSearchFlow.kt            # 피드·북마크함 공통 검색 흐름(임베딩·자판 보정·검색 로그)
@@ -257,9 +259,14 @@ src/main/kotlin/com/example/linksphere/
 | `PATCH`  | `/post/{id}/visibility`   | 게시글 공개/비공개 토글        | ✅   |
 | `DELETE` | `/post/{id}`              | 게시글 삭제                    | ✅   |
 | `GET`    | `/link-preview?url=`      | 등록 전 링크 미리보기 (결과 10분 캐시, 이메일 미인증 시 403) | ✅   |
+| `GET`    | `/og/post/{id}`           | 메신저 미리보기 봇용 글 OG 태그 HTML (`text/html`, 5분 공개 캐시) | ❌   |
 
 `/link-preview`는 `/post` 아래가 아니다 — `GET /post/*`가 비로그인에게 열려 있어, 그 아래 두면 로그인 없이 크롤링을
 시키는 경로가 된다(`LinkPreviewController`).
+
+`/og/post/{id}`는 JSON이 아니라 HTML을 준다. 카카오톡·Slack 같은 미리보기 봇이 글 주소(`/post/<id>`)를 열면 CloudFront Function이
+그 요청만 이리로 보낸다. 항상 비로그인 기준이라 공개 글만 그 글의 제목·설명·썸네일이 실리고, 볼 수 없는 글·없는 글은 사이트 이름·소개만
+실린다(`PostOgController`).
 
 **게시글 목록 쿼리 파라미터**: `category`, `search`, `filter`, `nickname`, `cursor`, `size`. 첫 쪽은 `cursor` 없이 요청하고 다음 쪽은 응답의 `nextCursor`를 보낸다(`null`이면 끝). `page`는 받지 않는다([`docs/PAGINATION.md`](docs/PAGINATION.md) §5.1).
 

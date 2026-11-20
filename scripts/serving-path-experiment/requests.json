@@ -61,6 +61,7 @@
   {"id": "r-cors", "group": "응답", "title": "Vary 여러 값(CORS 응답)", "method": "GET", "path": "/api/post?size=1", "headers": {"origin": "https://linksphere.click"}, "expect": {"header": {"vary": "Access-Control-Request-Method", "access-control-allow-origin": "https://linksphere.click"}}, "requirement": "값이 여럿인 Vary가 모두 나가야 한다(#121)"},
   {"id": "r-hsts", "group": "응답", "title": "HSTS", "method": "GET", "path": "/api/post?size=1", "expect": {"header": {"strict-transport-security": "max-age=31536000"}}, "requirement": "HTTPS 응답에 HSTS가 붙어야 한다(#40)"},
   {"id": "r-type", "group": "응답", "title": "Content-Type charset·한글 본문", "method": "GET", "path": "/api/common/category-option", "expect": {"bodyHas": "개발"}, "requirement": "한글 응답이 UTF-8로 나가야 한다"},
+  {"id": "r-og-html", "group": "응답", "title": "미리보기 봇용 OG HTML(text/html·한글 제목)", "method": "GET", "path": "/api/og/post/00000000-0000-4000-8000-000000000101", "expect": {"status": 200, "bodyHas": "Spring Boot 입문"}, "requirement": "HTML 응답이 UTF-8로 나가고, Accept에 HTML이 없어도(여기서는 기본 application/json) 406이 아니어야 한다(GET /og/post/{id})"},
   {"id": "r-health", "group": "응답", "title": "헬스 체크", "method": "GET", "path": "/api/actuator/health", "expect": {"status": 200}, "requirement": "헬스 체크가 200과 UP이어야 한다"},
   {"id": "r-view", "group": "응답", "title": "조회 기록 응답(조회수)", "method": "POST", "path": "/api/post/00000000-0000-4000-8000-000000000102/view"},
   {"id": "r-api-docs", "group": "응답", "title": "OpenAPI 문서의 서버 주소", "method": "GET", "path": "/api/v3/api-docs"},

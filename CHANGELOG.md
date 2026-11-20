@@ -11,6 +11,23 @@
 
 ### Added
 
+- `post` 메신저 미리보기 봇에 줄 글의 OG 태그 HTML 엔드포인트 `GET /og/post/{id}`
+  <details><summary>배경·구현</summary>
+
+  글 주소(`/post/<id>`)는 어떤 글이든 같은 SPA 껍데기 HTML이라, 카카오톡·Slack에 글 주소를 붙이면 어느 글이든 사이트 기본
+  미리보기만 나왔다. 이 엔드포인트는 그 글의 제목·설명·썸네일을 `og:*`·`twitter:card` 태그에 담은 HTML을 준다. 봇은 토큰을 보내지
+  않으므로 항상 비로그인 기준으로 묻는다(`PostLookupService.findVisiblePreviews(ids, null)`). 그래서 공개 글만 글의 값이 실리고, 글쓴이
+  본인의 비공개 글·지운 글·없는 글·UUID가 아닌 id는 모두 사이트 이름·소개만 실린다(이미지 없음, 사용자 결정). 설명·썸네일이 없는 글은
+  그 태그를 싣지 않는다. 글의 값은 `HtmlUtils.htmlEscape`로 이스케이프한다. 응답은 `text/html;charset=UTF-8`에
+  `Cache-Control: max-age=300, public`이다. 봇마다 보내는 `Accept`를 다 알 수 없어 `produces`를 걸지 않고, `Accept`에 HTML이 없어도
+  406 대신 HTML을 준다(serving-path 비교 도구의 `Accept: application/json` 요청에서 406이 나 찾았다). JSON을 읽지 않는 봇용이라 `ApiResponse`로 감싸지 않는 유일한 엔드포인트이고, 반환 규칙
+  검사에 이 하나만 예외로 둔다. 경로는 토큰과 상관없는 응답이라 `permitAll`이다. 봇 요청을 이리로 보내는 CloudFront Function은 FE
+  PR에서 바꾼다. 그 전까지는 이 경로를 직접 부를 때만 쓰인다. 계획은 FE `docs/plans/2026-11-19-post-link-in-app-and-og.md` Phase 2-1.
+  (`PostOgController.kt`(신규), `PostOgService.kt`(신규), `SecurityConfig.kt`, `ControllerSignatureRulesTest.kt`, `application.yml`,
+  `README.md`, `docs/BE-ARCHITECTURE.md`, `docs/DEPLOY.md`)
+
+  </details>
+
 - `interaction` 한 회원의 북마크를 10,000개까지만 저장, 넘으면 409 `BOOKMARK_LIMIT_EXCEEDED`
   <details><summary>배경·구현</summary>
 
