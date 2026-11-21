@@ -1359,7 +1359,7 @@ Lambda 자체의 로그 형식(`LoggingConfig.LogFormat`)은 `Text` 그대로다
 | 사이트 첫 화면 | [`pages-site/index.html`](../pages-site/index.html) — 워크플로의 "사이트 조립" 단계가 이 폴더를 사이트 루트에, 위 결과를 `api-docs/`에 넣는다 |
 
 **주소 구조** — 저장소 하나에 Pages 사이트는 하나뿐이라 문서마다 하위 경로(`api-docs/`)를 쓰고, 루트 첫 화면은 FE·BE 저장소 Pages의
-문서(FE Storybook, 이 API 문서)를 카드로 함께 보여 준다. FE 저장소 첫 화면(`pages-site/index.html`)도 같은 목록이라 문서를 더하거나
+문서(FE Storybook, FE 코드 지도, 이 API 문서)를 카드로 함께 보여 준다. FE 저장소 첫 화면(`pages-site/index.html`)도 같은 목록이라 문서를 더하거나
 옮기면 두 저장소의 파일을 같이 고친다 — 저장소를 넘는 링크는 자동 검사가 없다. 2026-10-31 전까지는 첫 화면이 `api-docs/`로 바로
 넘겼다. 그때 루트에 Swagger UI가 있던 첫 배포(2026-10-30) 때의 링크(`#/태그/operation`)는 이제 넘기지 않고 첫 화면을 보여 준다
 (2026-10-31 사용자 결정, FE PR [#465](https://github.com/BAECHAN/link-sphere_FE_NEW/pull/465)에서 시안 비교).
