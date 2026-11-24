@@ -55,7 +55,8 @@ class PostRepositoryIntegrationTest {
         assertEquals(false, page.content.any { it.id == othersPrivateLikedByMe })
     }
 
-    // 비로그인의 isLiked·isBookmarked는 PostService가 null로 넘긴다 — 조건을 붙이지 않아 공개 피드 전체가 나온다
+    // isLiked·isBookmarked 필터가 없으면 PostService가 null로 넘긴다 — 조건을 붙이지 않아 공개 피드 전체가 나온다
+    // (비로그인이 이 필터를 보내면 PostService가 저장소에 닿기 전에 거절한다)
     @Test
     fun `postIds 가 null 이면 거르지 않고 공개 글을 모두 돌려준다`() {
         val page = findPosts(postIds = null, currentUserId = null)

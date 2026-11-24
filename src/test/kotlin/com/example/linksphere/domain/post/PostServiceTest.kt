@@ -22,6 +22,7 @@ import com.example.linksphere.global.exception.EmailNotVerifiedException
 import com.example.linksphere.global.exception.ForbiddenException
 import com.example.linksphere.global.exception.InvalidInputException
 import com.example.linksphere.global.exception.InvalidUrlException
+import com.example.linksphere.global.exception.LoginRequiredException
 import com.example.linksphere.global.exception.PostNotFoundException
 import com.example.linksphere.global.ratelimit.RateLimitService
 import com.example.linksphere.infra.ai.GeminiService
@@ -31,6 +32,8 @@ import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 import org.mockito.ArgumentCaptor
 import org.mockito.ArgumentMatchers
 import org.mockito.ArgumentMatchers.any
@@ -969,13 +972,14 @@ class PostServiceTest {
     fun `getPostsByCursor는 닉네임과 봇 제외 필터를 회원 id 집합으로 바꿔 저장소에 넘긴다`() {
         val authorId = UUID.randomUUID()
         val botId = UUID.randomUUID()
-        val filters = setOf("isLiked", "excludeBots")
+        // 비로그인으로 보내도 되는 값만 쓴다 - 로그인 전용 값(isLiked 등)은 비로그인이면 저장소에 닿기 전에 거절된다
+        val filters = setOf("unknownFilter", "excludeBots")
         `when`(memberService.findIdsByNicknameContaining("Kim")).thenReturn(setOf(authorId))
         `when`(memberService.findBotIds()).thenReturn(setOf(botId))
         `when`(postRepository.findPostsAfter(null, null, filters, null, setOf(authorId), setOf(botId), null, PostListSort.LATEST, null, 10, null, false))
             .thenReturn(KeysetSlice(emptyList()))
 
-        postService.getPostsByCursor(null, null, " isLiked, excludeBots ,", "Kim", null, 10, null)
+        postService.getPostsByCursor(null, null, " unknownFilter, excludeBots ,", "Kim", null, 10, null)
 
         verify(postRepository).findPostsAfter(null, null, filters, null, setOf(authorId), setOf(botId), null, PostListSort.LATEST, null, 10, null, false)
     }
@@ -1063,16 +1067,51 @@ class PostServiceTest {
         verify(postRepository).findPostsAfter(null, null, setOf("isBookmarked"), bookmarked.toSet(), null, emptySet(), userId, PostListSort.LATEST, null, 10, null, false)
     }
 
-    // 비로그인의 isBookmarked·isLiked는 전처럼 무시한다 - interaction에 묻지 않고 거르지도 않는다
+    // 비로그인의 isBookmarked·isLiked는 조건을 버리고 전체 글을 주지 않는다 - 저장소와 interaction에 묻기 전에 거절한다
+    // (docs/plans/2026-11-23-login-only-filter-chips.md)
     @Test
-    fun `getPostsByCursor는 비로그인이면 북마크와 좋아요 필터를 무시한다`() {
-        `when`(postRepository.findPostsAfter(null, null, setOf("isBookmarked", "isLiked"), null, null, emptySet(), null, PostListSort.LATEST, null, 10, null, false))
+    fun `getPostsByCursor는 비로그인이면 북마크와 좋아요 필터를 거절하고 저장소를 부르지 않는다`() {
+        assertThrows(LoginRequiredException::class.java) {
+            postService.getPostsByCursor(null, null, "isBookmarked,isLiked", null, null, 10, null)
+        }
+
+        verifyNoInteractions(postRepository, bookmarkRepository, postReactionRepository)
+    }
+
+    // 로그인한 사람 기준으로만 뜻이 있는 값 네 가지는 하나만 있어도, 다른 값과 섞여도, 공백이 끼어도 거절한다
+    @ParameterizedTest
+    @ValueSource(strings = ["isMyPosts", "isPrivate", "isBookmarked", "isLiked", "isMyPosts,excludeBots", " isMyPosts , "])
+    fun `getPostsByCursor는 비로그인이면 로그인 전용 필터를 거절한다`(filter: String) {
+        assertThrows(LoginRequiredException::class.java) {
+            postService.getPostsByCursor(null, null, filter, null, null, 10, null)
+        }
+
+        verifyNoInteractions(postRepository, memberService, geminiService)
+    }
+
+    // 봇 제외는 로그인과 상관없는 값이라 비로그인에게도 그대로 된다
+    @Test
+    fun `getPostsByCursor는 비로그인이어도 봇 제외 필터만 있으면 조회한다`() {
+        val botId = UUID.randomUUID()
+        `when`(memberService.findBotIds()).thenReturn(setOf(botId))
+        `when`(postRepository.findPostsAfter(null, null, setOf("excludeBots"), null, null, setOf(botId), null, PostListSort.LATEST, null, 10, null, false))
             .thenReturn(KeysetSlice(emptyList()))
 
-        postService.getPostsByCursor(null, null, "isBookmarked,isLiked", null, null, 10, null)
+        postService.getPostsByCursor(null, null, "excludeBots", null, null, 10, null)
 
-        verify(postRepository).findPostsAfter(null, null, setOf("isBookmarked", "isLiked"), null, null, emptySet(), null, PostListSort.LATEST, null, 10, null, false)
-        verifyNoInteractions(bookmarkRepository, postReactionRepository)
+        verify(postRepository).findPostsAfter(null, null, setOf("excludeBots"), null, null, setOf(botId), null, PostListSort.LATEST, null, 10, null, false)
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = ["isMyPosts", "isPrivate"])
+    fun `getPostsByCursor는 로그인했으면 로그인 전용 필터를 저장소에 그대로 넘긴다`(filter: String) {
+        val userId = UUID.randomUUID()
+        `when`(postRepository.findPostsAfter(null, null, setOf(filter), null, null, emptySet(), userId, PostListSort.LATEST, null, 10, null, false))
+            .thenReturn(KeysetSlice(emptyList()))
+
+        postService.getPostsByCursor(null, null, filter, null, null, 10, userId)
+
+        verify(postRepository).findPostsAfter(null, null, setOf(filter), null, null, emptySet(), userId, PostListSort.LATEST, null, 10, null, false)
     }
 
     // 맞는 회원이 없으면 빈 집합을 넘긴다(결과 없음). null(거르지 않음)로 바꾸면 전체 글이 나온다
@@ -1089,10 +1128,11 @@ class PostServiceTest {
 
     @Test
     fun `getPostsByCursor는 닉네임이 비었고 봇 제외가 없으면 member에 묻지 않는다`() {
-        `when`(postRepository.findPostsAfter(null, null, setOf("isMyPosts"), null, null, emptySet(), null, PostListSort.LATEST, null, 10, null, false))
+        val userId = UUID.randomUUID()
+        `when`(postRepository.findPostsAfter(null, null, setOf("isMyPosts"), null, null, emptySet(), userId, PostListSort.LATEST, null, 10, null, false))
             .thenReturn(KeysetSlice(emptyList()))
 
-        postService.getPostsByCursor(null, null, "isMyPosts", "  ", null, 10, null)
+        postService.getPostsByCursor(null, null, "isMyPosts", "  ", null, 10, userId)
 
         verifyNoInteractions(memberService)
     }

@@ -7,7 +7,7 @@
 > **읽고 나면**: 요청이 어느 코드를 거치는지, 레이어끼리 무엇을 참조하고 어떤 타입을 주고받는지(§3) 따라갈 수 있고, 자동 검사(§2)와 선례 패턴(§7)에 맞춰 새 코드를 쓸 수 있다.
 > 지금 코드가 규칙과 어긋나는 곳은 §9에 모아 두었다 — 그쪽을 본떠 쓰지 않는다.
 >
-> **마지막 검토**: 2026-11-19 (§2 반환 규칙 행과 §4 성공 응답의 HTML 예외만 고침 — 메신저 미리보기 봇용 OG HTML 엔드포인트를 더함). 같은 날 앞서 (§7-8·§7-10의 `PostLookupService` 항목만 고침 — 댓글의 우리 글 링크 카드를 글에서 직접 읽게 함). 이전 2026-11-18 (§7-8의 id 집합 필터 항목만 고침 — `filter=isLiked`가 최근 좋아요 10,000개만 넘기게 함). 같은 날 앞서 (§4 실패 표의 `BOOKMARK_LIMIT_EXCEEDED` 행과 §7 상수 항목의 `BookmarkLimits`만 고침 — 회원당 북마크 저장 한도를 더함). 이전 2026-11-17 (§2 검사 표와 §3의 다른 도메인 금지 항목만 고침 — `@Query` 문자열에 적은 다른 패키지의 엔티티·테이블 이름 검사를 더함). 이전 2026-11-16 (§2·§3의 위반 수, §5 역할·권한 흐름, §6 메서드 이름만 고침 — auth가 회원 테이블을 조인하지 않고 역할을 member에 묻게 함). 같은 날 앞서 (§1 그래프, §2·§3의 위반 수, §3 접미사 표, §7-5만 고침 — 탈퇴 로직을 member로 옮기고 다른 패키지의 데이터는 동기 이벤트를 듣는 쪽이 지우게 함). 같은 날 앞서 (§1 패키지 역할·그래프, §2 검사 표, §3 global → domain 예외, §9 순환 간선만 고침 — `ErrorResponse`를 `global/exception`으로 옮기고 `SecurityConfig`가 auth 필터의 구체 타입을 모르게 함). 같은 날 앞서 (§1 잡 표·패키지 역할·그래프, §3 접미사 표, §7-5, §9 순환 간선만 고침 — 뒷일 전달을 `global/job`으로 옮김). 이전 2026-11-15 (§1 패키지 그래프, §8 순수 함수 테스트 예시 경로, "남은 것"의 linkpreview 항목만 고침. 같은 날 §11 도구 선택 표의 Detekt 행도 고침). 이전 2026-11-12 (§4 실패 표의 `page=-1` 예, §7-8 N+1의 `countQuery` 예, §7-9 페이징의 `page` 서술만 고침, 같은 날 `page` 400 코드 제거를 반영). 이전 2026-11-11 (§3 컨트롤러·Service에 두는 한도와 §7-3 조회 기록만 고침). 이전 2026-11-10 (§1 요청 파이프라인의 서빙 경로만 고침), 2026-11-07
+> **마지막 검토**: 2026-11-23 (§4 code 표의 `LoginRequiredException` 행, §5 공개 GET 항목, §7-8 id 집합 필터 문장만 고침 — 토큰 없이 보낸 로그인 전용 `filter`를 401로 거절함). 이전 2026-11-19 (§2 반환 규칙 행과 §4 성공 응답의 HTML 예외만 고침 — 메신저 미리보기 봇용 OG HTML 엔드포인트를 더함). 같은 날 앞서 (§7-8·§7-10의 `PostLookupService` 항목만 고침 — 댓글의 우리 글 링크 카드를 글에서 직접 읽게 함). 이전 2026-11-18 (§7-8의 id 집합 필터 항목만 고침 — `filter=isLiked`가 최근 좋아요 10,000개만 넘기게 함). 같은 날 앞서 (§4 실패 표의 `BOOKMARK_LIMIT_EXCEEDED` 행과 §7 상수 항목의 `BookmarkLimits`만 고침 — 회원당 북마크 저장 한도를 더함). 이전 2026-11-17 (§2 검사 표와 §3의 다른 도메인 금지 항목만 고침 — `@Query` 문자열에 적은 다른 패키지의 엔티티·테이블 이름 검사를 더함). 이전 2026-11-16 (§2·§3의 위반 수, §5 역할·권한 흐름, §6 메서드 이름만 고침 — auth가 회원 테이블을 조인하지 않고 역할을 member에 묻게 함). 같은 날 앞서 (§1 그래프, §2·§3의 위반 수, §3 접미사 표, §7-5만 고침 — 탈퇴 로직을 member로 옮기고 다른 패키지의 데이터는 동기 이벤트를 듣는 쪽이 지우게 함). 같은 날 앞서 (§1 패키지 역할·그래프, §2 검사 표, §3 global → domain 예외, §9 순환 간선만 고침 — `ErrorResponse`를 `global/exception`으로 옮기고 `SecurityConfig`가 auth 필터의 구체 타입을 모르게 함). 같은 날 앞서 (§1 잡 표·패키지 역할·그래프, §3 접미사 표, §7-5, §9 순환 간선만 고침 — 뒷일 전달을 `global/job`으로 옮김). 이전 2026-11-15 (§1 패키지 그래프, §8 순수 함수 테스트 예시 경로, "남은 것"의 linkpreview 항목만 고침. 같은 날 §11 도구 선택 표의 Detekt 행도 고침). 이전 2026-11-12 (§4 실패 표의 `page=-1` 예, §7-8 N+1의 `countQuery` 예, §7-9 페이징의 `page` 서술만 고침, 같은 날 `page` 400 코드 제거를 반영). 이전 2026-11-11 (§3 컨트롤러·Service에 두는 한도와 §7-3 조회 기록만 고침). 이전 2026-11-10 (§1 요청 파이프라인의 서빙 경로만 고침), 2026-11-07
 
 시스템 전체(CloudFront·S3·Lambda·배포 파이프라인)는 FE 레포
 [`docs/SYSTEM-ARCHITECTURE.md`](https://github.com/BAECHAN/link-sphere_FE_NEW/blob/main/docs/SYSTEM-ARCHITECTURE.md)가,
@@ -392,6 +392,7 @@ return ApiResponse(HttpStatus.OK.value(), "Link preview", postService.previewLin
 | `InvalidCredentialsException` | 401 | `INVALID_CREDENTIALS` |
 | `InvalidTokenException` | 401 | `INVALID_REFRESH_TOKEN` |
 | `InvalidActionTokenException` | 401 | `INVALID_ACTION_TOKEN` |
+| `LoginRequiredException` | 401 | `NOT_LOGGED_IN`(공개 엔드포인트가 로그인이 필요한 요청을 비로그인으로 받음 — 보안 진입점의 "토큰 없음"과 같은 code·메시지, §5) |
 | `RateLimitExceededException` | 429 | `RATE_LIMIT_EXCEEDED` (+ `Retry-After`) |
 | `InvalidInputException` | 400 | `INVALID_INPUT` |
 | `InvalidUrlException` | 400 | `INVALID_URL` / `URL_UNRESOLVABLE` / `URL_NOT_ALLOWED` (`e.code`) |
@@ -440,6 +441,11 @@ fun getPosts(authentication: Authentication?, ...): ApiResponse<PostPageResponse
   경로까지 연다. 로그인 여부에 따라 응답이 달라지는 공개 GET(`/post`, `/post/*`, `/post/*/comment`)은 `permitAll()`이
   아니라 `.access { … getAttribute("exception") == null }`을 쓴다 — 토큰 없이 오면 허용하고, 만료·무효 토큰이면 401을
   돌려 FE가 갱신하게 한다(#104, [`plans/2026-10-20-public-get-expired-token-401.md`](plans/2026-10-20-public-get-expired-token-401.md)).
+- **공개 GET이어도 로그인한 사람 기준으로만 뜻이 있는 요청은 서비스가 `LoginRequiredException`으로 거절한다** — `GET /post`에
+  `filter=isMyPosts`·`isPrivate`·`isBookmarked`·`isLiked`를 토큰 없이 보내면 401 `NOT_LOGGED_IN`이다(`PostService.getPostsByCursor`).
+  조건을 버리고 전체 공개 글을 200으로 주면 물어본 것과 다른 답이 된다. 값 목록이 domain에 있어 `SecurityConfig`가 아니라
+  서비스에서 막는다(global → domain 금지, §2). `filter=excludeBots`와 모르는 값은 로그인과 상관없어 그대로 통과한다
+  ([`plans/2026-11-23-login-only-filter-chips.md`](plans/2026-11-23-login-only-filter-chips.md)).
 - 세션 토큰·액션 토큰은 `SecureToken`으로 만들고 **DB에는 sha256 해시만** 저장한다. 세션 회전·재사용 탐지는
   `MemberSessionService.rotate`(§7-2).
 
@@ -663,7 +669,7 @@ for (id in ids) {
   `PostInteractionAdapter`가 구현한다. 구현은 저장소만 참조하는 클래스로 둔다 — 그 패키지의 Service가 구현하면 빈이 서로 물린다.
 - 다른 패키지의 데이터로 목록을 거를 때는 그 테이블을 서브쿼리로 읽지 않고 id 집합을 물어 `IN`으로 건다 — `filter=isBookmarked`·
   `isLiked`는 `PostService`가 포트에서 내가 한 글 id를 받아 저장소에 넘긴다(닉네임·봇 필터와 같은 방식). 빈 집합이면 DB에 묻지 않고
-  빈 결과를 내고, null이면 거르지 않는다(비로그인이거나 이 필터가 없을 때). 집합이 커지면 `IN` 목록이 드라이버의 바인드 한계(65,535)에
+  빈 결과를 내고, null이면 거르지 않는다(이 필터가 없을 때 — 비로그인이 이 필터를 보내면 그 전에 401로 거절한다, §5). 집합이 커지면 `IN` 목록이 드라이버의 바인드 한계(65,535)에
   닿으므로 넘기는 쪽이 크기를 묶는다 — 북마크는 저장 한도(회원당 10,000개)가, 좋아요는 포트가 최근 10,000개만 넘기는 것이 맡는다
   (`findRecentLikedPostIds`, 잘랐으면 목록 응답의 `likedFilterLimit`으로 알린다). 그래도 집합이 10,000개를 넘으면 경고 로그를 남긴다.
 - 다른 패키지가 가진 id 가운데로 글 목록을 읽을 때는 그 패키지가 글 테이블을 조인하지 않는다 — 북마크함은 자기 테이블에서 글 id를

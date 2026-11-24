@@ -12,6 +12,7 @@ import com.example.linksphere.global.common.AdvisoryLock
 import com.example.linksphere.global.exception.BookmarkFolderNotFoundException
 import com.example.linksphere.global.exception.BookmarkLimitExceededException
 import com.example.linksphere.global.exception.ForbiddenException
+import com.example.linksphere.global.exception.LoginRequiredException
 import com.example.linksphere.global.ratelimit.RateLimitService
 import com.example.linksphere.infra.ai.GeminiService
 import com.example.linksphere.support.PostgresIntegrationTest
@@ -164,9 +165,10 @@ class PostInteractionPortIntegrationTest {
         assertEquals(setOf(busyPost), feedIds("isLiked", viewer))
     }
 
+    // 조건을 버리고 공개 글을 모두 주던 것을 거절로 바꿨다(docs/plans/2026-11-23-login-only-filter-chips.md)
     @Test
-    fun `비로그인이면 isBookmarked 와 isLiked 를 무시하고 공개 글을 모두 돌려준다`() {
-        assertEquals(setOf(busyPost, quietPost), feedIds("isBookmarked,isLiked", null))
+    fun `비로그인이면 isBookmarked 와 isLiked 를 거절한다`() {
+        assertThrows(LoginRequiredException::class.java) { feedIds("isBookmarked,isLiked", null) }
     }
 
     // 좋아요 필터는 최근 10,000개 안에서 거른다(docs/plans/2026-11-17-bookmark-limit-liked-filter.md) - 딱 10,000개면 전부 본다
