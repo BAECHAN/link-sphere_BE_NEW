@@ -1384,6 +1384,25 @@ curl -sI https://baechan.github.io/link-sphere_BE_NEW/api-docs/ | head -1       
 curl -s https://baechan.github.io/link-sphere_BE_NEW/api-docs/openapi.json | jq -c '.servers'   # [{"url":"https://linksphere.click/api"}]
 ```
 
+**잡 구조와 게시 실패 복구 (2026-11-24)** — 워크플로는 산출물(워크플로 실행이 GitHub에 올려 두는 파일 묶음)을 올리는 `build` 잡과 그
+산출물을 게시하는 `deploy` 잡으로 나뉜다. 게시 권한(`pages: write`·`id-token: write`)과 `github-pages` 환경은 `deploy` 잡에만 있고,
+Gradle 의존성 코드가 도는 `build` 잡은 `contents: read`만 갖는다. 이 워크플로는 2026-10-30 도입 뒤 `main`에서 51회 모두
+성공했고 게시 단계가 `Found 0 artifact(s)`로 실패한 적은 없다(2026-11-24 `gh run list` 기준). 같은 액션을 한 잡에서 쓰던 FE
+Storybook 배포가 2026-11-24에 올린 직후의 산출물 목록 조회가 비어 실행 3개가 연달아 실패했고, FE를 먼저 나눈 뒤(FE PR
+[#677](https://github.com/BAECHAN/link-sphere_FE_NEW/pull/677)) 여기도 같은 구조로 맞췄다. 경위와 잰 값은 FE
+[`docs/DEPLOY.md` "Storybook 공개 배포"](https://github.com/BAECHAN/link-sphere_FE_NEW/blob/main/docs/DEPLOY.md#storybook-공개-배포)의
+"잡 구조와 실패 복구"에 있다.
+
+게시가 `Found 0 artifact(s)`로 실패하면 실패한 `deploy` 잡만 다시 돌린다(아래 명령). `build` 잡이 다시 돌지 않으면 산출물은
+하나로 남는다. 한 잡 구조에서는 재실행이 산출물을 하나 더 올려 `Multiple artifacts`로 다시 실패했다(FE에서 겪음). 아래
+`--failed` 명령은 두 잡 구조에서 실행해 본 적이 없다(실패한 실행이 없었다). 실패한 잡만 다시 돈다는 근거는 위 FE 문서가 인용한
+GitHub 문서다. 실제로 해 본 것은 성공한 실행의 `deploy` 잡을 `gh run rerun --job <잡 번호>`로 다시 돌린 것이다(FE #677, 이
+저장소의 결과는 #228 본문 "검증"). 산출물 보존 기간(1일)이 지났으면 위 "트리거"의 수동 실행 명령으로 새 실행을 돌린다.
+
+```bash
+gh run rerun <실행 번호> --failed --repo BAECHAN/link-sphere_BE_NEW
+```
+
 **되돌리기·끄기** — Pages는 마지막으로 성공한 배포를 계속 보여 준다. 이전 상태로 되돌리려면 원인 커밋을 `main`에서 revert해 다시
 돌게 한다(`workflow_dispatch`는 `main`의 최신 커밋을 올리므로 그 자체로는 되돌리지 못한다). 사이트를 내리려면
 `gh api -X DELETE repos/BAECHAN/link-sphere_BE_NEW/pages`(다시 켤 때는 위 POST).
