@@ -79,7 +79,8 @@ class PostController(
             "인증 토큰을 보내면 본인의 좋아요·북마크 여부가 응답에 반영된다. size 는 최대 50 으로 잘린다. " +
             "filter=isLiked 는 최근 좋아요 10,000개 안에서 거르고, 좋아요가 더 있어 잘랐을 때만 likedFilterLimit 이 10000 이다(평소 null). " +
             "같은 IP의 검색이 몰리면 의미 검색을 건너뛰고 키워드 검색 결과만 돌려준다(에러 아님). " +
-            "실패: 400 INVALID_INPUT(잘못된 cursor, 검색어 유무가 달라진 cursor)",
+            "실패: 400 INVALID_INPUT(잘못된 cursor, 검색어 유무가 달라진 cursor), " +
+            "401 NOT_LOGGED_IN(토큰 없이 filter 에 isMyPosts·isPrivate·isBookmarked·isLiked 를 보냄)",
     )
     @SecurityRequirements
     @GetMapping

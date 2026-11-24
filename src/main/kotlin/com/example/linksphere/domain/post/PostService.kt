@@ -12,6 +12,7 @@ import com.example.linksphere.global.common.CursorCodec
 import com.example.linksphere.global.common.Paging
 import com.example.linksphere.global.exception.DuplicatePostException
 import com.example.linksphere.global.exception.ForbiddenException
+import com.example.linksphere.global.exception.LoginRequiredException
 import com.example.linksphere.global.exception.PostNotFoundException
 import com.example.linksphere.global.ratelimit.RateLimitService
 import org.slf4j.LoggerFactory
@@ -59,6 +60,10 @@ class PostService(
         // 목록의 filter 파라미터 값 - 내가 북마크·좋아요한 글만. id 집합을 interaction에 물어 IN으로 건다
         private const val BOOKMARKED_FILTER = "isBookmarked"
         private const val LIKED_FILTER = "isLiked"
+
+        // 로그인한 사람 기준으로만 뜻이 있는 filter 값. 토큰 없이 오면 조건을 버리고 전체 글을 주는 대신 401로 거절한다
+        // (docs/plans/2026-11-23-login-only-filter-chips.md). isMyPosts·isPrivate는 PostRepositoryImpl이 푸는 값이다
+        private val LOGIN_ONLY_FILTERS = setOf("isMyPosts", "isPrivate", BOOKMARKED_FILTER, LIKED_FILTER)
 
         // IN 목록이 이 수를 넘으면 경고 로그를 남긴다(결과는 줄이지 않는다). 드라이버는 한 문장의 바인드 값이 65,535개를 넘으면
         // 예외를 던지므로(pgjdbc 42.7.11 PgPreparedStatement.maximumNumberOfParameters, simple 모드만 예외) 그 전에 알아채려는
@@ -176,6 +181,11 @@ class PostService(
         val sort = if (PostSearchQuery.tokenize(search).isEmpty()) PostListSort.LATEST else PostListSort.RELEVANCE
         val state = cursor?.let { CursorCodec.decode(it, sort.name, sort.keyTypes) }
         val filters = filter?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }?.toSet().orEmpty()
+
+        if (currentUserId == null && filters.any { it in LOGIN_ONLY_FILTERS }) {
+            throw LoginRequiredException()
+        }
+
         // 필터의 id 조회는 처음 읽을 때(find 안) 한 번 한다 - 검색어 임베딩(PostSearchFlow)이 이 조회들보다 먼저 불리던 순서를 지킨다
         val categoryIds by lazy { resolveCategoryFilter(category) }
         // 닉네임·봇 필터는 member에 id를 물어 저장소에는 id 집합만 넘긴다 - 글 쿼리가 회원 테이블을 직접 읽지 않는다
@@ -212,7 +222,8 @@ class PostService(
 
     /**
      * filter의 isBookmarked·isLiked를 글 id 집합으로 푼다 - 글 쿼리가 북마크·좋아요 테이블을 직접 읽지 않고 interaction에 묻는다.
-     * 둘 다 없거나 비로그인이면 거르지 않고, 둘 다 있으면 둘 다 한 글만 남는다. 좋아요는 최근 것만 본다(PostInteractionPort.findRecentLikedPostIds).
+     * 둘 다 없으면 거르지 않고(비로그인이 이 값을 보내면 getPostsByCursor가 먼저 거절한다), 둘 다 있으면 둘 다 한 글만 남는다.
+     * 좋아요는 최근 것만 본다(PostInteractionPort.findRecentLikedPostIds).
      */
     private fun resolveInteractionFilter(filters: Set<String>, viewerId: UUID?): InteractionFilter {
         if (viewerId == null) {

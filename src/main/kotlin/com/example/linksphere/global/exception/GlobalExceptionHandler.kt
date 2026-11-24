@@ -197,6 +197,19 @@ class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response)
     }
 
+    // 공개 엔드포인트가 로그인이 필요한 요청을 비로그인으로 받았을 때. 보안 진입점(CustomAuthenticationEntryPoint)의
+    // "토큰 없음"과 같은 code·메시지로 낸다 - FE는 NOT_LOGGED_IN 하나로 두 경우를 같이 처리한다.
+    @ExceptionHandler(LoginRequiredException::class)
+    fun handleLoginRequiredException(e: LoginRequiredException): ResponseEntity<ErrorResponse> {
+        val response =
+            ErrorResponse(
+                status = HttpStatus.UNAUTHORIZED.value(),
+                code = "NOT_LOGGED_IN",
+                message = e.message ?: "Authentication required",
+            )
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response)
+    }
+
     @ExceptionHandler(org.springframework.web.bind.MissingRequestCookieException::class)
     fun handleMissingRequestCookieException(
         _e: org.springframework.web.bind.MissingRequestCookieException,

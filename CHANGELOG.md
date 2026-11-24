@@ -111,6 +111,23 @@
 
 ### Changed
 
+- `post` 글 목록의 로그인 전용 `filter`를 토큰 없이 보내면 401 `NOT_LOGGED_IN`으로 거절
+  <details><summary>배경·구현</summary>
+
+  `GET /post`의 `filter` 값 가운데 `isMyPosts`·`isPrivate`·`isBookmarked`·`isLiked`는 로그인한 사람 기준으로만 뜻이 있다. 지금까지는
+  토큰 없이 보내도 200이었다 — `isMyPosts`·`isBookmarked`·`isLiked`는 조건을 버리고 전체 공개 글을, `isPrivate`는 빈 목록을 줬다
+  (2026-11-23 운영에 토큰 없이 요청해 확인). 남의 비공개 글이 새지는 않았지만 물어본 것과 다른 답이라, FE에서 로그아웃 상태로 범위
+  칩을 누르면 왜 그런 목록이 나왔는지 알 수 없었다. 이제 `PostService.getPostsByCursor`가 저장소·interaction에 묻기 전에
+  `LoginRequiredException`을 던지고, `GlobalExceptionHandler`가 보안 진입점의 "토큰 없음"과 같은 본문(401 `NOT_LOGGED_IN`,
+  `Authentication required`)으로 바꾼다. FE가 이미 아는 code라 FE 분기는 늘지 않는다. 값 목록이 domain에 있어 `SecurityConfig`가
+  아니라 서비스에서 막는다(global → domain 금지). 로그인한 요청, 필터 없는 요청, `filter=excludeBots`, 모르는 값은 그대로다. 만료·무효
+  토큰은 전처럼 필터와 상관없이 401 `TOKEN_EXPIRED`·`INVALID_TOKEN`이다. 저장소의 비로그인 분기(`PostRepositoryImpl`)는 HTTP로는
+  닿지 않게 됐지만 그대로 뒀다. 성공 응답 스키마는 그대로이고 `@Operation` 설명에 실패 사유를 더했다. 계획은
+  `docs/plans/2026-11-23-login-only-filter-chips.md` Phase 2.
+  (`LoginRequiredException.kt`(신규), `GlobalExceptionHandler.kt`, `PostService.kt`, `PostController.kt`, `docs/BE-ARCHITECTURE.md`)
+
+  </details>
+
 - `comment` 댓글에 붙은 우리 글 주소의 링크 카드가 그 글의 제목·설명·썸네일을 실음
   <details><summary>배경·구현</summary>
 
@@ -293,6 +310,11 @@
 
 ### Migration
 
+- FE 의존: 로그인 전용 `filter`의 401 거절은 로그아웃 상태에서 그 요청을 보내지 않는 FE(#675)가 배포된 뒤에만 나간다. 그 전 번들을
+  띄워 둔 탭은 로그아웃 상태로 범위 칩을 누르면 로그인 페이지로 가고, 칩을 켠 채 로그아웃하면 목록 자리에 불러오지 못했다는 안내가
+  뜨고, 로그아웃 상태로 범위 칩 목록이 떠 있던 탭은 창으로 돌아오거나 다음 쪽을 받을 때 로그인 페이지로 간다(FE 코드로 추적, 실행해
+  보지 않음). 새로고침하면 새 화면을 받는다. FE는 `GET /post` 설명이 바뀐 생성 스펙을 다시 만든다 — 안
+  하면 다음 날 `openapi-drift-check` 이슈가 열린다. 되돌릴 때는 이 BE 변경만 되돌린다(FE는 그대로 둬도 된다).
 - DB 먼저: 이 버전을 배포하기 **전에** `sql/add_cursor_pagination_indexes.sql`을 세션 풀러(5432)로 실행한다. 정렬 키 인덱스 3개를 만들고
   `posts.created_at`을 `NOT NULL`로 바꾼다. 없이 배포해도 결과는 같지만 정렬 키를 처음부터 훑는다. 옛 번들은 아래 `page` 제거 전까지
   `page` 경로로 동작한다. 되돌릴 때는 FE를 먼저 되돌린다. 옛 BE는 `cursor`를 무시해 모든 목록이 10개에서 조용히 끝난다.

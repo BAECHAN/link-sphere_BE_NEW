@@ -1,5 +1,15 @@
 # 피드 범위 필터에 "좋아요한" 칩 추가
 
+<!-- plan-result:start — 이 블록만 병합 뒤에도 고칠 수 있다(.claude/CLAUDE.md "계획과 PR 본문"). 아래는 승인된 계획 원문 -->
+
+## 구현 결과
+
+- 대체됨(일부): `docs/plans/2026-11-23-login-only-filter-chips.md`(#227) — "비로그인이면 BE에서 조건을 붙이지 않는다(전체 공개
+  피드)"를 뒤집었다. 토큰 없이 `filter=isLiked`·`isBookmarked`·`isMyPosts`·`isPrivate`를 보내면 401 `NOT_LOGGED_IN`으로 거절한다.
+  FE 칩을 로그아웃 상태에서 숨기지 않는 것은 그대로다(꺼진 칩을 누르면 로그인 창이 뜬다, FE #675).
+
+<!-- plan-result:end -->
+
 > 좋아요한 글을 다시 찾을 방법이 없던 빈 곳을, 기존 "북마크한"·"내가 작성한" 칩과 같은 방식의
 > `filter=isLiked` 하나로 메운다. "내 댓글" 페이지와 북마크 페이지는 건드리지 않는다.
 

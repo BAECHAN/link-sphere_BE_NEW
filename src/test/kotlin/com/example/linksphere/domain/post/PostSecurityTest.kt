@@ -15,6 +15,7 @@ import com.example.linksphere.global.config.security.CustomAccessDeniedHandler
 import com.example.linksphere.global.config.security.CustomAuthenticationEntryPoint
 import com.example.linksphere.global.exception.DuplicatePostException
 import com.example.linksphere.global.exception.InvalidInputException
+import com.example.linksphere.global.exception.LoginRequiredException
 import com.example.linksphere.global.ratelimit.RateLimitService
 import jakarta.servlet.http.Cookie
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -184,13 +185,27 @@ class PostSecurityTest {
 
     @Test
     fun `토큰 없이 조회하면 지금처럼 비로그인으로 목록을 준다`() {
-        `when`(postService.getPostsByCursor(isNull(), isNull(), eq("isPrivate"), isNull(), isNull(), eq(10), isNull(), anyEmbeddingGate()))
+        `when`(postService.getPostsByCursor(isNull(), isNull(), isNull(), isNull(), isNull(), eq(10), isNull(), anyEmbeddingGate()))
             .thenReturn(emptyPage)
 
-        mockMvc.perform(get("/post").param("filter", "isPrivate"))
+        mockMvc.perform(get("/post"))
             .andExpect(status().isOk)
 
-        verify(postService).getPostsByCursor(isNull(), isNull(), eq("isPrivate"), isNull(), isNull(), eq(10), isNull(), anyEmbeddingGate())
+        verify(postService).getPostsByCursor(isNull(), isNull(), isNull(), isNull(), isNull(), eq(10), isNull(), anyEmbeddingGate())
+        verifyNoInteractions(memberSessionService)
+    }
+
+    // 서비스가 로그인 전용 필터를 거절하면 보안 진입점의 "토큰 없음"과 같은 본문으로 나간다 - FE는 이 code 하나로 둘을 같이 처리한다
+    @Test
+    fun `토큰 없이 로그인 전용 필터를 조회해 서비스가 거절하면 401 NOT_LOGGED_IN을 준다`() {
+        `when`(postService.getPostsByCursor(isNull(), isNull(), eq("isPrivate"), isNull(), isNull(), eq(10), isNull(), anyEmbeddingGate()))
+            .thenThrow(LoginRequiredException())
+
+        mockMvc.perform(get("/post").param("filter", "isPrivate"))
+            .andExpect(status().isUnauthorized)
+            .andExpect(jsonPath("$.code").value("NOT_LOGGED_IN"))
+            .andExpect(jsonPath("$.message").value("Authentication required"))
+
         verifyNoInteractions(memberSessionService)
     }
 
