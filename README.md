@@ -95,6 +95,10 @@ src/main/kotlin/com/example/linksphere/
 │   │   ├── PostCategoryClassifier.kt    # AI 카테고리 분류
 │   │   ├── PostSearchQuery.kt           # 키워드·의미 검색 조건 조립
 │   │   ├── LinkPreviewController.kt     # 등록 전 링크 미리보기 API(GET /link-preview) — 부품은 linkpreview/
+│   │   ├── OgThumbnailService.kt        # 피드 카드용 og 이미지 사본: 받기·줄이기·저장, 원본 주소가 그대로일 때만 컬럼 갱신(docs/OG-THUMBNAIL.md)
+│   │   ├── OgThumbnailResizer.kt        # 사본 줄이기(960×540을 덮는 최소 크기, 투명하면 PNG·아니면 JPEG)
+│   │   ├── OgThumbnailJobHandler.kt     # og-thumbnail 잡 처리기
+│   │   ├── OgThumbnailBackfillService.kt / OgThumbnailBackfillJobHandler.kt  # 사본 없는 기존 글 소급(og-thumbnail-backfill, 사람이 부름)
 │   │   ├── PostMemberEventListener.kt   # 회원 영구 삭제 때 그 회원의 조회 기록 삭제
 │   │   └── TablePost.kt
 │   ├── linkpreview/                     # URL 검증·메타데이터 추출·미리보기 캐시(API는 post/LinkPreviewController)
@@ -169,13 +173,16 @@ src/main/kotlin/com/example/linksphere/
 │   │   ├── CursorCodec.kt               # 목록 cursor 인코딩·검증
 │   │   ├── SeekPredicate.kt             # "이 키 다음부터" 조건식(방향 혼합)
 │   │   ├── KeysetQuery.kt               # cursor 목록 조회(WHERE·파생 테이블 형태)
-│   │   ├── BatchJobLimits.kt            # 예약 배치 3종 공용 마감(90초)
+│   │   ├── BatchJobLimits.kt            # 배치 잡 공용 마감(90초) — 예약 배치 3종과 og 이미지 사본 소급
 │   │   ├── TransactionCallbacks.kt      # 커밋 뒤 실행 등록(afterCommit)
 │   │   └── SupabaseStorageService.kt    # Supabase 이미지 업로드
 │   ├── ratelimit/
 │   │   ├── RateLimitService.kt          # bucketKey·limit·window 기반 범용 고정윈도 카운터
 │   │   ├── RateLimitRepository.kt
 │   │   └── TableRateLimit.kt            # 카운터 행(인증·요청 한도와 조회수 집계가 함께 씀, 테이블 auth_rate_limits)
+│   ├── storage/                         # og 이미지 사본 저장 인터페이스(구현은 infra/aws)
+│   │   ├── ThumbnailStorage.kt
+│   │   └── SkippingThumbnailStorage.kt  # 로컬·테스트용 — 저장하지 않음(app.og-thumbnail.storage=skip)
 │   ├── job/                             # 뒷일 전달(docs/BE-ARCHITECTURE.md §7-5)
 │   │   ├── JobPublisher.kt              # 뒷일을 맡기는 인터페이스 + {linksphereJob, event} 모양(JobMessage)
 │   │   ├── JobHandler.kt                # 뒷일 한 종류를 처리하는 인터페이스(각 도메인이 구현)
@@ -200,9 +207,10 @@ src/main/kotlin/com/example/linksphere/
     ├── ai/
     │   ├── GeminiService.kt             # Gemini AI 콘텐츠 분석·임베딩 생성 (폴백 모델 포함)
     │   └── dto/GeminiDtos.kt
-    ├── aws/                             # 운영용 뒷일 전달 — Lambda self-invoke
+    ├── aws/                             # 운영용 뒷일 전달(Lambda self-invoke)과 og 이미지 사본 저장(S3)
     │   ├── LambdaJobPublisher.kt        # JobPublisher 구현(app.job.publisher=lambda)
-    │   └── LambdaSelfInvoker.kt
+    │   ├── LambdaSelfInvoker.kt
+    │   └── S3ThumbnailStorage.kt        # ThumbnailStorage 구현(app.og-thumbnail.storage=s3) — FE 버킷 og-thumbnails/
     ├── mail/
     │   └── MailService.kt               # AWS SES 메일 발송(실패해도 로그만, fail-open)
     ├── youtube/                         # YouTube Data API v3로 영상 설명 보강
@@ -547,6 +555,7 @@ SnapStart 체크포인트 **이전**(`companion object init`)에 읽기 전용 �
 - [`docs/ACCOUNT-DELETION.md`](docs/ACCOUNT-DELETION.md) — 회원탈퇴 14일 유예기간: 즉시 익명화 대신 신청→유예→로그인 복구/만료 익명화 2단계로 바꾼 이유와 구조
 - [`docs/PAGINATION.md`](docs/PAGINATION.md) — 목록 페이지네이션: offset과 cursor를 합성 데이터로 비교한 실험, 전환된 cursor 구조와 판단 근거
 - [`docs/DATA-PROTECTION.md`](docs/DATA-PROTECTION.md) — 개인정보 보호 정책: 이메일 컬럼을 암호화하지 않기로 한 근거와 실제 유출 지점 보완
+- [`docs/OG-THUMBNAIL.md`](docs/OG-THUMBNAIL.md) — 피드 카드용 og 이미지 사본: 글을 쓸 때 서버가 줄인 사본을 만들어 두는 흐름, 늦게 온 잡을 버리는 방법, 기존 글 소급
 
 **절차** — "이럴 땐 이렇게 한다"
 

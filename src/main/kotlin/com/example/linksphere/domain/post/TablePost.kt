@@ -47,4 +47,9 @@ class TablePost(
     val embedding: FloatArray? = null,
     // 브라우저가 만든 Idempotency-Key. 봇과 이 컬럼 이전의 글은 null이다.
     @Column(name = "idempotency_key", updatable = false) val idempotencyKey: UUID? = null,
+    // 피드 카드용 사본(960px)의 절대 주소. null이면 사본이 없어 FE가 ogImage를 그린다. 쓰기는 PostRepository의 네이티브
+    // UPDATE로만 한다(사본 잡의 조건부 채우기, og_image가 바뀔 때 비우기) - embedding과 같은 이유로 insertable/updatable=false다:
+    // AI 잡처럼 글을 읽어 전체를 save하는 경로가 그 사이 사본 잡이 채운 값을 옛 값(null)으로 덮지 않는다. 메모리 값은 응답용이다.
+    @Column(name = "og_image_thumbnail", columnDefinition = "text", insertable = false, updatable = false)
+    var ogImageThumbnail: String? = null,
 )

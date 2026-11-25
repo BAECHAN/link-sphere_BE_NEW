@@ -97,6 +97,17 @@ app:
     # - lambda: Lambda self-invoke. LambdaHandler가 init에서 시스템 프로퍼티로 넣는다(운영)
     # - skip: 넘기지 않고 버린다. 아래 tools 프로필의 기본값
     publisher: in-process
+  og-thumbnail:
+    # 피드 카드용 og 이미지 사본(domain/post/OgThumbnailService, docs/plans/2026-11-25-og-thumbnail.md)을 어디에 둘지 고른다.
+    # - skip: 사본을 만들지 않는다(원본도 받지 않는다). 로컬·테스트 기본값 - og_image_thumbnail이 null이라 FE가 원본을 그린다
+    # - s3: FE 버킷의 og-thumbnails/에 올린다. LambdaHandler가 init에서 시스템 프로퍼티로 넣는다(운영)
+    storage: skip
+    bucket: link-sphere-fe-bucket
+    region: ap-northeast-2
+    # FE 배포의 s3 sync --delete가 이 접두어를 빼고 동기화한다(FE deploy.yml). 바꾸면 FE 쪽 제외 줄도 같이 바꾼다
+    key-prefix: og-thumbnails/
+    # CloudFront가 이 경로를 같은 버킷의 접두어로 보낸다. 컬럼에는 이 주소로 시작하는 절대 주소가 들어간다
+    public-base-url: https://linksphere.click/og-thumbnails/
 
 logging:
   level:

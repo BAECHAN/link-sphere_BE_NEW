@@ -104,6 +104,7 @@ class PostResponseAssembler(
         tags = post.tags,
         categories = post.categoryIds.sorted().mapNotNull { id -> categoryMap[id]?.let { CategoryResponse(id = it.id, name = it.name) } },
         ogImage = post.ogImage,
+        ogImageThumbnail = post.ogImageThumbnail,
         aiSummary = post.aiSummary,
         createdAt = post.createdAt,
         aiStatus = post.aiStatus,

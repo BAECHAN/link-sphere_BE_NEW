@@ -1,6 +1,6 @@
 # Link-Sphere BE — 성능 (Lambda 콜드스타트)
 
-> 마지막 검토: 2026-11-12 (§7 단건 비교 `event.json`에서 없어진 `page`만 뺌). 2026-11-10 (§4.6 효과 판정과 구간 값 설명, §7 구간 쿼리만 다시 봄. 같은 날 서빙 경로 전환에 맞춰 §3 `DispatcherServlet` 행과 5장 머리 메모만 고침. 2026-11-06에는 §3·§4.1 워밍업이 스냅샷에 담는 것과 3회의 근거, §8 메모리 요금 문장, 2026-11-05에는 §4.6 AWS SDK 첫 호출 데우기와 §7 측정 방법 추가)
+> 마지막 검토: 2026-11-25 (§4.6 데우는 클라이언트에 S3를 더한 문장만 고침). 2026-11-12 (§7 단건 비교 `event.json`에서 없어진 `page`만 뺌). 2026-11-10 (§4.6 효과 판정과 구간 값 설명, §7 구간 쿼리만 다시 봄. 같은 날 서빙 경로 전환에 맞춰 §3 `DispatcherServlet` 행과 5장 머리 메모만 고침. 2026-11-06에는 §3·§4.1 워밍업이 스냅샷에 담는 것과 3회의 근거, §8 메모리 요금 문장, 2026-11-05에는 §4.6 AWS SDK 첫 호출 데우기와 §7 측정 방법 추가)
 
 이 문서는 **"왜 느렸고, 무엇을 근거로 무엇을 바꿨는지"** 를 남긴다.
 배포 절차는 [DEPLOY.md](./DEPLOY.md), 무엇이 바뀌었는지는 [CHANGELOG.md](../CHANGELOG.md)를 참고.
@@ -132,7 +132,7 @@ AI·댓글 발행만 잡힌다. 피드 발행은 빠져 있다.
 같은 날 댓글 POST의 Lambda Duration은 첫 발행이 낀 요청 2,521ms·2,250ms, 같은 인스턴스의 다음 등록 99ms였다. 구간별로 재지는
 않아서 "SDK 초기화가 대부분"은 첫 호출과 이후 호출의 차이에서 나온 추정이다.
 
-`LambdaHandler.warmUpAwsSdk()`가 init에서 `SdkWarmUp.warmUp(LambdaClient, SesClient)`을 호출한다. AWS 문서는 SnapStart에서
+`LambdaHandler.warmUpAwsSdk()`가 init에서 `SdkWarmUp.warmUp(LambdaClient, SesClient, S3Client)`을 호출한다(S3는 2026-11-25 og 이미지 사본 저장으로 더함, 그 효과는 재지 않았다). AWS 문서는 SnapStart에서
 이 방식을 권한다.
 
 > `SdkWarmUp`은 HTTP 클라이언트를 데우려 네트워크 호출을 1번 하고, 서비스 클라이언트는 로컬의 준비된 응답으로 데운다. AWS 자격

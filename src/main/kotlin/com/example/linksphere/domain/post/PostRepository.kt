@@ -1,9 +1,11 @@
 package com.example.linksphere.domain.post
 
+import org.springframework.data.domain.Limit
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
+import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDateTime
 import java.util.UUID
 
@@ -17,6 +19,12 @@ interface VisiblePostPreview {
     val title: String
     val description: String?
     val ogImage: String?
+}
+
+// 소급 대상 한 건(findOgThumbnailCandidatesAfter)
+interface OgThumbnailCandidate {
+    val id: UUID
+    val ogImage: String
 }
 
 interface PostRepository :
@@ -87,4 +95,30 @@ interface PostRepository :
     // 이유로, 방금 등록돼 AI 잡이 진행 중인 글을 동시에 건드리지 않기 위함이다.
     @Query(value = "SELECT * FROM posts WHERE embedding IS NULL AND created_at < :before ORDER BY created_at", nativeQuery = true)
     fun findAllWithoutEmbeddingCreatedBefore(@Param("before") before: LocalDateTime): List<TablePost>
+
+    // og_image_thumbnail도 embedding처럼 TablePost에 insertable/updatable=false라 아래 두 네이티브 UPDATE로만 쓴다.
+    // 글 수정이 og_image를 바꿀 때 같은 트랜잭션에서 옛 사본 주소를 비운다(PostService.updatePost)
+    @Modifying
+    @Query(value = "UPDATE posts SET og_image_thumbnail = NULL WHERE id = :id", nativeQuery = true)
+    fun clearOgImageThumbnail(@Param("id") id: UUID)
+
+    // 사본 잡이 저장 직전에 부른다(OgThumbnailService). og_image가 잡을 맡길 때와 같을 때만 채우고 바뀐 행 수를 돌려준다 - 0이면
+    // 그 사이 주소가 바뀌었거나 글이 지워졌다. 잡은 트랜잭션 밖에서 돌아 이 UPDATE 하나로 커밋한다(저장소 메서드의 @Transactional은
+    // MemberSessionRepository 선례)
+    @Modifying
+    @Transactional
+    @Query(value = "UPDATE posts SET og_image_thumbnail = :thumbnail WHERE id = :id AND og_image = :ogImage", nativeQuery = true)
+    fun updateOgImageThumbnailIfOgImage(@Param("id") id: UUID, @Param("ogImage") ogImage: String, @Param("thumbnail") thumbnail: String): Int
+
+    // 소급 대상: og 이미지가 있는데 사본이 없는 글을 id 순으로 cursor 뒤부터(OgThumbnailBackfillService). 못 만든 글도 null로 남지만
+    // cursor가 지나가면 다시 읽지 않아 소급이 끝난다
+    @Query(
+        "SELECT p.id AS id, p.ogImage AS ogImage FROM TablePost p " +
+            "WHERE p.ogImage IS NOT NULL AND p.ogImage <> '' AND p.ogImageThumbnail IS NULL AND p.id > :after ORDER BY p.id",
+    )
+    fun findOgThumbnailCandidatesAfter(@Param("after") after: UUID, limit: Limit): List<OgThumbnailCandidate>
+
+    // 소급 요약 로그의 "남은 수" - 위와 같은 조건으로 cursor 뒤만 센다
+    @Query("SELECT COUNT(p) FROM TablePost p WHERE p.ogImage IS NOT NULL AND p.ogImage <> '' AND p.ogImageThumbnail IS NULL AND p.id > :after")
+    fun countOgThumbnailCandidatesAfter(@Param("after") after: UUID): Long
 }

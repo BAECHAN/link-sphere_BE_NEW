@@ -1,6 +1,6 @@
 # AWS Lambda SnapStart 배포 가이드
 
-> 마지막 검토: 2026-11-20 (환경변수 표의 `APP_FRONTEND_URL` 설명만 고침 — 미리보기 봇용 OG HTML의 `og:url`). 2026-11-16 (spring.factories 절에 "`minimize()`를 쓰지 않는 이유"만 더함). 2026-11-12 (13번 검증의 호출 구성만 고침). 2026-11-11 (SES 승인 전 영향 문단의 `PostService`·`CommentService` 줄 번호만 고침). 2026-11-10 (서빙 경로를 serverless-java-container로 옮긴 것에 맞춰 "Lambda 실행 구조", "요청 경로를 serverless-java-container로 처리하는 이유", "SnapStart 동작 흐름", spring.factories 절, 13번 검증, 시행착오 3·5·7의 메모만 고침. 2026-11-07에는 같은 절에 비교 실험 결과와 깨진 주소의 운영 측정만 더함. 2026-11-06에는 AWS 설정 변경 경로와 명령 실행 위치만 다시 봄. 같은 날 "MockMvc 방식을 사용하는 이유", "init 단계에서 워밍업을 실행하는 이유", "메모리 2048MB인 이유"만 다시 봄. 2026-11-05에는 TLS 인자·임시 조회 이메일 제외·덤프 처리·로그 가림·cursor 스모크 테스트·요청 경로·Lambda 실행 역할·백업 보존 설정·CDK 안내만 다시 봄. 전체 검토는 2026-10-30)
+> 마지막 검토: 2026-11-25 (14장 og 이미지 사본을 더하고, "Lambda 실행 구조"의 잡 목록과 "SnapStart 동작 흐름"의 데우는 클라이언트만 고침). 2026-11-20 (환경변수 표의 `APP_FRONTEND_URL` 설명만 고침 — 미리보기 봇용 OG HTML의 `og:url`). 2026-11-16 (spring.factories 절에 "`minimize()`를 쓰지 않는 이유"만 더함). 2026-11-12 (13번 검증의 호출 구성만 고침). 2026-11-11 (SES 승인 전 영향 문단의 `PostService`·`CommentService` 줄 번호만 고침). 2026-11-10 (서빙 경로를 serverless-java-container로 옮긴 것에 맞춰 "Lambda 실행 구조", "요청 경로를 serverless-java-container로 처리하는 이유", "SnapStart 동작 흐름", spring.factories 절, 13번 검증, 시행착오 3·5·7의 메모만 고침. 2026-11-07에는 같은 절에 비교 실험 결과와 깨진 주소의 운영 측정만 더함. 2026-11-06에는 AWS 설정 변경 경로와 명령 실행 위치만 다시 봄. 같은 날 "MockMvc 방식을 사용하는 이유", "init 단계에서 워밍업을 실행하는 이유", "메모리 2048MB인 이유"만 다시 봄. 2026-11-05에는 TLS 인자·임시 조회 이메일 제외·덤프 처리·로그 가림·cursor 스모크 테스트·요청 경로·Lambda 실행 역할·백업 보존 설정·CDK 안내만 다시 봄. 전체 검토는 2026-10-30)
 
 ## 아키텍처 개요
 
@@ -39,8 +39,9 @@ API 요청 (linksphere.click, HTTPS)
       호출은 IAM 인가 단계에서 403, §5-1 참고)
       → LambdaHandler.handleRequest()
         → linksphereJob 필드로 분기: 없으면 아래 HTTP 요청 경로, 있으면
-          ai-analysis/comment-postprocess/feed-crawl/feed-item/account-purge/orphan-image-gc
-          내부 작업(self-invoke·EventBridge, 목록 정본은 docs/BE-ARCHITECTURE.md §1)을 서블릿 경로 없이 바로 처리
+          ai-analysis/comment-postprocess/feed-crawl/feed-item/account-purge/orphan-image-gc/
+          og-thumbnail/og-thumbnail-backfill
+          내부 작업(self-invoke·EventBridge·수동 호출, 목록 정본은 docs/BE-ARCHITECTURE.md §1)을 서블릿 경로 없이 바로 처리
         → (HTTP 요청 경로) FunctionUrlOriginGuard 검사 — 지금은 ORIGIN_VERIFY_SECRET이
           미설정이라 fail-open(항상 통과)이며, OAC가 사실상 이 자리를 대신한다(§5-1
           "Phase 0 관련 정정" 참고)
@@ -119,7 +120,7 @@ Cookie 객체로 변환, `secure(true)`, 쿼리의 `+`를 공백으로 변환(20
    - LambdaHandler.companion.init { } 실행
    - Spring Boot 시작 (serverless-java-container가 서블릿 컨텍스트와 필터를 등록)
    - warmUp() 실행 — 읽기 전용 엔드포인트로 실제 요청을 흘려보냄
-   - warmUpAwsSdk() 실행 — LambdaClient·SesClient를 SdkWarmUp으로 데움(운영 함수·메일은 부르지 않음)
+   - warmUpAwsSdk() 실행 — LambdaClient·SesClient·S3Client를 SdkWarmUp으로 데움(운영 함수·메일·버킷은 부르지 않음)
    - SnapStart가 이 상태를 스냅샷으로 저장
 
 2. 요청 수신 (cold start):
@@ -1124,6 +1125,56 @@ docker rm -f bk-rehearsal
   바꾼다. pg_dump는 서버보다 메이저 버전이 같거나 높아야 하므로, Supabase가 Postgres 18로 올라가면 태그도 `pg18`로 바꾼다.
 - **새 테이블**: `postgres`로 만들면 기본 권한으로 자동으로 백업된다. 세션처럼 계속 바뀌는 데이터면 워크플로의
   `--exclude-table-data`에 더한다.
+
+### 14. og 이미지 사본 (컬럼 추가 + 기존 글 소급) — 컬럼 적용 완료 (2026-11-25), 소급은 배포 뒤
+
+글을 등록하거나 링크를 바꾸면 BE가 og 이미지를 받아 줄인 사본을 FE 버킷(서울, `link-sphere-fe-bucket`)의 `og-thumbnails/`에
+올리고 `posts.og_image_thumbnail`에 `https://linksphere.click/og-thumbnails/<이름>`을 적는다. 동작과 값은
+[`OG-THUMBNAIL.md`](./OG-THUMBNAIL.md), 계획은 FE `docs/plans/2026-11-25-og-thumbnail.md`다. 이 장은 운영에 들이는 순서만 적는다.
+
+- **권한·배포 제외는 다른 저장소에서 끝났다**: API Lambda 역할의 `og-thumbnails/*` 쓰기·지우기 정책(infra #47), FE 배포
+  `s3 sync --delete`의 `og-thumbnails/*` 제외(FE #689).
+- **Lambda 환경변수는 바꾸지 않는다**: `LambdaHandler`가 init에서 `app.og-thumbnail.storage=s3`를 넣고, 버킷·리전·접두어·공개 주소는
+  `application.yml`의 `app.og-thumbnail`에 있다. 로컬·테스트 기본값은 `skip`이라 사본을 만들지 않는다.
+
+적용 순서(`CHANGELOG.md` `[Unreleased] > Migration` 참고):
+
+1. `sql/add_posts_og_image_thumbnail.sql`을 코드 배포 **전에** 세션 풀러(5432)로 실행한다(2026-11-25 사용자가 Supabase SQL Editor로 실행함). 컬럼 없이 새 코드가
+   나가면 `posts`를 읽는 모든 요청이 500이다.
+2. 코드가 `prod`로 배포되고 5회 연속 invoke 게이트를 통과한 뒤, 다음 새 글에 사본이 생기는지 본다(CloudWatch의
+   `[OgThumbnail] 사본 저장` 또는 `사본 없음 - … reason: …`, 12장 계정으로 `og_image_thumbnail`).
+3. 기존 글을 소급한다. 첫 호출은 1건만 처리한다:
+   ```bash
+   echo '{"linksphereJob":"og-thumbnail-backfill","limit":1}' > /tmp/og-backfill-event.json
+   aws lambda invoke --function-name link-sphere-api:prod --region ap-northeast-1 \
+     --cli-read-timeout 150 --log-type Tail \
+     --payload fileb:///tmp/og-backfill-event.json /tmp/out.json \
+     --query 'LogResult' --output text | base64 -d
+   ```
+   로그 끝의 요약 한 줄을 본다:
+   `[OgThumbnailBackfill] 완료 - processed=1, stored=1, failed=0, failures={}, remaining=N, nextCursor=<글 id>, deadlineReached=false`.
+   `stored=1`이면 요약 바로 위 `[OgThumbnail] 사본 저장 - postId: …, url: …`의 주소를 열어 사본을 눈으로 확인한다.
+4. 확인되면 요약의 `nextCursor`를 넣어 남은 글을 이어 처리한다. `remaining=0`이 될 때까지 매번 새 `nextCursor`로 반복한다:
+   ```bash
+   echo '{"linksphereJob":"og-thumbnail-backfill","limit":50,"cursor":"<nextCursor>"}' > /tmp/og-backfill-event.json
+   ```
+   (같은 `aws lambda invoke` 명령). 한 호출은 90초 마감(`BatchJobLimits`)에서 멈추고 `deadlineReached=true`를 남긴다 — 그때도
+   `nextCursor`로 이어 가면 된다.
+
+- **`--cli-read-timeout 150`을 빼지 않는다**: AWS CLI의 읽기 한도 기본값은 60초이고, 읽기 시간 초과는 재시도 대상이라 같은
+  호출이 최대 세 번 나간다. 소급 한 번은 90초 + 마지막 한 건까지 걸릴 수 있어, 기본값이면 첫 호출이 도는 중에 같은 소급이 또 돈다
+  (사본 이름이 같아 결과는 같지만 일이 겹친다). 근거는 로컬 설치본 awscli 2.34.14의 `awscli/data/cli.json`(`cli-read-timeout`
+  설명 "The default value is 60 seconds")과 `awscli/botocore/retries/standard.py`(`ReadTimeoutError`의 상위 `HTTPClientError`가 일시
+  오류, 기본 3회)다. CloudShell의 CLI 버전은 확인하지 않았다. 150초는 Lambda 타임아웃(120초)보다 길게 잡은 값이다.
+- **못 만든 글은 표시하지 않는다**: WebP·404 같은 글은 컬럼이 null로 남고 FE가 원본을 그린다. cursor가 지나간 글은 다시 읽지
+  않으므로 영구 실패가 있어도 소급은 끝난다. 요약의 `failures`는 `이유@사이트` → 건수다(이유 목록은 `OG-THUMBNAIL.md` §7).
+  cursor 없이 다시 부르면 실패한 글을 처음부터 다시 시도한다.
+- **진행 확인**(12장 계정): `SELECT count(*) FILTER (WHERE og_image_thumbnail IS NOT NULL), count(*) FROM posts WHERE og_image IS
+  NOT NULL AND og_image <> '';`
+- **되돌릴 때**: 옛 코드는 컬럼과 사본을 읽지 않아 코드만 되돌려도 API는 돈다. 다만 옛 코드는 링크를 바꿔도 사본 주소를 비우지
+  않는다. FE가 `ogImageThumbnail`을 그리는 동안(FE 계획 PR 4 뒤) 되돌렸으면, 그 사이 링크를 바꾼 글의 카드에 옛 그림이 남는다.
+  이때는 사용자가 `UPDATE posts SET og_image_thumbnail = NULL;`을 실행해 모든 카드를 원본으로 돌린다. 남은 사본은 아무 글도 가리키지
+  않는 파일일 뿐이다.
 
 ---
 

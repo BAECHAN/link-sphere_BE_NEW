@@ -8,6 +8,8 @@ import com.example.linksphere.domain.feed.FeedCrawlJobHandler
 import com.example.linksphere.domain.feed.FeedItemJobEvent
 import com.example.linksphere.domain.feed.FeedItemJobHandler
 import com.example.linksphere.domain.post.AiAnalysisJobHandler
+import com.example.linksphere.domain.post.OgThumbnailBackfillJobHandler
+import com.example.linksphere.domain.post.OgThumbnailJobHandler
 import com.example.linksphere.domain.post.PostCreatedEvent
 import com.example.linksphere.domain.upload.OrphanImageGcJobHandler
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
@@ -44,6 +46,15 @@ class JobWiringTest {
                 AccountPurgeJobHandler.JOB_NAME,
                 OrphanImageGcJobHandler.JOB_NAME,
             ),
+        )
+    }
+
+    // 피드 카드용 og 이미지 사본 잡 둘(2026-11-25). 소급 잡 이름은 사용자가 CloudShell에서 보내는 입력에도 들어간다(docs/DEPLOY.md)
+    @Test
+    fun `og 이미지 사본 잡 이름은 og-thumbnail과 og-thumbnail-backfill이다`() {
+        assertEquals(
+            listOf("og-thumbnail", "og-thumbnail-backfill"),
+            listOf(OgThumbnailJobHandler.JOB_NAME, OgThumbnailBackfillJobHandler.JOB_NAME),
         )
     }
 

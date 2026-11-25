@@ -8,6 +8,7 @@ import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
+import java.io.UncheckedIOException
 import java.net.URI
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
@@ -21,6 +22,9 @@ private const val USER_AGENT =
 // 지금처럼 영어를 받게 한다.
 private const val ACCEPT_LANGUAGE = "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7"
 private const val MAX_REDIRECTS = 5
+
+// og 이미지 원본을 받을 때(safeConnectImage). JDK ImageIO가 읽는 형식만 적는다
+private const val IMAGE_ACCEPT = "image/jpeg,image/png,image/gif;q=0.9,*/*;q=0.5"
 
 // 인프런처럼 CloudFront 엣지가 접속 국가로 언어를 정하되 그 사실을 리다이렉트로 드러내지
 // 않는 사이트가 있다 - Accept-Language 헤더도 무시한다(2026-09-27 도쿄 Lambda 재현,
@@ -279,33 +283,78 @@ class UrlMetadataExtractor(
      *
      * FeedParser가 RSS/Atom 피드를 가져올 때도 이 검증된 로직을 그대로 재사용한다.
      */
-    fun safeConnect(url: String): org.jsoup.Connection.Response {
+    fun safeConnect(url: String): org.jsoup.Connection.Response = followValidatedRedirects(url, ::applyLocaleOverride) { currentUrl ->
+        Jsoup.connect(currentUrl)
+            .userAgent(USER_AGENT)
+            .referrer("http://google.com")
+            .header("Accept-Language", ACCEPT_LANGUAGE)
+            .timeout(5000)
+            // YouTube watch 페이지 HTML이 실측 1.3~1.4MB고, Jsoup 기본 상한 2MB는 여유가
+            // 1.5배뿐인 데다, 넘어도 예외 없이 조용히 잘린다. 이 상한은 gzip 해제 후
+            // 바이트에 적용된다.
+            .maxBodySize(4 * 1024 * 1024)
+            .followRedirects(false)
+            // 리다이렉트 응답(예: youtu.be → youtube.com)은 Content-Type이
+            // text/html이 아닌 경우가 많아(예: application/binary), 검사를 끄지
+            // 않으면 아래 상태코드 분기 전에 execute()가 예외를 던져버린다.
+            .ignoreContentType(true)
+            // 403(Cloudflare·AWS IP 차단)이면 지금은 execute()가 던져 og:title조차 못
+            // 건지고 제목이 URL 문자열로 폴백된다. 응답을 그대로 받아 최소한 og:*는 읽는다.
+            // 이 옵션이 끄는 건 "상태코드 <200 || >=400 일 때의 throw"뿐이라 아래 300~399
+            // 리다이렉트 분기와는 간섭하지 않는다 - 3xx는 원래부터 던지지 않았다.
+            .ignoreHttpErrors(true)
+            .execute()
+    }
+
+    /**
+     * og 이미지 원본을 받는다(사본 잡, domain/post/OgThumbnailService). [safeConnect]와 같은 홉별 재검증을 거치고, 이미지에 맞게
+     * 본문 상한·시간 한도만 따로 준다 - [safeConnect]의 4MB 상한은 넘으면 조용히 잘려 이미지가 깨진다. 본문도 여기서 다 받는다:
+     * [timeoutMillis]는 Jsoup `timeout`이라 한 바이트씩 흘리는 서버도 끝없이 붙잡지 않는다. 다만 딱 그 시간에 끊기지는 않는다 -
+     * 1초 한도에 200ms마다 조금씩 보내는 서버는 2.9초에 끝났다(SafeConnectTest).
+     *
+     * 본문이 [maxBodyBytes]를 넘으면 그 길이에서 잘린다. 넘었는지는 호출하는 쪽이 상한+1을 넘겨 길이로 가린다. 언어 접두어
+     * 강제([applyLocaleOverride])는 HTML 페이지용이라 하지 않는다.
+     */
+    fun safeConnectImage(url: String, maxBodyBytes: Int, timeoutMillis: Int): org.jsoup.Connection.Response {
+        val response =
+            followValidatedRedirects(url, { it }) { currentUrl ->
+                Jsoup.connect(currentUrl)
+                    .userAgent(USER_AGENT)
+                    // 형식을 고르는 CDN이 WebP·AVIF(JDK가 읽지 못한다)를 주지 않게 읽을 수 있는 형식을 먼저 적는다
+                    .header("Accept", IMAGE_ACCEPT)
+                    .timeout(timeoutMillis)
+                    .maxBodySize(maxBodyBytes)
+                    .followRedirects(false)
+                    .ignoreContentType(true)
+                    .ignoreHttpErrors(true)
+                    .execute()
+            }
+
+        try {
+            response.bufferUp()
+        } catch (e: UncheckedIOException) {
+            // Jsoup은 본문을 읽다 난 IOException(시간 초과 포함)을 UncheckedIOException으로 감싼다
+            throw e.cause ?: e
+        }
+
+        return response
+    }
+
+    /**
+     * Jsoup의 자동 리다이렉트를 끄고([execute]가 `followRedirects(false)`로 요청한다) 직접 따라가면서, 매 홉마다 SafeUrlValidator로
+     * 재검증한다. [rewrite]는 매 홉(최초 요청 포함)의 주소를 검증 전에 바꾼다.
+     */
+    private inline fun followValidatedRedirects(
+        url: String,
+        rewrite: (String) -> String,
+        execute: (String) -> org.jsoup.Connection.Response,
+    ): org.jsoup.Connection.Response {
         var currentUrl = url
         var hop = 0
         while (true) {
-            currentUrl = applyLocaleOverride(currentUrl)
+            currentUrl = rewrite(currentUrl)
             safeUrlValidator.validate(currentUrl)
-            val response =
-                Jsoup.connect(currentUrl)
-                    .userAgent(USER_AGENT)
-                    .referrer("http://google.com")
-                    .header("Accept-Language", ACCEPT_LANGUAGE)
-                    .timeout(5000)
-                    // YouTube watch 페이지 HTML이 실측 1.3~1.4MB고, Jsoup 기본 상한 2MB는 여유가
-                    // 1.5배뿐인 데다, 넘어도 예외 없이 조용히 잘린다. 이 상한은 gzip 해제 후
-                    // 바이트에 적용된다.
-                    .maxBodySize(4 * 1024 * 1024)
-                    .followRedirects(false)
-                    // 리다이렉트 응답(예: youtu.be → youtube.com)은 Content-Type이
-                    // text/html이 아닌 경우가 많아(예: application/binary), 검사를 끄지
-                    // 않으면 아래 상태코드 분기 전에 execute()가 예외를 던져버린다.
-                    .ignoreContentType(true)
-                    // 403(Cloudflare·AWS IP 차단)이면 지금은 execute()가 던져 og:title조차 못
-                    // 건지고 제목이 URL 문자열로 폴백된다. 응답을 그대로 받아 최소한 og:*는 읽는다.
-                    // 이 옵션이 끄는 건 "상태코드 <200 || >=400 일 때의 throw"뿐이라 아래 300~399
-                    // 리다이렉트 분기와는 간섭하지 않는다 - 3xx는 원래부터 던지지 않았다.
-                    .ignoreHttpErrors(true)
-                    .execute()
+            val response = execute(currentUrl)
 
             if (response.statusCode() !in 300..399) return response
 
