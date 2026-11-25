@@ -143,6 +143,11 @@ class PostService(
             postInteractionPort.bookmarkNewPost(userId, savedPost.id!!, request.folderIds.orEmpty().distinct())
         }
 
+        // 피드 카드용 사본은 커밋 뒤 따로 만든다(OgThumbnailService) - 원본을 받아 줄이는 데 시간이 걸려 등록 응답을 붙잡지 않는다
+        if (!savedPost.ogImage.isNullOrBlank()) {
+            eventPublisher.publishEvent(PostOgImageChangedEvent(postId = savedPost.id!!, previousOgImage = null, ogImage = savedPost.ogImage))
+        }
+
         if (pageContent != null) {
             logger.info("[AI Async] PostCreatedEvent 발행 - postId: ${savedPost.id}")
             eventPublisher.publishEvent(
@@ -290,6 +295,7 @@ class PostService(
         val post = postRepository.findById(id).orElseThrow { PostNotFoundException(id) }
         if (post.userId != userId) throw ForbiddenException("You are not the owner of this post")
 
+        val previousOgImage = post.ogImage
         post.isPrivate = request.isPrivate
         post.categoryIds.clear()
         if (!request.categoryIds.isNullOrEmpty()) {
@@ -353,6 +359,14 @@ class PostService(
             newUrl != null -> post.aiStatus = AiStatus.NONE
         }
 
+        // og 이미지가 바뀌면(주소 변경·빈 og:image 채움) 옛 사본은 새 원본과 맞지 않는다. 같은 트랜잭션에서 사본 주소를 비우고
+        // 커밋 뒤 옛 사본을 지운 다음 새로 만든다(OgThumbnailService). 사본 주소는 save로 써지지 않아 네이티브 UPDATE로 비운다
+        val ogImageChanged = previousOgImage.blankToNull() != post.ogImage.blankToNull()
+        if (ogImageChanged) {
+            postRepository.clearOgImageThumbnail(id)
+            post.ogImageThumbnail = null
+        }
+
         val savedPost = postRepository.save(post)
 
         if (pageContent != null) {
@@ -369,8 +383,14 @@ class PostService(
             )
         }
 
+        if (ogImageChanged) {
+            eventPublisher.publishEvent(PostOgImageChangedEvent(postId = id, previousOgImage = previousOgImage, ogImage = post.ogImage))
+        }
+
         return postResponseAssembler.convertToResponse(savedPost, userId)
     }
+
+    private fun String?.blankToNull(): String? = this?.takeIf { it.isNotBlank() }
 
     /** 재수집한 제목은 빈약하지 않을 때만 채택한다 - PostAIService와 같은 판정을 쓴다. */
     private fun usableTitle(metadata: UrlMetadata?, url: String?): String? {
@@ -396,6 +416,11 @@ class PostService(
         // 듣는 쪽은 이 트랜잭션 안에서 바로 실행되고, 실패하면 삭제도 되돌려진다.
         eventPublisher.publishEvent(PostDeletingEvent(id))
         postRepository.delete(post)
+
+        // 사본은 커밋 뒤 지운다(OgThumbnailService) - 삭제가 롤백되면 사본도 남아야 한다
+        if (!post.ogImage.isNullOrBlank()) {
+            eventPublisher.publishEvent(PostOgImageChangedEvent(postId = id, previousOgImage = post.ogImage, ogImage = null))
+        }
     }
 
     /**

@@ -4,10 +4,15 @@ import com.example.linksphere.infra.youtube.YoutubeVideoClient
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.sun.net.httpserver.HttpServer
 import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Timeout
 import org.mockito.Mockito.mock
 import java.net.InetSocketAddress
+import java.net.SocketTimeoutException
+import java.util.concurrent.TimeUnit
 
 /**
  * safeConnect가 실제로 보내는 요청 헤더를 검증한다. 로컬 HttpServer를 띄우고 붙어서, 목이 아니라
@@ -49,5 +54,50 @@ class SafeConnectTest {
         extractor.safeConnect(baseUrl)
 
         assertTrue(receivedAcceptLanguage?.startsWith("ko-KR") == true, "actual=$receivedAcceptLanguage")
+    }
+
+    // 사본 잡의 원본 받기(OgThumbnailService). 시간 한도는 연결부터 본문 끝까지 합친 값이라야 한다 - 한 바이트씩 흘려 보내는 서버가
+    // 읽기마다 한도 안에 들어와도 잡이 끝나지 않으면 안 된다. 합친 값이 아니면 이 테스트는 @Timeout(10초)에 걸린다
+    @Test
+    @Timeout(10, unit = TimeUnit.SECONDS)
+    fun `safeConnectImage는 본문이 시간 한도 안에 다 오지 않으면 SocketTimeoutException을 던진다`() {
+        val baseUrl =
+            startServer { exchange ->
+                exchange.responseHeaders.add("Content-Type", "image/png")
+                exchange.sendResponseHeaders(200, 100)
+                exchange.responseBody.use { out ->
+                    repeat(100) {
+                        out.write(0)
+                        out.flush()
+                        Thread.sleep(200)
+                    }
+                }
+            }
+
+        val extractor =
+            UrlMetadataExtractor(ObjectMapper(), mock(SafeUrlValidator::class.java), mock(YoutubeVideoClient::class.java))
+
+        assertThrows(SocketTimeoutException::class.java) {
+            extractor.safeConnectImage(baseUrl, maxBodyBytes = 1024, timeoutMillis = 1000).bodyAsBytes()
+        }
+    }
+
+    // safeConnect의 4MB 상한처럼 넘으면 조용히 잘린다 - 호출하는 쪽이 상한+1을 넘겨 "넘었는지"를 길이로 가린다
+    @Test
+    fun `safeConnectImage는 본문을 상한에서 자르고 이미지 Content-Type을 그대로 돌려준다`() {
+        val baseUrl =
+            startServer { exchange ->
+                val body = ByteArray(5000)
+                exchange.responseHeaders.add("Content-Type", "image/jpeg")
+                exchange.sendResponseHeaders(200, body.size.toLong())
+                exchange.responseBody.use { it.write(body) }
+            }
+
+        val extractor =
+            UrlMetadataExtractor(ObjectMapper(), mock(SafeUrlValidator::class.java), mock(YoutubeVideoClient::class.java))
+        val response = extractor.safeConnectImage(baseUrl, maxBodyBytes = 1001, timeoutMillis = 5000)
+
+        assertEquals("image/jpeg", response.contentType())
+        assertEquals(1001, response.bodyAsBytes().size)
     }
 }

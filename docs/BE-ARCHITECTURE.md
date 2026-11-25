@@ -7,7 +7,7 @@
 > **읽고 나면**: 요청이 어느 코드를 거치는지, 레이어끼리 무엇을 참조하고 어떤 타입을 주고받는지(§3) 따라갈 수 있고, 자동 검사(§2)와 선례 패턴(§7)에 맞춰 새 코드를 쓸 수 있다.
 > 지금 코드가 규칙과 어긋나는 곳은 §9에 모아 두었다 — 그쪽을 본떠 쓰지 않는다.
 >
-> **마지막 검토**: 2026-11-23 (§4 code 표의 `LoginRequiredException` 행, §5 공개 GET 항목, §7-8 id 집합 필터 문장만 고침 — 토큰 없이 보낸 로그인 전용 `filter`를 401로 거절함). 이전 2026-11-19 (§2 반환 규칙 행과 §4 성공 응답의 HTML 예외만 고침 — 메신저 미리보기 봇용 OG HTML 엔드포인트를 더함). 같은 날 앞서 (§7-8·§7-10의 `PostLookupService` 항목만 고침 — 댓글의 우리 글 링크 카드를 글에서 직접 읽게 함). 이전 2026-11-18 (§7-8의 id 집합 필터 항목만 고침 — `filter=isLiked`가 최근 좋아요 10,000개만 넘기게 함). 같은 날 앞서 (§4 실패 표의 `BOOKMARK_LIMIT_EXCEEDED` 행과 §7 상수 항목의 `BookmarkLimits`만 고침 — 회원당 북마크 저장 한도를 더함). 이전 2026-11-17 (§2 검사 표와 §3의 다른 도메인 금지 항목만 고침 — `@Query` 문자열에 적은 다른 패키지의 엔티티·테이블 이름 검사를 더함). 이전 2026-11-16 (§2·§3의 위반 수, §5 역할·권한 흐름, §6 메서드 이름만 고침 — auth가 회원 테이블을 조인하지 않고 역할을 member에 묻게 함). 같은 날 앞서 (§1 그래프, §2·§3의 위반 수, §3 접미사 표, §7-5만 고침 — 탈퇴 로직을 member로 옮기고 다른 패키지의 데이터는 동기 이벤트를 듣는 쪽이 지우게 함). 같은 날 앞서 (§1 패키지 역할·그래프, §2 검사 표, §3 global → domain 예외, §9 순환 간선만 고침 — `ErrorResponse`를 `global/exception`으로 옮기고 `SecurityConfig`가 auth 필터의 구체 타입을 모르게 함). 같은 날 앞서 (§1 잡 표·패키지 역할·그래프, §3 접미사 표, §7-5, §9 순환 간선만 고침 — 뒷일 전달을 `global/job`으로 옮김). 이전 2026-11-15 (§1 패키지 그래프, §8 순수 함수 테스트 예시 경로, "남은 것"의 linkpreview 항목만 고침. 같은 날 §11 도구 선택 표의 Detekt 행도 고침). 이전 2026-11-12 (§4 실패 표의 `page=-1` 예, §7-8 N+1의 `countQuery` 예, §7-9 페이징의 `page` 서술만 고침, 같은 날 `page` 400 코드 제거를 반영). 이전 2026-11-11 (§3 컨트롤러·Service에 두는 한도와 §7-3 조회 기록만 고침). 이전 2026-11-10 (§1 요청 파이프라인의 서빙 경로만 고침), 2026-11-07
+> **마지막 검토**: 2026-11-25 (§1 그림·잡 표·패키지 역할·그래프, §7-5·§7-7·§7-11만 고침 — og 이미지 사본 잡 두 개와 사본 저장 인터페이스 `global/storage`를 더함). 이전 2026-11-23 (§4 code 표의 `LoginRequiredException` 행, §5 공개 GET 항목, §7-8 id 집합 필터 문장만 고침 — 토큰 없이 보낸 로그인 전용 `filter`를 401로 거절함). 이전 2026-11-19 (§2 반환 규칙 행과 §4 성공 응답의 HTML 예외만 고침 — 메신저 미리보기 봇용 OG HTML 엔드포인트를 더함). 같은 날 앞서 (§7-8·§7-10의 `PostLookupService` 항목만 고침 — 댓글의 우리 글 링크 카드를 글에서 직접 읽게 함). 이전 2026-11-18 (§7-8의 id 집합 필터 항목만 고침 — `filter=isLiked`가 최근 좋아요 10,000개만 넘기게 함). 같은 날 앞서 (§4 실패 표의 `BOOKMARK_LIMIT_EXCEEDED` 행과 §7 상수 항목의 `BookmarkLimits`만 고침 — 회원당 북마크 저장 한도를 더함). 이전 2026-11-17 (§2 검사 표와 §3의 다른 도메인 금지 항목만 고침 — `@Query` 문자열에 적은 다른 패키지의 엔티티·테이블 이름 검사를 더함). 이전 2026-11-16 (§2·§3의 위반 수, §5 역할·권한 흐름, §6 메서드 이름만 고침 — auth가 회원 테이블을 조인하지 않고 역할을 member에 묻게 함). 같은 날 앞서 (§1 그래프, §2·§3의 위반 수, §3 접미사 표, §7-5만 고침 — 탈퇴 로직을 member로 옮기고 다른 패키지의 데이터는 동기 이벤트를 듣는 쪽이 지우게 함). 같은 날 앞서 (§1 패키지 역할·그래프, §2 검사 표, §3 global → domain 예외, §9 순환 간선만 고침 — `ErrorResponse`를 `global/exception`으로 옮기고 `SecurityConfig`가 auth 필터의 구체 타입을 모르게 함). 같은 날 앞서 (§1 잡 표·패키지 역할·그래프, §3 접미사 표, §7-5, §9 순환 간선만 고침 — 뒷일 전달을 `global/job`으로 옮김). 이전 2026-11-15 (§1 패키지 그래프, §8 순수 함수 테스트 예시 경로, "남은 것"의 linkpreview 항목만 고침. 같은 날 §11 도구 선택 표의 Detekt 행도 고침). 이전 2026-11-12 (§4 실패 표의 `page=-1` 예, §7-8 N+1의 `countQuery` 예, §7-9 페이징의 `page` 서술만 고침, 같은 날 `page` 400 코드 제거를 반영). 이전 2026-11-11 (§3 컨트롤러·Service에 두는 한도와 §7-3 조회 기록만 고침). 이전 2026-11-10 (§1 요청 파이프라인의 서빙 경로만 고침), 2026-11-07
 
 시스템 전체(CloudFront·S3·Lambda·배포 파이프라인)는 FE 레포
 [`docs/SYSTEM-ARCHITECTURE.md`](https://github.com/BAECHAN/link-sphere_FE_NEW/blob/main/docs/SYSTEM-ARCHITECTURE.md)가,
@@ -26,6 +26,7 @@ Spring MVC를 그대로 태우고(Tomcat 소켓 없음), **내부 잡**(`linksph
 flowchart TD
   CF["CloudFront /api/* (OAC 서명)"] --> URL["Lambda Function URL<br/>prod alias"]
   EB["EventBridge 룰 (4일마다)"] --> H
+  CS["CloudShell aws lambda invoke<br/>(og-thumbnail-backfill, 사람이 부름)"] --> H
   URL --> H{"LambdaHandler.handleRequest<br/>linksphereJob 있나?"}
   H -->|"있음"| JOB["JobRunner → 이름이 맞는 JobHandler<br/>Service 직접 호출, 서블릿 필터·DispatcherServlet 미경유"]
   H -->|"없음"| G["FunctionUrlOriginGuard<br/>→ 쿼리 정규화 → serverless-java-container<br/>(/api 제거, 서블릿 필터 전체)"]
@@ -36,7 +37,7 @@ flowchart TD
   S -.->|"예외"| EH["GlobalExceptionHandler<br/>ErrorResponse(status, code, message)"]
   S -.->|"커밋 뒤 이벤트"| AC["@TransactionalEventListener(AFTER_COMMIT)"]
   AC --> D["JobPublisher.publish<br/>운영: LambdaJobPublisher → LambdaSelfInvoker<br/>EVENT(비동기) 호출, prod alias"]
-  D -->|"ai-analysis · comment-postprocess · feed-item"| H
+  D -->|"ai-analysis · comment-postprocess · feed-item · og-thumbnail"| H
   JOB --> S
 ```
 
@@ -48,8 +49,10 @@ flowchart TD
 | `feed-item` | `FeedCrawlService`(5건씩) | `FeedItemJobHandler` → `FeedCrawlService.processFeedItemJob` → 항목마다 `FeedItemProcessor.processFeedItem` → `PostService.createPost` → 다시 `ai-analysis` |
 | `account-purge` | 같은 EventBridge 룰 | `AccountPurgeJobHandler` → `AccountPurgeService.purgeExpired`, `RateLimitService.purgeExpired` |
 | `orphan-image-gc` | 같은 EventBridge 룰(`dryRun` 지원) | `OrphanImageGcJobHandler` → `OrphanImageGcService.collect` |
+| `og-thumbnail` | 글 등록·og 이미지 주소 변경 커밋 뒤 `OgThumbnailService.handleOgImageChanged` → `JobPublisher` | `OgThumbnailJobHandler` → `OgThumbnailService.createThumbnail` |
+| `og-thumbnail-backfill` | 사람이 CloudShell에서 직접(`limit`·`cursor`, [DEPLOY.md](./DEPLOY.md) 14장) | `OgThumbnailBackfillJobHandler` → `OgThumbnailBackfillService.run` → 글마다 `createThumbnail` |
 
-- 잡 이름 여섯 개는 떠 있는 호출과 EventBridge 룰의 입력이 쓰는 값이라 바꾸지 않는다(`JobWiringTest`가 고정한다).
+- 잡 이름 여덟 개는 떠 있는 호출, EventBridge 룰의 입력, DEPLOY.md의 수동 호출 명령이 쓰는 값이라 바꾸지 않는다(`JobWiringTest`가 고정한다).
 - **뒷일을 어떻게 넘길지는 `app.job.publisher` 설정이 고른다**(`application.yml`). 운영은 `lambda`(`LambdaHandler`가 init에서
   넣는다), 개발 환경(`bootRun`)은 `in-process` — 같은 프로세스의 전용 스레드에서 같은 처리기를 탄다. 그래서 **로컬에서 글이나
   댓글을 등록하면 Gemini 호출·크롤링·알림 발송이 실제로 돈다**(2026-11-16 전에는 생략됐다). `tools/*Runner` 프로필은 `skip`이
@@ -72,8 +75,9 @@ flowchart TD
 | `global/ratelimit/` | 범용 고정 윈도 레이트리밋 `RateLimitService`와 그 저장소 `RateLimitRepository`·`TableRateLimit`(테이블 이름은 옛 이름 `auth_rate_limits` 그대로) | 위와 같음 |
 | `global/config/` | Security·Swagger·Async 설정. `security/RequestAuthenticationFilter`는 `SecurityConfig`가 받는 요청 인증 필터 타입이고 구현은 auth에 있다(§3) | 위와 같음 |
 | `global/job/` | 뒷일 전달의 인터페이스 `JobPublisher`(맡긴다)·`JobHandler`(처리한다), 이름으로 처리기를 찾는 `JobRunner`, 개발 환경용 `InProcessJobPublisher`, 도구용 `SkippingJobPublisher` | 위와 같음 |
+| `global/storage/` | og 이미지 사본 저장의 인터페이스 `ThumbnailStorage`, 로컬·테스트용 `SkippingThumbnailStorage`(`app.og-thumbnail.storage=skip`) | 위와 같음 |
 | `global/exception/` | 커스텀 예외 전부 + `GlobalExceptionHandler` + 오류 응답 봉투 `ErrorResponse` | — |
-| `infra/<기술>/` | 외부 연동(Gemini·YouTube·SES·FCM·Lambda self-invoke) | `global`만 — `domain`을 참조하지 않는다 |
+| `infra/<기술>/` | 외부 연동(Gemini·YouTube·SES·FCM·Lambda self-invoke·S3 사본 저장) | `global`만 — `domain`을 참조하지 않는다 |
 | `tools/` | 로컬 1회성 CLI | 전부 |
 
 도메인 안에는 서브패키지를 만들지 않는다(`infra/<기술>/dto/`만 예외). 도메인·`global` 하위는 단수 소문자
@@ -106,6 +110,7 @@ flowchart LR
     global_config["config"]
     global_job["job"]
     global_ratelimit["ratelimit"]
+    global_storage["storage"]
   end
   subgraph infra
     infra_ai["ai"]
@@ -143,6 +148,7 @@ flowchart LR
   domain_post --> global_common
   domain_post --> global_job
   domain_post --> global_ratelimit
+  domain_post --> global_storage
   domain_post --> infra_ai
   domain_upload --> domain_comment
   domain_upload --> domain_member
@@ -150,6 +156,7 @@ flowchart LR
   domain_upload --> global_job
   domain_upload --> global_ratelimit
   infra_aws --> global_job
+  infra_aws --> global_storage
   infra_fcm --> domain_auth
   infra_fcm --> domain_member
   infra_fcm --> global_common
@@ -596,7 +603,7 @@ if (memberActionTokenRepository.consumeIfActive(token.id, Instant.now()) == 0) {
 
 ### 7-5. 커밋 뒤 비동기 잡 (뒷일 전달)
 
-- **언제**: 오래 걸리는 후처리(AI 분석, 알림·링크 프리뷰)를 요청 응답과 분리할 때.
+- **언제**: 오래 걸리는 후처리(AI 분석, 알림·링크 프리뷰, og 이미지 사본)를 요청 응답과 분리할 때.
 - **정석**: `PostService.createPost`(이벤트 발행) → `PostAIService.handlePostCreatedEvent`(AFTER_COMMIT, 맡기기만) →
   `JobPublisher.publish("ai-analysis", event, …)` → (전달) → `JobRunner` → `AiAnalysisJobHandler` → `PostAIService.processAiJob`
 - **콘센트와 플러그**: 맡기는 쪽과 처리하는 쪽은 `global/job`의 인터페이스(`JobPublisher`·`JobHandler`)만 안다. 전달 방식은
@@ -605,6 +612,8 @@ if (memberActionTokenRepository.consumeIfActive(token.id, Instant.now()) == 0) {
 - **모양**: 이벤트 DTO는 그 도메인 `*DTO.kt`에(`PostCreatedEvent`), payload는 `{linksphereJob, event}`(`JobMessage`).
   리스너는 맡기기만 하고 즉시 리턴한다. 처리부는 대상이 이미 지워졌을 수 있다고 보고 `?: return`. 처리기는 `event` 필드를
   DTO로 되돌려 Service를 부르고, "정상적인 경합"으로 볼 예외만 삼킨다(`AiAnalysisJobHandler`).
+- 잡이 도는 사이 원본이 바뀔 수 있으면 결과를 저장할 때 잡을 맡긴 때의 값과 같은지 조건부 UPDATE로 확인한다 — 0행이면 늦게 온
+  옛 잡이라 결과를 버린다(`PostRepository.updateOgImageThumbnailIfOgImage`, [OG-THUMBNAIL.md](OG-THUMBNAIL.md) §5).
 - 새 잡을 추가할 때: 그 도메인에 `<이름>JobHandler`(`@Component`, `JOB_NAME` 상수) + 맡기는 쪽의 `jobPublisher.publish` +
   이 문서 §1 표 + `JobWiringTest`의 이름 목록. `LambdaHandler`는 고치지 않는다.
 - 개발 환경 구현은 `AsyncConfig`의 풀을 쓰지 않는다 — AI 잡이 그 풀에 하위 작업을 맡기고 기다려, 잡이 같은 풀을 차지하면
@@ -633,7 +642,7 @@ if (memberActionTokenRepository.consumeIfActive(token.id, Instant.now()) == 0) {
 ### 7-7. 배치 잡 형태
 
 - **언제**: EventBridge가 주기적으로 부르는 정리·수집 잡.
-- **정석**: `AccountPurgeService.purgeExpired`(`FeedCrawlService`, `OrphanImageGcService`도 같은 형태)
+- **정석**: `AccountPurgeService.purgeExpired`(`FeedCrawlService`, `OrphanImageGcService`, 사람이 부르는 `OgThumbnailBackfillService`도 같은 형태)
 - **모양**: 대상 id를 한 번에 조회 → 90초 데드라인(Lambda 120초 안) → 항목마다 별도 빈의 `@Transactional` 메서드를
   `runCatching`으로 호출해 한 건 실패가 나머지를 막지 않게 → 남은 건 다음 실행으로 → 요약 로그(`purged=…, failed=…`).
 
@@ -704,7 +713,7 @@ for (id in ids) {
 - **정석**: `infra/youtube/YoutubeVideoClient.kt`
 - **모양**: `RestClient` + `JdkClientHttpRequestFactory`로 **connect·read 타임아웃을 명시**한다 → 실패는 warn 로그 후
   null 반환 → 호출부가 폴백한다. 키 설정은 `@Value("\${키:}")` 기본값으로 비어 있어도 부팅되게 한다. AWS SDK 클라이언트는
-  SnapStart 때문에 `by lazy`(`MailService`)이고, SDK 초기화는 `LambdaHandler.warmUpAwsSdk`가 스냅샷 전에 한다(새 클라이언트는 그 인자에 더한다). 응답 파싱은 `internal` 순수 함수로 떼어 테스트한다.
+  SnapStart 때문에 `by lazy`(`MailService`)이고, SDK 초기화는 `LambdaHandler.warmUpAwsSdk`가 스냅샷 전에 한다(새 클라이언트는 그 인자에 더한다). 요청 안에서 부르는 AWS SDK 호출은 `apiCallTimeout`으로 한 번의 호출(재시도 포함)을 끊는다(`S3ThumbnailStorage`). 응답 파싱은 `internal` 순수 함수로 떼어 테스트한다.
 - **안티패턴**: 기본 생성자 `RestTemplate()` — 타임아웃이 없다(spring-web 6.2.14 `SimpleClientHttpRequestFactory`는
   timeout이 -1이면 설정하지 않음, 2026-10-25 업스트림 소스로 확인). `SupabaseStorageService`가 이것으로 업로드 서명
   요청이 끝없이 멈췄다 — 지금은 팩토리에 타임아웃을 건 `RestTemplate`이다(§9).

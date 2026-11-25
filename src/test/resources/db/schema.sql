@@ -13,6 +13,8 @@
 -- 덤프 뒤 손으로 넣은 것(읽기 전용 계정 adhoc_readonly는 members 권한이 없어 pg_dump가 막힌다 - BE docs/DEPLOY.md §12)
 --   2026-10-26 bookmark_folders.pinned_at - add_bookmark_folders_pinned_at.sql을 운영에 적용한 뒤 pg_catalog로 7번째 컬럼·
 --              timestamp without time zone·NULL 허용·기본값 없음을 확인하고 pg_dump가 내는 형식대로 넣었다
+--   2026-11-25 posts.og_image_thumbnail - add_posts_og_image_thumbnail.sql을 운영에 적용했다. text·NULL 허용·기본값 없음은 그
+--              파일 그대로이고, 마지막 컬럼 자리는 ADD COLUMN이 끝에 붙인다는 동작으로 넣었다(pg_catalog로 위치를 확인하지 않았다)
 --
 -- 아래 "테스트 전용 앞부분"은 운영(Supabase)에만 있는 것을 같은 이름으로 만들어 덤프 본문을 고치지 않는다
 --   extensions 스키마의 vector  - posts.embedding이 extensions.vector(768)다
@@ -344,7 +346,8 @@ CREATE TABLE public.posts (
     ai_status character varying(20) DEFAULT 'NONE'::character varying NOT NULL,
     is_private boolean DEFAULT false NOT NULL,
     embedding extensions.vector(768),
-    idempotency_key uuid
+    idempotency_key uuid,
+    og_image_thumbnail text
 );
 
 

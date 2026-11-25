@@ -66,6 +66,9 @@ data class PostResponse(
     val tags: List<String>?,
     val categories: List<CategoryResponse>,
     val ogImage: String?,
+    // 피드 카드용으로 줄인 사본(가로 960px 안팎)의 절대 주소. null이면 사본이 아직 없거나 만들 수 없는 원본이라 ogImage를 그린다.
+    // 상세 화면·공유 미리보기는 계속 ogImage를 쓴다(docs/plans/2026-11-25-og-thumbnail.md "쓰는 곳")
+    val ogImageThumbnail: String?,
     val aiSummary: String?,
     val createdAt: LocalDateTime?,
     val aiStatus: AiStatus,
@@ -95,4 +98,18 @@ data class PostCreatedEvent(
     val description: String?,
     val content: String,
     val existingTags: List<String>,
+)
+
+// 글의 og_image가 바뀌었다(등록·주소 변경·빈 og:image 채움·삭제). OgThumbnailService가 커밋 뒤 듣고 옛 사본을 지운 뒤 새 사본 잡을
+// 맡긴다. 삭제면 ogImage가 null, 새 글이면 previousOgImage가 null이다
+data class PostOgImageChangedEvent(
+    val postId: UUID,
+    val previousOgImage: String?,
+    val ogImage: String?,
+)
+
+// 잡 og-thumbnail이 받는 내용. ogImage는 맡길 때의 원본 주소다 - 저장 직전에 글의 og_image와 비교한다
+data class OgThumbnailJobEvent(
+    val postId: UUID,
+    val ogImage: String,
 )

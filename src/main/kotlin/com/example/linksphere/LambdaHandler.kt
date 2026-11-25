@@ -21,6 +21,7 @@ import org.slf4j.MDC
 import org.springframework.web.context.support.WebApplicationContextUtils
 import software.amazon.awssdk.core.warmup.SdkWarmUp
 import software.amazon.awssdk.services.lambda.LambdaClient
+import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.ses.SesClient
 import java.io.InputStream
 import java.io.OutputStream
@@ -97,6 +98,9 @@ class LambdaHandler : RequestStreamHandler {
             // 뒷일(AI 분석·댓글 알림 등)은 Lambda에서만 self-invoke로 넘긴다. 기본값(application.yml)은 같은 프로세스에서
             // 처리하는 개발 환경용인데, Lambda는 응답 뒤 실행 환경을 얼려 그 방식으로는 처리가 멈춘다(global/job/JobPublisher).
             System.setProperty("app.job.publisher", "lambda")
+            // 피드 카드용 og 이미지 사본도 Lambda에서만 S3(FE 버킷의 og-thumbnails/)에 올린다. 기본값(application.yml)은 사본을 만들지
+            // 않는 로컬·테스트용이다(global/storage/ThumbnailStorage). Lambda 환경변수를 바꾸지 않고 배포만으로 켜진다
+            System.setProperty("app.og-thumbnail.storage", "s3")
 
             // 기본값이 Tomcat·예전 경로와 다른 설정만 바꾼다(core 2.1.7 ContainerConfig.defaultConfig):
             // - rawPath의 /api를 떼고 요청의 context-path를 /api로 보여 준다. 보안 필터의 requestMatchers("/auth/login")가
@@ -176,7 +180,7 @@ class LambdaHandler : RequestStreamHandler {
         }
 
         /**
-         * 복원 뒤 첫 self-invoke·메일 발송이 AWS SDK 초기화를 떠안지 않게 스냅샷 전에 데운다.
+         * 복원 뒤 첫 self-invoke·메일 발송·사본 저장이 AWS SDK 초기화를 떠안지 않게 스냅샷 전에 데운다.
          *
          * 서비스 호출은 로컬의 준비된 응답으로 돌고 HTTP 클라이언트만 네트워크를 1번 쓴다. 자격 증명·IAM 권한이
          * 필요 없다(https://docs.aws.amazon.com/sdk-for-java/latest/developer-guide/sdk-warmup.html). 실제
@@ -184,7 +188,7 @@ class LambdaHandler : RequestStreamHandler {
          */
         private fun warmUpAwsSdk() {
             try {
-                SdkWarmUp.warmUp(LambdaClient::class.java, SesClient::class.java)
+                SdkWarmUp.warmUp(LambdaClient::class.java, SesClient::class.java, S3Client::class.java)
             } catch (e: Exception) {
                 logger.warn("AWS SDK warm-up failed: {}", e.message)
             }

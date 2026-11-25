@@ -133,6 +133,7 @@ class PostServiceTest {
             tags = emptyList(),
             categories = emptyList(),
             ogImage = null,
+            ogImageThumbnail = null,
             aiSummary = null,
             createdAt = null,
             aiStatus = AiStatus.NONE,
@@ -751,6 +752,113 @@ class PostServiceTest {
 
         assertEquals("사용자가 직접 쓴 제목", savedPostCaptor.value.title)
         verify(urlMetadataExtractor, never()).extract(ArgumentMatchers.anyString())
+    }
+
+    // ── 피드 카드용 og 이미지 사본(OgThumbnailService가 커밋 뒤 이벤트를 듣는다) ──────────────
+
+    @Test
+    fun `createPost는 og 이미지가 있으면 커밋 뒤 사본을 만들도록 알린다`() {
+        val userId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val url = "https://example.com/og"
+        `when`(urlMetadataExtractor.extract(url)).thenReturn(
+            UrlMetadata(title = "제목", description = null, ogImage = "https://example.com/og.png", tags = emptyList(), pageContent = null),
+        )
+        `when`(postRepository.save(anyUuid<TablePost>())).thenAnswer { invocation ->
+            val post = invocation.arguments[0] as TablePost
+            TablePost(id = postId, userId = post.userId, url = post.url, title = post.title, ogImage = post.ogImage)
+        }
+        stubAssemblerResponse(postId)
+
+        postService.createPost(userId, PostCreateRequest(url = url))
+
+        verify(eventPublisher).publishEvent(PostOgImageChangedEvent(postId, previousOgImage = null, ogImage = "https://example.com/og.png"))
+    }
+
+    @Test
+    fun `updatePost는 URL을 바꿔 og 이미지가 달라지면 같은 트랜잭션에서 사본 주소를 비우고 옛 사본 정리를 알린다`() {
+        val userId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val newUrl = "https://new.example.com"
+        val post =
+            TablePost(
+                id = postId,
+                userId = userId,
+                url = "https://old.example.com",
+                title = "기존 제목",
+                ogImage = "https://old.example.com/og.png",
+                ogImageThumbnail = "https://linksphere.click/og-thumbnails/old.jpg",
+            )
+        `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
+        `when`(urlMetadataExtractor.extract(newUrl)).thenReturn(
+            UrlMetadata(title = "새 제목", description = null, ogImage = "https://new.example.com/og.png", tags = emptyList(), pageContent = null),
+        )
+        val savedPostCaptor = ArgumentCaptor.forClass(TablePost::class.java)
+        `when`(postRepository.save(savedPostCaptor.capture())).thenReturn(post)
+        stubAssemblerResponse(postId)
+
+        postService.updatePost(postId, userId, PostUpdateRequest(url = newUrl))
+
+        verify(postRepository).clearOgImageThumbnail(postId)
+        // 응답을 만드는 엔티티도 옛 사본 주소를 들고 있지 않는다
+        assertNull(savedPostCaptor.value.ogImageThumbnail)
+        verify(eventPublisher).publishEvent(
+            PostOgImageChangedEvent(postId, previousOgImage = "https://old.example.com/og.png", ogImage = "https://new.example.com/og.png"),
+        )
+    }
+
+    @Test
+    fun `updatePost는 비어 있던 og 이미지를 채우면 사본을 만들도록 알린다`() {
+        val userId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val url = "https://example.com/a"
+        val post = TablePost(id = postId, userId = userId, url = url, title = "기존 제목")
+        `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
+        `when`(urlMetadataExtractor.extract(url)).thenReturn(
+            UrlMetadata(title = "새 제목", description = null, ogImage = "https://example.com/og.png", tags = emptyList(), pageContent = null),
+        )
+        `when`(postRepository.save(anyUuid<TablePost>())).thenReturn(post)
+        stubAssemblerResponse(postId)
+
+        postService.updatePost(postId, userId, PostUpdateRequest(title = ""))
+
+        verify(postRepository).clearOgImageThumbnail(postId)
+        verify(eventPublisher).publishEvent(PostOgImageChangedEvent(postId, previousOgImage = null, ogImage = "https://example.com/og.png"))
+    }
+
+    @Test
+    fun `updatePost는 og 이미지가 그대로면 사본 주소를 건드리지 않는다`() {
+        val userId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val url = "https://example.com/a"
+        val thumbnail = "https://linksphere.click/og-thumbnails/a.jpg"
+        val post = TablePost(id = postId, userId = userId, url = url, title = "기존 제목", ogImage = "https://example.com/og.png", ogImageThumbnail = thumbnail)
+        `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
+        // 제목만 비운 재수집은 빈 칸만 채운다 - 다른 og 이미지가 와도 기존 값을 그대로 둔다
+        `when`(urlMetadataExtractor.extract(url)).thenReturn(
+            UrlMetadata(title = "새 제목", description = null, ogImage = "https://example.com/other.png", tags = emptyList(), pageContent = null),
+        )
+        val savedPostCaptor = ArgumentCaptor.forClass(TablePost::class.java)
+        `when`(postRepository.save(savedPostCaptor.capture())).thenReturn(post)
+        stubAssemblerResponse(postId)
+
+        postService.updatePost(postId, userId, PostUpdateRequest(title = ""))
+
+        verify(postRepository, never()).clearOgImageThumbnail(anyUuid())
+        verify(eventPublisher, never()).publishEvent(ArgumentMatchers.any(PostOgImageChangedEvent::class.java))
+        assertEquals(thumbnail, savedPostCaptor.value.ogImageThumbnail)
+    }
+
+    @Test
+    fun `deletePost는 og 이미지가 있던 글이면 커밋 뒤 사본을 지우도록 알린다`() {
+        val ownerId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val post = TablePost(id = postId, userId = ownerId, url = "https://example.com", title = "제목", ogImage = "https://example.com/og.png")
+        `when`(postRepository.findById(postId)).thenReturn(Optional.of(post))
+
+        postService.deletePost(postId, ownerId)
+
+        verify(eventPublisher).publishEvent(PostOgImageChangedEvent(postId, previousOgImage = "https://example.com/og.png", ogImage = null))
     }
 
     // ── cursor 목록 ──────────────────────────────────────

@@ -83,6 +83,7 @@ class PostSecurityTest {
         tags = null,
         categories = emptyList(),
         ogImage = null,
+        ogImageThumbnail = null,
         aiSummary = null,
         createdAt = null,
         aiStatus = AiStatus.NONE,

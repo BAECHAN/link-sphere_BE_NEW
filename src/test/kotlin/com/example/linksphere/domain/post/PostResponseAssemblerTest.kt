@@ -150,6 +150,33 @@ class PostResponseAssemblerTest {
         assertEquals(emptyList<UUID>(), result.userInteractions.bookmarkFolderIds)
     }
 
+    // 목록 카드(FE PostCard)가 사본이 있으면 사본, 없으면 ogImage를 그린다 - 둘을 따로 싣는다
+    @Test
+    fun `convertToResponse 는 og 이미지 원본과 사본 주소를 따로 싣는다`() {
+        val ownerId = UUID.randomUUID()
+        val postId = UUID.randomUUID()
+        val post =
+            TablePost(
+                id = postId,
+                userId = ownerId,
+                url = "https://example.com",
+                title = "제목",
+                ogImage = "https://example.com/og.png",
+                ogImageThumbnail = "https://linksphere.click/og-thumbnails/a.jpg",
+            )
+        val owner = TableMember(id = ownerId, email = "owner@example.com", password = "enc", nickname = "owner")
+
+        `when`(memberService.getProfile(ownerId)).thenReturn(MemberProfile.from(owner))
+        `when`(bookmarkRepository.countByPostId(postId)).thenReturn(0L)
+        `when`(postReactionRepository.countByPostId(postId)).thenReturn(0L)
+        `when`(postCommentPort.countByPostId(postId)).thenReturn(0)
+
+        val result = assembler.convertToResponse(post, null)
+
+        assertEquals("https://example.com/og.png", result.ogImage)
+        assertEquals("https://linksphere.click/og-thumbnails/a.jpg", result.ogImageThumbnail)
+    }
+
     @Test
     fun `buildResponsesFromPosts 는 빈 목록이면 조회 없이 빈 목록을 반환한다`() {
         val result = assembler.buildResponsesFromPosts(emptyList(), UUID.randomUUID())

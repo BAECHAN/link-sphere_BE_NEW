@@ -241,6 +241,13 @@ dependencies {
         exclude(group = "software.amazon.awssdk", module = "netty-nio-client")
         exclude(group = "software.amazon.awssdk", module = "apache-client")
     }
+
+    // 피드 카드용 og 이미지 사본을 FE 버킷의 og-thumbnails/에 올리고 지운다(S3ThumbnailStorage). 위와 같은 이유로
+    // netty/apache 대신 url-connection-client를 쓴다.
+    implementation("software.amazon.awssdk:s3") {
+        exclude(group = "software.amazon.awssdk", module = "netty-nio-client")
+        exclude(group = "software.amazon.awssdk", module = "apache-client")
+    }
 }
 
 kotlin {
