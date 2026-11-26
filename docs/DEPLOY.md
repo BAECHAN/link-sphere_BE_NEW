@@ -1126,7 +1126,7 @@ docker rm -f bk-rehearsal
 - **새 테이블**: `postgres`로 만들면 기본 권한으로 자동으로 백업된다. 세션처럼 계속 바뀌는 데이터면 워크플로의
   `--exclude-table-data`에 더한다.
 
-### 14. og 이미지 사본 (컬럼 추가 + 기존 글 소급) — 컬럼 적용 완료 (2026-11-25), 소급은 배포 뒤
+### 14. og 이미지 사본 (컬럼 추가 + 기존 글 소급) — 적용 완료 (컬럼·소급 2026-11-25)
 
 글을 등록하거나 링크를 바꾸면 BE가 og 이미지를 받아 줄인 사본을 FE 버킷(서울, `link-sphere-fe-bucket`)의 `og-thumbnails/`에
 올리고 `posts.og_image_thumbnail`에 `https://linksphere.click/og-thumbnails/<이름>`을 적는다. 동작과 값은
@@ -1169,6 +1169,10 @@ docker rm -f bk-rehearsal
 - **못 만든 글은 표시하지 않는다**: WebP·404 같은 글은 컬럼이 null로 남고 FE가 원본을 그린다. cursor가 지나간 글은 다시 읽지
   않으므로 영구 실패가 있어도 소급은 끝난다. 요약의 `failures`는 `이유@사이트` → 건수다(이유 목록은 `OG-THUMBNAIL.md` §7).
   cursor 없이 다시 부르면 실패한 글을 처음부터 다시 시도한다.
+- **일부 글만 다시 판단받게 할 때**(예: 규칙이 바뀌어 사본이 원본보다 큰 글, `OG-THUMBNAIL.md` §8): 사용자가 그 글의 사본 주소만
+  비운다 — `UPDATE posts SET og_image_thumbnail = NULL WHERE og_image_thumbnail IS NOT NULL AND id IN ('<글 id>', …);`. 실행 전후로
+  12장 계정으로 행 수를 맞춰 보고, 바로 위 3번 명령(cursor 없이 `limit 1`)부터 다시 돌려 4번처럼 `nextCursor`로 이어 간다. 소급은 사본이 없는 글만 고르므로
+  비운 글과 전부터 실패하던 글만 다시 본다.
 - **진행 확인**(12장 계정): `SELECT count(*) FILTER (WHERE og_image_thumbnail IS NOT NULL), count(*) FROM posts WHERE og_image IS
   NOT NULL AND og_image <> '';`
 - **되돌릴 때**: 옛 코드는 컬럼과 사본을 읽지 않아 코드만 되돌려도 API는 돈다. 다만 옛 코드는 링크를 바꿔도 사본 주소를 비우지

@@ -26,7 +26,7 @@ sealed interface OgThumbnailResult {
  *
  * 흐름: PostService가 og_image를 바꾼 트랜잭션에서 사본 주소를 비우고 [PostOgImageChangedEvent]를 낸다 → 커밋 뒤
  * [handleOgImageChanged]가 옛 사본을 지우고 잡 `og-thumbnail`을 맡긴다 → [OgThumbnailJobHandler]가 [createThumbnail]을 부른다.
- * 소급은 [OgThumbnailBackfillService]가 같은 [createThumbnail]을 차례로 부른다.
+ * 소급은 [OgThumbnailBackfillService]가 같은 [createThumbnail]을 차례로 부른다. 줄인 결과가 원본보다 작지 않으면 사본을 두지 않는다.
  *
  * 사본은 원본과 같은 순간을 가리켜야 한다. 컬럼은 저장 직전에 og_image가 잡을 맡길 때와 같을 때만 채우고(조건부 UPDATE), 아니면
  * 막 올린 사본을 지운다 - 주소를 바꾼 뒤 늦게 도착한 옛 잡이 새 글에 옛 그림을 붙이지 않게 한다.
@@ -75,8 +75,9 @@ class OgThumbnailService(
     }
 
     /**
-     * [ogImage]를 받아 줄여 올리고, 글의 og_image가 아직 [ogImage]면 컬럼을 채운다. 못 만들면(받기·형식·상한) 컬럼은 null 그대로라
-     * FE가 원본을 그린다. 저장소 오류는 던진다 - 사본 잡은 Lambda 비동기 호출이라 다시 시도된다.
+     * [ogImage]를 받아 줄여 올리고, 글의 og_image가 아직 [ogImage]면 컬럼을 채운다. 못 만들면(받기·형식·상한) 또는 줄인 결과가
+     * 원본보다 작지 않으면 컬럼은 null 그대로라 FE가 원본을 그린다. 저장소 오류는 던진다 - 사본 잡은 Lambda 비동기 호출이라 다시
+     * 시도된다.
      */
     fun createThumbnail(postId: UUID, ogImage: String): OgThumbnailResult {
         val result = buildAndStore(postId, ogImage)
@@ -105,6 +106,14 @@ class OgThumbnailService(
                 is OgThumbnailResizer.Resized -> result
                 is OgThumbnailResizer.Rejected -> return OgThumbnailResult.NotStored(result.reason)
             }
+
+        // 줄일 픽셀이 없는 작은 원본(YouTube hqdefault 480×360 등)은 다시 인코딩만 하면 더 커진다. 원본이 작으면 FE가 원본을
+        // 그리게 둔다 - mod_pagespeed·Cloudflare Polish·jpegoptim도 결과가 작을 때만 쓴다. 다시 판단받는 글(소급 재실행)에 남은
+        // 옛 사본은 같은 이름이라 지운다(확장자는 그때 판단과 다를 수 있어 둘 다)
+        if (resized.bytes.size >= source.size) {
+            EXTENSIONS.forEach { extension -> deleteQuietly(thumbnailName(postId, ogImage, extension)) }
+            return OgThumbnailResult.NotStored("not-smaller")
+        }
 
         val name = thumbnailName(postId, ogImage, resized.extension)
         val url = thumbnailStorage.put(name, resized.bytes, resized.contentType, CACHE_CONTROL)

@@ -11,6 +11,7 @@ import com.sun.net.httpserver.HttpServer
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertDoesNotThrow
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.verify
@@ -22,9 +23,13 @@ import java.io.ByteArrayOutputStream
 import java.net.InetSocketAddress
 import java.net.URI
 import java.security.MessageDigest
+import java.util.Random
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
+import javax.imageio.IIOImage
 import javax.imageio.ImageIO
+import javax.imageio.ImageWriteParam
+import javax.imageio.stream.MemoryCacheImageOutputStream
 
 /**
  * 사본 잡의 받기·저장·컬럼 갱신과 커밋 뒤 리스너를 본다. 원본은 로컬 HttpServer가 내주고(SafeConnectTest와 같은 방식), 받기는
@@ -77,15 +82,34 @@ class OgThumbnailServiceTest {
         verify(postRepository).updateOgImageThumbnailIfOgImage(postId, ogImage, url)
     }
 
-    // 늦게 온 옛 잡: 글 주소가 바뀌어 og_image가 달라졌거나 글이 지워져 조건부 UPDATE가 0행이다
+    // 늦게 온 옛 잡: 글 주소가 바뀌어 og_image가 달라졌거나 글이 지워져 조건부 UPDATE가 0행이다.
+    // 원본은 잡음 그림이다 - 단색 PNG는 아주 작게 압축돼 줄인 JPEG가 더 커서(not-smaller) 올리기 전에 끝난다
     @Test
     fun `잡이 도는 사이 원본 주소가 바뀌면 올린 사본을 지우고 컬럼을 건드리지 않는다`() {
-        val ogImage = serve(contentType = "image/png", body = png(1920, 1080))
+        val ogImage = serve(contentType = "image/png", body = pngOf(noisy(1280, 720)))
 
         val result = service().createThumbnail(postId, ogImage)
 
         assertEquals(OgThumbnailResult.NotStored("post-changed"), result)
         assertEquals(listOf(storage.puts.single().name), storage.deletes)
+    }
+
+    // 이미 작게 압축된 원본(YouTube hqdefault 480×360 등)은 줄일 픽셀이 없어 다시 인코딩만 하면 원본보다 커진다.
+    // 다시 판단받는 글(소급 재실행)에 그 이름의 옛 사본이 남아 있을 수 있어 두 확장자 이름을 지운다
+    @Test
+    fun `다시 인코딩한 결과가 원본보다 작지 않으면 올리지 않고 같은 이름의 옛 사본을 지운다`() {
+        val source = jpeg(noisy(480, 360), quality = 0.3f)
+        val resized = OgThumbnailResizer.resize(source) as OgThumbnailResizer.Resized
+        assertTrue(resized.bytes.size >= source.size, "고정물 전제: 다시 인코딩하면 원본보다 커야 한다")
+        val ogImage = serve(contentType = "image/jpeg", body = source)
+        val hash = sha256Hex(ogImage).take(12)
+
+        val result = service().createThumbnail(postId, ogImage)
+
+        assertEquals(OgThumbnailResult.NotStored("not-smaller"), result)
+        assertEquals(emptyList<FakeThumbnailStorage.Put>(), storage.puts)
+        assertEquals(listOf("$postId-$hash.jpg", "$postId-$hash.png"), storage.deletes)
+        verifyNoInteractions(postRepository)
     }
 
     @Test
@@ -230,7 +254,44 @@ class OgThumbnailServiceTest {
         graphics.color = Color(20, 160, 90)
         graphics.fillRect(0, 0, width, height)
         graphics.dispose()
-        return ByteArrayOutputStream().also { ImageIO.write(image, "png", it) }.toByteArray()
+        return pngOf(image)
+    }
+
+    private fun pngOf(image: BufferedImage): ByteArray = ByteArrayOutputStream().also { ImageIO.write(image, "png", it) }.toByteArray()
+
+    // 고정 시드 잡음. 단색 그림과 달리 압축이 잘 되지 않아 품질에 따라 크기가 크게 달라진다
+    private fun noisy(width: Int, height: Int): BufferedImage {
+        val random = Random(42)
+        val image = BufferedImage(width, height, BufferedImage.TYPE_INT_RGB)
+
+        for (y in 0 until height) {
+            for (x in 0 until width) {
+                image.setRGB(x, y, random.nextInt(0x1000000))
+            }
+        }
+
+        return image
+    }
+
+    private fun jpeg(image: BufferedImage, quality: Float): ByteArray {
+        val writer = ImageIO.getImageWritersByFormatName("jpeg").next()
+        val param =
+            writer.defaultWriteParam.apply {
+                compressionMode = ImageWriteParam.MODE_EXPLICIT
+                compressionQuality = quality
+            }
+        val bytes = ByteArrayOutputStream()
+
+        try {
+            MemoryCacheImageOutputStream(bytes).use { output ->
+                writer.output = output
+                writer.write(null, IIOImage(image, null, null), param)
+            }
+        } finally {
+            writer.dispose()
+        }
+
+        return bytes.toByteArray()
     }
 
     private fun sha256Hex(value: String): String = MessageDigest.getInstance("SHA-256").digest(value.toByteArray()).joinToString("") { "%02x".format(it) }
