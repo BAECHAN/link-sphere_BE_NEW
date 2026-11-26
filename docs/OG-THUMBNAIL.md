@@ -8,7 +8,7 @@
 > **읽고 나면**: 사본이 언제 생기고 지워지는지 말할 수 있고, 크기·상한 값을 바꾸거나 사본이 없는 글의 이유를 로그로 찾고, 기존 글
 > 소급을 다시 돌릴 수 있다(§8).
 >
-> **마지막 검토**: 2026-11-25 (최초 작성)
+> **마지막 검토**: 2026-11-26 (원본보다 작을 때만 사본을 두는 규칙, 2026-11-25 운영 소급 결과)
 
 ## 1. 쉬운 설명
 
@@ -17,7 +17,8 @@
 
 피드 카드의 미리보기 그림이 그 포스터였다. 카드마다 원본 사이트의 og 이미지(링크를 붙이면 뜨는 대표 그림, `og:image`)를 그대로
 받아 그렸고, 큰 것은 5MB에 가까웠다. 이제 글이 저장되면 서버가 그 그림을 한 번 받아 줄인 사본을 우리 저장소(사이트와 같은 주소)에
-올려 둔다. 목록 카드는 사본을, 상세 화면은 원본을 그린다. 사본을 못 만들면 카드도 원본을 그린다.
+올려 둔다. 목록 카드는 사본을, 상세 화면은 원본을 그린다. 사본을 못 만들거나, 줄여 봐도 원본보다 작지 않으면 카드도 원본을
+그린다.
 
 ```mermaid
 flowchart TD
@@ -31,7 +32,10 @@ flowchart TD
   G -->|"2xx · image/*"| H["OgThumbnailResizer<br/>머리로 픽셀 수 확인 → 풀기 → 960×540 덮게 줄이기<br/>투명하면 PNG, 아니면 JPEG 0.8"]
   G -->|"실패"| N["컬럼 null 그대로<br/>로그 '사본 없음 - reason'"]
   H -->|"못 읽음 · 상한"| N
-  H --> I["S3 PutObject<br/>og-thumbnails/글id-해시12.확장자<br/>Cache-Control immutable"]
+  H --> S{"줄인 결과 바이트 < 받은 원본 바이트?"}
+  S -->|"아니오"| X["올리지 않음<br/>같은 이름 사본 두 개(jpg·png) 지우기<br/>reason not-smaller"]
+  X --> N
+  S -->|"예"| I["S3 PutObject<br/>og-thumbnails/글id-해시12.확장자<br/>Cache-Control immutable"]
   I --> J{"조건부 UPDATE<br/>og_image가 맡길 때와 같나?"}
   J -->|"1행"| K["og_image_thumbnail = 사본 주소<br/>글 응답 ogImageThumbnail"]
   J -->|"0행(늦게 온 잡)"| L["막 올린 사본 지우기"]
@@ -89,7 +93,7 @@ flowchart TD
 - **이름에 원본 주소가 들어간다**: `<글 id>-<원본 주소 SHA-256 앞 12자>.<jpg|png>`. 원본이 바뀌면 이름도 바뀌어, 한 번 올린 이름의
   내용은 바뀌지 않는다(그래서 `immutable` 캐시를 단다). 같은 잡이 두 번 돌아도 같은 이름을 덮어쓴다.
 - **저장 직전에 원본을 다시 본다**: 컬럼은 `UPDATE … WHERE id = :id AND og_image = :ogImage`(`PostRepository.kt:111`)로만 채운다.
-  0행이면 그 사이 주소가 바뀌었거나 글이 지워진 것이라 막 올린 사본을 지운다(`OgThumbnailService.kt:112`). 수정 트랜잭션이 사본
+  0행이면 그 사이 주소가 바뀌었거나 글이 지워진 것이라 막 올린 사본을 지운다(`OgThumbnailService.kt:121`). 수정 트랜잭션이 사본
   주소를 비우는 UPDATE가 행 잠금을 잡고 있으면 잡의 UPDATE는 기다렸다가 커밋된 새 `og_image`로 조건을 다시 본다(Postgres READ
   COMMITTED의 UPDATE 재확인 — 이 문서에서 원문을 인용하지 않았다).
 - 옛 사본은 컬럼 값이 아니라 이전 주소로 이름을 다시 계산해 지운다. 수정이 글을 읽은 뒤 커밋하기 전에 A 잡이 사본을 올렸으면
@@ -108,6 +112,17 @@ flowchart TD
 - **크기**: 배율 `min(1, max(960/가로, 540/세로))`. 카드가 16:9 가운데를 잘라 그리므로 960×540을 덮는 가장 작은 크기이고, 작은 원본은
   키우지 않는다. 절반씩 여러 번 줄여 한 번에 크게 줄일 때의 계단 현상을 줄인다.
 - **형식**: 실제로 투명한 픽셀이 하나라도 있으면 PNG, 아니면 JPEG 품질 0.8. 원본 형식과 상관없이 늘 다시 인코딩한다. GIF는 첫 장면만 쓴다.
+- **크기 비교**(`OgThumbnailService.kt:113`, 2026-11-26): 줄인 결과가 받은 원본보다 작을 때만 올린다. 같거나 크면 올리지 않고
+  `not-smaller`로 끝내며, 그 글·그 원본 주소의 사본 이름 두 개(jpg·png)를 지운다 — 다시 판단받는 글(§8)에 남은 옛 사본이다.
+  원본을 그대로 올리지는 않는다(늘 다시 인코딩한 JPEG·PNG만 올린다).
+  - 커지는 이유: 줄일 픽셀이 없는 작은 원본(YouTube `hqdefault.jpg` 480×360 등)은 다시 인코딩만 남는데, 이미 잘 압축된 원본보다
+    작게 만들 수 없다. 원본 15,119바이트인 YouTube 썸네일을 libjpeg-turbo 품질 80으로 다시 저장하면 우리 사본과 같은 21,849바이트,
+    품질 60 + 허프만 최적화로도 15,695바이트였다(2026-11-26, `djpeg`·`cjpeg`로 직접 실행).
+  - 같은 규칙을 쓰는 도구: [mod_pagespeed](https://www.modpagespeed.com/doc/reference-image-optimize)의 JPEG 재압축은 _"다시
+    인코딩한 결과가 원본보다 `ImageLimitOptimizedPercent`가 정한 만큼 작을 때만 남긴다(기본 100: 조금이라도 줄면)"_ (번역),
+    [jpegoptim](https://github.com/tjko/jpegoptim/blob/master/jpegoptim.1)은 `-f, --force`가 _"결과가 원본보다 커지더라도 최적화를
+    강제한다"_ (번역)라 기본은 원본을 둔다. [Cloudflare Polish](https://developers.cloudflare.com/images/polish/compression/)는
+    _"변환하면 파일이 커질 때는 AVIF·WebP로 바꾸지 않는다"_ (번역). 셋 다 2026-11-26에 원문을 읽었다.
 
 ### 5-4. 저장
 
@@ -142,7 +157,7 @@ Lambda는 도쿄, 버킷은 서울이라 리전을 설정으로 따로 받는다
 
 | 값 | 뜻 |
 | --- | --- |
-| null | 사본이 없다(아직 안 만듦, 못 만듦, 저장 꺼짐). FE는 `og_image` 원본을 그린다 |
+| null | 사본이 없다(아직 안 만듦, 못 만듦, 줄여도 원본보다 작지 않음, 저장 꺼짐). FE는 `og_image` 원본을 그린다 |
 | `https://linksphere.click/og-thumbnails/…` | 지금 `og_image`로 만든 사본의 절대 주소 |
 
 글 응답(`PostResponse`)은 `ogImage` 옆에 `ogImageThumbnail`(null 허용)을 낸다(`PostResponseAssembler.kt:107`). 공유 미리보기(`/og/post/{id}`),
@@ -172,6 +187,7 @@ Lambda는 도쿄, 버킷은 서울이라 리전을 설정으로 따로 받는다
 | `timeout` · `fetch-error` · `redirect-error` | 받기 시간 초과 · 그 밖의 입출력 오류 · 리다이렉트가 너무 많거나 `Location` 없음 |
 | `status-<코드>` · `not-image` · `too-large` | 2xx 아님 · `image/*` 아님 · 8MB 초과 |
 | `unsupported-format` · `too-many-pixels` · `decode-failed` | 읽을 수 없는 형식(WebP 등) · 픽셀 상한 초과 · 풀다 실패 |
+| `not-smaller` | 줄인 결과가 받은 원본보다 작지 않다. 같은 이름의 사본을 지운다(§5-3) |
 | `post-changed` | 저장 직전에 원본 주소가 바뀌었거나 글이 지워졌다(§5-2) |
 | `exception-<이름>` | 소급 중 예외(저장소 오류 등), 소급 요약에만 나온다 |
 
@@ -184,7 +200,7 @@ Lambda는 도쿄, 버킷은 서울이라 리전을 설정으로 따로 받는다
 | 삭제 때 이벤트 | `domain/post/PostService.kt:422` | 예 |
 | 커밋 뒤 옛 사본 지우기·잡 맡기기 | `domain/post/OgThumbnailService.kt:68`(`handleOgImageChanged`) | 예 |
 | 잡 처리기 | `domain/post/OgThumbnailJobHandler.kt` | 예 |
-| 받기·줄이기·저장·조건부 UPDATE | `domain/post/OgThumbnailService.kt:81`(`createThumbnail`), `:126`(`fetch`) | 예 |
+| 받기·줄이기·크기 비교·저장·조건부 UPDATE | `domain/post/OgThumbnailService.kt:82`(`createThumbnail`), `:113`(크기 비교), `:135`(`fetch`) | 예 |
 | 안전 연결(이미지용) | `domain/linkpreview/UrlMetadataExtractor.kt:318`(`safeConnectImage`), `:347`(리다이렉트 검증 루프) | 예 |
 | 줄이기·형식 | `domain/post/OgThumbnailResizer.kt:44`(`resize`) | 예 |
 | 저장 | `global/storage/ThumbnailStorage.kt`, `infra/aws/S3ThumbnailStorage.kt` | 예 |
@@ -198,6 +214,10 @@ Lambda는 도쿄, 버킷은 서울이라 리전을 설정으로 따로 받는다
 - **사본을 더 크게(예: 1,280px)**: `TARGET_WIDTH`·`TARGET_HEIGHT`만 바꾼다. 이미 만든 사본은 그대로라, 모두 바꾸려면 컬럼을 비우는
   SQL(사용자가 실행)을 돌린 뒤 소급을 처음부터 다시 돌린다. 이름은 원본 주소로만 정해져 같은 이름을 덮어쓴다 — 캐시가
   `immutable`이라 브라우저·CloudFront가 옛 크기를 계속 낼 수 있으니 이름 규칙(`thumbnailName`)에 크기를 넣는 것도 함께 검토한다.
+- **일부 글만 다시 판단받게 하기**(예: 규칙이 바뀌어 사본이 원본보다 큰 글): 그 글들의 `og_image_thumbnail`만 비우는 SQL(사용자가
+  실행, `WHERE og_image_thumbnail IS NOT NULL AND id IN (…)`)을 돌린 뒤 소급을 cursor 없이 처음부터 돌린다. 소급은 사본이 없는
+  글만 고르므로 비운 글과 전부터 실패하던 글만 다시 본다. 다시 판단에서 `not-smaller`가 나오면 같은 이름의 옛 사본을 지운다.
+  명령은 [`DEPLOY.md`](./DEPLOY.md) 14장.
 - **WebP 원본도 줄이기**: ImageIO WebP 플러그인(새 의존성)이 필요하다. `OgThumbnailResizerTest`의 `unsupported-format` 기대가 바뀐다.
 - **로컬에서 실제로 S3에 올려 보기**: 하지 않는다. 로컬 실행은 운영 DB에 붙고 버킷도 운영 버킷이다. 줄이기는 단위 테스트와
   `OgThumbnailResizer.resize`를 직접 부르는 임시 실행기로 본다(§9).
@@ -220,6 +240,14 @@ Lambda는 도쿄, 버킷은 서울이라 리전을 설정으로 따로 받는다
   `sips` 파일은 가로를 960px로 맞춘 것이라 크기가 다르다(1200×630 원본이면 `sips` 960×504, 새 코드는 540을 덮는 1029×540). `sips`의
   품질 설정은 이 문서에서 확인하지 않았다. 가장 큰 출력 한 장(2048×1536 → 960×720)을 눈으로 확인했다.
 
+- 운영 Lambda(java17 arm64)에서도 ImageIO·`BufferedImage`가 headless로 돌아 사본이 만들어졌다. 2026-11-25 소급은 8번 호출(1건,
+  50건씩 6번, 13건)이었고, 모든 호출이 요약 로그를 남기고 `deadlineReached=false`로 끝났다(CloudShell 출력의 요약 줄).
+- 크기 비교 규칙(2026-11-26)도 실패하는 테스트를 먼저 썼다. 비교를 뒤집거나(`<`) 옛 사본 지우기를 빼면 새 테스트가 실패하는 것을
+  확인했다. 이 규칙 때문에 "늦게 온 잡" 테스트의 원본을 단색 PNG(너무 작게 압축돼 새 규칙에 걸림)에서 고정 시드 잡음 PNG로 바꿨고
+  기대값은 그대로다.
+- 운영 결과(소급에서 못 만든 글의 이유·사이트, 사본 전후 Lighthouse, 사본이 원본보다 컸던 글과 정리 전후)는 FE
+  [`docs/PERFORMANCE.md`](https://github.com/BAECHAN/link-sphere_FE_NEW/blob/main/docs/PERFORMANCE.md) "피드 썸네일 사본"이 정본이다.
+
 ## 10. 시행착오
 
 - **Jsoup 한도는 정확히 그 시간에 끊지 않는다**: 한도 1초에 200ms마다 조금씩 보내는 서버를 붙이면 2.9초 만에 `SocketTimeoutException`으로
@@ -236,13 +264,12 @@ Lambda는 도쿄, 버킷은 서울이라 리전을 설정으로 따로 받는다
 
 - **마지막 한 건이 최악이면 120초를 넘을 수 있다**: 마감 직전에 시작한 글이 받기(10초, 실제로는 더 길 수 있음 §10) + 줄이기 + 올리기
   (10초) + 늦은 잡 지우기(10초)를 모두 꽉 채우면 Lambda 타임아웃에 걸린다. 그러면 요약 로그가 없다 — 같은 cursor로 다시 부르면 이미
-  사본이 생긴 글은 조회에서 빠지므로 이어서 처리된다. 일어난 적은 없다(아직 운영에서 돌리지 않음).
+  사본이 생긴 글은 조회에서 빠지므로 이어서 처리된다. 2026-11-25 운영 소급(8번 호출)에서는 일어나지 않았다.
 - **EXIF 방향을 반영하지 않는다**: 휴대폰 사진처럼 EXIF 회전값이 있는 JPEG는 사본이 원본과 다르게 누워 보일 수 있다. og 이미지에서 본
   적은 없다.
 - **CMYK JPEG**: 테스트하지 않았다. ImageIO가 못 읽으면 `decode-failed`로 원본을 쓴다.
 - **로컬 도구 `tools/OgImageBackfillRunner`는 사본 주소를 비우지 않는다**: 이 도구로 `og_image`를 바꾸면 옛 사본이 남아 카드에 옛 그림이
   보인다. 다시 쓸 일이 생기면 `clearOgImageThumbnail`을 함께 부르게 고친다.
-- **Lambda 런타임의 AWT**: 운영(java17 arm64)에서 `BufferedImage`·ImageIO가 headless로 도는지는 배포 뒤 첫 사본으로 확인한다.
 
 ## 12. 용어 사전
 

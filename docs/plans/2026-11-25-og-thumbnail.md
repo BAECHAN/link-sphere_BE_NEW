@@ -35,10 +35,13 @@ PR 1(infra #47)·PR 2(FE #689)와 PR 4의 결과는 FE 저장소의 같은 이�
   여유는 약 21.7MB다(2026-11-25 대화에서 사용자에게 알림).
 - 뒤로 넘긴 것
   - 검증의 "글 등록 구간 비교": 등록 요청에는 걸린 시간을 남기는 로그가 없어 배포 전 기준값이 따로 없다. 배포 뒤 CloudWatch에서 같은
-    글의 두 발행 로그(`og-thumbnail`, `ai-analysis`) 사이 간격으로 늘어난 시간을 잰다
-  - PR 4(FE): `docs/CACHE-STRATEGY.md`의 `og-thumbnails/` 캐시 헤더 행(PR 2 블록에 "PR 3·4"로 적은 약속이고, BE에는 그 문서가 없다),
+    글의 두 발행 로그(`og-thumbnail`, `ai-analysis`) 사이 간격으로 늘어난 시간을 잰다 → 보완함(2026-11-25 배포 뒤 사람 글 1건):
+    등록 응답에 더해진 발행은 약 51ms였다. 근거는 FE `docs/PERFORMANCE.md` "피드 썸네일 사본"
+  - PR 4(FE)(아래 목록 → 보완함, FE #690): `docs/CACHE-STRATEGY.md`의 `og-thumbnails/` 캐시 헤더 행(PR 2 블록에 "PR 3·4"로 적은 약속이고, BE에는 그 문서가 없다),
     `docs/ONBOARDING.md` 기능 지도에 `docs/OG-THUMBNAIL.md`와 `global/storage`(BE 문서 규칙), `docs/SERVICE-GLOSSARY.md` 잡 표,
     `docs/SYSTEM-ARCHITECTURE.md` 그림의 Lambda → S3 간선
+- 후속: [`2026-11-26-og-thumbnail-not-smaller.md`](./2026-11-26-og-thumbnail-not-smaller.md)(#231) — 이 계획의 크기 규칙은 픽셀만
+  봐서, 줄일 픽셀이 없는 작은 원본(YouTube 480×360)은 사본이 원본보다 컸다. 줄인 결과가 원본보다 작을 때만 사본을 둔다
 
 <!-- plan-result:end -->
 

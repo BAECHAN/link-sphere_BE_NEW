@@ -20,19 +20,21 @@
   주소(`https://linksphere.click/og-thumbnails/…`)를 `posts.og_image_thumbnail`에 적어 글 응답의 `ogImageThumbnail`(null 허용)로 낸다.
   받기는 링크 미리보기의 안전 연결을 써서 리다이렉트마다 주소를 다시 검증하고 8MB·10초에서 끊는다. 줄이기는 960×540을 덮는 최소
   크기(키우지 않음), 투명 픽셀이 있으면 PNG·아니면 JPEG 품질 0.8이고, 픽셀 수 5천만 상한은 풀기 전에 머리로 확인한다. 못 만들면
-  (WebP·404·상한 초과 등) null로 남고 FE가 원본을 그린다. 저장 직전에 글의 `og_image`가 잡을 맡길 때와 같은지 조건부 UPDATE로
+  (WebP·404·상한 초과 등) null로 남고 FE가 원본을 그린다. 줄인 결과가 받은 원본보다 작지 않아도(이미 작게 압축된 YouTube 480×360
+  썸네일은 다시 저장하면 약 45% 커졌다) 올리지 않고 null로 둔다. 저장 직전에 글의 `og_image`가 잡을 맡길 때와 같은지 조건부 UPDATE로
   확인해, 주소가 바뀐 뒤 늦게 끝난 잡은 막 올린 사본을 지우고 버린다. 주소가 바뀌거나 글을 지우면 같은 트랜잭션에서 컬럼을 비우고
   커밋 뒤 옛 사본을 지운다(실패는 로그만). 저장 구현은 `app.og-thumbnail.storage`로 고르며 로컬·테스트는 `skip`, 운영은
   `LambdaHandler`가 `s3`를 넣는다. 기존 글은 사람이 CloudShell에서 부르는 잡 `og-thumbnail-backfill`(`limit`·`cursor`, 90초 마감,
   요약 로그 한 줄)로 채운다. `og_image` 값과 그것을 쓰는 곳(공유 미리보기·댓글 카드·링크 미리보기)은 그대로다. 위 원본 23개
   (합계 34,093,757바이트)를 새 코드로 줄이면 합계 1,498,879바이트였다. 구조는 `docs/OG-THUMBNAIL.md`, 계획은 FE
-  `docs/plans/2026-11-25-og-thumbnail.md` PR 3.
+  `docs/plans/2026-11-25-og-thumbnail.md` PR 3, 크기 비교 규칙은 이 저장소 `docs/plans/2026-11-26-og-thumbnail-not-smaller.md`.
   (`OgThumbnailService.kt`(신규), `OgThumbnailResizer.kt`(신규), `OgThumbnailJobHandler.kt`(신규),
   `OgThumbnailBackfillService.kt`(신규), `OgThumbnailBackfillJobHandler.kt`(신규), `ThumbnailStorage.kt`(신규),
   `SkippingThumbnailStorage.kt`(신규), `S3ThumbnailStorage.kt`(신규), `add_posts_og_image_thumbnail.sql`(신규), `PostService.kt`,
   `PostRepository.kt`, `TablePost.kt`, `PostDTO.kt`, `PostResponseAssembler.kt`, `UrlMetadataExtractor.kt`, `BatchJobLimits.kt`,
   `LambdaHandler.kt`, `application.yml`, `build.gradle.kts`, `README.md`, `docs/OG-THUMBNAIL.md`(신규), `docs/BE-ARCHITECTURE.md`,
-  `docs/DEPLOY.md`, `docs/PERFORMANCE.md`)
+  `docs/DEPLOY.md`, `docs/PERFORMANCE.md`, [PR #230](https://github.com/BAECHAN/link-sphere_BE_NEW/pull/230),
+  [PR #231](https://github.com/BAECHAN/link-sphere_BE_NEW/pull/231))
 
   </details>
 
